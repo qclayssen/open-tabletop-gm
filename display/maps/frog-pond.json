@@ -1,0 +1,120 @@
+{
+ "name": "Frog Pond",
+ "width": 20,
+ "height": 14,
+ "diagonals": "5",
+ "info": "The Witherbloom race course. Open water is swimming (half speed without a swim speed); lily pads are difficult terrain. The finish line is on the right bank.",
+ "base": "floor",
+ "terrain": {
+  "finish": {
+   "cost": 1,
+   "blocks_sight": false,
+   "cover": 0,
+   "color": "feature"
+  }
+ },
+ "features": [
+  {
+   "type": "floor",
+   "x": 0,
+   "y": 0,
+   "w": 3,
+   "h": 14,
+   "label": "Start bank"
+  },
+  {
+   "type": "water",
+   "x": 3,
+   "y": 0,
+   "w": 14,
+   "h": 14
+  },
+  {
+   "type": "difficult",
+   "x": 5,
+   "y": 3,
+   "w": 2,
+   "h": 2
+  },
+  {
+   "type": "difficult",
+   "x": 8,
+   "y": 7,
+   "w": 2,
+   "h": 2
+  },
+  {
+   "type": "difficult",
+   "x": 11,
+   "y": 2,
+   "w": 2,
+   "h": 2
+  },
+  {
+   "type": "difficult",
+   "x": 13,
+   "y": 9,
+   "w": 2,
+   "h": 2
+  },
+  {
+   "type": "difficult",
+   "x": 7,
+   "y": 11,
+   "w": 2,
+   "h": 2
+  },
+  {
+   "type": "floor",
+   "x": 17,
+   "y": 0,
+   "w": 3,
+   "h": 14,
+   "label": "Finish bank"
+  },
+  {
+   "type": "finish",
+   "x": 17,
+   "y": 0,
+   "w": 1,
+   "h": 14
+  }
+ ],
+ "spawns": [
+  {
+   "id": "K",
+   "name": "Kairos",
+   "color": "quan",
+   "x": 1,
+   "y": 6
+  },
+  {
+   "id": "J",
+   "name": "Juno",
+   "color": "with",
+   "x": 1,
+   "y": 8
+  },
+  {
+   "id": "T",
+   "name": "Theodric",
+   "color": "silv",
+   "x": 1,
+   "y": 4
+  },
+  {
+   "id": "f1",
+   "name": "Giant frog",
+   "color": "danger",
+   "x": 9,
+   "y": 4
+  },
+  {
+   "id": "f2",
+   "name": "Giant frog",
+   "color": "danger",
+   "x": 12,
+   "y": 10
+  }
+ ]
+}

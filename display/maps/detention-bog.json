@@ -1,0 +1,140 @@
+{
+ "name": "Detention Bog",
+ "width": 24,
+ "height": 18,
+ "diagonals": "5",
+ "info": "Open water is swimming (half speed without a swim speed). Reeds are difficult terrain. Lanterns shed bright light 3 squares around them.",
+ "base": "floor",
+ "features": [
+  {
+   "type": "water",
+   "x": 0,
+   "y": 0,
+   "w": 24,
+   "h": 18
+  },
+  {
+   "type": "floor",
+   "x": 1,
+   "y": 1,
+   "w": 6,
+   "h": 5,
+   "label": "Boardwalk"
+  },
+  {
+   "type": "difficult",
+   "x": 7,
+   "y": 2,
+   "w": 6,
+   "h": 4,
+   "label": "Reeds"
+  },
+  {
+   "type": "floor",
+   "x": 3,
+   "y": 6,
+   "w": 3,
+   "h": 10
+  },
+  {
+   "type": "difficult",
+   "x": 8,
+   "y": 8,
+   "w": 7,
+   "h": 5,
+   "label": "Reeds"
+  },
+  {
+   "type": "floor",
+   "x": 15,
+   "y": 5,
+   "w": 6,
+   "h": 4,
+   "label": "Island"
+  },
+  {
+   "type": "difficult",
+   "x": 16,
+   "y": 12,
+   "w": 6,
+   "h": 5,
+   "label": "Reeds"
+  },
+  {
+   "type": "feature",
+   "x": 17,
+   "y": 6,
+   "w": 2,
+   "h": 2,
+   "label": "Old tree"
+  },
+  {
+   "type": "floor",
+   "x": 1,
+   "y": 14,
+   "w": 6,
+   "h": 3,
+   "label": "Reed-cutting dock"
+  },
+  {
+   "type": "feature",
+   "x": 4,
+   "y": 15,
+   "w": 1,
+   "h": 1,
+   "label": "Lantern"
+  },
+  {
+   "type": "feature",
+   "x": 2,
+   "y": 2,
+   "w": 1,
+   "h": 1,
+   "label": "Lantern"
+  }
+ ],
+ "spawns": [
+  {
+   "id": "K",
+   "name": "Kairos",
+   "color": "quan",
+   "x": 3,
+   "y": 15
+  },
+  {
+   "id": "J",
+   "name": "Juno",
+   "color": "with",
+   "x": 2,
+   "y": 15
+  },
+  {
+   "id": "M",
+   "name": "Mabli",
+   "color": "lore",
+   "x": 4,
+   "y": 14
+  },
+  {
+   "id": "b1",
+   "name": "Bog shrub",
+   "color": "danger",
+   "x": 9,
+   "y": 9
+  },
+  {
+   "id": "b2",
+   "name": "Bog shrub",
+   "color": "danger",
+   "x": 11,
+   "y": 10
+  },
+  {
+   "id": "s",
+   "name": "Stirges",
+   "color": "danger",
+   "x": 16,
+   "y": 6
+  }
+ ]
+}

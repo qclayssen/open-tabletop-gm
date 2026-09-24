@@ -301,7 +301,164 @@ def _norm_monster(r: dict) -> dict:
         "immunities":    _flat("damage_immunities"),
         "vulnerabilities": _flat("damage_vulnerabilities"),
         "condition_immunities": _flat("condition_immunities"),
+        "actions": [_norm_monster_action(a) for a in r.get("actions", [])
+                    if isinstance(a, dict)],
     }
+
+
+# ─── Structured monster actions ───────────────────────────────────────────────
+#
+# The tactical combat engine needs numbers, not prose: attack bonus, reach,
+# range, damage dice, save DC. Upstream carries most of these as fields; reach
+# and range only exist in the text, in a fixed SRD phrasing. Anything that does
+# not fit a known shape is kept as raw text with a flag rather than guessed at.
+# `flags` empty means the engine can run the action without GM judgment.
+#
+#   {"name", "kind": attack|save|multiattack|other, "flags": [...],
+#    "attack": {"type": melee|ranged|melee_or_ranged, "source": weapon|spell,
+#               "bonus", "reach", "range": [normal, long]},
+#    "damage": [{"dice", "type"}], "damage_choice": {"choose", "options"},
+#    "dc": {"ability", "value", "on_success"}, "area": {"shape", "size", "width"},
+#    "multiattack": [[{"action", "count", "type"}], ...],   # one list per option
+#    "usage": {...}, "rider": "<text after the damage>", "raw": "<desc>"}
+
+_ATTACK_HDR = re.compile(r"^(Melee or Ranged|Melee|Ranged) (Weapon|Spell) Attack:")
+_REACH      = re.compile(r"\breach (\d+) ft\.")
+_RANGE      = re.compile(r"\brange (\d+)(?:/(\d+))? ft\.")
+_HIT_DAMAGE = re.compile(
+    r"^\d+(?: \([^)]*\))? [a-z]+ damage"
+    r"(?: plus \d+(?: \([^)]*\))? [a-z]+ damage)*\.?")
+_LEAD_PART  = re.compile(r"(\d+)(?: \(([^)]*)\))? ([a-z]+) damage")
+_AREA       = re.compile(
+    r"(\d+)-foot(?:-radius)? (cone|line|cube|sphere)(?: that is (\d+) feet wide)?")
+
+
+def _damage_part(d: dict):
+    if not isinstance(d, dict) or "damage_dice" not in d:
+        return None
+    return {"dice": str(d["damage_dice"]).replace(" ", ""),
+            "type": (d.get("damage_type") or {}).get("index", "")}
+
+
+def _norm_monster_action(a: dict) -> dict:
+    desc  = (a.get("desc") or "").strip()
+    out   = {"name": a.get("name", ""), "kind": "other"}
+    flags = []
+
+    if isinstance(a.get("usage"), dict):
+        out["usage"] = a["usage"]
+
+    damage, choices = [], []
+    for d in a.get("damage") or []:
+        part = _damage_part(d)
+        if part:
+            damage.append(part)
+        elif isinstance(d, dict) and d.get("choose"):
+            opts = [_damage_part(o) for o in (d.get("from") or {}).get("options", [])]
+            if opts and all(opts):
+                choices.append({"choose": d["choose"], "options": opts})
+            else:
+                flags.append("damage_unparsed")
+        else:
+            flags.append("damage_unparsed")
+    if damage:
+        out["damage"] = damage
+    if choices:
+        out["damage_choice"] = choices[0] if len(choices) == 1 else choices
+        flags.append("damage_choice")
+
+    if a.get("multiattack_type"):
+        out["kind"] = "multiattack"
+        if a["multiattack_type"] == "actions":
+            sets = [a.get("actions") or []]
+        else:
+            opts = ((a.get("action_options") or {}).get("from") or {}).get("options", [])
+            sets = [o.get("items", []) if o.get("option_type") == "multiple" else [o]
+                    for o in opts]
+        parsed = [[{"action": i.get("action_name", ""), "count": i.get("count", 1),
+                    "type": i.get("type", "")} for i in s] for s in sets]
+        items = [i for s in parsed for i in s]
+        if (parsed and all(parsed) and all(i["action"] for i in items)
+                and all(str(i["count"]).isdigit() for i in items)):   # hydra: "Number of Heads"
+            for i in items:
+                i["count"] = int(i["count"])
+            out["multiattack"] = parsed
+        else:
+            flags.append("unparsed")
+
+    elif "attack_bonus" in a and _ATTACK_HDR.match(desc):
+        hdr   = _ATTACK_HDR.match(desc)
+        atype = {"Melee": "melee", "Ranged": "ranged",
+                 "Melee or Ranged": "melee_or_ranged"}[hdr.group(1)]
+        out["kind"] = "attack"
+        attack = {"type": atype, "source": hdr.group(2).lower(),
+                  "bonus": int(a["attack_bonus"])}
+        head, _, hit = desc.partition("Hit:")
+        reach, rng = _REACH.search(head), _RANGE.search(head)
+        if atype != "ranged":
+            if reach:
+                attack["reach"] = int(reach.group(1))
+            else:
+                flags.append("reach_unparsed")
+        if atype != "melee":
+            if rng:
+                attack["range"] = [int(rng.group(1)), int(rng.group(2) or rng.group(1))]
+            else:
+                flags.append("range_unparsed")
+        if "(+" in head.split(",")[0]:
+            flags.append("conditional_bonus")          # e.g. "+4 to hit with shillelagh"
+        out["attack"] = attack
+        if not damage and not choices:
+            flags.append("damage_unparsed")
+        hit  = hit.strip()
+        lead = _HIT_DAMAGE.match(hit)
+        # Upstream's damage list also carries damage that only a rider deals
+        # (a bite's poison on a failed save). Only the leading "Hit:" phrase
+        # lands on every hit; the rest belongs to the rider.
+        on_hit = {(dice.replace(" ", "") or flat, dtype) for flat, dice, dtype in
+                  _LEAD_PART.findall(lead.group(0) if lead else "")}
+        if damage and lead:
+            rider_dmg = [d for d in damage if (d["dice"], d["type"]) not in on_hit]
+            if rider_dmg:
+                out["damage"] = [d for d in damage if d not in rider_dmg]
+                out["rider_damage"] = rider_dmg
+                if not out["damage"]:
+                    del out["damage"]
+                    flags.append("damage_unparsed")
+        rest = hit[lead.end():].strip(" ,.") if lead else hit.strip(" ,.")
+        if rest:
+            out["rider"] = rest
+            flags.append("rider")
+        if a.get("dc"):
+            flags.append("rider")                      # save attached to an attack
+
+    elif isinstance(a.get("dc"), dict):
+        dc = a["dc"]
+        out["kind"] = "save"
+        out["dc"] = {"ability": (dc.get("dc_type") or {}).get("index", ""),
+                     "value": dc.get("dc_value"),
+                     "on_success": dc.get("success_type", "none")}
+        # Upstream's success_type contradicts its own text on a few records
+        # (adult red dragon Fire Breath says "none"). Refuse to pick a side.
+        text_half = bool(re.search(r"half as much damage on a successful", desc))
+        if text_half != (out["dc"]["on_success"] == "half"):
+            out["dc"]["on_success"] = None
+            flags.append("success_conflict")
+        area = _AREA.search(desc)
+        if area:
+            out["area"] = {"shape": area.group(2), "size": int(area.group(1))}
+            if area.group(3):
+                out["area"]["width"] = int(area.group(3))
+        else:
+            flags.append("targeting")
+
+    else:
+        flags.append("unparsed")
+
+    out["flags"] = sorted(set(flags))
+    if out["flags"]:
+        out["raw"] = desc
+    return out
 
 
 # ─── FoundryVTT normaliser ────────────────────────────────────────────────────

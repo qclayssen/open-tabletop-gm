@@ -22,6 +22,7 @@ Do NOT run `git init` or any git commands in campaign directories.
 | `/gm list` | List all campaigns. Follow `/gm list` branch. |
 | `/gm roll <notation>` | Roll dice. Follow `/gm roll` branch. |
 | `/gm combat start` | Start combat. Follow `/gm combat start` branch. |
+| `/gm combat grid <map>` | Start grid combat (the engine runs the rules). Follow `/gm combat grid` branch. |
 | `/gm rest <short\|long>` | Process a rest. Follow `/gm rest` branch. |
 | `/gm recap` | Read session-log.md; deliver 3-5 sentence in-character recap. |
 | `/gm pin [<fact> \| list \| remove <fact-or-number>]` | Manage `state.md → ## Pinned Facts` — the stable soft canon read at every `/gm load`. See `/gm pin` procedure below. |
