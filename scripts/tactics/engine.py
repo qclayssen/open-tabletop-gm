@@ -327,9 +327,13 @@ def move(enc: Encounter, roller: Roller, token_ref, square, reactions: dict = No
                            "parity": parity0})
     if lines:
         enc.turn.undo_locked = True
-    text = f"{t.name} moves {label(start)} to {t.square} ({used} ft, {remaining_movement(enc)} ft left)."
-    if stop_at < len(path) - 1:
-        text += " Movement stops."
+    if stop_at == 0 and len(path) > 1:
+        text = f"{t.name} is stopped at {t.square} before taking a step."
+    else:
+        text = (f"{t.name} moves {label(start)} to {t.square} "
+                f"({used} ft, {remaining_movement(enc)} ft left).")
+        if stop_at < len(path) - 1:
+            text += " Movement stops."
     hazards = [label(p) for p in path[1:stop_at + 1] if grid.terrain(p).get("hazard")]
     if hazards:
         text += f" Enters hazard at {', '.join(hazards)} (GM decides the effect)."

@@ -199,7 +199,9 @@ class DnD5e(Rules):
         if out["damage"]:
             text += " " + out["damage"]["text"]
         if hit and attack.get("rider"):
-            text += f" Rider not applied (GM decides): {attack['rider']}"
+            out["rider"] = attack["rider"]
+            first = re.sub(r"^(and|or)\s+", "", attack["rider"].split(". ")[0].rstrip("."))
+            text += f" GM decides the rider: {first}."
         out["text"] = text
         return out
 
@@ -314,6 +316,20 @@ class DnD5e(Rules):
         return {"healed": token.hp - before,
                 "text": f"{token.name} regains {token.hp - before} HP ({token.hp}/{token.max_hp})."}
 
+    # ── characters ───────────────────────────────────────────────────────────
+    def token_from_sheet(self, path, token_id, pos):
+        text = pathlib.Path(path).read_text(encoding="utf-8")
+        return _sheet_module().read_sheet(text, token_id, pos, path=str(path))
+
+    def token_from_monster(self, name, token_id, display_name, pos):
+        return token_from_monster(_lookup_monster(name), token_id, display_name, pos)
+
+    def write_back(self, sheet_text, token):
+        return _sheet_module().write_back(sheet_text, token)
+
+    def lasting_conditions(self, token):
+        return _sheet_module().lasting_conditions(token)
+
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -394,6 +410,32 @@ def token_from_monster(record: dict, token_id: str, name: str, pos: tuple,
         extra={"cr": record.get("cr"), "xp": record.get("xp"),
                "actions": [a for a in record.get("actions", []) if a.get("kind") != "attack"]},
     )
+
+
+def _sheet_module():
+    import importlib.util
+    name = "tactics_sheet_dnd5e"
+    if name not in sys.modules:
+        spec = importlib.util.spec_from_file_location(
+            name, pathlib.Path(__file__).with_name("tactics_sheet.py"))
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[name] = mod
+        spec.loader.exec_module(mod)
+    return sys.modules[name]
+
+
+def _lookup_monster(name: str) -> dict:
+    here = str(pathlib.Path(__file__).parent)
+    if here not in sys.path:
+        sys.path.insert(0, here)
+    import lookup                                   # systems/dnd5e/lookup.py
+    rec = lookup.lookup_record(name, category="monster")
+    if not rec:
+        raise ValueError(f"no SRD monster {name!r} (build the SRD: python3 systems/dnd5e/build_srd.py)")
+    if "actions" not in rec:
+        raise ValueError("the SRD dataset predates structured actions; rebuild it: "
+                         "python3 systems/dnd5e/build_srd.py --no-fvtt")
+    return rec
 
 
 RULES = DnD5e()

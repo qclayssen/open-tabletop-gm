@@ -15,6 +15,9 @@ The contract, grouped the way SYSTEM-PORTING.md documents it:
   movement      speed(token), crawling(token), stand_up_cost(token), reach(token)
   economy       turn_budget(token) -> dict ; initiative(token, roller) -> Roll
                 opportunity_attack(token) -> attack spec or None
+  characters    token_from_sheet(path, token_id, pos), token_from_monster(name, token_id,
+                display_name, pos), write_back(sheet_text, token) -> text,
+                lasting_conditions(token) -> list
 
 Result dicts carry a short `text` the CLI prints as-is. Rolls go through the
 Roller, so their source (engine, player, verbal) is always recorded.
@@ -99,6 +102,21 @@ class Rules:
         raise NotImplementedError
 
     def heal(self, token, amount: int) -> dict:
+        raise NotImplementedError
+
+    # characters: where tokens come from and where results go back to
+    def token_from_sheet(self, path, token_id: str, pos: tuple):
+        raise NotImplementedError
+
+    def token_from_monster(self, name: str, token_id: str, display_name: str, pos: tuple):
+        raise NotImplementedError
+
+    def write_back(self, sheet_text: str, token) -> str:
+        """The sheet with combat results (HP, resources, lasting conditions) written in."""
+        raise NotImplementedError
+
+    def lasting_conditions(self, token) -> list:
+        """Conditions that outlast the fight; the rest are dropped when combat ends."""
         raise NotImplementedError
 
 

@@ -105,6 +105,7 @@ class Encounter:
     status: str = "active"                       # active | ended
     system: str = "dnd5e"
     roll_mode: str = "players"                   # campaign default: players | auto
+    meta: dict = field(default_factory=dict)     # map display info: name, labels, zones, colors
     version: int = SCHEMA_VERSION
 
     # ── derived ──
