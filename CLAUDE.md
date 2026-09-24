@@ -85,6 +85,7 @@ python3 scripts/tactics/demo.py --seed 4          # scripted fight, prints every
 python3 scripts/tactics/combat.py --help          # GM command reference
 bash display/start-display.sh                     # display on http://localhost:5001
 bash display/start-display.sh --lan               # LAN mode (phones, tablets)
+GM_DISPLAY_PORT=5055 python3 display/gm-display-app.py   # a second display (tests)
 ```
 
 ## Milestones
@@ -102,9 +103,13 @@ bash display/start-display.sh --lan               # LAN mode (phones, tablets)
       and write-back, tracker and sidebar sync, 5 maps + README,
       `scripts/tactics.md`, `/gm combat grid`, `docs/TACTICAL-COMBAT.md`, demo.
       `cast` (save spells, Magic Missile) moves to milestone 4 with templates.
-- [ ] **3. Grid display**: `/combat` endpoint + `combat` SSE event (sync.py
-      already POSTs the snapshot), SVG grid panel, click to move and attack,
-      dice requests with "Roll for me", Playwright screenshots, phone width.
+- [x] **3. Grid display**: `/combat`, `/combat/state`, `/combat/do`; `combat`
+      SSE event; `display/static/tactics.{js,css}` (SVG grid, reach and dash
+      shading, path preview with OA warning, action bar, targets with hit %,
+      roll prompt with "Roll for me", animation, damage floaters, turn banner,
+      initiative strip, log, phone layout). Verified in the built-in browser
+      (desktop and 375 px). Open: the grid's own roll prompt is used instead of
+      the phone dice drawer; Help/Hide/Ready are greyed out until milestone 4.
 - [ ] **4. Spells and templates**: cones, spheres, lines, cubes; saves;
       concentration; Kairos's cantrips and level 1 spells first.
 - [ ] **5. Polish**: cover and sight shading, fog of war, condition badges,
@@ -125,6 +130,8 @@ bash display/start-display.sh --lan               # LAN mode (phones, tablets)
 - Kairos's sheet is the source of truth for his kit (Fire Bolt, Mind Sliver,
   Dagger; Magic Missile, Shield, Mage Armor, Silvery Barbs), not the original prompt.
 - Token size is 1 square for now; larger creatures are a later change.
+- Another display (claude-dnd-skill) may be running on port 5001 on this
+  machine. Test with GM_DISPLAY_PORT and TACTICS_NO_DISPLAY=1; never stop it.
 - Import the CLI as `tactics.cli`, never as a module named `combat`:
   `scripts/combat.py` (the initiative tracker) shadows it.
 - `display/static/reference/strixhaven_map_table.html` contains DM-only maps

@@ -6,7 +6,9 @@ Theatre-of-the-mind combat (`/gm combat start`) is unchanged and still available
 
 ## For the player
 
-**Starting a fight.** The GM starts one with `/gm combat grid <map>`, or you can ask for it. With the display running, the grid appears in your browser (milestone 3); without it, everything is plain text in the chat.
+**Starting a fight.** The GM starts one with `/gm combat grid <map>`, or you can ask for it. With the display running, the battle map appears on its own above the story, and hides again when the fight ends. Without the display, everything is plain text in the chat.
+
+**On the map (your turn).** Click Kairos to see where you can go: shaded squares are walking range (darker is closer), dashed squares need the Dash action. Point at a square to see the path and the feet it costs, with a red path and a warning if you would provoke an opportunity attack. Click to move (on a phone: tap to preview, tap again to go). Then pick an action: **Attack** or **Cast** highlights every valid target with your chance to hit; click one. **Dash**, **Disengage**, **Dodge**, **Undo move** and **End turn** are one click. When the engine needs your dice, type what you rolled, press **Roll the dice** to roll in the browser, or **Roll for me**. Everything you do is also sent to the GM, who narrates it. **Hide map** folds the panel away when you want to read.
 
 **Your turn.** Say what you do, as you normally would: "I move to D5 and cast Fire Bolt at the frog." The engine checks it is legal, and the GM narrates the result. You can:
 
@@ -43,6 +45,7 @@ All commands: `python3 scripts/tactics/combat.py -c <campaign> <command> ...`. E
 | `adjust <id> hp=N temp_hp=N ac=N` | GM correction (e.g. `ac=15` after Mage Armor) |
 | `log [n]` | The last n combat log lines |
 | `reachable <id>` | Squares reachable walking and with Dash (used by the display) |
+| `targets <id>` | Every attack and target with hit chance (used by the display) |
 | `end` | Ends combat: character sheets, tracker, session log, `state.md` |
 
 Flags for any command: `--roll N` (a player's natural roll; repeat for several), `--for-me` (the engine rolls the player's dice this time), `--react yes|no` (answer an opportunity attack prompt), `--seed N` (repeatable engine dice, for demos).
@@ -64,3 +67,4 @@ The demo plays a whole fight in a throwaway campaign folder and prints every com
 - 5e rules and the sheet reader: `systems/dnd5e/tactics_rules.py`, `systems/dnd5e/tactics_sheet.py`
 - Maps: `display/maps/*.json` (see `display/maps/README.md` to add your own)
 - The fight in progress: `<campaign>/combat/encounter.json` (a crash or restart loses nothing)
+- Display: `display/static/tactics.js` and `tactics.css`; endpoints `/combat`, `/combat/state`, `/combat/do` in `display/gm-display-app.py`. `GM_DISPLAY_PORT` runs a display on another port (the engine follows it).
