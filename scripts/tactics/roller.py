@@ -75,7 +75,7 @@ class Roller:
     rng: random.Random = field(default_factory=random.Random)
     supplied: list = field(default_factory=list)
     supplied_source: str = "verbal"
-    for_me: bool = False      # "Roll for me": the engine rolls a player's dice this time
+    for_me: bool = False      # "Roll for me": the engine rolls whatever the player has not supplied
     log: list = field(default_factory=list)
 
     def roll(self, notation: str, who: str, label: str, player: bool = False,
@@ -89,6 +89,8 @@ class Roller:
         shown = f"{count}d{sides}{mod:+d}" if count else str(mod)
         if shown.endswith("+0"):
             shown = shown[:-2]
+        if player and not self.supplied and self.for_me:
+            player = False                   # "Roll for me": the engine rolls what is still missing
         if not count:                        # flat damage: nothing to roll
             rec = Roll(who, label, shown, [], 0, mod, "fixed", advantage)
         elif player:

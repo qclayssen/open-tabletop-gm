@@ -299,3 +299,13 @@ def test_opportunity_attack_preview_uses_the_real_distance():
     enc = start(encounter([k, long]), ["kairos", "frog-1"])
     p = engine.preview_move(enc, "kairos", "B1")
     assert p["opportunity_attacks"][0]["hit_percent"] == 36
+
+
+def test_roll_for_me_keeps_the_rolls_already_made():
+    # The player rolled the d20 (14), then asked the engine to roll the damage.
+    enc = start(encounter([kairos(), frog("frog-1", (5, 0))]), ["kairos", "frog-1"])
+    r = roller(7, supplied=[14], source="player")
+    r.for_me = True
+    res = engine.attack(enc, r, "kairos", "frog-1", "fire bolt")
+    assert res["total"] == 19 and res["damage"]["total"] == 7
+    assert [x["source"] for x in enc.log[-1]["rolls"]] == ["player", "engine"]
