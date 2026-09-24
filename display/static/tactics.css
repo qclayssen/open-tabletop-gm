@@ -1,0 +1,135 @@
+/* tactics.css: the grid combat panel. Colour tokens follow the Strixhaven
+   reference page (display/static/reference/strixhaven_map_table.html). */
+
+:root {
+  --tx-paper: #E8EDEE; --tx-panel: #F4F7F7; --tx-ink: #1B2830; --tx-muted: #5A6A72;
+  --tx-line: #C3CDD0; --tx-accent: #1E7F74; --tx-brass: #A87A26; --tx-danger: #A33A3A;
+  --tx-floor: #DCE3E2; --tx-wall: #39474F; --tx-water: #8FB4C4; --tx-difficult: #A9B58C;
+  --tx-feature: #D9C8A0; --tx-void: #2A2F3A; --tx-hazard: #D9A3A0; --tx-grid: rgba(27,40,48,.14);
+  --tx-quan: #1E7F74; --tx-lore: #B8752E; --tx-heal: #2E7D4F;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --tx-paper: #0F171B; --tx-panel: #162127; --tx-ink: #DCE6E8; --tx-muted: #93A5AC;
+  --tx-line: #2C3B42; --tx-accent: #4FB8A8; --tx-brass: #D2A24A; --tx-danger: #E0716F;
+  --tx-floor: #1E2A2F; --tx-wall: #6C7E87; --tx-water: #2F5667; --tx-difficult: #4B5936;
+  --tx-feature: #5E5236; --tx-void: #07090D; --tx-hazard: #6B3434; --tx-grid: rgba(220,230,232,.10);
+  --tx-quan: #4FB8A8; --tx-lore: #D2A24A; --tx-heal: #6FCB8E;
+} }
+:root[data-theme="dark"] {
+  --tx-paper: #0F171B; --tx-panel: #162127; --tx-ink: #DCE6E8; --tx-muted: #93A5AC;
+  --tx-line: #2C3B42; --tx-accent: #4FB8A8; --tx-brass: #D2A24A; --tx-danger: #E0716F;
+  --tx-floor: #1E2A2F; --tx-wall: #6C7E87; --tx-water: #2F5667; --tx-difficult: #4B5936;
+  --tx-feature: #5E5236; --tx-void: #07090D; --tx-hazard: #6B3434; --tx-grid: rgba(220,230,232,.10);
+  --tx-quan: #4FB8A8; --tx-lore: #D2A24A; --tx-heal: #6FCB8E;
+}
+
+/* ── placement: over the narration column, which flows below while combat is on ── */
+#tx-panel {
+  position: fixed; z-index: 5; top: 64px; left: 230px; right: max(340px, 18vw);
+  max-height: calc(100vh - 150px);
+  display: flex; flex-direction: column; gap: 8px; padding: 10px 12px;
+  background: var(--tx-panel); color: var(--tx-ink);
+  border: 1px solid var(--tx-line); border-radius: 8px;
+  font: 14px/1.4 Figtree, system-ui, sans-serif;
+  box-shadow: 0 10px 30px rgba(0,0,0,.35);
+}
+#tx-panel[hidden] { display: none; }
+body.tx-sidebar-hidden #tx-panel { left: 60px; }
+body.tx-on #text-scroll { padding-top: calc(min(62vh, 640px) + 90px); }
+body.tx-on.tx-min #text-scroll { padding-top: 130px; }
+body.tx-min #tx-panel .tx-body, body.tx-min #tx-panel .tx-strip { display: none; }
+@media (max-width: 860px) {
+  /* No room beside the sidebar and settings here: sit above them (they are
+     z-index 6 to 8) and below dialogs and device approvals (10 and up).
+     "Hide map" folds the panel down to its header. */
+  #tx-panel { z-index: 9; left: 6px; right: 6px; top: 6px; max-height: calc(100vh - 84px); }
+  body.tx-on #text-scroll { padding-top: calc(70vh + 70px); }
+}
+
+.tx-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.tx-title { font-weight: 600; }
+.tx-title .tx-sub { color: var(--tx-muted); font-weight: 400; }
+#tx-banner { flex: 1; text-align: center; font-weight: 700; color: var(--tx-brass); min-height: 1.4em; }
+#tx-banner.tx-flash { animation: tx-flash 1.4s ease; }
+@keyframes tx-flash { 0% { transform: scale(1.25); opacity: 0; } 30% { opacity: 1; } 100% { transform: scale(1); } }
+.tx-btn {
+  font: 600 13px Figtree, system-ui, sans-serif; border: 1px solid var(--tx-line);
+  background: var(--tx-paper); color: var(--tx-ink); padding: 7px 11px; border-radius: 6px;
+  cursor: pointer; min-height: 36px;
+}
+.tx-btn:hover:not(:disabled) { border-color: var(--tx-accent); }
+.tx-btn[aria-pressed="true"] { background: var(--tx-accent); border-color: var(--tx-accent); color: var(--tx-paper); }
+.tx-btn:disabled { opacity: .45; cursor: not-allowed; }
+.tx-btn.tx-primary { background: var(--tx-accent); color: var(--tx-paper); border-color: var(--tx-accent); }
+.tx-btn:focus-visible, .tx-tok:focus-visible { outline: 2px solid var(--tx-brass); outline-offset: 2px; }
+
+.tx-strip { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+.tx-chip {
+  flex: none; display: flex; flex-direction: column; gap: 3px; padding: 4px 8px; border-radius: 6px;
+  background: var(--tx-paper); border: 1px solid var(--tx-line); font-size: 12px; min-width: 84px;
+}
+.tx-chip.tx-now { border-color: var(--tx-brass); box-shadow: 0 0 0 1px var(--tx-brass); }
+.tx-chip.tx-dead { opacity: .45; text-decoration: line-through; }
+.tx-hpbar { height: 4px; background: var(--tx-line); border-radius: 2px; overflow: hidden; }
+.tx-hpbar i { display: block; height: 100%; background: var(--tx-heal); }
+.tx-hpbar i.tx-low { background: var(--tx-danger); }
+
+.tx-body { display: grid; grid-template-columns: minmax(0, 1fr) 250px; gap: 10px; min-height: 0; }
+@media (max-width: 1100px) { .tx-body { grid-template-columns: 1fr; } }
+.tx-board {
+  align-self: start; overflow: auto; max-height: min(62vh, 640px); background: var(--tx-paper);
+  border: 1px solid var(--tx-line); border-radius: 6px; touch-action: manipulation;
+}
+@media (max-width: 860px) { .tx-board { max-height: 48vh; } }
+.tx-board svg { display: block; }
+.tx-side { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.tx-info { font-size: 13px; color: var(--tx-muted); min-height: 2.8em; }
+.tx-info strong { color: var(--tx-ink); }
+.tx-warn { color: var(--tx-danger); font-weight: 600; }
+.tx-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.tx-attacks { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; }
+.tx-prompt {
+  border: 1px solid var(--tx-brass); border-radius: 6px; padding: 10px; display: grid; gap: 8px;
+  background: var(--tx-paper);
+}
+.tx-prompt[hidden] { display: none; }
+.tx-prompt .tx-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.tx-prompt input {
+  width: 5.5em; font: 16px Figtree, system-ui, sans-serif; padding: 6px 8px; border-radius: 6px;
+  border: 1px solid var(--tx-line); background: var(--tx-panel); color: var(--tx-ink);
+}
+.tx-log { margin: 0; padding-left: 18px; font-size: 12px; color: var(--tx-muted); max-height: 150px; overflow: auto; }
+.tx-log li { margin-bottom: 3px; }
+
+/* ── board ── */
+.tx-cell-lbl { font: 600 11px Figtree, system-ui, sans-serif; fill: var(--tx-ink); paint-order: stroke; stroke-width: 3; }
+.tx-reach { fill: var(--tx-accent); pointer-events: none; }
+.tx-dash { fill: none; stroke: var(--tx-accent); stroke-width: 2; stroke-dasharray: 4 3; pointer-events: none; }
+.tx-path { fill: none; stroke: var(--tx-brass); stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+.tx-path.tx-risky { stroke: var(--tx-danger); }
+.tx-feet { font: 700 12px Figtree, system-ui, sans-serif; fill: var(--tx-ink); paint-order: stroke; stroke: var(--tx-panel); stroke-width: 4; pointer-events: none; }
+.tx-tok { cursor: pointer; }
+.tx-tok .tx-ring { fill: none; stroke: var(--tx-brass); stroke-width: 3; opacity: 0; }
+.tx-tok.tx-now .tx-ring { opacity: 1; animation: tx-pulse 1.6s ease-in-out infinite; }
+@keyframes tx-pulse { 50% { stroke-width: 5; } }
+.tx-tok.tx-dead { opacity: .3; cursor: default; }
+.tx-tok.tx-target .tx-ring { opacity: 1; stroke: var(--tx-danger); stroke-dasharray: 5 3; }
+.tx-tok text { pointer-events: none; }
+.tx-pct { font: 700 11px Figtree, system-ui, sans-serif; fill: #fff; }
+.tx-pct-bg { fill: var(--tx-danger); }
+.tx-float { font: 800 16px Figtree, system-ui, sans-serif; paint-order: stroke; stroke: var(--tx-panel); stroke-width: 4; pointer-events: none; animation: tx-rise 1.3s ease-out forwards; }
+.tx-float.tx-dmg { fill: var(--tx-danger); }
+.tx-float.tx-heal { fill: var(--tx-heal); }
+@keyframes tx-rise { from { transform: translateY(0); opacity: 1; } to { transform: translateY(-26px); opacity: 0; } }
+
+.tx-toast {
+  position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); max-width: 90%;
+  background: var(--tx-ink); color: var(--tx-paper); padding: 8px 12px; border-radius: 6px;
+  font-size: 13px; box-shadow: 0 6px 18px rgba(0,0,0,.3); z-index: 2;
+}
+.tx-toast[hidden] { display: none; }
+.tx-toast.tx-error { background: var(--tx-danger); }
+
+@media (prefers-reduced-motion: reduce) {
+  .tx-tok.tx-now .tx-ring, #tx-banner.tx-flash, .tx-float { animation: none; }
+}

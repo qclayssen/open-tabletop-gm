@@ -3014,6 +3014,7 @@
     :root:not([data-theme]) #dice-pending-badge .dpb-label { color: rgba(110, 75, 20, 0.85); }
   }
 </style>
+<link rel="stylesheet" href="/static/tactics.css">
 </head>
 <body>
 
@@ -6898,6 +6899,10 @@ function connect() {
     if (payload.device_request) {
       _showDeviceRequest(payload.device_request);
     }
+    // Grid combat: the tactics engine's snapshot (display/static/tactics.js).
+    if (payload.combat !== undefined && window.Tactics) {
+      window.Tactics.update(payload.combat);
+    }
     if (payload.device_approved) {
       _onDeviceApproved(payload.device_approved);
     }
@@ -7544,5 +7549,6 @@ function _initDicePad() {
   window._onDiceRequestCancelled = _onDiceRequestCancelled;
 }
 </script>
+<script src="/static/tactics.js" defer></script>
 </body>
 </html>

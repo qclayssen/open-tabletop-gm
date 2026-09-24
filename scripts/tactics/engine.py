@@ -63,8 +63,7 @@ def hostile(a, b) -> bool:
 
 def player_rolls(enc: Encounter, token, roller: Roller) -> bool:
     """Does a human roll this token's dice right now?"""
-    return (token.controller == "player" and enc.roll_mode == "players"
-            and not roller.for_me)
+    return token.controller == "player" and enc.roll_mode == "players"
 
 
 def average_damage(attack: dict) -> float:

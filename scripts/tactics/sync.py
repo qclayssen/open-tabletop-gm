@@ -45,8 +45,11 @@ def _post(path: str, payload: dict) -> None:
     if not display_enabled():
         return
     ps = _push_stats()
-    ps._send(ps.FLASK_URL.replace("/stats", path), json.dumps(payload).encode("utf-8"),
-             ps._read_token())
+    url = ps.FLASK_URL.replace("/stats", path)
+    port = os.environ.get("GM_DISPLAY_PORT", "").strip()
+    if port.isdigit():                      # a display on another port (see gm-display-app.py)
+        url = url.replace("localhost:5001", f"localhost:{port}")
+    ps._send(url, json.dumps(payload).encode("utf-8"), ps._read_token())
 
 
 # ─── tracker.json ─────────────────────────────────────────────────────────────
