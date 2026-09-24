@@ -117,9 +117,12 @@ GM_DISPLAY_PORT=5055 python3 display/gm-display-app.py   # a second display (tes
 
 ## Decisions on record
 
-- Remotes: target is `upstream` = Bobby-Gray/open-tabletop-gm and `origin` =
-  the user's fork. The rename was blocked by a permission prompt during
-  milestone 1; check `git remote -v` before pushing.
+- Workflow: one session per milestone ("Read CLAUDE.md and
+  docs/TACTICAL-COMBAT.md, then continue with milestone N"). Branch from
+  `main`, PR to the fork (`gh pr create --repo qclayssen/open-tabletop-gm`),
+  merge when CI (Actions, enabled) is green. `origin` = fork (HTTPS; SSH keys
+  do not work here), `upstream` = Bobby-Gray. Push with
+  `git -c credential.helper='!gh auth git-credential' push`.
 - Roll mode follows the campaign's `roll_mode`; every roll logs its source.
 - On `combat.py end`: write HP, temp HP, spent slots, hit dice and death saves to
   the installed `characters/Kairos.md` (backup `Kairos.md.bak` first, print a
@@ -134,9 +137,9 @@ GM_DISPLAY_PORT=5055 python3 display/gm-display-app.py   # a second display (tes
   machine. Test with GM_DISPLAY_PORT and TACTICS_NO_DISPLAY=1; never stop it.
 - Import the CLI as `tactics.cli`, never as a module named `combat`:
   `scripts/combat.py` (the initiative tracker) shadows it.
-- `display/static/reference/strixhaven_map_table.html` contains DM-only maps
-  and hidden campus places. Only its five player-facing maps were ported. Do
-  not publish that file to a public remote without the user's decision.
+- `display/static/reference/strixhaven_map_table.html` is a player-facing copy:
+  DM-only maps and undiscovered places were removed before publishing. Never
+  add content from the user's own copy or any DM folder.
 - Monster riders (the giant frog's grapple) are reported as "GM decides the
   rider", applied with `combat.py condition`. The CLI never applies them.
 - 2 giant frogs vs level 1 Kairos alone is a deadly encounter by 5e math; the
