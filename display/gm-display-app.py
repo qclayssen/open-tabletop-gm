@@ -109,6 +109,9 @@ HELP_LOCK     = os.path.join(_DISPLAY_DIR, ".help-lock")
 CAMP_FILE     = os.path.join(_DISPLAY_DIR, ".campaign")
 STATS_FILE    = os.path.join(_DISPLAY_DIR, "stats.json")
 TOKEN_FILE    = os.path.join(_DISPLAY_DIR, ".token")
+# Port override so a second display (tests, a demo) can run beside a live one.
+# The tactics engine honours the same variable when it pushes updates.
+_PORT         = int(os.environ.get("GM_DISPLAY_PORT", "5001") or 5001)
 INPUT_FILE    = os.path.join(_DISPLAY_DIR, "player_input.json")
 TRIGGER_FILE  = os.path.join(_DISPLAY_DIR, ".input_trigger")
 QUEUE_FILE    = os.path.join(_DISPLAY_DIR, ".input_queue")
@@ -2752,13 +2755,13 @@ if __name__ == "__main__":
         pass
 
     if _LAN_MODE:
-        print(f"GM Display — LAN mode (0.0.0.0:5001) [{scheme.upper()}]")
-        print(f"  Local:  {scheme}://localhost:5001")
+        print(f"GM Display — LAN mode (0.0.0.0:{_PORT}) [{scheme.upper()}]")
+        print(f"  Local:  {scheme}://localhost:{_PORT}")
         print("  Token stored at:", TOKEN_FILE)
         print("  POST endpoints require X-DND-Token header (send.py/push_stats.py handle this automatically)")
         print()
     else:
-        print(f"GM Display — Flask server starting on {scheme}://localhost:5001")
-        print(f"Open {scheme}://localhost:5001 in your browser, then Chromecast the tab.")
+        print(f"GM Display — Flask server starting on {scheme}://localhost:{_PORT}")
+        print(f"Open {scheme}://localhost:{_PORT} in your browser, then Chromecast the tab.")
         print()
-    app.run(host=host, port=5001, threaded=True, debug=False, ssl_context=ssl_ctx)
+    app.run(host=host, port=_PORT, threaded=True, debug=False, ssl_context=ssl_ctx)
