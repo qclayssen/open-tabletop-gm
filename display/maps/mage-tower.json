@@ -1,0 +1,179 @@
+{
+ "name": "Mage Tower Stadium",
+ "width": 30,
+ "height": 12,
+ "diagonals": "5",
+ "info": "Five zones, left to right: Quandrix Tower, Quandrix Half, Midfield, Opponent Half, Opponent Tower. Each zone is 6 squares wide. Carry the mascot into your own tower zone to score. Spells are allowed; harming a player is a foul.",
+ "base": "floor",
+ "terrain": {
+  "tower": {
+   "cost": 1,
+   "blocks_sight": false,
+   "cover": 0,
+   "color": "feature"
+  }
+ },
+ "features": [
+  {
+   "type": "tower",
+   "x": 0,
+   "y": 0,
+   "w": 6,
+   "h": 12,
+   "label": "Quandrix Tower"
+  },
+  {
+   "type": "floor",
+   "x": 6,
+   "y": 0,
+   "w": 6,
+   "h": 12,
+   "label": "Quandrix Half"
+  },
+  {
+   "type": "floor",
+   "x": 12,
+   "y": 0,
+   "w": 6,
+   "h": 12,
+   "label": "Midfield"
+  },
+  {
+   "type": "floor",
+   "x": 18,
+   "y": 0,
+   "w": 6,
+   "h": 12,
+   "label": "Opponent Half"
+  },
+  {
+   "type": "tower",
+   "x": 24,
+   "y": 0,
+   "w": 6,
+   "h": 12,
+   "label": "Opponent Tower"
+  },
+  {
+   "type": "wall",
+   "x": 2,
+   "y": 5,
+   "w": 2,
+   "h": 2
+  },
+  {
+   "type": "wall",
+   "x": 26,
+   "y": 5,
+   "w": 2,
+   "h": 2
+  },
+  {
+   "type": "difficult",
+   "x": 13,
+   "y": 2,
+   "w": 4,
+   "h": 2,
+   "label": "Snarl eddy"
+  },
+  {
+   "type": "difficult",
+   "x": 13,
+   "y": 8,
+   "w": 4,
+   "h": 2
+  }
+ ],
+ "zones": [
+  6,
+  12,
+  18,
+  24
+ ],
+ "spawns": [
+  {
+   "id": "K",
+   "name": "Kairos",
+   "color": "quan",
+   "x": 8,
+   "y": 5
+  },
+  {
+   "id": "M",
+   "name": "Mabli",
+   "color": "lore",
+   "x": 7,
+   "y": 8
+  },
+  {
+   "id": "J",
+   "name": "Juno",
+   "color": "with",
+   "x": 9,
+   "y": 3
+  },
+  {
+   "id": "Q1",
+   "name": "Quandrix guard",
+   "color": "quan",
+   "x": 4,
+   "y": 3
+  },
+  {
+   "id": "Q2",
+   "name": "Quandrix guard",
+   "color": "quan",
+   "x": 4,
+   "y": 8
+  },
+  {
+   "id": "m",
+   "name": "Quandrix mascot",
+   "color": "brass",
+   "x": 1,
+   "y": 6
+  },
+  {
+   "id": "T",
+   "name": "Theodric",
+   "color": "silv",
+   "x": 21,
+   "y": 6
+  },
+  {
+   "id": "S",
+   "name": "Saffi",
+   "color": "pris",
+   "x": 22,
+   "y": 3
+  },
+  {
+   "id": "R",
+   "name": "Rennick",
+   "color": "with",
+   "x": 22,
+   "y": 9
+  },
+  {
+   "id": "O1",
+   "name": "Opponent guard",
+   "color": "silv",
+   "x": 25,
+   "y": 3
+  },
+  {
+   "id": "O2",
+   "name": "Opponent guard",
+   "color": "silv",
+   "x": 25,
+   "y": 8
+  },
+  {
+   "id": "o",
+   "name": "Opponent mascot",
+   "color": "brass",
+   "x": 28,
+   "y": 6
+  }
+ ]
+}

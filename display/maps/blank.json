@@ -1,0 +1,32 @@
+{
+ "name": "Blank Grid",
+ "width": 24,
+ "height": 16,
+ "diagonals": "5",
+ "info": "An empty 24 by 16 grid (120 by 80 feet) for any scene the other maps don't cover.",
+ "base": "floor",
+ "features": [],
+ "spawns": [
+  {
+   "id": "K",
+   "name": "Kairos",
+   "color": "quan",
+   "x": 3,
+   "y": 8
+  },
+  {
+   "id": "J",
+   "name": "Juno",
+   "color": "with",
+   "x": 2,
+   "y": 9
+  },
+  {
+   "id": "M",
+   "name": "Mabli",
+   "color": "lore",
+   "x": 4,
+   "y": 9
+  }
+ ]
+}

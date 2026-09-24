@@ -8,6 +8,7 @@ Map rows are strings, one character per square, decoded through a legend:
 
     .  floor      #  wall       ,  difficult
     ~  water      ^  hazard     o  feature (furniture, rubble: difficult, half cover)
+    _  void (a drop or gap: blocks movement, not sight)
 
 Diagonals: rule "5" (every square costs 5 ft, the 2014 default) or "5-10-5"
 (the DMG variant: every second diagonal costs 10 ft).
@@ -31,9 +32,10 @@ TERRAIN = {
     "water":     {"cost": 2,    "blocks_sight": False, "cover": 0, "swim": True},
     "hazard":    {"cost": 1,    "blocks_sight": False, "cover": 0, "hazard": True},
     "feature":   {"cost": 2,    "blocks_sight": False, "cover": 2},
+    "void":      {"cost": None, "blocks_sight": False, "cover": 0},   # a drop: see across, can't walk
 }
 DEFAULT_LEGEND = {".": "floor", "#": "wall", ",": "difficult",
-                  "~": "water", "^": "hazard", "o": "feature"}
+                  "~": "water", "^": "hazard", "o": "feature", "_": "void"}
 DIAGONAL_RULES = ("5", "5-10-5")
 
 Pos = tuple  # (x, y)
