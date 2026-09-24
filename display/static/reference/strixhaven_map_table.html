@@ -1,0 +1,232 @@
+<title>Strixhaven Map Table</title>
+<!-- Player-facing copy for the repo: DM-only maps and undiscovered places removed. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IM+Fell+English+SC&family=Figtree:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+:root{
+  --paper:#E8EDEE; --panel:#F4F7F7; --ink:#1B2830; --muted:#5A6A72; --line:#C3CDD0;
+  --accent:#1E7F74; --brass:#A87A26; --danger:#A33A3A;
+  --floor:#DCE3E2; --wall:#39474F; --water:#8FB4C4; --difficult:#A9B58C; --feature:#D9C8A0; --void:#2A2F3A; --grid:rgba(27,40,48,.14);
+  --lore:#B8752E; --pris:#B03A48; --quan:#1E7F74; --silv:#5A6475; --with:#5E7A3A;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --paper:#0F171B; --panel:#162127; --ink:#DCE6E8; --muted:#93A5AC; --line:#2C3B42;
+  --accent:#4FB8A8; --brass:#D2A24A; --danger:#E0716F;
+  --floor:#1E2A2F; --wall:#6C7E87; --water:#2F5667; --difficult:#4B5936; --feature:#5E5236; --void:#07090D; --grid:rgba(220,230,232,.10);
+  color-scheme:dark;}}
+:root[data-theme="dark"]{
+  --paper:#0F171B; --panel:#162127; --ink:#DCE6E8; --muted:#93A5AC; --line:#2C3B42;
+  --accent:#4FB8A8; --brass:#D2A24A; --danger:#E0716F;
+  --floor:#1E2A2F; --wall:#6C7E87; --water:#2F5667; --difficult:#4B5936; --feature:#5E5236; --void:#07090D; --grid:rgba(220,230,232,.10);
+  color-scheme:dark;}
+*{box-sizing:border-box}
+body{background:var(--paper);color:var(--ink);font:15px/1.5 Figtree,system-ui,sans-serif;padding-inline:16px;padding-block:18px 40px;margin:0}
+.wrap{max-width:1180px;margin:0 auto;display:grid;gap:14px}
+header{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:8px 20px}
+h1{font-family:"IM Fell English SC",Georgia,serif;font-weight:400;font-size:clamp(26px,4vw,38px);margin:0;letter-spacing:.02em;text-wrap:balance}
+.sub{color:var(--muted);margin:0;max-width:62ch}
+nav{display:flex;flex-wrap:wrap;gap:6px}
+nav button,.btn{font:600 13px Figtree,sans-serif;border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:7px 12px;border-radius:6px;cursor:pointer}
+nav button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--paper)}
+nav .dm{border-style:dashed;color:var(--danger)}
+nav .dm[aria-pressed="true"]{background:var(--danger);border-color:var(--danger);color:var(--paper)}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--brass);outline-offset:2px}
+.stage{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:14px;align-items:start}
+@media (max-width:860px){.stage{grid-template-columns:1fr}}
+.board{background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:auto;max-height:78vh;touch-action:none}
+.board svg{display:block}
+aside{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;display:grid;gap:12px}
+aside h2{font-family:"IM Fell English SC",Georgia,serif;font-weight:400;font-size:22px;margin:0}
+aside h3{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0}
+.meta{font:12px "JetBrains Mono",monospace;color:var(--muted)}
+.row{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.legend{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 10px;font-size:13px}
+.sw{display:inline-block;width:12px;height:12px;border-radius:2px;margin-right:6px;vertical-align:-1px;border:1px solid var(--line)}
+input,select{font:14px Figtree,sans-serif;background:var(--paper);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:6px 8px;min-width:0}
+.toklist{display:grid;gap:4px;max-height:220px;overflow:auto}
+.tok{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:13px;padding:3px 6px;border-radius:5px;background:var(--paper)}
+.tok button{border:0;background:none;color:var(--danger);cursor:pointer;font-size:13px}
+.warn{border:1px dashed var(--danger);color:var(--danger);padding:10px;border-radius:6px;font-size:13px}
+.note{font-size:13px;color:var(--muted)}
+.lock{opacity:.35}
+.pin{cursor:pointer}
+.pin:focus-visible circle{stroke:var(--brass);stroke-width:4}
+text{font-family:Figtree,sans-serif}
+.lab{font-family:"IM Fell English SC",Georgia,serif}
+.gate{display:grid;gap:10px;place-items:start;padding:24px}
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Strixhaven Map Table</h1>
+      <p class="sub">Maps for <em>Kairos at Strixhaven</em>. Click a place on the campus map to read about it. On battle maps, drag tokens to move them; they snap to 5-foot squares and stay where you leave them in this browser.</p>
+    </div>
+    <nav id="tabs" aria-label="Maps"></nav>
+  </header>
+  <div class="stage">
+    <div class="board" id="board"></div>
+    <aside id="side"></aside>
+  </div>
+</div>
+
+<script>
+const C=32; // px per 5 ft square
+const fixv=s=>s.replace(/<(\w+)([^>]*?)(\/?)>/g,(m,tag,attrs,sl)=>{const st=[];attrs=attrs.replace(/\s(fill|stroke)="(var\([^"]*\))"/g,(mm,k,v)=>{st.push(k+':'+v);return ''});return `<${tag}${attrs}${st.length?` style="${st.join(';')}"`:''}${sl}>`});
+const store={get(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+/* ---------- CAMPUS ---------- */
+const colleges={lore:"Lorehold",pris:"Prismari",quan:"Quandrix",silv:"Silverquill",with:"Witherbloom",cent:"Central"};
+const places=[
+ {id:"biblioplex",n:"The Biblioplex",c:"cent",x:500,y:350,d:"The great library, bigger inside than out. Still being rebuilt after the invasion; memorials to the fallen line its halls. The Mystical Archive is sealed. Kairos grew up in these stacks."},
+ {id:"quad",n:"Central Quad",c:"cent",x:500,y:470,d:"Lawns, lanterns and every argument on campus. Lanternfall floats a lantern here for each person lost in the invasion."},
+ {id:"firejolt",n:"Firejolt Café",c:"cent",x:610,y:500,d:"Best pastries, worst gossip. Tutoring tables by the hearth; the roofs next door are easy to climb."},
+ {id:"stadium",n:"Mage Tower Stadium",c:"cent",x:500,y:610,d:"Home of Mage Tower. Two towers, two mascots, a lot of shouting."},
+ {id:"skydock",n:"Skyferry Dock and Market",c:"cent",x:820,y:630,d:"Where students arrive and leave. Secondhand bookstalls line the pier."},
+ {id:"omen",n:"Omenpath Gate and Path Ward",c:"cent",x:900,y:520,d:"The new gate to other worlds, and the office that checks everyone's papers."},
+ {id:"quanhall",n:"Quandrix Lecture Halls",c:"quan",x:760,y:230,d:"Fractal architecture; staircases that disagree with you. Esteemed Professor Marrow teaches probability here."},
+ {id:"conserv",n:"Fractal Conservatory",c:"quan",x:860,y:320,d:"A greenhouse where plants grow in spirals and rooms are larger inside than out."},
+ {id:"spire",n:"Quandrix Spire",c:"quan",x:700,y:130,d:"The tallest tower in the college. Students are not invited up."},
+ {id:"roost",n:"The Owl Roost",c:"lore",x:250,y:200,d:"Magister Vael's tower above the Lorehold archive. Tea, owls, and questions that don't get answered."},
+ {id:"echoes",n:"Hall of Echoes",c:"lore",x:170,y:300,d:"Lorehold's chamber for summoning the testimony of the dead."},
+ {id:"ledgers",n:"Lorehold Ledger Vaults",c:"lore",x:320,y:120,d:"Travel logs, expedition records and sealed orders, going back centuries."},
+ {id:"runway",n:"Glass Runway",c:"pris",x:230,y:560,d:"Prismari's stage for performance and the annual Fashion Night."},
+ {id:"workshops",n:"Prismari Workshop Vaults",c:"pris",x:130,y:470,d:"Kilns, forges and elemental constructs, some finished."},
+ {id:"ballroom",n:"Grand Ballroom",c:"silv",x:650,y:380,d:"Silverquill's pride. Site of the annual Masquerade."},
+ {id:"debate",n:"Silverquill Debating Halls",c:"silv",x:600,y:250,d:"Where words are weapons and ink is ammunition."},
+ {id:"greenhouse",n:"Witherbloom Greenhouses",c:"with",x:360,y:640,d:"Alchemy, medicine, and the frog pond where first-years race."},
+ {id:"bog",n:"Detention Bog",c:"with",x:250,y:660,d:"Detention happens here: stinging reeds, lantern light, and things that watch from the water."}
+];
+const regions=[
+ {c:"lore",d:"M60,60 L420,60 L400,320 L260,380 L60,340 Z",lx:120,ly:95},
+ {c:"quan",d:"M580,60 L960,60 L960,380 L760,400 L640,300 Z",lx:820,ly:95},
+ {c:"silv",d:"M560,200 L640,300 L760,400 L700,440 L560,420 L540,300 Z",lx:575,ly:215},
+ {c:"pris",d:"M60,360 L260,400 L320,560 L260,620 L60,600 Z",lx:80,ly:395},
+ {c:"with",d:"M60,610 L270,630 L330,580 L440,600 L460,690 L60,690 Z",lx:360,ly:680}
+];
+function campus(){
+  const found=store.get("sk-found",{});
+  const vis=p=>!p.hid||found[p.id];
+  let s=`<svg viewBox="0 0 1000 700" width="100%" style="min-width:640px" role="img" aria-label="Map of Strixhaven campus">
+  <rect width="1000" height="700" fill="var(--paper)"/>
+  <path d="M0,520 C200,500 330,540 470,560 C620,580 760,560 1000,590" stroke="var(--water)" stroke-width="18" fill="none" opacity=".7"/>`;
+  regions.forEach(r=>{s+=`<path d="${r.d}" fill="var(--${r.c})" fill-opacity=".16" stroke="var(--${r.c})" stroke-width="2"/>
+   <text class="lab" x="${r.lx}" y="${r.ly}" font-size="22" fill="var(--${r.c})">${colleges[r.c]}</text>`});
+  // paths
+  s+=`<g stroke="var(--line)" stroke-width="4" fill="none" stroke-dasharray="2 8" stroke-linecap="round">
+   <path d="M500,350 L500,610"/><path d="M500,350 L250,200"/><path d="M500,350 L760,230"/><path d="M500,470 L230,560"/><path d="M500,470 L650,380"/><path d="M500,610 L820,630 L900,520"/><path d="M500,470 L360,640 L250,660"/></g>`;
+  // biblioplex footprint
+  s+=`<rect x="440" y="300" width="120" height="100" rx="6" fill="var(--panel)" stroke="var(--ink)" stroke-width="2"/>
+   <ellipse cx="500" cy="610" rx="95" ry="45" fill="none" stroke="var(--ink)" stroke-width="2"/>`;
+  places.forEach(p=>{
+    const col=p.c==="cent"?"var(--brass)":`var(--${p.c})`;
+    if(!vis(p)){s+=`<g class="pin lock" tabindex="0" data-id="${p.id}" role="button" aria-label="Unknown place"><circle cx="${p.x}" cy="${p.y}" r="9" fill="none" stroke="var(--muted)" stroke-width="2" stroke-dasharray="3 3"/><text x="${p.x}" y="${p.y+4}" text-anchor="middle" font-size="12" fill="var(--muted)">?</text></g>`;return}
+    s+=`<g class="pin" tabindex="0" role="button" data-id="${p.id}" aria-label="${p.n}"><circle cx="${p.x}" cy="${p.y}" r="10" fill="${col}" stroke="var(--panel)" stroke-width="3"/>
+    <text x="${p.x+14}" y="${p.y+5}" font-size="13" font-weight="600" fill="var(--ink)" paint-order="stroke" stroke="var(--paper)" stroke-width="4">${p.n}</text></g>`;
+  });
+  s+=`<g transform="translate(940,640)"><circle r="26" fill="none" stroke="var(--muted)"/><path d="M0,-22 L6,0 L0,22 L-6,0Z" fill="var(--brass)"/><text y="-30" text-anchor="middle" font-size="12" fill="var(--muted)">N</text></g></svg>`;
+  board.innerHTML=fixv(s);
+  board.querySelectorAll(".pin").forEach(g=>{const f=()=>showPlace(g.dataset.id);g.addEventListener("click",f);g.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();f()}})});
+  showPlace(null);
+}
+function showPlace(id){
+  const found=store.get("sk-found",{});
+  const p=places.find(q=>q.id===id);
+  let h=`<h2>Campus</h2>`;
+  if(p){
+    if(p.hid&&!found[p.id]){
+      h+=`<h3>Undiscovered</h3><p class="note">Something is here that Kairos hasn't found yet. Mark it found once the story reveals it.</p><button class="btn" id="reveal">Mark as discovered</button>`;
+    }else{
+      h+=`<h3>${colleges[p.c]}</h3><div><strong>${p.n}</strong></div><p style="margin:0">${p.d}</p>`;
+      if(p.hid)h+=`<button class="btn" id="hide">Hide again</button>`;
+    }
+  }else h+=`<p class="note" style="margin:0">Select a place. Dashed circles are places not yet discovered in play.</p>`;
+  h+=`<h3>Colleges</h3><div class="legend">${Object.keys(colleges).filter(k=>k!=="cent").map(k=>`<span><i class="sw" style="background:var(--${k})"></i>${colleges[k]}</span>`).join("")}<span><i class="sw" style="background:var(--brass)"></i>Central campus</span></div>
+  <p class="meta">${places.filter(q=>!q.hid||found[q.id]).length} of ${places.length} places discovered</p>`;
+  side.innerHTML=h;
+  const r=document.getElementById("reveal"); if(r)r.onclick=()=>{found[p.id]=1;store.set("sk-found",found);campus();showPlace(p.id)};
+  const hd=document.getElementById("hide"); if(hd)hd.onclick=()=>{delete found[p.id];store.set("sk-found",found);campus();showPlace(p.id)};
+}
+
+/* ---------- BATTLE MAPS ---------- */
+// f: [type,x,y,w,h,label?]  types: wall water diff feat void floor
+const maps={
+ tower:{name:"Mage Tower Stadium",dm:0,w:30,h:12,info:"Five zones, left to right: Quandrix Tower, Quandrix Half, Midfield, Opponent Half, Opponent Tower. Each zone is 6 squares wide. Carry the mascot into your own tower zone to score. Spells are allowed; harming a player is a foul.",
+  f:[["feat",0,0,6,12,"Quandrix Tower"],["floor",6,0,6,12,"Quandrix Half"],["floor",12,0,6,12,"Midfield"],["floor",18,0,6,12,"Opponent Half"],["feat",24,0,6,12,"Opponent Tower"],["wall",2,5,2,2],["wall",26,5,2,2],["diff",13,2,4,2,"Snarl eddy"],["diff",13,8,4,2]],
+  zones:[6,12,18,24],
+  t:[["K","Kairos","quan",8,5],["M","Mabli","lore",7,8],["J","Juno","with",9,3],["Q1","Quandrix guard","quan",4,3],["Q2","Quandrix guard","quan",4,8],["m","Quandrix mascot","brass",1,6],["T","Theodric","silv",21,6],["S","Saffi","pris",22,3],["R","Rennick","with",22,9],["O1","Opponent guard","silv",25,3],["O2","Opponent guard","silv",25,8],["o","Opponent mascot","brass",28,6]]},
+ cafe:{name:"Firejolt Café and Rooftops",dm:0,w:24,h:16,info:"Ground floor café (left) and the rooftops next door (right). Gaps between roofs are 2 to 3 squares: a jump or an Acrobatics check. Chimneys give half cover.",
+  f:[["wall",0,0,11,1],["wall",0,15,11,1],["wall",0,0,1,16],["wall",10,0,1,6],["wall",10,9,1,7],["feat",2,2,3,2,"Hearth"],["feat",6,3,2,2,"Table"],["feat",6,9,2,2,"Table"],["feat",2,10,3,2,"Counter"],
+     ["void",11,0,13,16],["floor",12,1,5,6,"Roof A"],["floor",19,1,5,5,"Roof B"],["floor",12,9,4,6,"Roof C"],["floor",18,8,6,7,"Roof D"],["wall",14,3,1,1],["wall",21,11,1,1],["wall",13,11,1,1]],
+  t:[["K","Kairos","quan",5,7],["J","Juno","with",3,7],["M","Mabli","lore",7,7],["H","Masked figure","danger",13,3],["c1","Cultist","danger",20,2],["c2","Cultist","danger",19,10]]},
+ bog:{name:"Detention Bog",dm:0,w:24,h:18,info:"Open water is swimming (half speed). Reeds are difficult terrain and give light cover. Lanterns shed bright light 3 squares around them.",
+  f:[["water",0,0,24,18],["floor",1,1,6,5,"Boardwalk"],["diff",7,2,6,4,"Reeds"],["floor",3,6,3,10],["diff",8,8,7,5,"Reeds"],["floor",15,5,6,4,"Island"],["diff",16,12,6,5,"Reeds"],["feat",17,6,2,2,"Old tree"],["floor",1,14,6,3,"Reed-cutting dock"],["feat",4,15,1,1,"Lantern"],["feat",2,2,1,1,"Lantern"]],
+  t:[["K","Kairos","quan",3,15],["J","Juno","with",2,15],["M","Mabli","lore",4,14],["b1","Bog shrub","danger",9,9],["b2","Bog shrub","danger",11,10],["s","Stirges","danger",16,6]]},
+ pond:{name:"Frog Pond",dm:0,w:20,h:14,info:"The Witherbloom race course. Lily pads are difficult terrain; the finish line is on the right bank.",
+  f:[["floor",0,0,3,14,"Start bank"],["water",3,0,14,14],["diff",5,3,2,2],["diff",8,7,2,2],["diff",11,2,2,2],["diff",13,9,2,2],["diff",7,11,2,2],["floor",17,0,3,14,"Finish bank"],["feat",17,0,1,14]],
+  t:[["K","Kairos","quan",1,6],["J","Juno","with",1,8],["T","Theodric","silv",1,4],["f1","Giant frog","danger",9,4],["f2","Giant frog","danger",12,10]]},
+ grid:{name:"Blank Grid",dm:0,w:24,h:16,info:"An empty 24 by 16 grid (120 by 80 feet) for any scene the other maps don't cover.",f:[],
+  t:[["K","Kairos","quan",3,8],["J","Juno","with",2,9],["M","Mabli","lore",4,9]]},
+};
+const tokColor=c=>c==="danger"?"var(--danger)":c==="brass"?"var(--brass)":`var(--${c})`;
+function battle(key){
+  const m=maps[key], W=m.w*C, H=m.h*C;
+  let toks=store.get("sk-tok-"+key,null)||m.t.map(t=>({id:t[0],name:t[1],c:t[2],x:t[3],y:t[4]}));
+  const save=()=>store.set("sk-tok-"+key,toks);
+  const fill={wall:"var(--wall)",water:"var(--water)",diff:"var(--difficult)",feat:"var(--feature)",void:"var(--void)",floor:"var(--floor)"};
+  function draw(){
+    let s=`<svg id="bsvg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${m.name} battle map"><rect width="${W}" height="${H}" fill="var(--floor)"/>`;
+    m.f.forEach(([t,x,y,w,h,l])=>{s+=`<rect x="${x*C}" y="${y*C}" width="${w*C}" height="${h*C}" fill="${fill[t]}"/>`;
+      if(t==="diff")s+=`<path d="${Array.from({length:w*h},(_,i)=>{const cx=(x+i%w)*C,cy=(y+Math.floor(i/w))*C;return `M${cx+8},${cy+24} l6,-10 l6,10`}).join(" ")}" stroke="var(--ink)" stroke-opacity=".35" fill="none"/>`});
+    for(let i=0;i<=m.w;i++)s+=`<line x1="${i*C}" y1="0" x2="${i*C}" y2="${H}" stroke="var(--grid)"/>`;
+    for(let j=0;j<=m.h;j++)s+=`<line x1="0" y1="${j*C}" x2="${W}" y2="${j*C}" stroke="var(--grid)"/>`;
+    (m.zones||[]).forEach(z=>s+=`<line x1="${z*C}" y1="0" x2="${z*C}" y2="${H}" stroke="var(--brass)" stroke-width="3" stroke-dasharray="8 6"/>`);
+    m.f.forEach(([t,x,y,w,h,l])=>{if(l)s+=`<text x="${x*C+6}" y="${y*C+16}" font-size="12" font-weight="600" fill="var(--ink)" paint-order="stroke" stroke="${fill[t]}" stroke-width="3">${l}</text>`});
+    toks.forEach((t,i)=>{s+=`<g class="tk" data-i="${i}" style="cursor:grab" tabindex="0" aria-label="${t.name}"><circle cx="${t.x*C+C/2}" cy="${t.y*C+C/2}" r="${C/2-3}" fill="${tokColor(t.c)}" stroke="var(--panel)" stroke-width="2"/>
+     <text x="${t.x*C+C/2}" y="${t.y*C+C/2+4}" text-anchor="middle" font-size="${t.id.length>2?9:12}" font-weight="700" fill="#fff" pointer-events="none">${t.id}</text><title>${t.name}</title></g>`});
+    s+=`</svg>`; board.innerHTML=fixv(s); bind();
+  }
+  function bind(){
+    const svg=document.getElementById("bsvg");
+    svg.querySelectorAll(".tk").forEach(g=>{
+      g.addEventListener("pointerdown",e=>{
+        e.preventDefault(); const i=+g.dataset.i; g.setPointerCapture(e.pointerId); const c=g.querySelector("circle"),tx=g.querySelector("text");
+        const move=ev=>{const p=svg.createSVGPoint();p.x=ev.clientX;p.y=ev.clientY;const q=p.matrixTransform(svg.getScreenCTM().inverse());c.setAttribute("cx",q.x);c.setAttribute("cy",q.y);tx.setAttribute("x",q.x);tx.setAttribute("y",q.y+4)};
+        const up=ev=>{g.removeEventListener("pointermove",move);g.removeEventListener("pointerup",up);
+          const cx=+c.getAttribute("cx"),cy=+c.getAttribute("cy");toks[i].x=Math.max(0,Math.min(m.w-1,Math.floor(cx/C)));toks[i].y=Math.max(0,Math.min(m.h-1,Math.floor(cy/C)));save();draw();panel()};
+        g.addEventListener("pointermove",move);g.addEventListener("pointerup",up);
+      });
+      g.addEventListener("keydown",e=>{const i=+g.dataset.i,d={ArrowUp:[0,-1],ArrowDown:[0,1],ArrowLeft:[-1,0],ArrowRight:[1,0]}[e.key];if(!d)return;e.preventDefault();
+        toks[i].x=Math.max(0,Math.min(m.w-1,toks[i].x+d[0]));toks[i].y=Math.max(0,Math.min(m.h-1,toks[i].y+d[1]));save();draw();panel();board.querySelector(`.tk[data-i="${i}"]`).focus()});
+    });
+  }
+  function panel(){
+    side.innerHTML=`<h2>${m.name}</h2><p class="meta">${m.w*5} × ${m.h*5} ft · 1 square = 5 ft</p><p style="margin:0">${m.info}</p>
+    <h3>Legend</h3><div class="legend"><span><i class="sw" style="background:var(--floor)"></i>Floor</span><span><i class="sw" style="background:var(--wall)"></i>Wall / blocking</span><span><i class="sw" style="background:var(--water)"></i>Water</span><span><i class="sw" style="background:var(--difficult)"></i>Difficult terrain</span><span><i class="sw" style="background:var(--feature)"></i>Feature / cover</span><span><i class="sw" style="background:var(--void)"></i>Drop / off-map</span></div>
+    <h3>Tokens</h3><div class="toklist">${toks.map((t,i)=>`<div class="tok"><span><i class="sw" style="background:${tokColor(t.c)}"></i>${t.name} <span class="meta">(${String.fromCharCode(65+(t.x%26))}${t.y+1})</span></span><button data-del="${i}" aria-label="Remove ${t.name}">Remove</button></div>`).join("")}</div>
+    <form id="add" class="row"><label class="note" for="tn" style="width:100%">Add a token</label><input id="tn" placeholder="Name" style="flex:1 1 110px" required><select id="tc"><option value="danger">Enemy</option><option value="quan">Ally (teal)</option><option value="lore">Lorehold</option><option value="pris">Prismari</option><option value="silv">Silverquill</option><option value="with">Witherbloom</option><option value="brass">Object</option></select><button class="btn">Add</button></form>
+    <div class="row"><button class="btn" id="reset">Reset this map</button></div>
+    <p class="note" style="margin:0">Drag a token, or focus it and use the arrow keys.</p>`;
+    side.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>{toks.splice(+b.dataset.del,1);save();draw();panel()});
+    document.getElementById("add").onsubmit=e=>{e.preventDefault();const n=document.getElementById("tn").value.trim();if(!n)return;
+      const id=n.split(/\s+/).map(w=>w[0]).join("").slice(0,2).toUpperCase();toks.push({id,name:n,c:document.getElementById("tc").value,x:Math.floor(m.w/2),y:Math.floor(m.h/2)});save();draw();panel()};
+    document.getElementById("reset").onclick=()=>{toks=m.t.map(t=>({id:t[0],name:t[1],c:t[2],x:t[3],y:t[4]}));save();draw();panel()};
+  }
+  draw();panel();
+}
+
+/* ---------- TABS ---------- */
+const board=document.getElementById("board"), side=document.getElementById("side"), tabs=document.getElementById("tabs");
+const views=[["campus","Campus"],["tower","Mage Tower"],["cafe","Café rooftops"],["bog","Detention Bog"],["pond","Frog Pond"],["grid","Blank grid"]];
+function go(v){
+  if(v!=="campus"&&!(v in maps))v="campus";
+  store.set("sk-view",v);
+  tabs.querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.v===v)));
+  if(v==="campus")return campus();
+  battle(v);
+}
+views.forEach(([v,l])=>{const b=document.createElement("button");b.textContent=l;b.dataset.v=v;b.onclick=()=>go(v);tabs.appendChild(b)});
+go(store.get("sk-view","campus"));
+</script>
