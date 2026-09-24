@@ -1,0 +1,1759 @@
+[
+ {
+  "index": "giant-frog",
+  "name": "Giant Frog",
+  "size": "Medium",
+  "type": "beast",
+  "alignment": "unaligned",
+  "armor_class": [
+   {
+    "type": "dex",
+    "value": 11
+   }
+  ],
+  "hit_points": 18,
+  "hit_dice": "4d8",
+  "hit_points_roll": "4d8",
+  "speed": {
+   "walk": "30 ft.",
+   "swim": "30 ft."
+  },
+  "strength": 12,
+  "dexterity": 13,
+  "constitution": 11,
+  "intelligence": 2,
+  "wisdom": 10,
+  "charisma": 3,
+  "proficiencies": [
+   {
+    "value": 2,
+    "proficiency": {
+     "index": "skill-perception",
+     "name": "Skill: Perception",
+     "url": "/api/2014/proficiencies/skill-perception"
+    }
+   },
+   {
+    "value": 3,
+    "proficiency": {
+     "index": "skill-stealth",
+     "name": "Skill: Stealth",
+     "url": "/api/2014/proficiencies/skill-stealth"
+    }
+   }
+  ],
+  "damage_vulnerabilities": [],
+  "damage_resistances": [],
+  "damage_immunities": [],
+  "condition_immunities": [],
+  "senses": {
+   "darkvision": "30 ft.",
+   "passive_perception": 12
+  },
+  "languages": "",
+  "challenge_rating": 0.25,
+  "proficiency_bonus": 2,
+  "xp": 50,
+  "special_abilities": [
+   {
+    "name": "Amphibious",
+    "desc": "The frog can breathe air and water"
+   },
+   {
+    "name": "Standing Leap",
+    "desc": "The frog's long jump is up to 20 ft. and its high jump is up to 10 ft., with or without a running start."
+   }
+  ],
+  "actions": [
+   {
+    "name": "Bite",
+    "desc": "Melee Weapon Attack: +3 to hit, reach 5 ft., one target. Hit: 4 (1d6 + 1) piercing damage, and the target is grappled (escape DC 11). Until this grapple ends, the target is restrained, and the frog can't bite another target.",
+    "attack_bonus": 3,
+    "damage": [
+     {
+      "damage_type": {
+       "index": "piercing",
+       "name": "Piercing",
+       "url": "/api/2014/damage-types/piercing"
+      },
+      "damage_dice": "1d6+1"
+     }
+    ]
+   },
+   {
+    "name": "Swallow",
+    "desc": "The frog makes one bite attack against a Small or smaller target it is grappling. If the attack hits, the target is swallowed, and the grapple ends. The swallowed target is blinded and restrained, it has total cover against attacks and other effects outside the frog, and it takes 5 (2d4) acid damage at the start of each of the frog's turns. The frog can have only one target swallowed at a time. If the frog dies, a swallowed creature is no longer restrained by it and can escape from the corpse using 5 ft. of movement, exiting prone."
+   }
+  ],
+  "image": "/api/images/monsters/giant-frog.png",
+  "url": "/api/2014/monsters/giant-frog"
+ },
+ {
+  "index": "goblin",
+  "name": "Goblin",
+  "size": "Small",
+  "type": "humanoid",
+  "subtype": "goblinoid",
+  "alignment": "neutral evil",
+  "armor_class": [
+   {
+    "type": "armor",
+    "value": 15,
+    "armor": [
+     {
+      "index": "leather-armor",
+      "name": "Leather Armor",
+      "url": "/api/2014/equipment/leather-armor"
+     },
+     {
+      "index": "shield",
+      "name": "Shield",
+      "url": "/api/2014/equipment/shield"
+     }
+    ]
+   }
+  ],
+  "hit_points": 7,
+  "hit_dice": "2d6",
+  "hit_points_roll": "2d6",
+  "speed": {
+   "walk": "30 ft."
+  },
+  "strength": 8,
+  "dexterity": 14,
+  "constitution": 10,
+  "intelligence": 10,
+  "wisdom": 8,
+  "charisma": 8,
+  "proficiencies": [
+   {
+    "value": 6,
+    "proficiency": {
+     "index": "skill-stealth",
+     "name": "Skill: Stealth",
+     "url": "/api/2014/proficiencies/skill-stealth"
+    }
+   }
+  ],
+  "damage_vulnerabilities": [],
+  "damage_resistances": [],
+  "damage_immunities": [],
+  "condition_immunities": [],
+  "senses": {
+   "darkvision": "60 ft.",
+   "passive_perception": 9
+  },
+  "languages": "Common, Goblin",
+  "challenge_rating": 0.25,
+  "proficiency_bonus": 2,
+  "xp": 50,
+  "special_abilities": [
+   {
+    "name": "Nimble Escape",
+    "desc": "The goblin can take the Disengage or Hide action as a bonus action on each of its turns."
+   }
+  ],
+  "actions": [
+   {
+    "name": "Scimitar",
+    "desc": "Melee Weapon Attack: +4 to hit, reach 5 ft., one target. Hit: 5 (1d6 + 2) slashing damage.",
+    "attack_bonus": 4,
+    "damage": [
+     {
+      "damage_type": {
+       "index": "slashing",
+       "name": "Slashing",
+       "url": "/api/2014/damage-types/slashing"
+      },
+      "damage_dice": "1d6+2"
+     }
+    ]
+   },
+   {
+    "name": "Shortbow",
+    "desc": "Ranged Weapon Attack: +4 to hit, range 80/320 ft., one target. Hit: 5 (1d6 + 2) piercing damage.",
+    "attack_bonus": 4,
+    "damage": [
+     {
+      "damage_type": {
+       "index": "piercing",
+       "name": "Piercing",
+       "url": "/api/2014/damage-types/piercing"
+      },
+      "damage_dice": "1d6+2"
+     }
+    ]
+   }
+  ],
+  "image": "/api/images/monsters/goblin.png",
+  "url": "/api/2014/monsters/goblin"
+ },
+ {
+  "index": "adult-red-dragon",
+  "name": "Adult Red Dragon",
+  "size": "Huge",
+  "type": "dragon",
+  "alignment": "chaotic evil",
+  "armor_class": [
+   {
+    "type": "natural",
+    "value": 19
+   }
+  ],
+  "hit_points": 256,
+  "hit_dice": "19d12",
+  "hit_points_roll": "19d12+133",
+  "speed": {
+   "walk": "40 ft.",
+   "climb": "40 ft.",
+   "fly": "80 ft."
+  },
+  "strength": 27,
+  "dexterity": 10,
+  "constitution": 25,
+  "intelligence": 16,
+  "wisdom": 13,
+  "charisma": 21,
+  "proficiencies": [
+   {
+    "value": 6,
+    "proficiency": {
+     "index": "saving-throw-dex",
+     "name": "Saving Throw: DEX",
+     "url": "/api/2014/proficiencies/saving-throw-dex"
+    }
+   },
+   {
+    "value": 13,
+    "proficiency": {
+     "index": "saving-throw-con",
+     "name": "Saving Throw: CON",
+     "url": "/api/2014/proficiencies/saving-throw-con"
+    }
+   },
+   {
+    "value": 7,
+    "proficiency": {
+     "index": "saving-throw-wis",
+     "name": "Saving Throw: WIS",
+     "url": "/api/2014/proficiencies/saving-throw-wis"
+    }
+   },
+   {
+    "value": 11,
+    "proficiency": {
+     "index": "saving-throw-cha",
+     "name": "Saving Throw: CHA",
+     "url": "/api/2014/proficiencies/saving-throw-cha"
+    }
+   },
+   {
+    "value": 13,
+    "proficiency": {
+     "index": "skill-perception",
+     "name": "Skill: Perception",
+     "url": "/api/2014/proficiencies/skill-perception"
+    }
+   },
+   {
+    "value": 6,
+    "proficiency": {
+     "index": "skill-stealth",
+     "name": "Skill: Stealth",
+     "url": "/api/2014/proficiencies/skill-stealth"
+    }
+   }
+  ],
+  "damage_vulnerabilities": [],
+  "damage_resistances": [],
+  "damage_immunities": [
+   "fire"
+  ],
+  "condition_immunities": [],
+  "senses": {
+   "blindsight": "60 ft.",
+   "darkvision": "120 ft.",
+   "passive_perception": 23
+  },
+  "languages": "Common, Draconic",
+  "challenge_rating": 17,
+  "proficiency_bonus": 6,
+  "xp": 18000,
+  "special_abilities": [
+   {
+    "name": "Legendary Resistance",
+    "desc": "If the dragon fails a saving throw, it can choose to succeed instead.",
+    "usage": {
+     "type": "per day",
+     "times": 3
+    }
+   }
+  ],
+  "actions": [
+   {
+    "name": "Multiattack",
+    "multiattack_type": "actions",
+    "desc": "The dragon can use its Frightful Presence. It then makes three attacks: one with its bite and two with its claws.",
+    "actions": [
+     {
+      "action_name": "Frightful Presence",
+      "count": 1,
+      "type": "ability"
+     },
+     {
+      "action_name": "Bite",
+      "count": 1,
+      "type": "melee"
+     },
+     {
+      "action_name": "Claw",
+      "count": 2,
+      "type": "melee"
+     }
+    ]
+   },
+   {
+    "name": "Bite",
+    "desc": "Melee Weapon Attack: +14 to hit, reach 10 ft., one target. Hit: 19 (2d10 + 8) piercing damage plus 7 (2d6) fire damage.",
+    "attack_bonus": 14,
+    "damage": [
+     {
+      "damage_type": {
+       "index": "piercing",
+       "name": "Piercing",
+       "url": "/api/2014/damage-types/piercing"
+      },
+      "damage_dice": "2d10+8"
+     },
+     {
+      "damage_type": {
+       "index": "fire",
+       "name": "Fire",
+       "url": "/api/2014/damage-types/fire"
+      },
+      "damage_dice": "2d6"
+     }
+    ]
+   },
+   {
+    "name": "Claw",
+    "desc": "Melee Weapon Attack: +14 to hit, reach 5 ft., one target. Hit: 15 (2d6 + 8) slashing damage.",
+    "attack_bonus": 14,
+    "damage": [
+     {
+      "damage_type": {
+       "index": "slashing",
+       "name": "Slashing",
+       "url": "/api/2014/damage-types/slashing"
+      },
+      "damage_dice": "2d6+8"
+     }
+    ]
+   },
+   {
+    "name": "Tail",
+    "desc": "Melee Weapon Attack: +14 to hit, reach 15 ft., one target. Hit: 17 (2d8 + 8) bludgeoning damage.",
+    "attack_bonus": 14,
+    "damage": [
+     {
+      "damage_type": {
+       "index": "bludgeoning",
+       "name": "Bludgeoning",
+       "url": "/api/2014/damage-types/bludgeoning"
+      },
+      "damage_dice": "2d8+8"
+     }
+    ]
+   },
+   {
+    "name": "Frightful Presence",
+    "desc": "Each creature of the dragon's choice that is within 120 ft. of the dragon and aware of it must succeed on a DC 19 Wisdom saving throw or become frightened for 1 minute. A creature can repeat the saving throw at the end of each of its turns, ending the effect on itself on a success. If a creature's saving throw is successful or the effect ends for it, the creature is immune to the dragon's Frightful Presence for the next 24 hours.",
+    "dc": {
+     "dc_type": {
+      "index": "wis",
+      "name": "WIS",
+      "url": "/api/2014/ability-scores/wis"
+     },
+     "dc_value": 19,
+     "success_type": "none"
+    }
+   },
+   {
+    "name": "Fire Breath",
+    "desc": "The dragon exhales fire in a 60-foot cone. Each creature in that area must make a DC 21 Dexterity saving throw, taking 63 (18d6) fire damage on a failed save, or half as much damage on a successful one.",
+    "usage": {
+     "type": "recharge on roll",
+     "dice": "1d6",
+     "min_value": 5
+    },
+    "dc": {
+     "dc_type": {
+      "index": "dex",
+      "name": "DEX",
+      "url": "/api/2014/ability-scores/dex"
+     },
+     "dc_value": 21,
+     "success_type": "none"
+    },
+    "damage": [
+     {
+      "damage_type": {
+       "index": "fire",
+       "name": "Fire",
+       "url": "/api/2014/damage-types/fire"
+      },
+      "damage_dice": "18d6"
+     }
+    ]
+   }
+  ],
+  "legendary_actions": [
+   {
+    "name": "Detect",
+    "desc": "The dragon makes a Wisdom (Perception) check."
+   },
+   {
+    "name": "Tail Attack",
+    "desc": "The dragon makes a tail attack."
+   },
+   {
+    "name": "Wing Attack (Costs 2 Actions)",
+    "desc": "The dragon beats its wings. Each creature within 10 ft. of the dragon must succeed on a DC 22 Dexterity saving throw or take 15 (2d6 + 8) bludgeoning damage and be knocked prone. The dragon can then fly up to half its flying speed.",
+    "dc": {
+     "dc_type": {
+      "index": "dex",
+      "name": "DEX",
+      "url": "/api/2014/ability-scores/dex"
+     },
+     "dc_value": 22,
+     "success_type": "none"
+    },
+    "damage": [
+     {
+      "damage_type": {
+       "index": "bludgeoning",
+       "name": "Bludgeoning",
+       "url": "/api/2014/damage-types/bludgeoning"
+      },
+      "damage_dice": "2d6+8"
+     }
+    ]
+   }
+  ],
+  "image": "/api/images/monsters/adult-red-dragon.png",
+  "url": "/api/2014/monsters/adult-red-dragon"
+ },
+ {
+  "index": "djinni",
+  "name": "Djinni",
+  "size": "Large",
+  "type": "elemental",
+  "alignment": "chaotic good",
+  "armor_class": [
+   {
+    "type": "natural",
+    "value": 17
+   }
+  ],
+  "hit_points": 161,
+  "hit_dice": "14d10",
+  "hit_points_roll": "14d10+84",
+  "speed": {
+   "walk": "30 ft.",
+   "fly": "90 ft."
+  },
+  "strength": 21,
+  "dexterity": 15,
+  "constitution": 22,
+  "intelligence": 15,
+  "wisdom": 16,
+  "charisma": 20,
+  "proficiencies": [
+   {
+    "value": 6,
+    "proficiency": {
+     "index": "saving-throw-dex",
+     "name": "Saving Throw: DEX",
+     "url": "/api/2014/proficiencies/saving-throw-dex"
+    }
+   },
+   {
+    "value": 7,
+    "proficiency": {
+     "index": "saving-throw-wis",
+     "name": "Saving Throw: WIS",
+     "url": "/api/2014/proficiencies/saving-throw-wis"
+    }
+   },
+   {
+    "value": 9,
+    "proficiency": {
+     "index": "saving-throw-cha",
+     "name": "Saving Throw: CHA",
+     "url": "/api/2014/proficiencies/saving-throw-cha"
+    }
+   }
+  ],
+  "damage_vulnerabilities": [],
+  "damage_resistances": [],
+  "damage_immunities": [
+   "lightning",
+   "thunder"
+  ],
+  "condition_immunities": [],
+  "senses": {
+   "darkvision": "120 ft.",
+   "passive_perception": 13
+  },
+  "languages": "Auran",
+  "challenge_rating": 11,
+  "proficiency_bonus": 4,
+  "xp": 7200,
+  "special_abilities": [
+   {
+    "name": "Elemental Demise",
+    "desc": "If the djinni dies, its body disintegrates into a warm breeze, leaving behind only equipment the djinni was wearing or carrying."
+   },
+   {
+    "name": "Innate Spellcasting",
+    "desc": "The djinni's innate spellcasting ability is Charisma (spell save DC 17, +9 to hit with spell attacks). It can innately cast the following spells, requiring no material components:\n\nAt will: detect evil and good, detect magic, thunderwave\n3/day each: create food and water (can create wine instead of water), tongues, wind walk\n1/day each: conjure elemental (air elemental only), creation, gaseous form, invisibility, major image, plane shift",
+    "spellcasting": {
+     "ability": {
+      "index": "cha",
+      "name": "CHA",
+      "url": "/api/2014/ability-scores/cha"
+     },
+     "dc": 17,
+     "modifier": 9,
+     "components_required": [
+      "V",
+      "S"
+     ],
+     "spells": [
+      {
+       "name": "Detect Evil and Good",
+       "level": 1,
+       "url": "/api/2014/spells/detect-evil-and-good",
+       "usage": {
+        "type": "at will"
+       }
+      },
+      {
+       "name": "Detect Magic",
+       "level": 1,
+       "url": "/api/2014/spells/detect-magic",
+       "usage": {
+        "type": "at will"
+       }
+      },
+      {
+       "name": "Thunderwave",
+       "level": 1,
+       "url": "/api/2014/spells/thunderwave",
+       "usage": {
+        "type": "at will"
+       }
+      },
+      {
+       "name": "Create Food and Water",
+       "level": 3,
+       "notes": "Can create wine instead of water",
+       "url": "/api/2014/spells/create-food-and-water",
+       "usage": {
+        "type": "per day",
+        "times": 3
+       }
+      },
+      {
+       "name": "Tongues",
+       "level": 3,
+       "url": "/api/2014/spells/tongues",
+       "usage": {
+        "type": "per day",
+        "times": 3
+       }
+      },
+      {
+       "name": "Wind Walk",
+       "level": 6,
+       "url": "/api/2014/spells/wind-walk",
+       "usage": {
+        "type": "per day",
+        "times": 3
+       }
+      },
+      {
+       "name": "Conjure Elemental",
+       "level": 5,
+       "notes": "Air Elemental Only",
+       "url": "/api/2014/spells/conjure-elemental",
+       "usage": {
+        "type": "per day",
+        "times": 1
+       }
+      },
+      {
+       "name": "Creation",
+       "level": 5,
+       "url": "/api/2014/spells/creation",
+       "usage": {
+        "type": "per day",
+        "times": 1
+       }
+      },
+      {
+       "name": "Gaseous Form",
+       "level": 3,
+       "url": "/api/2014/spells/gaseous-form",
+       "usage": {
+        "type": "per day",
+        "times": 1
+       }
+      },
+      {
+       "name": "Invisibility",
+       "level": 2,
+       "url": "/api/2014/spells/invisibility",
+       "usage": {
+        "type": "per day",
+        "times": 1
+       }
+      },
+      {
+       "name": "Major Image",
+       "level": 3,
+       "url": "/api/2014/spells/major-image",
+       "usage": {
+        "type": "per day",
+        "times": 1
+       }
+      },
+      {
+       "name": "Plane Shift",
+       "level": 7,
+       "url": "/api/2014/spells/plane-shift",
+       "usage": {
+        "type": "per day",
+        "times": 1
+       }
+      }
+     ]
+    }
+   }
+  ],
+  "actions": [
+   {
+    "name": "Multiattack",
+    "multiattack_type": "actions",
+    "desc": "The djinni makes three scimitar attacks.",
+    "actions": [
+     {
+      "action_name": "Scimitar",
+      "count": 3,
+      "type": "melee"
+     }
+    ]
+   },
+   {
+    "name": "Scimitar",
+    "desc": "Melee Weapon Attack: +9 to hit, reach 5 ft., one target. Hit: 12 (2d6 + 5) slashing damage plus 3 (1d6) lightning or thunder damage (djinni's choice).",
+    "attack_bonus": 9,
+    "damage": [
+     {
+      "damage_type": {
+       "index": "slashing",
+       "name": "Slashing",
+       "url": "/api/2014/damage-types/slashing"
+      },
+      "damage_dice": "2d6+5"
+     },
+     {
+      "choose": 1,
+      "type": "damage",
+      "from": {
+       "option_set_type": "options_array",
+       "options": [
+        {
+         "option_type": "damage",
+         "damage_type": {
+          "index": "lightning",
+          "name": "Lightning",
+          "url": "/api/2014/damage-types/lightning"
+         },
+         "damage_dice": "1d6"
+        },
+        {
+         "option_type": "damage",
+         "damage_type": {
+          "index": "thunder",
+          "name": "Thunder",
+          "url": "/api/2014/damage-types/thunder"
+         },
+         "damage_dice": "1d6"
+        }
+       ]
+      }
+     }
+    ]
+   },
+   {
+    "name": "Create Whirlwind",
+    "desc": "A 5-foot-radius, 30-foot-tall cylinder of swirling air magically forms on a point the djinni can see within 120 feet of it. The whirlwind lasts as long as the djinni maintains concentration (as if concentrating on a spell). Any creature but the djinni that enters the whirlwind must succeed on a DC 18 Strength saving throw or be restrained by it. The djinni can move the whirlwind up to 60 feet as an action, and creatures restrained by the whirlwind move with it. The whirlwind ends if the djinni loses sight of it.\nA creature can use its action to free a creature restrained by the whirlwind, including itself, by succeeding on a DC 18 Strength check. If the check succeeds, the creature is no longer restrained and moves to the nearest space outside the whirlwind.",
+    "dc": {
+     "dc_type": {
+      "index": "str",
+      "name": "STR",
+      "url": "/api/2014/ability-scores/str"
+     },
+     "dc_value": 18,
+     "success_type": "none"
+    }
+   }
+  ],
+  "image": "/api/images/monsters/djinni.png",
+  "url": "/api/2014/monsters/djinni"
+ },
+ {
+  "index": "bandit-captain",
+  "name": "Bandit Captain",
+  "desc": "It takes a strong personality, ruthless cunning, and a silver tongue to keep a gang of bandits in line. The **bandit captain** has these qualities in spades.\n\nIn addition to managing a crew of selfish malcontents, the **pirate captain** is a variation of the bandit captain, with a ship to protect and command. To keep the crew in line, the captain must mete out rewards and punishment on a regular basis.\n\nMore than treasure, a bandit captain or pirate captain craves infamy. A prisoner who appeals to the captain’s vanity or ego is more likely to be treated fairly than a prisoner who does not or claims not to know anything of the captain’s colorful reputation.",
+  "size": "Medium",
+  "type": "humanoid",
+  "subtype": "any race",
+  "alignment": "any non-lawful alignment",
+  "armor_class": [
+   {
+    "type": "armor",
+    "value": 15,
+    "armor": [
+     {
+      "index": "studded-leather-armor",
+      "name": "Studded Leather Armor",
+      "url": "/api/2014/equipment/studded-leather-armor"
+     }
+    ]
+   }
+  ],
+  "hit_points": 65,
+  "hit_dice": "10d8",
+  "hit_points_roll": "10d8+20",
+  "speed": {
+   "walk": "30 ft."
+  },
+  "strength": 15,
+  "dexterity": 16,
+  "constitution": 14,
+  "intelligence": 14,
+  "wisdom": 11,
+  "charisma": 14,
+  "proficiencies": [
+   {
+    "value": 4,
+    "proficiency": {
+     "index": "saving-throw-str",
+     "name": "Saving Throw: STR",
+     "url": "/api/2014/proficiencies/saving-throw-str"
+    }
+   },
+   {
+    "value": 5,
+    "proficiency": {
+     "index": "saving-throw-dex",
+     "name": "Saving Throw: DEX",
+     "url": "/api/2014/proficiencies/saving-throw-dex"
+    }
+   },
+   {
+    "value": 2,
+    "proficiency": {
+     "index": "saving-throw-wis",
+     "name": "Saving Throw: WIS",
+     "url": "/api/2014/proficiencies/saving-throw-wis"
+    }
+   },
+   {
+    "value": 4,
+    "proficiency": {
+     "index": "skill-athletics",
+     "name": "Skill: Athletics",
+     "url": "/api/2014/proficiencies/skill-athletics"
+    }
+   },
+   {
+    "value": 4,
+    "proficiency": {
+     "index": "skill-deception",
+     "name": "Skill: Deception",
+     "url": "/api/2014/proficiencies/skill-deception"
+    }
+   }
+  ],
+  "damage_vulnerabilities": [],
+  "damage_resistances": [],
+  "damage_immunities": [],
+  "condition_immunities": [],
+  "senses": {
+   "passive_perception": 10
+  },
+  "languages": "any two languages",
+  "challenge_rating": 2,
+  "proficiency_bonus": 2,
+  "xp": 450,
+  "actions": [
+   {
+    "name": "Multiattack",
+    "multiattack_type": "action_options",
+    "desc": "The captain makes three melee attacks: two with its scimitar and one with its dagger. Or the captain makes two ranged attacks with its daggers.",
+    "action_options": {
+     "choose": 1,
+     "type": "action",
+     "from": {
+      "option_set_type": "options_array",
+      "options": [
+       {
+        "option_type": "multiple",
+        "items": [
+         {
+          "option_type": "action",
+          "action_name": "Scimitar",
+          "count": 2,
+          "type": "melee"
+         },
+         {
+          "option_type": "action",
+          "action_name": "Dagger",
+          "count": 1,
+          "type": "melee"
+         }
+        ]
+       },
+       {
+        "option_type": "action",
+        "action_name": "Dagger",
+        "count": 2,
+        "type": "ranged"
+       }
+      ]
+     }
+    }
+   },
+   {
+    "name": "Scimitar",
+    "desc": "Melee Weapon Attack: +5 to hit, reach 5 ft., one target. Hit: 6 (1d6 + 3) slashing damage.",
+    "attack_bonus": 5,
+    "damage": [
+     {
+      "damage_type": {
+       "index": "slashing",
+       "name": "Slashing",
+       "url": "/api/2014/damage-types/slashing"
+      },
+      "damage_dice": "1d6+3"
+     }
+    ]
+   },
+   {
+    "name": "Dagger",
+    "desc": "Melee or Ranged Weapon Attack: +5 to hit, reach 5 ft. or range 20/60 ft., one target. Hit: 5 (1d4 + 3) piercing damage.",
+    "attack_bonus": 5,
+    "damage": [
+     {
+      "damage_type": {
+       "index": "piercing",
+       "name": "Piercing",
+       "url": "/api/2014/damage-types/piercing"
+      },
+      "damage_dice": "1d4+3"
+     }
+    ]
+   }
+  ],
+  "reactions": [
+   {
+    "name": "Parry",
+    "desc": "The captain adds 2 to its AC against one melee attack that would hit it. To do so, the captain must see the attacker and be wielding a melee weapon."
+   }
+  ],
+  "image": "/api/images/monsters/bandit-captain.png",
+  "url": "/api/2014/monsters/bandit-captain"
+ },
+ {
+  "index": "adult-brass-dragon",
+  "name": "Adult Brass Dragon",
+  "size": "Huge",
+  "type": "dragon",
+  "alignment": "chaotic good",
+  "armor_class": [
+   {
+    "type": "natural",
+    "value": 18
+   }
+  ],
+  "hit_points": 172,
+  "hit_dice": "15d12",
+  "hit_points_roll": "15d12+75",
+  "speed": {
+   "walk": "40 ft.",
+   "burrow": "40 ft.",
+   "fly": "80 ft."
+  },
+  "strength": 23,
+  "dexterity": 10,
+  "constitution": 21,
+  "intelligence": 14,
+  "wisdom": 13,
+  "charisma": 17,
+  "proficiencies": [
+   {
+    "value": 5,
+    "proficiency": {
+     "index": "saving-throw-dex",
+     "name": "Saving Throw: DEX",
+     "url": "/api/2014/proficiencies/saving-throw-dex"
+    }
+   },
+   {
+    "value": 10,
+    "proficiency": {
+     "index": "saving-throw-con",
+     "name": "Saving Throw: CON",
+     "url": "/api/2014/proficiencies/saving-throw-con"
+    }
+   },
+   {
+    "value": 6,
+    "proficiency": {
+     "index": "saving-throw-wis",
+     "name": "Saving Throw: WIS",
+     "url": "/api/2014/proficiencies/saving-throw-wis"
+    }
+   },
+   {
+    "value": 8,
+    "proficiency": {
+     "index": "saving-throw-cha",
+     "name": "Saving Throw: CHA",
+     "url": "/api/2014/proficiencies/saving-throw-cha"
+    }
+   },
+   {
+    "value": 7,
+    "proficiency": {
+     "index": "skill-history",
+     "name": "Skill: History",
+     "url": "/api/2014/proficiencies/skill-history"
+    }
+   },
+   {
+    "value": 11,
+    "proficiency": {
+     "index": "skill-perception",
+     "name": "Skill: Perception",
+     "url": "/api/2014/proficiencies/skill-perception"
+    }
+   },
+   {
+    "value": 8,
+    "proficiency": {
+     "index": "skill-persuasion",
+     "name": "Skill: Persuasion",
+     "url": "/api/2014/proficiencies/skill-persuasion"
+    }
+   },
+   {
+    "value": 5,
+    "proficiency": {
+     "index": "skill-stealth",
+     "name": "Skill: Stealth",
+     "url": "/api/2014/proficiencies/skill-stealth"
+    }
+   }
+  ],
+  "damage_vulnerabilities": [],
+  "damage_resistances": [],
+  "damage_immunities": [
+   "fire"
+  ],
+  "condition_immunities": [],
+  "senses": {
+   "blindsight": "60 ft.",
+   "darkvision": "120 ft.",
+   "passive_perception": 21
+  },
+  "languages": "Common, Draconic",
+  "challenge_rating": 13,
+  "proficiency_bonus": 5,
+  "xp": 10000,
+  "special_abilities": [
+   {
+    "name": "Legendary Resistance",
+    "desc": "If the dragon fails a saving throw, it can choose to succeed instead.",
+    "usage": {
+     "type": "per day",
+     "times": 3
+    }
+   }
+  ],
+  "actions": [
+   {
+    "name": "Multiattack",
+    "multiattack_type": "actions",
+    "desc": "The dragon can use its Frightful Presence. It then makes three attacks: one with its bite and two with its claws.",
+    "actions": [
+     {
+      "action_name": "Frightful Presence",
+      "count": 1,
+      "type": "ability"
+     },
+     {
+      "action_name": "Bite",
+      "count": 1,
+      "type": "melee"
+     },
+     {
+      "action_name": "Claw",
+      "count": 2,
+      "type": "melee"
+     }
+    ]
+   },
+   {
+    "name": "Bite",
+    "desc": "Melee Weapon Attack: +11 to hit, reach 10 ft., one target. Hit: 17 (2d10 + 6) piercing damage.",
+    "attack_bonus": 11,
+    "damage": [
+     {
+      "damage_type": {
+       "index": "piercing",
+       "name": "Piercing",
+       "url": "/api/2014/damage-types/piercing"
+      },
+      "damage_dice": "2d10+6"
+     }
+    ]
+   },
+   {
+    "name": "Claw",
+    "desc": "Melee Weapon Attack: +11 to hit, reach 5 ft., one target. Hit: 13 (2d6 + 6) slashing damage.",
+    "attack_bonus": 11,
+    "damage": [
+     {
+      "damage_type": {
+       "index": "slashing",
+       "name": "Slashing",
+       "url": "/api/2014/damage-types/slashing"
+      },
+      "damage_dice": "2d6+6"
+     }
+    ]
+   },
+   {
+    "name": "Tail",
+    "desc": "Melee Weapon Attack: +11 to hit, reach 15 ft., one target. Hit: 15 (2d8 + 6) bludgeoning damage.",
+    "attack_bonus": 11,
+    "damage": [
+     {
+      "damage_type": {
+       "index": "bludgeoning",
+       "name": "Bludgeoning",
+       "url": "/api/2014/damage-types/bludgeoning"
+      },
+      "damage_dice": "2d8+6"
+     }
+    ]
+   },
+   {
+    "name": "Frightful Presence",
+    "desc": "Each creature of the dragon's choice that is within 120 feet of the dragon and aware of it must succeed on a DC 16 Wisdom saving throw or become frightened for 1 minute. A creature can repeat the saving throw at the end of each of its turns, ending the effect on itself on a success. If a creature's saving throw is successful or the effect ends for it, the creature is immune to the dragon's Frightful Presence for the next 24 hours .",
+    "dc": {
+     "dc_type": {
+      "index": "wis",
+      "name": "WIS",
+      "url": "/api/2014/ability-scores/wis"
+     },
+     "dc_value": 16,
+     "success_type": "none"
+    }
+   },
+   {
+    "name": "Breath Weapons",
+    "desc": "The dragon uses one of the following breath weapons.\nFire Breath. The dragon exhales fire in an 60-foot line that is 5 feet wide. Each creature in that line must make a DC 18 Dexterity saving throw, taking 45 (13d6) fire damage on a failed save, or half as much damage on a successful one.\nSleep Breath. The dragon exhales sleep gas in a 60-foot cone. Each creature in that area must succeed on a DC 18 Constitution saving throw or fall unconscious for 10 minutes. This effect ends for a creature if the creature takes damage or someone uses an action to wake it.",
+    "usage": {
+     "type": "recharge on roll",
+     "dice": "1d6",
+     "min_value": 5
+    },
+    "options": {
+     "choose": 1,
+     "type": "attack",
+     "from": {
+      "option_set_type": "options_array",
+      "options": [
+       {
+        "option_type": "breath",
+        "name": "Fire Breath",
+        "dc": {
+         "dc_type": {
+          "index": "dex",
+          "name": "DEX",
+          "url": "/api/2014/ability-scores/dex"
+         },
+         "dc_value": 18,
+         "success_type": "half"
+        },
+        "damage": [
+         {
+          "damage_type": {
+           "index": "fire",
+           "name": "Fire",
+           "url": "/api/2014/damage-types/fire"
+          },
+          "damage_dice": "13d6"
+         }
+        ]
+       },
+       {
+        "option_type": "breath",
+        "name": "Sleep Breath",
+        "dc": {
+         "dc_type": {
+          "index": "con",
+          "name": "CON",
+          "url": "/api/2014/ability-scores/con"
+         },
+         "dc_value": 18,
+         "success_type": "none"
+        }
+       }
+      ]
+     }
+    }
+   }
+  ],
+  "legendary_actions": [
+   {
+    "name": "Detect",
+    "desc": "The dragon makes a Wisdom (Perception) check."
+   },
+   {
+    "name": "Tail Attack",
+    "desc": "The dragon makes a tail attack."
+   },
+   {
+    "name": "Wing Attack (Costs 2 Actions)",
+    "desc": "The dragon beats its wings. Each creature within 10 ft. of the dragon must succeed on a DC 19 Dexterity saving throw or take 13 (2d6 + 6) bludgeoning damage and be knocked prone. The dragon can then fly up to half its flying speed.",
+    "dc": {
+     "dc_type": {
+      "index": "dex",
+      "name": "DEX",
+      "url": "/api/2014/ability-scores/dex"
+     },
+     "dc_value": 19,
+     "success_type": "none"
+    },
+    "damage": [
+     {
+      "damage_type": {
+       "index": "bludgeoning",
+       "name": "Bludgeoning",
+       "url": "/api/2014/damage-types/bludgeoning"
+      },
+      "damage_dice": "2d6+6"
+     }
+    ]
+   }
+  ],
+  "image": "/api/images/monsters/adult-brass-dragon.png",
+  "url": "/api/2014/monsters/adult-brass-dragon"
+ },
+ {
+  "index": "ancient-brass-dragon",
+  "name": "Ancient Brass Dragon",
+  "size": "Gargantuan",
+  "type": "dragon",
+  "alignment": "chaotic good",
+  "armor_class": [
+   {
+    "type": "natural",
+    "value": 20
+   }
+  ],
+  "hit_points": 297,
+  "hit_dice": "17d20",
+  "hit_points_roll": "17d20+119",
+  "speed": {
+   "walk": "40 ft.",
+   "burrow": "40 ft.",
+   "fly": "80 ft."
+  },
+  "strength": 27,
+  "dexterity": 10,
+  "constitution": 25,
+  "intelligence": 16,
+  "wisdom": 15,
+  "charisma": 19,
+  "proficiencies": [
+   {
+    "value": 6,
+    "proficiency": {
+     "index": "saving-throw-dex",
+     "name": "Saving Throw: DEX",
+     "url": "/api/2014/proficiencies/saving-throw-dex"
+    }
+   },
+   {
+    "value": 13,
+    "proficiency": {
+     "index": "saving-throw-con",
+     "name": "Saving Throw: CON",
+     "url": "/api/2014/proficiencies/saving-throw-con"
+    }
+   },
+   {
+    "value": 8,
+    "proficiency": {
+     "index": "saving-throw-wis",
+     "name": "Saving Throw: WIS",
+     "url": "/api/2014/proficiencies/saving-throw-wis"
+    }
+   },
+   {
+    "value": 10,
+    "proficiency": {
+     "index": "saving-throw-cha",
+     "name": "Saving Throw: CHA",
+     "url": "/api/2014/proficiencies/saving-throw-cha"
+    }
+   },
+   {
+    "value": 9,
+    "proficiency": {
+     "index": "skill-history",
+     "name": "Skill: History",
+     "url": "/api/2014/proficiencies/skill-history"
+    }
+   },
+   {
+    "value": 14,
+    "proficiency": {
+     "index": "skill-perception",
+     "name": "Skill: Perception",
+     "url": "/api/2014/proficiencies/skill-perception"
+    }
+   },
+   {
+    "value": 10,
+    "proficiency": {
+     "index": "skill-persuasion",
+     "name": "Skill: Persuasion",
+     "url": "/api/2014/proficiencies/skill-persuasion"
+    }
+   },
+   {
+    "value": 6,
+    "proficiency": {
+     "index": "skill-stealth",
+     "name": "Skill: Stealth",
+     "url": "/api/2014/proficiencies/skill-stealth"
+    }
+   }
+  ],
+  "damage_vulnerabilities": [],
+  "damage_resistances": [],
+  "damage_immunities": [
+   "fire"
+  ],
+  "condition_immunities": [],
+  "senses": {
+   "blindsight": "60 ft.",
+   "darkvision": "120 ft.",
+   "passive_perception": 24
+  },
+  "languages": "Common, Draconic",
+  "challenge_rating": 20,
+  "proficiency_bonus": 6,
+  "xp": 25000,
+  "special_abilities": [
+   {
+    "name": "Legendary Resistance",
+    "desc": "If the dragon fails a saving throw, it can choose to succeed instead.",
+    "usage": {
+     "type": "per day",
+     "times": 3
+    }
+   }
+  ],
+  "actions": [
+   {
+    "name": "Multiattack",
+    "multiattack_type": "actions",
+    "desc": "The dragon can use its Frightful Presence. It then makes three attacks: one with its bite and two with its claws.",
+    "actions": [
+     {
+      "action_name": "Frightful Presence",
+      "count": 1,
+      "type": "ability"
+     },
+     {
+      "action_name": "Bite",
+      "count": 1,
+      "type": "melee"
+     },
+     {
+      "action_name": "Claw",
+      "count": 2,
+      "type": "melee"
+     }
+    ]
+   },
+   {
+    "name": "Bite",
+    "desc": "Melee Weapon Attack: +14 to hit, reach 15 ft., one target. Hit: 19 (2d10 + 8) piercing damage.",
+    "attack_bonus": 14,
+    "damage": [
+     {
+      "damage_type": {
+       "index": "piercing",
+       "name": "Piercing",
+       "url": "/api/2014/damage-types/piercing"
+      },
+      "damage_dice": "2d10+8"
+     }
+    ]
+   },
+   {
+    "name": "Claw",
+    "desc": "Melee Weapon Attack: +14 to hit, reach 10 ft., one target. Hit: 15 (2d6 + 8) slashing damage.",
+    "attack_bonus": 14,
+    "damage": [
+     {
+      "damage_type": {
+       "index": "slashing",
+       "name": "Slashing",
+       "url": "/api/2014/damage-types/slashing"
+      },
+      "damage_dice": "2d6+8"
+     }
+    ]
+   },
+   {
+    "name": "Tail",
+    "desc": "Melee Weapon Attack: +14 to hit, reach 20 ft., one target. Hit: 17 (2d8 + 8) bludgeoning damage.",
+    "attack_bonus": 14,
+    "damage": [
+     {
+      "damage_type": {
+       "index": "bludgeoning",
+       "name": "Bludgeoning",
+       "url": "/api/2014/damage-types/bludgeoning"
+      },
+      "damage_dice": "2d8+8"
+     }
+    ]
+   },
+   {
+    "name": "Frightful Presence",
+    "desc": "Each creature of the dragon's choice that is within 120 feet of the dragon and aware of it must succeed on a DC 18 Wisdom saving throw or become frightened for 1 minute. A creature can repeat the saving throw at the end of each of its turns, ending the effect on itself on a success. If a creature's saving throw is successful or the effect ends for it, the creature is immune to the dragon's Frightful Presence for the next 24 hours.",
+    "dc": {
+     "dc_type": {
+      "index": "wis",
+      "name": "WIS",
+      "url": "/api/2014/ability-scores/wis"
+     },
+     "dc_value": 18,
+     "success_type": "none"
+    }
+   },
+   {
+    "name": "Breath Weapons",
+    "desc": "The dragon uses one of the following breath weapons:\nFire Breath. The dragon exhales fire in an 90-foot line that is 10 feet wide. Each creature in that line must make a DC 21 Dexterity saving throw, taking 56 (16d6) fire damage on a failed save, or half as much damage on a successful one.\nSleep Breath. The dragon exhales sleep gas in a 90-foot cone. Each creature in that area must succeed on a DC 21 Constitution saving throw or fall unconscious for 10 minutes. This effect ends for a creature if the creature takes damage or someone uses an action to wake it.",
+    "usage": {
+     "type": "recharge on roll",
+     "dice": "1d6",
+     "min_value": 5
+    },
+    "options": {
+     "choose": 1,
+     "type": "attack",
+     "from": {
+      "option_set_type": "options_array",
+      "options": [
+       {
+        "option_type": "breath",
+        "name": "Fire Breath",
+        "dc": {
+         "dc_type": {
+          "index": "dex",
+          "name": "DEX",
+          "url": "/api/2014/ability-scores/dex"
+         },
+         "dc_value": 21,
+         "success_type": "half"
+        },
+        "damage": [
+         {
+          "damage_type": {
+           "index": "fire",
+           "name": "Fire",
+           "url": "/api/2014/damage-types/fire"
+          },
+          "damage_dice": "16d6"
+         }
+        ]
+       },
+       {
+        "option_type": "breath",
+        "name": "Sleep Breath",
+        "dc": {
+         "dc_type": {
+          "index": "con",
+          "name": "CON",
+          "url": "/api/2014/ability-scores/con"
+         },
+         "dc_value": 21,
+         "success_type": "none"
+        }
+       }
+      ]
+     }
+    }
+   },
+   {
+    "name": "Change Shape",
+    "desc": "The dragon magically polymorphs into a humanoid or beast that has a challenge rating no higher than its own, or back into its true form. It reverts to its true form if it dies. Any equipment it is wearing or carrying is absorbed or borne by the new form (the dragon's choice).\nIn a new form, the dragon retains its alignment, hit points, Hit Dice, ability to speak, proficiencies, Legendary Resistance, lair actions, and Intelligence, Wisdom, and Charisma scores, as well as this action. Its statistics and capabilities are otherwise replaced by those of the new form, except any class features or legendary actions of that form."
+   }
+  ],
+  "legendary_actions": [
+   {
+    "name": "Detect",
+    "desc": "The dragon makes a Wisdom (Perception) check."
+   },
+   {
+    "name": "Tail Attack",
+    "desc": "The dragon makes a tail attack."
+   },
+   {
+    "name": "Wing Attack (Costs 2 Actions)",
+    "desc": "The dragon beats its wings. Each creature within 15 ft. of the dragon must succeed on a DC 22 Dexterity saving throw or take 15 (2d6 + 8) bludgeoning damage and be knocked prone. The dragon can then fly up to half its flying speed.",
+    "dc": {
+     "dc_type": {
+      "index": "dex",
+      "name": "DEX",
+      "url": "/api/2014/ability-scores/dex"
+     },
+     "dc_value": 22,
+     "success_type": "none"
+    },
+    "damage": [
+     {
+      "damage_type": {
+       "index": "bludgeoning",
+       "name": "Bludgeoning",
+       "url": "/api/2014/damage-types/bludgeoning"
+      },
+      "damage_dice": "2d6+8"
+     }
+    ]
+   }
+  ],
+  "image": "/api/images/monsters/ancient-brass-dragon.png",
+  "url": "/api/2014/monsters/ancient-brass-dragon"
+ },
+ {
+  "index": "druid",
+  "name": "Druid",
+  "desc": "**Druids** dwell in forests and other secluded wilderness locations, where they protect the natural world from monsters and the encroachment of civilization. Some are **tribal shamans** who heal the sick, pray to animal spirits, and provide spiritual guidance.",
+  "size": "Medium",
+  "type": "humanoid",
+  "subtype": "any race",
+  "alignment": "any alignment",
+  "armor_class": [
+   {
+    "type": "dex",
+    "value": 11
+   },
+   {
+    "type": "spell",
+    "value": 16,
+    "spell": {
+     "index": "barkskin",
+     "name": "Barkskin",
+     "url": "/api/2014/spells/barkskin"
+    }
+   }
+  ],
+  "hit_points": 27,
+  "hit_dice": "5d8",
+  "hit_points_roll": "5d8+5",
+  "speed": {
+   "walk": "30 ft."
+  },
+  "strength": 10,
+  "dexterity": 12,
+  "constitution": 13,
+  "intelligence": 12,
+  "wisdom": 15,
+  "charisma": 11,
+  "proficiencies": [
+   {
+    "value": 4,
+    "proficiency": {
+     "index": "skill-medicine",
+     "name": "Skill: Medicine",
+     "url": "/api/2014/proficiencies/skill-medicine"
+    }
+   },
+   {
+    "value": 3,
+    "proficiency": {
+     "index": "skill-nature",
+     "name": "Skill: Nature",
+     "url": "/api/2014/proficiencies/skill-nature"
+    }
+   },
+   {
+    "value": 4,
+    "proficiency": {
+     "index": "skill-perception",
+     "name": "Skill: Perception",
+     "url": "/api/2014/proficiencies/skill-perception"
+    }
+   }
+  ],
+  "damage_vulnerabilities": [],
+  "damage_resistances": [],
+  "damage_immunities": [],
+  "condition_immunities": [],
+  "senses": {
+   "passive_perception": 14
+  },
+  "languages": "Druidic plus any two languages",
+  "challenge_rating": 2,
+  "proficiency_bonus": 2,
+  "xp": 450,
+  "special_abilities": [
+   {
+    "name": "Spellcasting",
+    "desc": "The druid is a 4th-level spellcaster. Its spellcasting ability is Wisdom (spell save DC 12, +4 to hit with spell attacks). It has the following druid spells prepared:\n\n- Cantrips (at will): druidcraft, produce flame, shillelagh\n- 1st level (4 slots): entangle, longstrider, speak with animals, thunderwave\n- 2nd level (3 slots): animal messenger, barkskin",
+    "spellcasting": {
+     "level": 4,
+     "ability": {
+      "index": "wis",
+      "name": "WIS",
+      "url": "/api/2014/ability-scores/wis"
+     },
+     "dc": 12,
+     "modifier": 4,
+     "components_required": [
+      "V",
+      "S",
+      "M"
+     ],
+     "school": "druid",
+     "slots": {
+      "1": 4,
+      "2": 3
+     },
+     "spells": [
+      {
+       "name": "Druidcraft",
+       "level": 0,
+       "url": "/api/2014/spells/druidcraft"
+      },
+      {
+       "name": "Produce Flame",
+       "level": 0,
+       "url": "/api/2014/spells/produce-flame"
+      },
+      {
+       "name": "Shillelagh",
+       "level": 0,
+       "url": "/api/2014/spells/shillelagh"
+      },
+      {
+       "name": "Entangle",
+       "level": 1,
+       "url": "/api/2014/spells/entangle"
+      },
+      {
+       "name": "Longstrider",
+       "level": 1,
+       "url": "/api/2014/spells/longstrider"
+      },
+      {
+       "name": "Speak with Animals",
+       "level": 1,
+       "url": "/api/2014/spells/speak-with-animals"
+      },
+      {
+       "name": "Thunderwave",
+       "level": 1,
+       "url": "/api/2014/spells/thunderwave"
+      },
+      {
+       "name": "Animal Messenger",
+       "level": 2,
+       "url": "/api/2014/spells/animal-messenger"
+      },
+      {
+       "name": "Barkskin",
+       "level": 2,
+       "url": "/api/2014/spells/barkskin"
+      }
+     ]
+    }
+   }
+  ],
+  "actions": [
+   {
+    "name": "Quarterstaff",
+    "desc": " Melee Weapon Attack: +2 to hit (+4 to hit with shillelagh), reach 5 ft., one target. Hit: 3 (1d6) bludgeoning damage, 4 (1d8) bludgeoning damage if wielded with two hands, or 6 (1d8 + 2) bludgeoning damage with shillelagh.",
+    "attack_bonus": 2,
+    "damage": [
+     {
+      "choose": 1,
+      "type": "damage",
+      "from": {
+       "option_set_type": "options_array",
+       "options": [
+        {
+         "option_type": "damage",
+         "damage_type": {
+          "index": "bludgeoning",
+          "name": "Bludgeoning",
+          "url": "/api/2014/damage-types/bludgeoning"
+         },
+         "damage_dice": "1d6",
+         "notes": "One handed"
+        },
+        {
+         "option_type": "damage",
+         "damage_type": {
+          "index": "bludgeoning",
+          "name": "Bludgeoning",
+          "url": "/api/2014/damage-types/bludgeoning"
+         },
+         "damage_dice": "1d8",
+         "notes": "Two handed"
+        },
+        {
+         "option_type": "damage",
+         "damage_type": {
+          "index": "bludgeoning",
+          "name": "Bludgeoning",
+          "url": "/api/2014/damage-types/bludgeoning"
+         },
+         "damage_dice": "1d8+2",
+         "notes": "With shillelagh"
+        }
+       ]
+      }
+     }
+    ]
+   }
+  ],
+  "image": "/api/images/monsters/druid.png",
+  "url": "/api/2014/monsters/druid"
+ },
+ {
+  "index": "octopus",
+  "name": "Octopus",
+  "size": "Small",
+  "type": "beast",
+  "alignment": "unaligned",
+  "armor_class": [
+   {
+    "type": "dex",
+    "value": 12
+   }
+  ],
+  "hit_points": 3,
+  "hit_dice": "1d6",
+  "hit_points_roll": "1d6",
+  "speed": {
+   "walk": "5 ft.",
+   "swim": "30 ft."
+  },
+  "strength": 4,
+  "dexterity": 15,
+  "constitution": 11,
+  "intelligence": 3,
+  "wisdom": 10,
+  "charisma": 4,
+  "proficiencies": [
+   {
+    "value": 2,
+    "proficiency": {
+     "index": "skill-perception",
+     "name": "Skill: Perception",
+     "url": "/api/2014/proficiencies/skill-perception"
+    }
+   },
+   {
+    "value": 4,
+    "proficiency": {
+     "index": "skill-stealth",
+     "name": "Skill: Stealth",
+     "url": "/api/2014/proficiencies/skill-stealth"
+    }
+   }
+  ],
+  "damage_vulnerabilities": [],
+  "damage_resistances": [],
+  "damage_immunities": [],
+  "condition_immunities": [],
+  "senses": {
+   "darkvision": "30 ft.",
+   "passive_perception": 12
+  },
+  "languages": "",
+  "challenge_rating": 0,
+  "proficiency_bonus": 2,
+  "xp": 10,
+  "special_abilities": [
+   {
+    "name": "Hold Breath",
+    "desc": "While out of water, the octopus can hold its breath for 30 minutes."
+   },
+   {
+    "name": "Underwater Camouflage",
+    "desc": "The octopus has advantage on Dexterity (Stealth) checks made while underwater."
+   },
+   {
+    "name": "Water Breathing",
+    "desc": "The octopus can breathe only underwater."
+   }
+  ],
+  "actions": [
+   {
+    "name": "Tentacles",
+    "desc": "Melee Weapon Attack: +4 to hit, reach 5 ft., one target. Hit: 1 bludgeoning damage, and the target is grappled (escape DC 10). Until this grapple ends, the octopus can't use its tentacles on another target.",
+    "attack_bonus": 4,
+    "damage": [
+     {
+      "damage_type": {
+       "index": "bludgeoning",
+       "name": "Bludgeoning",
+       "url": "/api/2014/damage-types/bludgeoning"
+      },
+      "damage_dice": "1"
+     }
+    ]
+   },
+   {
+    "name": "Ink Cloud",
+    "desc": "A 5-foot-radius cloud of ink extends all around the octopus if it is underwater. The area is heavily obscured for 1 minute, although a significant current can disperse the ink. After releasing the ink, the octopus can use the Dash action as a bonus action.",
+    "usage": {
+     "type": "recharge after rest",
+     "rest_types": [
+      "short",
+      "long"
+     ]
+    },
+    "attack_bonus": 0
+   }
+  ],
+  "image": "/api/images/monsters/octopus.png",
+  "url": "/api/2014/monsters/octopus"
+ }
+]
