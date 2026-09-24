@@ -138,6 +138,32 @@ For most systems, you can start without any system-specific scripts and rely ent
 
 ---
 
+## Tactical grid combat (optional): `tactics_rules.py`
+
+Grid combat (`scripts/tactics/`) is a deterministic engine: it owns positions, turn order, movement, reach, line of sight and every die roll, and the GM only narrates. The engine is system-neutral. Everything that depends on a game's rules comes from one file, `systems/<system>/tactics_rules.py`, which defines a subclass of `tactics.rules.Rules` and exposes it as `RULES`. Without that file, grid combat is simply unavailable for the system; theatre-of-the-mind combat is unaffected.
+
+The engine measures geometry and hands it over as an `AttackContext` (`distance` in feet, `melee`, `cover` as an AC bonus, `long_range`, `hostile_adjacent`, `opportunity`). Your rules decide what those facts mean. Every method that rolls takes the engine's `Roller` and a `player` flag; roll through it (`roller.roll(notation, who, label, player=player, advantage=..., crit=...)`) so each roll's source is logged and a player's roll is requested instead of invented. Result dicts carry a short `text` the CLI prints as-is.
+
+| Area | Method | Returns |
+|------|--------|---------|
+| Attack | `attack(attacker, target, attack, ctx, roller, player)` | `{hit, crit, natural, total, ac, advantage, reasons, damage, text}`; applies damage on a hit |
+| | `hit_chance(attacker, target, attack, ctx)` | `{percent, chance, advantage, reasons}`, no roll (shown on previews) |
+| Save | `saving_throw(token, ability, dc, roller, player)` | `{success, auto_fail, natural, total, dc, text}` |
+| Damage | `damage(target, parts, crit, ctx)` | applies `[{amount, type}]`; `{total, hp_after, dropped, dead, concentration_dc, text}` |
+| | `heal(token, amount)` | `{healed, text}` |
+| Conditions | `can_act(token)`, `can_react(token)` | bool |
+| | `death_save(token, roller, player)` | `{stable, dead, revived, text}`, or model your system's equivalent |
+| Movement | `speed(token)`, `crawling(token)`, `stand_up_cost(token)`, `reach(token)` | feet / bool |
+| Action economy | `turn_budget(token)` | `{movement, action, bonus, reaction}` |
+| | `initiative(token, roller)` | the `Roll` |
+| | `opportunity_attack(token)` | the attack spec used as a reaction, or `None` |
+
+Tokens (`tactics.state.Token`) carry the common fields (HP, AC, speed, conditions, attacks, saves, resistances). Put anything system-specific in `token.extra`. Attack specs are plain dicts: `{name, type: melee|ranged|melee_or_ranged, bonus, reach, range: [normal, long], damage: [{dice, type}], flags}`.
+
+`systems/dnd5e/tactics_rules.py` is the reference implementation (2014 rules), and `tests/test_tactics_rules_dnd5e.py` shows how to test one with scripted dice.
+
+---
+
 ## Step-by-step: building a new system module
 
 ### Step 1 — Copy the template
