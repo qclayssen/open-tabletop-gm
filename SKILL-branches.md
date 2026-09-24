@@ -177,6 +177,12 @@ Each turn in combat:
 4. Clear `## Active Combat` in state.md
 5. Return to ACTIVE state
 
+## `/gm combat grid <map>`
+
+1. Read `<skill-base>/scripts/tactics.md` and follow its loop until `combat.py end`.
+2. Also when `state.md → ## Active Combat` says a grid combat is in progress (resume after a restart).
+3. Without the display it still works: every command prints plain text.
+
 ---
 
 ## `/gm rest <short|long>`

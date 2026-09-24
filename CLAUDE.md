@@ -41,9 +41,17 @@ scripts/tactics/             grid combat engine (stdlib only)
   rules.py                   thin system interface + loader (see SYSTEM-PORTING.md)
   engine.py                  initiative, turns, move + opportunity attacks, undo,
                              attack, Dash/Disengage/Dodge, previews (hit %, OA warnings)
+  ai.py                      numbered enemy options (deterministic) + choose
+  maps.py                    display/maps/*.json (rectangles) -> engine grid
+  sync.py                    tracker.json, display /stats + /combat, state.md,
+                             sheets (.bak) and session-log.md on end
+  cli.py                     the GM commands; run via scripts/tactics/combat.py
+  demo.py                    scripted Kairos vs 2 giant frogs, in a temp campaign
+scripts/tactics.md           the GM loop (loaded only at /gm combat grid)
 systems/dnd5e/
   tactics_rules.py           5e rules: advantage, crits, cover, resistances, 0 HP,
                              death saves, SRD monster -> Token adapter
+  tactics_sheet.py           character sheet -> Token, and write-back after combat
   build_srd.py               SRD build; monsters carry structured `actions`
   lookup.py                  SRD lookup (data/ is generated and gitignored)
 display/                     Flask companion: gm-display-app.py (SSE /stream, JSON
@@ -73,6 +81,8 @@ python3 -m pytest tests/ -q                       # full suite
 python3 -m pytest tests/test_tactics_*.py -q      # engine only
 python3 systems/dnd5e/build_srd.py --no-fvtt      # build SRD data (network)
 python3 systems/dnd5e/lookup.py monster "giant frog" --json
+python3 scripts/tactics/demo.py --seed 4          # scripted fight, prints every command
+python3 scripts/tactics/combat.py --help          # GM command reference
 bash display/start-display.sh                     # display on http://localhost:5001
 bash display/start-display.sh --lan               # LAN mode (phones, tablets)
 ```
@@ -84,15 +94,17 @@ bash display/start-display.sh --lan               # LAN mode (phones, tablets)
       structured monster actions in `build_srd.py` with a golden lookup test.
 - [x] **1. Engine core + tests**: state, grid, movement, reach, basic attacks,
       initiative, HP, death saves, opportunity attacks, undo, previews.
-- [ ] **2. CLI + GM loop**: `scripts/tactics/combat.py` (`start`, `status`,
-      `options`, `move`, `attack`, `choose`, `end-turn`, `undo-move`, `end`),
-      `ai.py` numbered enemy options, Kairos sheet parser, tracker and sidebar
-      sync, sheet write-back with `.bak` and diff on `end`, session log summary,
-      `scripts/tactics.md` GM loop, `docs/TACTICAL-COMBAT.md`, demo: Kairos vs
-      2 giant frogs on Frog Pond.
-- [ ] **3. Grid display**: `combat` SSE event, SVG grid panel, click to move and
-      attack, "Roll for me", maps in `display/maps/` (+ README), Playwright
-      screenshots, phone width.
+- [x] **Review pass**: 10 findings fixed (sight at map edges, 5-10-5 parity,
+      check_input double delivery, flat damage, OA preview distance, Dodge).
+- [x] **2. CLI + GM loop**: `combat.py` (start, status, options, choose, move,
+      preview, attack, dash/disengage/dodge/stand, death-save, undo-move,
+      end-turn, condition, adjust, log, reachable, end), `ai.py`, sheet reader
+      and write-back, tracker and sidebar sync, 5 maps + README,
+      `scripts/tactics.md`, `/gm combat grid`, `docs/TACTICAL-COMBAT.md`, demo.
+      `cast` (save spells, Magic Missile) moves to milestone 4 with templates.
+- [ ] **3. Grid display**: `/combat` endpoint + `combat` SSE event (sync.py
+      already POSTs the snapshot), SVG grid panel, click to move and attack,
+      dice requests with "Roll for me", Playwright screenshots, phone width.
 - [ ] **4. Spells and templates**: cones, spheres, lines, cubes; saves;
       concentration; Kairos's cantrips and level 1 spells first.
 - [ ] **5. Polish**: cover and sight shading, fog of war, condition badges,
@@ -113,3 +125,12 @@ bash display/start-display.sh --lan               # LAN mode (phones, tablets)
 - Kairos's sheet is the source of truth for his kit (Fire Bolt, Mind Sliver,
   Dagger; Magic Missile, Shield, Mage Armor, Silvery Barbs), not the original prompt.
 - Token size is 1 square for now; larger creatures are a later change.
+- Import the CLI as `tactics.cli`, never as a module named `combat`:
+  `scripts/combat.py` (the initiative tracker) shadows it.
+- `display/static/reference/strixhaven_map_table.html` contains DM-only maps
+  and hidden campus places. Only its five player-facing maps were ported. Do
+  not publish that file to a public remote without the user's decision.
+- Monster riders (the giant frog's grapple) are reported as "GM decides the
+  rider", applied with `combat.py condition`. The CLI never applies them.
+- 2 giant frogs vs level 1 Kairos alone is a deadly encounter by 5e math; the
+  demo usually ends with Kairos down. That is the rules, not a bug.
