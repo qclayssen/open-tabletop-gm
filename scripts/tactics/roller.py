@@ -47,6 +47,12 @@ def parse(notation: str) -> tuple:
     return count, sides, mod
 
 
+def average(notation: str) -> float:
+    """Mean result of plain NdS+M notation (or a flat number)."""
+    n, sides, mod = parse(notation)
+    return n * (sides + 1) / 2 + mod
+
+
 @dataclass
 class Roll:
     who: str
@@ -83,7 +89,9 @@ class Roller:
         shown = f"{count}d{sides}{mod:+d}" if count else str(mod)
         if shown.endswith("+0"):
             shown = shown[:-2]
-        if player:
+        if not count:                        # flat damage: nothing to roll
+            rec = Roll(who, label, shown, [], 0, mod, "fixed", advantage)
+        elif player:
             if not self.supplied:
                 raise PendingRoll(who, label, shown, advantage)
             natural = int(self.supplied.pop(0))

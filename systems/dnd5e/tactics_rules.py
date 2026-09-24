@@ -19,6 +19,7 @@ _SCRIPTS = str(pathlib.Path(__file__).resolve().parents[2] / "scripts")
 if _SCRIPTS not in sys.path:
     sys.path.insert(0, _SCRIPTS)
 
+from tactics.roller import average             # noqa: E402
 from tactics.rules import AttackContext, Rules  # noqa: E402
 from tactics.state import Token                   # noqa: E402
 
@@ -140,7 +141,7 @@ class DnD5e(Rules):
             (adv if ctx.distance <= 5 else dis).append(f"{target.name} is prone")
         if target.has("invisible"):
             dis.append(f"{target.name} is invisible")
-        if target.has("dodging") and self.can_act(target):
+        if self._dodging(target):
             dis.append(f"{target.name} is dodging")
         if not ctx.melee:
             if ctx.long_range:
@@ -152,6 +153,10 @@ class DnD5e(Rules):
         if dis and not adv:
             return "disadvantage", dis
         return "normal", adv + dis
+
+    def _dodging(self, token) -> bool:
+        """PHB Dodge: the benefit ends if you are incapacitated or your speed drops to 0."""
+        return token.dodging and self.can_act(token) and self.speed(token) > 0
 
     def hit_chance(self, attacker, target, attack: dict, ctx: AttackContext) -> dict:
         """Exact chance to hit, for previews (BG3-style percentages on every
@@ -208,7 +213,7 @@ class DnD5e(Rules):
         if ability == "dex":
             if token.has("restrained"):
                 mode = "disadvantage"
-            elif token.has("dodging") and self.can_act(token):
+            elif self._dodging(token):
                 mode = "advantage"
         bonus = int(token.saves.get(ability, 0))
         r = roller.roll(f"1d20{bonus:+d}", token.name, f"{ability.upper()} save DC {dc}",
@@ -322,14 +327,7 @@ def _conditional(entries) -> list:
 
 
 def average_damage(attack: dict) -> float:
-    avg = 0.0
-    for p in attack.get("damage", []):
-        m = re.fullmatch(r"(\d*)d(\d+)([+-]\d+)?", p["dice"].replace(" ", ""))
-        if m:
-            avg += int(m.group(1) or 1) * (int(m.group(2)) + 1) / 2 + int(m.group(3) or 0)
-        elif p["dice"].lstrip("+-").isdigit():
-            avg += int(p["dice"])
-    return avg
+    return sum(average(p["dice"]) for p in attack.get("damage", []))
 
 
 def _defenses(value) -> list:

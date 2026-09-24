@@ -217,3 +217,18 @@ def test_grappled_means_speed_zero():
     k = kairos()
     k.add_condition("grappled")
     assert RULES.speed(k) == 0
+
+
+def test_dodge_is_lost_at_speed_zero():
+    # PHB: the Dodge benefit ends if you are incapacitated or your speed drops to 0.
+    k = kairos()
+    k.dodging = True
+    assert RULES.advantage(goblin(), k, MELEE)[0] == "disadvantage"
+    k.add_condition("grappled")
+    assert RULES.advantage(goblin(), k, MELEE)[0] == "normal"
+
+
+def test_flat_damage_is_never_asked_for():
+    r = roller()                                   # nothing supplied, no engine dice
+    rec = r.roll("1", "Octopus", "Tentacles damage", player=True)
+    assert rec.total == 1 and rec.source == "fixed" and rec.dice == []

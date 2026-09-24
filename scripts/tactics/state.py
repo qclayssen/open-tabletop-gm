@@ -49,6 +49,7 @@ class Token:
     stable: bool = False
     dead: bool = False
     reaction_used: bool = False
+    dodging: bool = False        # took the Dodge action; cleared at the start of their next turn
     concentration: str = None
     source: dict = field(default_factory=dict)      # {"kind": "srd", "ref": "giant-frog"} | {"kind": "sheet", ...}
     extra: dict = field(default_factory=dict)       # system-specific data (spell slots, ...)
@@ -82,6 +83,7 @@ class TurnState:
     actor: str = ""
     movement_budget: int = 0     # feet available this turn (speed, doubled by Dash)
     movement_used: int = 0
+    diag_parity: int = 0         # diagonals taken so far, for the "5-10-5" variant
     action_used: bool = False
     bonus_used: bool = False
     disengaged: bool = False
@@ -107,7 +109,12 @@ class Encounter:
 
     # ── derived ──
     def board(self) -> Grid:
-        return Grid.from_dict(self.grid)
+        """The Grid, built once per map dict (not a dataclass field, so never saved)."""
+        cached = self.__dict__.get("_board")
+        if cached is None or cached[0] is not self.grid:
+            cached = (self.grid, Grid.from_dict(self.grid))
+            self.__dict__["_board"] = cached
+        return cached[1]
 
     def token(self, ref: str) -> Token:
         """Find a token by id or (case-insensitive) name."""

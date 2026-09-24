@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from . import rules as rules_mod
 from .grid import MoveOptions, label, parse_square
-from .roller import PendingRoll, Roller, parse as parse_dice
+from .roller import PendingRoll, Roller, average
 from .rules import AttackContext
 from .state import Encounter, TurnState
 
@@ -68,11 +68,7 @@ def player_rolls(enc: Encounter, token, roller: Roller) -> bool:
 
 
 def average_damage(attack: dict) -> float:
-    total = 0.0
-    for p in attack.get("damage", []):
-        n, sides, mod = parse_dice(p["dice"])
-        total += n * (sides + 1) / 2 + mod
-    return total
+    return sum(average(p["dice"]) for p in attack.get("damage", []))
 
 
 def _log(enc: Encounter, kind: str, actor: str, text: str, roller: Roller = None, mark: int = 0) -> None:
@@ -155,7 +151,7 @@ def _start_turn(enc: Encounter, roller: Roller) -> dict:
     R = rules_for(enc)
     t = enc.current
     t.reaction_used = False
-    t.remove_condition("dodging")          # Dodge lasts until the start of your next turn
+    t.dodging = False                      # Dodge lasts until the start of your next turn
     enc.turn = TurnState(actor=t.id, movement_budget=R.speed(t))
     text = f"{t.name}'s turn."
     if t.hp == 0 and not t.dead and not t.stable and not R.can_act(t):
@@ -211,23 +207,11 @@ def reachable(enc: Encounter, token_ref) -> dict:
     R, grid, opts = rules_for(enc), enc.board(), move_options(enc, t)
     mine = enc.current is not None and enc.current.id == t.id
     left = remaining_movement(enc) if mine else R.speed(t)
-    walk = grid.reachable(t.pos, left, opts)
-    dash = {}
-    if mine and not enc.turn.action_used:
-        more = grid.reachable(t.pos, left + R.speed(t), opts)
-        dash = {p: c for p, c in more.items() if p not in walk}
-    return {"walk": {label(p): c for p, c in walk.items()},
-            "dash": {label(p): c for p, c in dash.items()}}
-
-
-def _path_costs(grid, path, opts) -> list:
-    """Cumulative feet at each square of a path."""
-    out, total, par = [0], 0, 0
-    for a, b in zip(path, path[1:]):
-        step = grid._step_cost(a, b, par, opts)
-        total, par = total + step[0], step[1]
-        out.append(total)
-    return out
+    can_dash = mine and not enc.turn.action_used
+    parity = enc.turn.diag_parity if mine else 0
+    every = grid.reachable(t.pos, left + (R.speed(t) if can_dash else 0), opts, parity=parity)
+    return {"walk": {label(p): c for p, c in every.items() if c <= left},
+            "dash": {label(p): c for p, c in every.items() if c > left}}
 
 
 def _provokers(enc: Encounter, mover, path) -> list:
@@ -257,7 +241,8 @@ def _plan(enc: Encounter, t, square):
         raise CombatError(f"{label(dest)} is a {grid.terrain_name(dest)}.")
     if dest != t.pos and (dest in opts.blocked or dest in opts.occupied):
         raise CombatError(f"{label(dest)} is occupied.")
-    found = grid.path(t.pos, dest, opts=opts)
+    parity = enc.turn.diag_parity if enc.current and enc.current.id == t.id else 0
+    found = grid.path(t.pos, dest, opts=opts, parity=parity)
     if found is None:
         raise CombatError(f"No path from {t.square} to {label(dest)}.")
     path, feet = found
@@ -271,9 +256,9 @@ def preview_move(enc: Encounter, token_ref, square) -> dict:
     R = rules_for(enc)
     left = remaining_movement(enc)
     warnings = []
-    for _i, h in _provokers(enc, t, path):
+    for i, h in _provokers(enc, t, path):
         oa = R.opportunity_attack(h)
-        ctx = AttackContext(distance=5, melee=True, opportunity=True)
+        ctx = AttackContext(distance=grid.distance(path[i], h.pos), melee=True, opportunity=True)
         warnings.append({"id": h.id, "name": h.name, "attack": oa["name"],
                          "hit_percent": R.hit_chance(h, t, oa, ctx)["percent"]})
     hazards = [label(p) for p in path[1:] if grid.terrain(p).get("hazard")]
@@ -313,7 +298,8 @@ def move(enc: Encounter, roller: Roller, token_ref, square, reactions: dict = No
                                  f"{t.name} is leaving {h.name}'s reach. Opportunity attack?",
                                  ["yes", "no"])
     mark = len(roller.log)
-    costs = _path_costs(grid, path, opts)
+    parity0 = enc.turn.diag_parity
+    costs, _ = grid.step_costs(path, opts, parity0)
     start, stop_at, lines = t.pos, len(path) - 1, []
     by_step = {}
     for i, h in provoked:
@@ -336,7 +322,9 @@ def move(enc: Encounter, roller: Roller, token_ref, square, reactions: dict = No
     t.x, t.y = path[stop_at]
     used = costs[stop_at]
     enc.turn.movement_used += used
-    enc.turn.moves.append({"from": list(start), "to": list(t.pos), "feet": used})
+    enc.turn.diag_parity = grid.step_costs(path[:stop_at + 1], opts, parity0)[1]
+    enc.turn.moves.append({"from": list(start), "to": list(t.pos), "feet": used,
+                           "parity": parity0})
     if lines:
         enc.turn.undo_locked = True
     text = f"{t.name} moves {label(start)} to {t.square} ({used} ft, {remaining_movement(enc)} ft left)."
@@ -366,6 +354,7 @@ def undo_move(enc: Encounter) -> dict:
         t.add_condition("prone")
     else:
         t.x, t.y = last["from"]
+        enc.turn.diag_parity = last.get("parity", 0)
     enc.turn.movement_used -= last["feet"]
     text = f"{t.name} undoes the last move: back at {t.square}, {remaining_movement(enc)} ft left."
     _log(enc, "undo", t.id, text)
@@ -489,12 +478,12 @@ def _simple_action(enc: Encounter, token_ref, kind: str) -> dict:
     _require_action(enc, t)
     if kind == "dash":
         enc.turn.movement_budget += rules_for(enc).speed(t)
-        text = f"{t.name} dashes ({remaining_movement(enc) + 0} ft left)."
+        text = f"{t.name} dashes ({remaining_movement(enc)} ft left)."
     elif kind == "disengage":
         enc.turn.disengaged = True
         text = f"{t.name} disengages: no opportunity attacks this turn."
     else:
-        t.add_condition("dodging")
+        t.dodging = True
         text = f"{t.name} dodges: attacks against them have disadvantage until their next turn."
     enc.turn.action_used = True
     enc.turn.undo_locked = True

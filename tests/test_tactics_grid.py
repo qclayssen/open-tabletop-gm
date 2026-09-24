@@ -147,3 +147,18 @@ def test_creatures_give_at_most_half_cover():
     g = open_grid()
     c = g.cover((0, 2), (4, 2), creatures={(2, 1), (2, 2), (2, 3)})
     assert c == {"los": True, "cover": 2}
+
+
+def test_a_wall_on_the_top_or_left_edge_still_blocks_sight():
+    # Regression: int() truncated -0.0001 to 0, so the nudged copy of a line
+    # running along the top (or left) map edge never saw it left the map.
+    g = Grid(["..#..",
+              "..#..",
+              "..#.."])
+    assert not g.line_of_sight((0, 0), (4, 0))
+    g = Grid([".....",
+              ".....",
+              "#####",
+              ".....",
+              "....."])
+    assert not g.line_of_sight((0, 0), (0, 4))

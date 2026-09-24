@@ -277,3 +277,25 @@ def test_invalid_state_is_refused_on_save_and_load(tmp_path):
     (tmp_path / "e.json").write_text(json.dumps(data), encoding="utf-8")
     with pytest.raises(ValueError, match="hp 99"):
         state.load(tmp_path / "e.json")
+
+
+def test_variant_diagonal_parity_carries_across_moves():
+    enc = start(encounter([kairos(), frog("frog-1", (7, 7))], diagonals="5-10-5"),
+                ["kairos", "frog-1"])
+    assert engine.move(enc, roller(), "kairos", "B2")["feet"] == 5     # 1st diagonal
+    assert engine.move(enc, roller(), "kairos", "C3")["feet"] == 10    # 2nd diagonal, not 5
+    engine.undo_move(enc)
+    assert engine.move(enc, roller(), "kairos", "C3")["feet"] == 10    # undo restored parity
+    assert engine.reachable(enc, "kairos")["walk"]["D4"] == 5         # 3rd diagonal: 5
+
+
+def test_opportunity_attack_preview_uses_the_real_distance():
+    # A reach-10 creature at 10 ft attacks a prone crawler: disadvantage, not
+    # the advantage a 5 ft attacker would get. Bite +3 vs AC 12: 60% -> 36%.
+    k = kairos(pos=(2, 0))
+    k.add_condition("prone")
+    long = frog("frog-1", (4, 0))
+    long.attacks[0]["reach"] = 10
+    enc = start(encounter([k, long]), ["kairos", "frog-1"])
+    p = engine.preview_move(enc, "kairos", "B1")
+    assert p["opportunity_attacks"][0]["hit_percent"] == 36

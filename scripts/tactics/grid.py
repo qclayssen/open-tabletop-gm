@@ -16,6 +16,7 @@ Diagonals: rule "5" (every square costs 5 ft, the 2014 default) or "5-10-5"
 from __future__ import annotations
 
 import heapq
+import math
 import re
 from dataclasses import dataclass
 
@@ -125,6 +126,16 @@ class Grid:
     def passable(self, p: Pos) -> bool:
         return self.in_bounds(p) and self.terrain(p)["cost"] is not None
 
+    def step_costs(self, path: list, opts: MoveOptions = None, parity: int = 0) -> tuple:
+        """([cumulative feet at each square], final diagonal parity) along a path."""
+        opts = opts or MoveOptions()
+        out, total = [0], 0
+        for a, b in zip(path, path[1:]):
+            feet, parity = self._step_cost(a, b, parity, opts)
+            total += feet
+            out.append(total)
+        return out, parity
+
     def blocks_sight(self, p: Pos) -> bool:
         return self.in_bounds(p) and bool(self.terrain(p)["blocks_sight"])
 
@@ -157,10 +168,11 @@ class Grid:
         factor = 1 + int(difficult) + int(opts.crawling)  # PHB: these stack, 1 extra foot each
         return base * factor, parity
 
-    def _dijkstra(self, start: Pos, budget: int, opts: MoveOptions, goal: Pos = None):
-        best = {(start, 0): 0}
+    def _dijkstra(self, start: Pos, budget: int, opts: MoveOptions, goal: Pos = None,
+                  parity: int = 0):
+        best = {(start, parity): 0}
         prev = {}
-        heap = [(0, start, 0)]
+        heap = [(0, start, parity)]
         while heap:
             cost, pos, par = heapq.heappop(heap)
             if cost > best.get((pos, par), 1 << 30):
@@ -184,10 +196,12 @@ class Grid:
                         heapq.heappush(heap, (nc, nxt, npar))
         return best, prev
 
-    def reachable(self, start: Pos, budget: int, opts: MoveOptions = None) -> dict:
-        """{square: feet} for every square the mover can end on within budget."""
+    def reachable(self, start: Pos, budget: int, opts: MoveOptions = None,
+                  parity: int = 0) -> dict:
+        """{square: feet} for every square the mover can end on within budget.
+        parity: diagonals already taken this turn (only matters for "5-10-5")."""
         opts = opts or MoveOptions()
-        best, _ = self._dijkstra(start, budget, opts)
+        best, _ = self._dijkstra(start, budget, opts, parity=parity)
         out = {}
         for (pos, _par), cost in best.items():
             if pos == start or pos in opts.occupied:
@@ -196,12 +210,13 @@ class Grid:
                 out[pos] = cost
         return out
 
-    def path(self, start: Pos, goal: Pos, budget: int = 1 << 20, opts: MoveOptions = None):
+    def path(self, start: Pos, goal: Pos, budget: int = 1 << 20, opts: MoveOptions = None,
+             parity: int = 0):
         """(list of squares from start to goal inclusive, feet) or None."""
         opts = opts or MoveOptions()
         if goal != start and goal in opts.occupied:
             return None
-        best, prev = self._dijkstra(start, budget, opts, goal=goal)
+        best, prev = self._dijkstra(start, budget, opts, goal=goal, parity=parity)
         ends = [(c, k) for k, c in best.items() if k[0] == goal]
         if not ends:
             return None
@@ -235,8 +250,10 @@ class Grid:
         return True
 
     def _cells_between(self, a, b):
-        lo_x, hi_x = int(min(a[0], b[0])), int(max(a[0], b[0]))
-        lo_y, hi_y = int(min(a[1], b[1])), int(max(a[1], b[1]))
+        # floor, not int(): a line nudged just off the top or left edge must
+        # enumerate row/column -1 so it counts as leaving the map.
+        lo_x, hi_x = math.floor(min(a[0], b[0])), math.floor(max(a[0], b[0]))
+        lo_y, hi_y = math.floor(min(a[1], b[1])), math.floor(max(a[1], b[1]))
         for x in range(lo_x, hi_x + 1):
             for y in range(lo_y, hi_y + 1):
                 if self._segment_hits(a, b, (x, y)):
