@@ -68,3 +68,4 @@ The demo plays a whole fight in a throwaway campaign folder and prints every com
 - Maps: `display/maps/*.json` (see `display/maps/README.md` to add your own)
 - The fight in progress: `<campaign>/combat/encounter.json` (a crash or restart loses nothing)
 - Display: `display/static/tactics.js` and `tactics.css`; endpoints `/combat`, `/combat/state`, `/combat/do` in `display/gm-display-app.py`. `GM_DISPLAY_PORT` runs a display on another port (the engine follows it).
+- Milestone plans, findings and decisions: `docs/milestones/`

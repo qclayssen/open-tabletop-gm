@@ -90,57 +90,33 @@ GM_DISPLAY_PORT=5055 python3 display/gm-display-app.py   # a second display (tes
 
 ## Milestones
 
-- [x] **Setup**: branch `tactical-combat`; reference map page and Kairos fixture;
-      SRD built; `check_input.py` LAN fix (separate commit, upstreamable);
-      structured monster actions in `build_srd.py` with a golden lookup test.
-- [x] **1. Engine core + tests**: state, grid, movement, reach, basic attacks,
-      initiative, HP, death saves, opportunity attacks, undo, previews.
-- [x] **Review pass**: 10 findings fixed (sight at map edges, 5-10-5 parity,
-      check_input double delivery, flat damage, OA preview distance, Dodge).
-- [x] **2. CLI + GM loop**: `combat.py` (start, status, options, choose, move,
-      preview, attack, dash/disengage/dodge/stand, death-save, undo-move,
-      end-turn, condition, adjust, log, reachable, end), `ai.py`, sheet reader
-      and write-back, tracker and sidebar sync, 5 maps + README,
-      `scripts/tactics.md`, `/gm combat grid`, `docs/TACTICAL-COMBAT.md`, demo.
-      `cast` (save spells, Magic Missile) moves to milestone 4 with templates.
-- [x] **3. Grid display**: `/combat`, `/combat/state`, `/combat/do`; `combat`
-      SSE event; `display/static/tactics.{js,css}` (SVG grid, reach and dash
-      shading, path preview with OA warning, action bar, targets with hit %,
-      roll prompt with "Roll for me", animation, damage floaters, turn banner,
-      initiative strip, log, phone layout). Verified in the built-in browser
-      (desktop and 375 px). Open: the grid's own roll prompt is used instead of
-      the phone dice drawer; Help/Hide/Ready are greyed out until milestone 4.
-- [ ] **4. Spells and templates**: cones, spheres, lines, cubes; saves;
-      concentration; Kairos's cantrips and level 1 spells first.
-- [ ] **5. Polish**: cover and sight shading, fog of war, condition badges,
-      keyboard controls, accessibility.
+Details, findings, decisions and open items: `docs/milestones/` (one file per
+milestone; read the one you are working on).
 
-## Decisions on record
+- [x] 1. Engine core, [x] 2. CLI and GM loop, [x] 3. Grid display
+- [ ] 4. Spells and templates (next: `docs/milestones/04-spells-templates.md`)
+- [ ] 5. Polish
+
+At the end of a milestone: update its file (Shipped, Findings, Decisions,
+Open), tick it here, and keep this file under 150 lines.
+
+## Decisions on record (cross-cutting)
 
 - Workflow: one session per milestone ("Read CLAUDE.md and
-  docs/TACTICAL-COMBAT.md, then continue with milestone N"). Branch from
+  docs/milestones/0N-*.md, then continue with milestone N"). Branch from
   `main`, PR to the fork (`gh pr create --repo qclayssen/open-tabletop-gm`),
-  merge when CI (Actions, enabled) is green. `origin` = fork (HTTPS; SSH keys
-  do not work here), `upstream` = Bobby-Gray. Push with
+  merge when CI (Actions) is green. `origin` = fork (HTTPS; SSH keys do not
+  work here), `upstream` = Bobby-Gray. Push with
   `git -c credential.helper='!gh auth git-credential' push`.
-- Roll mode follows the campaign's `roll_mode`; every roll logs its source.
-- On `combat.py end`: write HP, temp HP, spent slots, hit dice and death saves to
-  the installed `characters/Kairos.md` (backup `Kairos.md.bak` first, print a
-  short diff); keep lasting conditions, drop combat-only ones; append a 3 to 5
-  line summary to `session-log.md`.
-- Upstream data quirk: 5e-bits `success_type` sometimes contradicts its own text;
-  such actions are flagged `success_conflict`, never resolved automatically.
-- Kairos's sheet is the source of truth for his kit (Fire Bolt, Mind Sliver,
-  Dagger; Magic Missile, Shield, Mage Armor, Silvery Barbs), not the original prompt.
-- Token size is 1 square for now; larger creatures are a later change.
-- Another display (claude-dnd-skill) may be running on port 5001 on this
-  machine. Test with GM_DISPLAY_PORT and TACTICS_NO_DISPLAY=1; never stop it.
+- Roll mode follows the campaign's `roll_mode`; every roll logs its source;
+  "Roll for me" rolls only what the player has not supplied.
+- Nothing is guessed: unparseable SRD data keeps its raw text and a flag;
+  monster riders are "GM decides the rider" until milestone 4 says otherwise.
 - Import the CLI as `tactics.cli`, never as a module named `combat`:
   `scripts/combat.py` (the initiative tracker) shadows it.
-- `display/static/reference/strixhaven_map_table.html` is a player-facing copy:
-  DM-only maps and undiscovered places were removed before publishing. Never
-  add content from the user's own copy or any DM folder.
-- Monster riders (the giant frog's grapple) are reported as "GM decides the
-  rider", applied with `combat.py condition`. The CLI never applies them.
-- 2 giant frogs vs level 1 Kairos alone is a deadly encounter by 5e math; the
-  demo usually ends with Kairos down. That is the rules, not a bug.
+- Another display (claude-dnd-skill) may hold port 5001 on this machine. Test
+  with GM_DISPLAY_PORT and TACTICS_NO_DISPLAY=1; never stop it; remove test
+  runtime files from `display/` afterwards.
+- `display/static/reference/strixhaven_map_table.html` is a player-facing copy
+  (DM-only maps and undiscovered places removed). Never add content from the
+  user's own copy or any DM folder.
