@@ -10,7 +10,7 @@ Primary path — HTTP drain endpoint (display running):
   the persisted .input_queue file atomically. Follows send.py's token/scheme
   pattern for auth and TLS.
 
-Fallback path — file read (display not running or unreachable):
+Fallback path — file read (only when the display cannot be reached at all):
   Reads player_input.json (the file the app persists that same queue to)
   directly and writes [] to clear it. Useful after a display crash or when
   running without the companion.
@@ -27,6 +27,7 @@ import os
 import pathlib
 import ssl
 import sys
+import urllib.error
 import urllib.request
 
 _DIR         = pathlib.Path(__file__).parent
@@ -98,8 +99,16 @@ def main() -> None:
             entries = json.loads(resp.read())
         _print_entries(entries)
         return
-    except Exception:
-        pass
+    except urllib.error.HTTPError as e:
+        # The display answered: it still owns the queue. Reading the file now
+        # would deliver the same actions again on the next successful drain.
+        print(f"check_input: display refused the drain ({e.code})", file=sys.stderr)
+        return
+    except urllib.error.URLError:
+        pass                    # could not connect: the display is not running
+    except Exception as e:      # read timeout, bad JSON: the app may already have drained
+        print(f"check_input: drain failed ({e.__class__.__name__})", file=sys.stderr)
+        return
 
     # Fallback: read queue file directly (display not running or unreachable)
     try:

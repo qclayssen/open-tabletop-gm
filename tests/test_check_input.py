@@ -113,5 +113,40 @@ class CheckInputTest(unittest.TestCase):
         self.assertEqual(json.loads(self.mod.QUEUE_FILE.read_text(encoding="utf-8")), [])
 
 
+class NoDoubleDelivery(unittest.TestCase):
+    """If the display answers with an error it still owns the queue, so the
+    file must not be read (the app would deliver the same actions again)."""
+
+    def test_http_error_does_not_fall_back_to_the_file(self):
+        mod = _load_check_input()
+        tmp = Path(tempfile.mkdtemp())
+        mod.NARRATION_TARGET, mod.ROLL_PREFS = tmp / "n", tmp / "r"
+        mod.TOKEN_FILE, mod.QUEUE_FILE = tmp / ".token", tmp / "player_input.json"
+        queued = json.dumps([{"character": "Kairos", "text": "moves to D5"}])
+        mod.QUEUE_FILE.write_text(queued, encoding="utf-8")
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                self.send_response(500)
+                self.end_headers()
+
+            def log_message(self, *a):
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            mod.DRAIN_URL = f"http://127.0.0.1:{server.server_address[1]}/player-input/drain"
+            out, err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                mod.main()
+        finally:
+            server.shutdown()
+            server.server_close()
+        self.assertEqual(out.getvalue(), "")
+        self.assertIn("500", err.getvalue())
+        self.assertEqual(mod.QUEUE_FILE.read_text(encoding="utf-8"), queued)
+
+
 if __name__ == "__main__":
     unittest.main()
