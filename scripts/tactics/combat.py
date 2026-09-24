@@ -21,6 +21,7 @@ Actions (the current creature)
     adjust <token> hp=N temp_hp=N ac=N           GM correction
     log [n]                        last n combat log lines
     reachable <token>              squares reachable walking and with Dash (for the display)
+    targets <token>                every attack and target with hit chance (for the display)
 
 Dice. Under roll_mode "players" a player's roll is asked for, never invented:
 the command stops (exit code 2, nothing changed) and says what to roll.

@@ -20,6 +20,7 @@ Actions (the current creature)
     adjust <token> hp=N temp_hp=N ac=N           GM correction
     log [n]                        last n combat log lines
     reachable <token>              squares reachable walking and with Dash (for the display)
+    targets <token>                every attack and target with hit chance (for the display)
 
 Dice. Under roll_mode "players" a player's roll is asked for, never invented:
 the command stops (exit code 2, nothing changed) and says what to roll.
@@ -50,7 +51,7 @@ from .state import Encounter
 _SCRIPTS = pathlib.Path(__file__).resolve().parents[1]
 
 _DISPLAY_CAMPAIGN = _SCRIPTS.parent / "display" / ".campaign"
-READ_ONLY = ("status", "options", "preview", "reachable", "log")
+READ_ONLY = ("status", "options", "preview", "reachable", "targets", "log")
 
 
 class Stop(Exception):
@@ -274,6 +275,11 @@ def run(args) -> int:
         elif cmd == "reachable":
             data = engine.reachable(enc, args.token)
             text = f"{len(data['walk'])} squares walking, {len(data['dash'])} more with Dash."
+        elif cmd == "targets":
+            data = {"targets": engine.attack_options(enc, args.token)}
+            legal = [t for t in data["targets"] if t["legal"]]
+            text = "; ".join(f"{t['attack']} -> {t['target_name']} {t['hit_percent']}%"
+                             for t in legal) or "No target in range."
         elif cmd == "log":
             text = "\n".join(e["text"] for e in enc.log[-args.n:]) or "(empty log)"
         elif cmd == "choose":
@@ -381,7 +387,7 @@ def parser() -> argparse.ArgumentParser:
     s.add_argument("token")
     s.add_argument("target")
     s.add_argument("attack", nargs="*")
-    for name in ("dash", "disengage", "dodge", "stand", "death-save", "reachable"):
+    for name in ("dash", "disengage", "dodge", "stand", "death-save", "reachable", "targets"):
         s = sub.add_parser(name, parents=c)
         s.add_argument("token")
     sub.add_parser("undo-move", parents=c)

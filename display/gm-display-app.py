@@ -2491,6 +2491,126 @@ def drain_player_input():
     return jsonify(drained), 200
 
 
+# ─── Tactical grid combat ────────────────────────────────────────────────────
+#
+# The engine (scripts/tactics/) owns every rule. This app only relays:
+#   POST /combat        the engine's snapshot after each command -> SSE {"combat": ...}
+#   GET  /combat/state  the current snapshot, for a page opened mid-fight
+#   POST /combat/do     a player's click, run through the same CLI the GM uses;
+#                       the result is queued so the GM sees it and narrates it
+
+TACTICS_CLI = os.path.join(SCRIPTS_DIR, "tactics", "combat.py")
+_combat_lock = threading.Lock()
+_combat_run_lock = threading.Lock()      # one engine command at a time
+_current_combat: Optional[dict] = None
+
+# Commands a browser may run. Mutating ones act only for player-controlled tokens.
+_COMBAT_READ = {"reachable", "preview", "targets", "status"}
+_COMBAT_WRITE = {"move", "attack", "dash", "disengage", "dodge", "stand",
+                 "undo-move", "end-turn", "death-save"}
+
+
+@app.route("/combat", methods=["POST"])
+def combat_push():
+    if not _token_ok():
+        return "Forbidden", 403
+    global _current_combat
+    snap = (request.get_json(silent=True) or {}).get("combat")
+    if not isinstance(snap, dict):
+        return "Bad Request", 400
+    with _combat_lock:
+        _current_combat = snap if snap.get("status") == "active" else None
+    _broadcast({"combat": snap})
+    return "", 204
+
+
+def _run_tactics(args: list, extra: list = ()) -> tuple:
+    """Run the tactics CLI for the active campaign. (exit code, stdout)."""
+    camp = _active_campaign_name()
+    if not camp:
+        return 1, "No active campaign."
+    cmd = [sys.executable, TACTICS_CLI, "-c", camp, *args, *extra]
+    with _combat_run_lock:
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
+                                  timeout=30)
+        except (OSError, subprocess.TimeoutExpired) as e:
+            return 1, f"Combat engine failed: {e.__class__.__name__}"
+    return proc.returncode, (proc.stdout or proc.stderr or "").strip()
+
+
+@app.route("/combat/state", methods=["GET"])
+def combat_state():
+    with _combat_lock:
+        snap = _current_combat
+    if snap is None:
+        code, out = _run_tactics(["status"], ["--json"])
+        if code == 0:
+            try:
+                snap = json.loads(out).get("combat")
+            except ValueError:
+                snap = None
+    return jsonify(snap if snap and snap.get("status") == "active" else {})
+
+
+@app.route("/combat/do", methods=["POST"])
+def combat_do():
+    """Body: {"cmd": "move", "args": ["kairos", "D5"], "rolls": [14], "for_me": false,
+    "react": "yes"|"no"|null}. Returns {"ok", "text", "result"} or {"pending": text}
+    (a roll or decision is needed; nothing changed) or {"error": text}."""
+    if not _token_ok():
+        return "Forbidden", 403
+    data = request.get_json(force=True, silent=True) or {}
+    cmd = str(data.get("cmd", ""))
+    args = [str(a)[:40] for a in (data.get("args") or [])][:6]
+    if cmd not in _COMBAT_READ | _COMBAT_WRITE:
+        return jsonify({"error": f"unknown command {cmd!r}"}), 400
+    actor = None
+    if cmd in _COMBAT_WRITE:
+        if not _rate_ok(request.remote_addr):
+            return "Too Many Requests", 429
+        if _device_ok(request.headers.get("X-DND-Device", ""), request.remote_addr) != "approved":
+            return jsonify({"error": "This device is not approved yet."}), 403
+        with _combat_lock:
+            snap = _current_combat or {}
+        tokens = {t.get("id"): t for t in snap.get("tokens", [])}
+        actor = tokens.get(snap.get("current"))
+        if not actor or actor.get("controller") != "player":
+            return jsonify({"error": "It is not a player's turn."}), 409
+        if cmd not in ("undo-move", "end-turn") and (not args or args[0] != actor["id"]):
+            return jsonify({"error": f"Only {actor['name']} can act now."}), 409
+    extra = ["--json"]
+    rolls = [int(r) for r in (data.get("rolls") or [])[:6]
+             if isinstance(r, int) or (isinstance(r, str) and r.isdigit())]
+    for r in rolls:
+        extra += ["--roll", str(r)]
+    if rolls:
+        extra.append("--player-roll")
+    if data.get("for_me"):
+        extra.append("--for-me")
+    if data.get("react") in ("yes", "no"):
+        extra += ["--react", data["react"]]
+    code, out = _run_tactics([cmd, *args], extra)
+    if code == 2:
+        return jsonify({"pending": out})
+    if code != 0:
+        return jsonify({"error": out or "The engine refused."})
+    try:
+        res = json.loads(out)
+    except ValueError:
+        return jsonify({"error": "Unreadable engine output."})
+    if cmd in _COMBAT_WRITE:
+        # Queue the outcome as the player's action so the GM narrates it.
+        text = re.sub(r"[`\\$]", "", res.get("text", ""))[:500]
+        with _input_lock:
+            _input_queue.append({"character": actor["name"], "text": f"(grid) {text}",
+                                 "hold": False, "timestamp": _time.time()})
+            current = list(_input_queue)
+        _persist_input_queue()
+        _broadcast({"pending_input": current})
+    return jsonify({"ok": True, "text": res.get("text", ""), "result": res.get("result", {})})
+
+
 @app.route("/stream")
 def stream():
     q: queue.Queue = queue.Queue(maxsize=256)
@@ -2518,6 +2638,11 @@ def stream():
     with _stats_lock:
         if _current_stats:
             q.put_nowait({"stats": dict(_current_stats)})
+
+    # Replay an active grid combat so the grid appears on (re)connect.
+    with _combat_lock:
+        if _current_combat:
+            q.put_nowait({"combat": dict(_current_combat)})
 
     # Send current input queue so the pending indicator is accurate on reconnect.
     with _input_lock:
