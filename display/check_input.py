@@ -11,8 +11,9 @@ Primary path — HTTP drain endpoint (display running):
   pattern for auth and TLS.
 
 Fallback path — file read (display not running or unreachable):
-  Reads .input_queue directly and writes [] to clear it. Useful after a
-  display crash or when running without the companion.
+  Reads player_input.json (the file the app persists that same queue to)
+  directly and writes [] to clear it. Useful after a display crash or when
+  running without the companion.
 
 Output format (when non-empty):
   [CharName]: action text
@@ -33,7 +34,9 @@ _SCHEME_FILE = _DIR / ".scheme"
 _SCHEME      = _SCHEME_FILE.read_text(encoding="utf-8").strip() if _SCHEME_FILE.exists() else "http"
 DRAIN_URL    = f"{_SCHEME}://localhost:5001/player-input/drain"
 TOKEN_FILE   = _DIR / ".token"
-QUEUE_FILE   = _DIR / ".input_queue"
+# The queue the drain endpoint serves; gm-display-app.py persists it here.
+# (.input_queue is a different, plain-text file owned by wrapper.py.)
+QUEUE_FILE   = _DIR / "player_input.json"
 NARRATION_TARGET = _DIR / "narration_target"   # set by the display's Narration slider
 ROLL_PREFS       = _DIR / "roll_prefs.json"    # per-character roll overrides (Settings → Rolls)
 
@@ -83,25 +86,30 @@ def _print_entries(entries: list) -> None:
             print(f"[{char}]: {text}")
 
 
-# Primary: HTTP drain — clears memory and file atomically
-try:
-    token = TOKEN_FILE.read_text(encoding="utf-8").strip() if TOKEN_FILE.exists() else ""
-    req = urllib.request.Request(
-        DRAIN_URL, method="POST",
-        headers={"X-Token": token, "Content-Length": "0"},
-    )
-    with urllib.request.urlopen(req, context=_SSL_CTX, timeout=2) as resp:
-        entries = json.loads(resp.read())
-    _print_entries(entries)
-    sys.exit(0)
-except Exception:
-    pass
-
-# Fallback: read queue file directly (display not running or unreachable)
-try:
-    if QUEUE_FILE.exists():
-        entries = json.loads(QUEUE_FILE.read_text(encoding="utf-8"))
-        QUEUE_FILE.write_text("[]", encoding="utf-8")   # clear without deleting — app sees empty queue on next persist
+def main() -> None:
+    # Primary: HTTP drain — clears memory and file atomically
+    try:
+        token = TOKEN_FILE.read_text(encoding="utf-8").strip() if TOKEN_FILE.exists() else ""
+        req = urllib.request.Request(
+            DRAIN_URL, method="POST",
+            headers={"X-DND-Token": token, "Content-Length": "0"},
+        )
+        with urllib.request.urlopen(req, context=_SSL_CTX, timeout=2) as resp:
+            entries = json.loads(resp.read())
         _print_entries(entries)
-except Exception:
-    pass
+        return
+    except Exception:
+        pass
+
+    # Fallback: read queue file directly (display not running or unreachable)
+    try:
+        if QUEUE_FILE.exists():
+            entries = json.loads(QUEUE_FILE.read_text(encoding="utf-8"))
+            QUEUE_FILE.write_text("[]", encoding="utf-8")   # clear without deleting: the app loads an empty queue on restart
+            _print_entries(entries)
+    except Exception:
+        pass
+
+
+if __name__ == "__main__":
+    main()
