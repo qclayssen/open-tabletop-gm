@@ -244,3 +244,20 @@ def test_local_calls_send_reasoning_none_and_advisors_send_nothing(tmp_path, mon
     Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path), bridge=FakeBridge()).handle("hm")
     assert {r for role, r in c.reasoning if role == "dm"} == {"none"}
     assert {r for role, r in c.reasoning if role.startswith("advisor")} == {None}
+
+
+def test_a_local_client_takes_the_dm_and_picks_and_advisors_stay_on_the_router(tmp_path):
+    local = FakeClient(lambda m, msgs, role: "1" if role == "enemy-pick"
+                       else 'Hm.\n{"escalate": "cult lore?"}')
+    router = FakeClient(lambda m, msgs, role: "Note.")
+    b = FakeBridge([fight(current="frog-1", controller="gm"), fight()], {
+        "end-turn": lambda a: Result(0, "ok"),
+        "options": lambda a: Result(0, "Frog\n1. Bite Kairos"),
+        "choose": lambda a: Result(0, "1. Bite: miss.")})
+    s = Session("demo", router, MODELS, camp_dir=camp_dir(tmp_path, "council: off"), bridge=b,
+                local_client=local)
+    s.handle("/c end-turn")                      # uses the frog turn snapshot first
+    s.handle("I look.")
+    assert set(local.roles()) == {"dm", "enemy-pick"}
+    assert router.roles() and all(r.startswith("advisor") for r in router.roles())
+    assert s.summarizer.client is local

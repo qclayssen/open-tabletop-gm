@@ -5,6 +5,10 @@ Model names are OmniRoute combo names by default, so which real model answers
 
 Environment:
     GM_LLM_URL        endpoint root, default http://localhost:20128 (OmniRoute)
+    GM_LOCAL_URL      optional: send the local tier (dm, picks, summaries) straight
+                      here, e.g. http://localhost:11434 (Ollama), and only the
+                      advisors through GM_LLM_URL. OmniRoute's request queue
+                      times local calls out at 15 s (requestQueue.maxWaitMs).
     GM_LLM_KEY        bearer token; falls back to OMNIROUTE_API_KEY
     GM_DM_MODEL       every turn, enemy picks, summaries   (default dm-local)
     GM_ADVISOR_MODEL  escalations and triggers             (default dm-advisor)

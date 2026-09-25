@@ -16,6 +16,7 @@ Environment: see llm.py (GM_LLM_URL, GM_DM_MODEL, GM_ADVISOR_MODEL, ...).
 from __future__ import annotations
 
 import argparse
+import os
 import pathlib
 import re
 import shlex
@@ -45,15 +46,18 @@ def _join(*parts) -> str:
 
 class Session:
     def __init__(self, campaign, client, models, *, camp_dir, bridge=None,
-                 show_notes: bool = False, budget: int = 12000, reasoning="env"):
+                 show_notes: bool = False, budget: int = 12000, reasoning="env",
+                 local_client=None):
         self.campaign = campaign
-        self.client, self.models = client, models
+        self.client, self.models = client, models      # client: advisors
+        self.local = local_client or client            # local: dm, picks, summaries
         self.camp_dir = pathlib.Path(camp_dir)
         self.bridge = bridge or Bridge(campaign, self.camp_dir)
         self.memory = Memory(self.camp_dir)
         # reasoning_effort for local-tier calls; advisors (cloud) get none sent.
         self.reasoning = llm.reasoning_from_env() if reasoning == "env" else reasoning
-        self.summarizer = Summarizer(client, models.fast, self.memory, reasoning=self.reasoning)
+        self.summarizer = Summarizer(self.local, models.fast, self.memory,
+                                     reasoning=self.reasoning)
         self.show_notes, self.budget = show_notes, budget
         self.pending = None            # {"args": [...], "rolls": [...]} while the player rolls
         self.saved_notes = ""          # from /advise, used by the next DM call
@@ -73,7 +77,7 @@ class Session:
                                       self.memory.summary(), self.memory.unsummarized(),
                                       engine=engine, notes=notes, player=player, task=task,
                                       budget=self.budget)
-        return reply.parse(self.client.chat(self.models.dm, msgs, max_tokens=500, role="dm",
+        return reply.parse(self.local.chat(self.models.dm, msgs, max_tokens=500, role="dm",
                                             reasoning=self.reasoning).text)
 
     def _consult(self, names, question, model=None) -> str:
@@ -139,7 +143,7 @@ class Session:
     def _pick(self, menu: str) -> int:
         valid = _OPTION.findall(menu)
         try:
-            text = reply.strip_think(self.client.chat(
+            text = reply.strip_think(self.local.chat(
                 self.models.fast, [{"role": "system", "content": ENEMY_PICK},
                                  {"role": "user", "content": menu}],
                 max_tokens=16, temperature=0.2, role="enemy-pick",
@@ -262,11 +266,15 @@ def main(argv=None) -> int:
     if not camp_dir.exists():
         print(f"No campaign {args.campaign!r} at {camp_dir}")
         return 1
-    client = llm.Client(usage_log=camp_dir / "localdm" / "usage.jsonl")
+    usage = camp_dir / "localdm" / "usage.jsonl"
+    client = llm.Client(usage_log=usage)
+    local_url = os.environ.get("GM_LOCAL_URL", "").strip()
+    local = llm.Client(base_url=local_url, api_key="", usage_log=usage) if local_url else client
     models = llm.Models.from_env()
-    s = Session(args.campaign, client, models, camp_dir=camp_dir,
+    s = Session(args.campaign, client, models, camp_dir=camp_dir, local_client=local,
                 show_notes=args.show_gm_notes, budget=args.budget)
-    print(f"Local DM: {models.dm}, advisor {models.advisor}, via {client.base_url}. /quit to stop.")
+    print(f"Local DM: {models.dm} via {local.base_url}; advisor {models.advisor} via "
+          f"{client.base_url}. /quit to stop.")
     while True:
         try:
             line = input("> ")
