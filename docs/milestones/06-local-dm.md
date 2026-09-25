@@ -140,8 +140,6 @@ Hardware note: the reference machine has 16 GB of unified memory.
   engine's own "Re-run the same command with" wording.
 - A boss at 2x the top PC max HP made a giant frog (18) a boss against a level
   1 wizard (8); 3x fixes that.
-- `tests/test_encoding_utf8.py` fails on `main` for `scripts/world.py`; fixed on
-  `spells-templates` (e856ed0), not by this branch.
 
 ## Open
 
