@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import subprocess
 import sys
@@ -14,9 +15,12 @@ import preflight  # noqa: E402
 
 
 def run(root, *args):
-    env = {"GM_CAMPAIGN_ROOT": str(root), "PATH": "/usr/bin:/bin", "PYTHONUTF8": "1"}
+    # Keep the real environment: Windows Python 3.10 cannot start its runtime
+    # without SYSTEMROOT and friends, and a real start-display.sh run has them.
+    env = dict(os.environ, GM_CAMPAIGN_ROOT=str(root), PYTHONUTF8="1")
     p = subprocess.run([sys.executable, str(PREFLIGHT), *args], capture_output=True,
                        text=True, encoding="utf-8", env=env)
+    assert "Traceback" not in p.stderr, p.stderr
     return p.returncode, p.stdout
 
 
