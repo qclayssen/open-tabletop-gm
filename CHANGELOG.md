@@ -24,6 +24,9 @@ This project is the LLM-agnostic, system-flexible fork of [claude-dnd-skill](htt
 - The scene name read "The Temple" at an inn: "lantern" was a temple word, and scene keywords matched inside other words ("ale" in "pale", "inn" in "dinner"). Keywords now match whole words, with or without a common ending.
 - The "Waiting on" dice badge sat over the middle of the story. It now sits under the scene name, and the story moves down while it shows. With the settings column collapsed, the story no longer runs under Phone Mode and the Settings toggle.
 - Phone Mode's Roll tab kept the previous roll's result under a new dice request.
+- `send.py --dice-request ... --wait` said "all rolls received" when the request was cancelled. It now says it was cancelled, prints the rolls made before, and exits 2.
+- `start-display.sh --campaign NAME` said "No campaign" for a campaign still in the old `~/open-tabletop-gm/campaigns/` folder, which `/gm load` finds.
+- The display writes `.input_queue` to a temp file and renames it, so `check_input.py` can never take a half-written action.
 - `docs/FIRST-SESSION.md`: how to start the display and a new campaign, and how to check the display without a GM.
 - A spell cast from the grid (Cast menu, or `cast`) used a 5 ft range when the SRD data was built by an older `build_srd.py`: Fire Bolt could not reach anything. Stale spell records, including ones cached in an encounter, are now looked up again.
 

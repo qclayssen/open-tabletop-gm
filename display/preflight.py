@@ -21,7 +21,7 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from paths import campaign_dir, campaigns_dir, campaign_system  # noqa: E402
+from paths import campaigns_dir, campaign_system, find_campaign  # noqa: E402
 
 SRD = ROOT / "systems" / "dnd5e" / "data" / "dnd5e_srd.json"
 REBUILD = "python3 systems/dnd5e/build_srd.py --no-fvtt"
@@ -56,7 +56,7 @@ def fight_in_progress(camp: pathlib.Path) -> str:
 def main(argv: list) -> int:
     name = argv[0].strip() if argv else ""
     if name:
-        camp = campaign_dir(name)
+        camp = find_campaign(name)   # also the legacy folder, like /gm load
         if not camp.is_dir():
             have = sorted(p.name for p in campaigns_dir().glob("*") if p.is_dir())
             print(f"No campaign {name!r} in {campaigns_dir()}. "

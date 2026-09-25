@@ -70,6 +70,15 @@ class DiceRequestResults(unittest.TestCase):
         self.assertEqual(self.status(rids[0]).get("results", []), [])
         self.assertEqual(len(self.status(rids[-1])["results"]), 1)
 
+    def test_a_cancelled_request_says_so_and_keeps_its_rolls(self):
+        rid = self.request(["Kairos", "Mira"])
+        first = self.roll(rid, "Kairos")
+        self.client.delete(f"/dice-request/{rid}")
+        st = self.status(rid)
+        self.assertTrue(st["complete"])
+        self.assertTrue(st.get("cancelled"))
+        self.assertEqual(st["results"], [first])
+
 
 if __name__ == "__main__":
     unittest.main()

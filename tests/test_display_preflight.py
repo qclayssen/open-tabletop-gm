@@ -51,3 +51,16 @@ def test_srd_data_missing_stale_or_current(tmp_path):
     srd.write_text(json.dumps({"spells": [{"name": "Fire Bolt", "mechanics": {
         "casting": "action", "range": 120, "attack": "ranged"}}]}), encoding="utf-8")
     assert preflight.srd_problem(srd) == ""
+
+
+def test_a_campaign_only_in_the_legacy_folder_is_found(tmp_path):
+    # /gm load finds it there (and copies it over), so preflight must too.
+    home = tmp_path / "home"
+    (home / "open-tabletop-gm" / "campaigns" / "old").mkdir(parents=True)
+    root = tmp_path / "root"
+    env = dict(os.environ, GM_CAMPAIGN_ROOT=str(root), PYTHONUTF8="1",
+               HOME=str(home), USERPROFILE=str(home))
+    p = subprocess.run([sys.executable, str(PREFLIGHT), "old"], capture_output=True,
+                       text=True, encoding="utf-8", env=env)
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert "No campaign" not in p.stdout

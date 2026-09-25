@@ -373,9 +373,13 @@ def _check_auto_trigger() -> None:
         content    = "\n".join(lines)
         _staged.clear()
 
+    # Write aside, then rename: check_input.py may move .input_queue away at any
+    # moment, and a half-written file it moved would lose the action.
     try:
-        with open(QUEUE_FILE, "w", encoding="utf-8") as f:
+        tmp = QUEUE_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
             f.write(content)
+        os.replace(tmp, QUEUE_FILE)
     except Exception:
         char_names = []
 
@@ -1079,7 +1083,19 @@ _dice_pending: dict = {}
 _dice_pending_lock = threading.Lock()
 # Finished requests keep their roll texts so --wait can print them to the GM.
 _dice_done: dict = {}           # request_id → [roll text, ...], oldest first
+_dice_cancelled: set = set()    # ids in _dice_done that the GM cancelled
 _DICE_DONE_KEEP = 50
+
+
+def _dice_finish(req_id: str, results: list, cancelled: bool = False) -> None:
+    """Keep a finished request's rolls for --wait. Caller holds _dice_pending_lock."""
+    _dice_done[req_id] = results
+    if cancelled:
+        _dice_cancelled.add(req_id)
+    while len(_dice_done) > _DICE_DONE_KEEP:
+        oldest = next(iter(_dice_done))
+        del _dice_done[oldest]
+        _dice_cancelled.discard(oldest)
 
 
 def _dice_pending_snapshot() -> list:
@@ -2099,9 +2115,7 @@ def player_dice():
                     pending_changed = True
                     if not entry["chars"]:
                         _dice_pending.pop(req_id, None)
-                        _dice_done[req_id] = entry["results"]
-                        while len(_dice_done) > _DICE_DONE_KEEP:
-                            _dice_done.pop(next(iter(_dice_done)))
+                        _dice_finish(req_id, entry["results"])
     if pending_changed:
         _broadcast({"dice_pending": _dice_pending_snapshot()})
 
@@ -2200,8 +2214,8 @@ def dice_request():
 def dice_request_status(request_id):
     """Poll a dice request's completion state.
 
-    Returns 200 with {complete, pending, results, label, started_at}. results
-    holds each roll's text so far. A finished request keeps its results (the
+    Returns 200 with {complete, pending, results, label, started_at}, plus
+    cancelled once the GM cancelled it. results holds each roll's text so far. A finished request keeps its results (the
     last _DICE_DONE_KEEP of them); one that never existed reports complete=True
     with empty pending and results.
     """
@@ -2211,6 +2225,7 @@ def dice_request_status(request_id):
         entry = _dice_pending.get(request_id)
         if entry is None or not entry["chars"]:
             return jsonify({"complete": True, "pending": [],
+                            "cancelled": request_id in _dice_cancelled,
                             "results": list(_dice_done.get(request_id, []))}), 200
         return jsonify({
             "complete": False,
@@ -2227,7 +2242,9 @@ def dice_request_cancel(request_id):
     if not _token_ok():
         return "Forbidden", 403
     with _dice_pending_lock:
-        _dice_pending.pop(request_id, None)
+        entry = _dice_pending.pop(request_id, None)
+        if entry is not None:
+            _dice_finish(request_id, entry.get("results", []), cancelled=True)
     _broadcast({"dice_pending": _dice_pending_snapshot(), "dice_request_cancelled": request_id})
     return "", 204
 

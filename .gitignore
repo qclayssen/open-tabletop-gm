@@ -9,6 +9,7 @@ display/cert.pem
 display/key.pem
 display/.campaign
 display/.input_queue
+display/.input_queue.tmp
 display/.input_trigger
 display/.autorun-session
 display/.approved_devices.json

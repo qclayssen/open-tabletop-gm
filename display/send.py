@@ -427,7 +427,7 @@ def main() -> None:
         help='Optional DC; displayed informationally on the phone.')
     parser.add_argument("--wait", action="store_true",
         help='With --dice-request: block until every prescribed character has rolled, then print each roll on stdout '
-             '(polls /dice-request/<id>). Exits non-zero on timeout.')
+             '(polls /dice-request/<id>). Exits 2 on timeout or when the request is cancelled.')
     parser.add_argument("--wait-timeout", type=int, default=120, metavar="SECONDS",
         help='Timeout for --wait (default 120s). On timeout, prints still-pending '
              'characters to stderr and exits 2.')
@@ -553,9 +553,15 @@ def main() -> None:
                         time.sleep(1.0)
                         continue
                     if st.get("complete"):
-                        print(f"send.py: all rolls received.", file=sys.stderr)
+                        if st.get("cancelled"):
+                            print("send.py: request cancelled; rolls made before it:",
+                                  file=sys.stderr)
+                        else:
+                            print(f"send.py: all rolls received.", file=sys.stderr)
                         for line in st.get("results") or []:
                             print(line, flush=True)
+                        if st.get("cancelled"):
+                            sys.exit(2)
                         break
                     remaining = st.get("pending") or []
                     if remaining != last_pending:
