@@ -6,7 +6,7 @@ Theatre-of-the-mind combat (`/gm combat start`) is unchanged and still available
 
 ## For the player
 
-**Starting a fight.** The GM starts one with `/gm combat grid <map>`, or you can ask for it. With the display running, the battle map appears on its own above the story, and hides again when the fight ends. Without the display, everything is plain text in the chat.
+**Starting a fight.** Start the display with your campaign (`bash display/start-display.sh --campaign <name>`, then `/gm load <name>`). The GM starts a fight with `/gm combat grid <map>`, or you can ask for it. With the display running, the battle map appears on its own above the story, and hides again when the fight ends. Without the display, everything is plain text in the chat.
 
 **On the map (your turn).** Click Kairos to see where you can go: shaded squares are walking range (darker is closer), dashed squares need the Dash action. Point at a square to see the path and the feet it costs, with a red path and a warning if you would provoke an opportunity attack. Click to move (on a phone: tap to preview, tap again to go). Then pick an action: **Attack** highlights every valid target with your chance to hit; click one. **Cast** opens your spell list: an area spell shows its template as you point at squares, with every creature caught and its chance to fail the save (allies in the area are flagged before you commit); a single-target spell shows your chance to hit or theirs to fail. **Dash**, **Disengage**, **Dodge**, **Undo move** and **End turn** are one click. When the engine needs your dice, type what you rolled, press **Roll the dice** to roll in the browser, or **Roll for me**. Everything you do is also sent to the GM, who narrates it. **Hide map** folds the panel away when you want to read.
 
@@ -78,13 +78,17 @@ Exit codes: `0` done; `1` not allowed (the message says why); `2` waiting for a 
 
 ## Try it
 
+New to grid combat? Play the tutorial: [TUTORIAL.md](TUTORIAL.md).
+
 ```bash
 python3 systems/dnd5e/build_srd.py --no-fvtt     # once: SRD monsters
+python3 scripts/tactics/play.py tutorial         # play it yourself: ten lessons, then win the fight
+python3 scripts/tactics/play.py mephit           # more fights: kobolds, frogs, mephit, or --map ...
 python3 scripts/tactics/demo.py                  # Kairos vs two giant frogs, scripted
 python3 scripts/tactics/demo.py --scenario mephit   # vs an ice mephit: Frost Breath, Fire Bolt, reactions
 ```
 
-The demo plays a whole fight in a throwaway campaign folder and prints every command and its output.
+`play.py` is a playable game in the terminal: you type your turns, and the game runs the enemies the way the GM would (`options`, then `choose 1`). The demo plays a whole fight on its own and prints every command and its output. Both use a throwaway campaign folder.
 
 ## Where things live
 

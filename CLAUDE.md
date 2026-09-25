@@ -53,6 +53,7 @@ scripts/tactics/             grid combat engine (stdlib only)
                              sheets (.bak) and session-log.md on end
   cli.py                     the GM commands; run via scripts/tactics/combat.py
   demo.py                    scripted Kairos vs 2 giant frogs, in a temp campaign
+  play.py                    playable terminal game + tutorial (docs/TUTORIAL.md)
 scripts/tactics.md           the GM loop (loaded only at /gm combat grid)
 systems/dnd5e/
   tactics_rules.py           5e rules: advantage, crits, cover, resistances, 0 HP,
@@ -89,9 +90,11 @@ python3 -m pytest tests/test_tactics_*.py -q      # engine only
 python3 systems/dnd5e/build_srd.py --no-fvtt      # build SRD data (network)
 python3 systems/dnd5e/lookup.py monster "giant frog" --json
 python3 scripts/tactics/demo.py --seed 4          # scripted fight, prints every command
+python3 scripts/tactics/play.py tutorial          # play a fight yourself (lessons)
 python3 scripts/tactics/combat.py --help          # GM command reference
 bash display/start-display.sh                     # display on http://localhost:5001
 bash display/start-display.sh --lan               # LAN mode (phones, tablets)
+bash display/start-display.sh --campaign NAME     # display for a campaign + preflight checks
 GM_DISPLAY_PORT=5055 python3 display/gm-display-app.py   # a second display (tests)
 ```
 
