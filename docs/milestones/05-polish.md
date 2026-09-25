@@ -46,4 +46,6 @@ Checked with the display off (`TACTICS_NO_DISPLAY=1`): every fact the map shows 
 - Darkness, light and darkvision (fog today is walls only).
 - Route roll requests to a bound phone (from milestone 3).
 - An upcast picker and readying a move from the browser (from milestone 4).
+- **Fog leak (found in review of #9/#10).** `sight.redact_log` only redacts names, so a log line can still read "An unseen creature moves to D5" and reveal the square or action. Drop the whole entry instead, with a leak test. (Issues are disabled on this repo, so it is tracked here.)
+- `visible_from` caches in `_visible_cache` and never invalidates. Safe only while `enc.grid` is immutable (`state.board()` rebuilds it per grid dict); key it on a grid version if doors or walls ever change in place.
 - Browser pass against a live display once a test campaign can be used on the dev port.

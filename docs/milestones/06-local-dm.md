@@ -197,6 +197,8 @@ does not step to a square with line of sight). Pack Tactics is not applied by
 - Ollama serves a 4096-token context by default; set `OLLAMA_CONTEXT_LENGTH=8192`
   before the summary and recent turns grow past it.
 
+- **TLS check (found in review of #8).** `display_bridge.py` (~line 95) sets `verify_mode = CERT_NONE` for any https `--display-url`, meant for the local self-signed cert. Restrict it to localhost, 127.0.0.1 and ::1. No token is sent, so only narration text is exposed.
+- `context.state_digest` sends "Pinned Facts" and "Live State Flags" from `state.md` to the model. Keep DM-only secrets out of those sections; only the model sees them, the display mirrors narration only.
 - Live combat through the REPL needs the SRD data (`systems/dnd5e/build_srd.py`).
 - No display output yet (`display/send.py`); the REPL prints to the terminal.
 - Qwen3 advice sometimes names non-5e checks ("Decipher Script"); a cloud

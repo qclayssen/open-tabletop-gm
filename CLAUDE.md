@@ -109,7 +109,7 @@ milestone; read the one you are working on).
 
 - [x] 1. Engine core, [x] 2. CLI and GM loop, [x] 3. Grid display
 - [x] 4. Spells and templates, [x] 5. Polish
-- [ ] 6. Local DM with a smarter advisor (`docs/milestones/06-local-dm.md`)
+- [x] 6. Local DM with a smarter advisor (`docs/milestones/06-local-dm.md`)
 
 At the end of a milestone: update its file (Shipped, Findings, Decisions,
 Open), tick it here, and keep this file under 150 lines.
