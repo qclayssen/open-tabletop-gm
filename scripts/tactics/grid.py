@@ -300,7 +300,18 @@ class Grid:
 
         Returns {"los": bool, "cover": 0|2|5}.
         """
-        creatures = set(creatures) - {attacker, target}
+        creatures = frozenset(creatures) - {attacker, target}
+        # Terrain never changes for a Grid, so the answer depends only on these.
+        # Enemy menus ask the same question thousands of times.
+        key = (tuple(attacker), tuple(target), creatures)
+        cache = self.__dict__.setdefault("_cover_cache", {})
+        if key not in cache:
+            if len(cache) > 50000:
+                cache.clear()
+            cache[key] = self._cover(attacker, target, creatures)
+        return dict(cache[key])
+
+    def _cover(self, attacker: Pos, target: Pos, creatures: frozenset) -> dict:
         best = None
         any_los = False
         for c in self._corners(attacker):
