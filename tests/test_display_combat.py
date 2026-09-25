@@ -120,6 +120,21 @@ class CombatEndpoints(unittest.TestCase):
                          [["spells", "kairos"], ["preview-area", "kairos", "burning hands", "D7"]])
         self.assertEqual(self.mod._input_queue, [])
 
+    def test_sight_runs_only_from_a_creature_on_the_players_map(self):
+        # The snapshot leaves out hidden and unseen enemies: no sight from them,
+        # and the engine is always asked for the players' view.
+        self.push(SNAP)
+        self.reply = (0, json.dumps({"text": "From Kairos (B7): ...", "result": {"cover": {}}}))
+        code, res = self.do({"cmd": "sight", "args": ["frog-1"]})
+        self.assertEqual((code, res["ok"]), (200, True))
+        self.assertEqual(self.calls, [(["sight", "frog-1", "--players"], ["--json"])])
+        code, res = self.do({"cmd": "sight", "args": ["goblin-9"]})
+        self.assertEqual(code, 403)
+        code, res = self.do({"cmd": "sight", "args": ["kairos", "--players"]})
+        self.assertEqual(code, 400)                    # flags from the browser are refused
+        self.assertEqual(len(self.calls), 1)
+        self.assertEqual(self.mod._input_queue, [])
+
     def test_new_actions_are_whitelisted_for_the_current_player(self):
         self.push(SNAP)
         bodies = [["cast", "kairos", "Magic Missile", "frog-1", "frog-1", "frog-1"],
