@@ -21,6 +21,7 @@ import pathlib
 import re
 import shlex
 import sys
+import threading
 
 if __package__ in (None, ""):                        # run as a script
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
@@ -37,6 +38,9 @@ NARRATE = ("Narrate what the Engine section says just happened, in 1 to 4 senten
            "Then the JSON line with null for both fields.")
 MAX_ENEMY_TURNS = 20
 ESCALATE_EVERY = 3            # player turns between two DM-asked escalations
+SHADOW = ("Review the latest exchange against the campaign notes. In at most 3 short "
+          "bullets: a contradiction to fix, a thread or NPC worth bringing back, or what to "
+          "set up next. If nothing needs attention, answer only: nothing.")
 _OPTION = re.compile(r"^(\d+)\. ", re.M)
 
 
@@ -47,7 +51,7 @@ def _join(*parts) -> str:
 class Session:
     def __init__(self, campaign, client, models, *, camp_dir, bridge=None,
                  show_notes: bool = False, budget: int = 12000, reasoning="env",
-                 local_client=None):
+                 local_client=None, shadow: bool = False):
         self.campaign = campaign
         self.client, self.models = client, models      # client: advisors
         self.local = local_client or client            # local: dm, picks, summaries
@@ -63,6 +67,12 @@ class Session:
         self.saved_notes = ""          # from /advise, used by the next DM call
         self.turn = 0
         self.last_escalation = -ESCALATE_EVERY
+        # Shadow advisor: after each player turn, one advisor reviews it in the
+        # background; its notes guide the next turn. Local DMs almost never
+        # escalate on their own (milestone 6 benchmark).
+        self.shadow = shadow
+        self._shadow_thread = None
+        self._notes_lock = threading.Lock()
 
     # ── model calls ────────────────────────────────────────────────────────
 
@@ -96,8 +106,35 @@ class Session:
         return self._consult(triggers.advisors_for(new), triggers.question(new))
 
     def _take_notes(self) -> str:
-        notes, self.saved_notes = self.saved_notes, ""
+        with self._notes_lock:
+            notes, self.saved_notes = self.saved_notes, ""
         return notes
+
+    def _save_notes(self, notes: str) -> None:
+        with self._notes_lock:
+            self.saved_notes = _join(self.saved_notes, notes)
+
+    def _start_shadow(self, line: str, narration: str):
+        if not self.shadow or not narration or (self._shadow_thread
+                                                and self._shadow_thread.is_alive()):
+            return None
+        names = advisor.pick(f"{line} {narration}")[:1]
+        question = f"{SHADOW}\n\nPlayer: {line}\nGM: {narration}"
+
+        def run():
+            notes = self._consult(names, question)
+            body = notes.split(":", 1)[-1].strip().lower()
+            if body and not body.startswith(("nothing", "(unavailable")):
+                self._save_notes(notes)
+
+        self._shadow_thread = threading.Thread(target=run, daemon=True)
+        self._shadow_thread.start()
+        return self._shadow_thread
+
+    def join_background(self, timeout=None) -> None:
+        if self._shadow_thread:
+            self._shadow_thread.join(timeout)
+        self.summarizer.join(timeout)
 
     def _notes_out(self, notes) -> list:
         return [f"[GM notes]\n{notes}"] if self.show_notes and notes else []
@@ -220,7 +257,7 @@ class Session:
             return [str(e)]
         notes = self._consult(names, question,
                               self.models.council if council else self.models.advisor)
-        self.saved_notes = _join(self.saved_notes, notes)
+        self._save_notes(notes)
         if self.show_notes:
             return [f"[GM notes]\n{notes}"]
         return ["(The advisors have been consulted. Their notes will guide the next scene.)"]
@@ -248,6 +285,8 @@ class Session:
         args = parse_player_command(r.command) if r.command else None
         if args and self._players_turn():
             out += self._engine(args)
+        if not notes:                        # nobody advised this turn: review it
+            self._start_shadow(line, r.narration)
         self.summarizer.maybe_start()
         return out
 
@@ -261,6 +300,8 @@ def main(argv=None) -> int:
     ap.add_argument("--show-gm-notes", action="store_true",
                     help="print advisor notes (spoilers: for a GM, not a player)")
     ap.add_argument("--budget", type=int, default=12000, help="prompt size budget, in characters")
+    ap.add_argument("--no-shadow", action="store_true",
+                    help="no background advisor review after each turn (also GM_SHADOW=0)")
     args = ap.parse_args(argv)
     camp_dir = find_campaign(args.campaign)
     if not camp_dir.exists():
@@ -271,8 +312,9 @@ def main(argv=None) -> int:
     local_url = os.environ.get("GM_LOCAL_URL", "").strip()
     local = llm.Client(base_url=local_url, api_key="", usage_log=usage) if local_url else client
     models = llm.Models.from_env()
+    shadow = not args.no_shadow and os.environ.get("GM_SHADOW", "1") != "0"
     s = Session(args.campaign, client, models, camp_dir=camp_dir, local_client=local,
-                show_notes=args.show_gm_notes, budget=args.budget)
+                show_notes=args.show_gm_notes, budget=args.budget, shadow=shadow)
     print(f"Local DM: {models.dm} via {local.base_url}; advisor {models.advisor} via "
           f"{client.base_url}. /quit to stop.")
     while True:
@@ -289,7 +331,7 @@ def main(argv=None) -> int:
             out = [f"(model unavailable: {e})"]
         for chunk in out:
             print(chunk + "\n")
-    s.summarizer.join(timeout=60)
+    s.join_background(timeout=60)
     return 0
 
 

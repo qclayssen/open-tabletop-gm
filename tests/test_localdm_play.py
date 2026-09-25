@@ -261,3 +261,48 @@ def test_a_local_client_takes_the_dm_and_picks_and_advisors_stay_on_the_router(t
     assert set(local.roles()) == {"dm", "enemy-pick"}
     assert router.roles() and all(r.startswith("advisor") for r in router.roles())
     assert s.summarizer.client is local
+
+
+def test_the_shadow_advisor_reviews_in_the_background_for_the_next_turn(tmp_path):
+    c = FakeClient(lambda m, msgs, role: "Bring back Mira." if role.startswith("advisor")
+                   else "Reeds." + NULLS)
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path), bridge=FakeBridge(), shadow=True)
+    assert s.handle("I look.") == ["Reeds."]
+    s.join_background(5)
+    assert len([r for r in c.roles() if r.startswith("advisor")]) == 1
+    assert "Bring back Mira." in s.saved_notes
+    s.handle("I wait.")
+    dm_calls = [call for call in c.calls if call[1] == "dm"]
+    assert "Bring back Mira." in user_text(dm_calls[-1]) and s.saved_notes == ""
+
+
+def test_a_nothing_review_is_dropped(tmp_path):
+    c = FakeClient(lambda m, msgs, role: "Nothing." if role.startswith("advisor") else "Ok." + NULLS)
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path), bridge=FakeBridge(), shadow=True)
+    s.handle("I look.")
+    s.join_background(5)
+    assert s.saved_notes == ""
+
+
+def test_no_shadow_when_the_turn_was_already_advised_or_one_is_running(tmp_path):
+    import threading as th
+    gate = th.Event()
+
+    def responder(model, msgs, role):
+        if role.startswith("advisor"):
+            gate.wait(5)
+            return "Note."
+        return "Ok." + NULLS
+
+    c = FakeClient(responder)
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path), bridge=FakeBridge(), shadow=True)
+    s.handle("I look.")
+    s.handle("I wait.")                  # the first review is still running
+    gate.set()
+    s.join_background(5)
+    assert len([r for r in c.roles() if r.startswith("advisor")]) == 1
+    c.calls.clear()
+    s.handle("/advise historian who built the stone?")
+    s.handle("I study it.")              # advised this turn (saved notes): no review
+    s.join_background(5)
+    assert [r for r in c.roles() if r.startswith("advisor")] == ["advisor:historian"]
