@@ -59,6 +59,37 @@ ignores `/no_think` and otherwise returns empty turns), `low`/`medium`/`high` to
 let it think, `off` to send nothing.
 `GM_SHADOW=0` (or `--no-shadow`) turns off the background advisor review.
 
+## Display
+
+`play.py` mirrors each turn's narration to the Flask display (`/chunk`, the
+same payloads as `display/send.py`) and registers the campaign at startup. The
+terminal output does not change. The endpoint, first match wins:
+`--display-url URL`, `GM_DISPLAY_URL`, `http://localhost:${GM_DISPLAY_PORT}`,
+a port number in `display/.port` (nothing in this repo writes it; a local
+launcher may), then `http://localhost:5001`.
+
+Port 5001 may belong to another display app: leave it running and point the
+local DM at its own display.
+
+```bash
+GM_DISPLAY_PORT=5051 python3 display/gm-display-app.py &     # this repo's display
+
+GM_DISPLAY_URL=http://localhost:5051 \
+GM_LOCAL_URL=http://localhost:11434 \
+GM_DM_MODEL=qwen3.5:9b \
+GM_FAST_MODEL=qwen3.5:4b \
+GM_ADVISOR_MODEL=dm-advisor \
+GM_COUNCIL_MODEL=dm-council \
+GM_LLM_URL=http://localhost:20128 \
+python3 scripts/localdm/play.py -c strixhaven-kairos
+```
+
+Only DM narration is sent, one event per turn with paragraphs kept. GM notes
+(even with `--show-gm-notes`), engine lines, roll prompts, `/usage` and model
+errors stay in the terminal. A display that is down or refuses the request
+prints one warning and play goes on; the campaign is registered on the first
+send that gets through. `--no-display` sends nothing.
+
 ## Ollama settings for 16 GB
 
 ```bash
