@@ -575,7 +575,7 @@ SCENES: dict[str, dict] = {
     "temple": {
         "keywords": [
             "temple", "shrine", "altar", "holy", "sacred", "chapel",
-            "prayer", "cleric", "incense", "lantern", "pew", "nave",
+            "prayer", "cleric", "incense", "pew", "nave",
             "pale flame",
         ],
         "colors": ["#0e0c18", "#1a1428"],
@@ -794,6 +794,14 @@ _current_scene_name: str = "tavern"   # default — we start in the inn
 _scene_buffer: list[str] = []
 _BUFFER_WINDOW = 20   # analyse last N cleaned chunks together
 
+# A keyword counts as a whole word, with or without a common ending: "ales",
+# "innkeepers" and "burning" match; "pale", "dinner" and "barely" do not.
+_SCENE_PATTERNS: dict[str, re.Pattern] = {
+    name: re.compile(r"\b(?:" + "|".join(re.escape(kw) for kw in scene["keywords"])
+                     + r")(?:s|es|ed|ing)?\b")
+    for name, scene in SCENES.items()
+}
+
 
 def _detect_scene(text: str) -> Optional[dict]:
     global _current_scene_name, _scene_buffer
@@ -806,8 +814,7 @@ def _detect_scene(text: str) -> Optional[dict]:
 
     scores: dict[str, int] = {}
     for scene_name in SCENE_PRIORITY:
-        scene = SCENES[scene_name]
-        score = sum(window.count(kw) for kw in scene["keywords"])
+        score = len(_SCENE_PATTERNS[scene_name].findall(window))
         if score > 0:
             scores[scene_name] = score
 

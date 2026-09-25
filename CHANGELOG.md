@@ -21,6 +21,9 @@ This project is the LLM-agnostic, system-flexible fork of [claude-dnd-skill](htt
 - `/gm new` left the previous campaign's story and party on the display. It now points the display at the new campaign and clears it. The display also no longer erases narration that arrives just after a clear.
 - A second display started for a test or demo (`GM_DISPLAY_PORT=... python3 display/gm-display-app.py`) took over `display/.port`, so the live session's scripts talked to the test display. Only `start-display.sh` writes it now.
 - `tests/test_milestone_counter.py` wrote its test player (Aldric) into the real `display/stats.json`.
+- The scene name read "The Temple" at an inn: "lantern" was a temple word, and scene keywords matched inside other words ("ale" in "pale", "inn" in "dinner"). Keywords now match whole words, with or without a common ending.
+- The "Waiting on" dice badge sat over the middle of the story. It now sits under the scene name, and the story moves down while it shows. With the settings column collapsed, the story no longer runs under Phone Mode and the Settings toggle.
+- Phone Mode's Roll tab kept the previous roll's result under a new dice request.
 - `docs/FIRST-SESSION.md`: how to start the display and a new campaign, and how to check the display without a GM.
 - A spell cast from the grid (Cast menu, or `cast`) used a 5 ft range when the SRD data was built by an older `build_srd.py`: Fire Bolt could not reach anything. Stale spell records, including ones cached in an encounter, are now looked up again.
 
