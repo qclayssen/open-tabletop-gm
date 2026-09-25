@@ -453,7 +453,7 @@
     } else if (ui.mode === 'aim') {
       const pv = ui.hover && ui.preview[ui.hover];
       const shape = sp.area ? `${sp.area.size} ft ${sp.area.shape}` : 'area';
-      if (!pv) s += `<br><strong>${esc(sp.name)}</strong> (${shape}): point at a square to aim, then click. On a phone, tap twice.`;
+      if (!pv) s += `<br><strong>${esc(sp.name)}</strong> (${esc(shape)}): point at a square to aim, then click. On a phone, tap twice.`;
       else {
         s += `<br>${esc(pv.text || pv.reason || '')}` + (pv.legal && ui.armed === ui.hover ? ' <em>Tap again to cast.</em>' : '');
         const allies = (pv.affected || []).filter(a => a.ally);
@@ -573,7 +573,7 @@
 
   async function toggleCast(t) {
     if (SPELL_MODES.includes(ui.mode)) { clearMode(); render(); return; }
-    clearMode(); ui.mode = 'cast'; render();
+    clearMode(); ui.mode = 'cast'; ui.spells = null; render();
     await loadSpells(t);
     if (ui.mode !== 'cast') return;
     render();
@@ -655,7 +655,7 @@
   async function toggleReady(t) {
     if (ui.mode === 'ready') { clearMode(); render(); return; }
     clearMode(); ui.mode = 'ready'; ui.readyStep = 'what'; render();
-    const [res] = await Promise.all([call('targets', [t.id]), ui.spells ? null : loadSpells(t)]);
+    const [res] = await Promise.all([call('targets', [t.id]), loadSpells(t)]);
     if (ui.mode !== 'ready') return;
     ui.targets = (res && res.result && res.result.targets) || [];
     render();
@@ -674,7 +674,8 @@
     for (const sp of spells)
       button(sp.name, () => readyPick({ kind: 'cast', what: sp.name, label: sp.name, area: sp.targeting === 'area',
                                          none: ['self', 'none'].includes(sp.targeting) }),
-        { parent: b, cls: 'tx-spell', meta: describe(sp) });
+        { parent: b, cls: 'tx-spell', disabled: !sp.ok, meta: sp.ok ? describe(sp) : sp.reason,
+          title: sp.ok ? describe(sp) : sp.reason });
   }
 
   function readyPick(w) {

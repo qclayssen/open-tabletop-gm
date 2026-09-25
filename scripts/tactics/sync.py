@@ -105,8 +105,10 @@ def snapshot(enc, meta: dict = None) -> dict:
                         "concentration": t.concentration, "effects": effect_names(t),
                         "reactions": t.reactions,
                         "readied": (t.extra.get("readied") or {}).get("label") or None,
-                        "hidden": t.has("hidden"), "slots": slots(t)}
-                       for t in enc.tokens.values()],
+                        "hidden": t.has("hidden"),
+                        "slots": slots(t) if t.side == "pc" else {}}
+                       # A hidden enemy is not drawn: players must not see where it is.
+                       for t in enc.tokens.values() if not (t.side == "enemy" and t.has("hidden"))],
             "log": enc.log[-8:]}
 
 

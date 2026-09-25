@@ -2584,6 +2584,14 @@ def combat_do():
         if a.startswith("-") and a.split("=", 1)[0] not in allowed:
             return jsonify({"error": f"flag {a.split('=', 1)[0]!r} is not allowed here"}), 400
     actor = None
+    if cmd in ("spells", "preview-area"):
+        # A monster's spell list and what an area would reveal are the GM's.
+        with _combat_lock:
+            snap = _current_combat or {}
+        tokens = {t.get("id"): t for t in snap.get("tokens", [])}
+        who = tokens.get(args[0]) if args else None
+        if not who or who.get("controller") != "player":
+            return jsonify({"error": "Only a player's own spells can be listed."}), 403
     if cmd in _COMBAT_WRITE:
         if not _rate_ok(request.remote_addr):
             return "Too Many Requests", 429
@@ -2612,6 +2620,8 @@ def combat_do():
         if answer in ("yes", "no"):
             extra += ["--react", answer]
     code, out = _run_tactics([cmd, *args], extra)
+    if code == 2 and out.startswith("usage:"):     # argparse also exits with 2 on bad input
+        return jsonify({"error": out.splitlines()[-1]})
     if code == 2:
         return jsonify({"pending": out})
     if code != 0:
@@ -2620,7 +2630,7 @@ def combat_do():
         res = json.loads(out)
     except ValueError:
         return jsonify({"error": "Unreadable engine output."})
-    if cmd in _COMBAT_WRITE:
+    if cmd in _COMBAT_WRITE and cmd != "reactions":   # a setting, not an action to narrate
         # Queue the outcome as the player's action so the GM narrates it.
         text = re.sub(r"[`\\$]", "", res.get("text", ""))[:500]
         with _input_lock:

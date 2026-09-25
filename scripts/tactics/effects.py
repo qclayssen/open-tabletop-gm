@@ -30,6 +30,8 @@ from .roller import Roller
 # Conditions that outlast the effect that caused them: a creature knocked prone
 # by Hideous Laughter is still prone when the laughter ends.
 PERSISTS = {"prone"}
+# What an effect can carry besides conditions.
+PAYLOAD = ("ac", "save_penalty", "advantage_next", "advantage_vs", "grapple")
 
 
 def add(token, effect: dict) -> list:
@@ -44,8 +46,13 @@ def add(token, effect: dict) -> list:
         if c in PERSISTS:
             token.add_condition(c)
     tracked = [c for c in kept if c not in PERSISTS]
+    if not tracked and not any(effect.get(k) for k in PAYLOAD):
+        return blocked                     # only a lasting condition (prone): nothing to track
+    # A condition counts as granted unless the creature had it with no effect
+    # behind it (then it came from elsewhere and must outlast this effect).
+    held = {c for e in token.effects for c in e.get("conditions", [])}
     effect = dict(effect, conditions=tracked,
-                  granted=[c for c in tracked if not token.has(c)])
+                  granted=[c for c in tracked if not token.has(c) or c in held])
     effect.setdefault("armed", False)
     token.effects.append(effect)
     for c in tracked:

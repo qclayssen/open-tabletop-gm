@@ -492,3 +492,32 @@ def test_mass_heals_and_temporary_hp_spells_do_not_crash_or_heal_wrongly():
     # 3d8+3 = 10 + 3 for each of Kairos and Mira; the frog in the area is not healed.
     spells.cast(enc, roller(supplied=[10, 10]), "kairos", "mass cure wounds", ["B1"])
     assert (k.hp, ally.hp, f.hp) == (8, 8, 5)
+
+
+def test_a_condition_shared_by_two_effects_ends_with_the_last_one():
+    f = frog("frog-1", (3, 0))
+    a = {"name": "web", "source": "kairos", "conditions": ["restrained"]}
+    b = {"name": "grapple", "source": "frog-2", "conditions": ["grappled", "restrained"]}
+    fx.add(f, a)
+    fx.add(f, b)
+    fx.remove(f, f.effects[0])
+    assert f.has("restrained")                           # the grapple still holds it
+    fx.remove(f, f.effects[0])
+    assert not f.has("restrained") and not f.has("grappled") and not f.effects
+
+
+def test_a_prone_rider_leaves_no_empty_effect():
+    f = frog("frog-1", (3, 0))
+    fx.add(f, {"name": "trip", "source": "wolf-1", "conditions": ["prone"],
+               "save": {"ability": "str", "dc": 11}, "repeat": "end"})
+    assert f.has("prone") and f.effects == []
+
+
+def test_a_hidden_enemy_is_not_in_the_players_snapshot():
+    from tactics import sync
+    k, g = caster(), monster("goblin", "goblin-1", (3, 0))
+    g.add_condition("hidden")
+    enc = fight(k, g)
+    ids = [t["id"] for t in sync.snapshot(enc)["tokens"]]
+    assert ids == ["kairos"]
+
