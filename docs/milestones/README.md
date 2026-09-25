@@ -7,8 +7,8 @@ One file per milestone. `CLAUDE.md` holds only what every session needs (rules, 
 | 1 | [Engine core](01-engine-core.md) | done | [#1](https://github.com/qclayssen/open-tabletop-gm/pull/1) |
 | 2 | [CLI and GM loop](02-cli-gm-loop.md) | done | [#1](https://github.com/qclayssen/open-tabletop-gm/pull/1) |
 | 3 | [Grid display](03-grid-display.md) | done | [#2](https://github.com/qclayssen/open-tabletop-gm/pull/2) |
-| 4 | [Spells and templates](04-spells-templates.md) | next | |
-| 5 | [Polish](05-polish.md) | planned | |
+| 4 | [Spells and templates](04-spells-templates.md) | done | branch `spells-templates` |
+| 5 | [Polish](05-polish.md) | next | |
 
 ## Template
 

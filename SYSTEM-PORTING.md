@@ -148,7 +148,12 @@ The engine measures geometry and hands it over as an `AttackContext` (`distance`
 |------|--------|---------|
 | Attack | `attack(attacker, target, attack, ctx, roller, player)` | `{hit, crit, natural, total, ac, advantage, reasons, damage, text}`; applies damage on a hit |
 | | `hit_chance(attacker, target, attack, ctx)` | `{percent, chance, advantage, reasons}`, no roll (shown on previews) |
-| Save | `saving_throw(token, ability, dc, roller, player)` | `{success, auto_fail, natural, total, dc, text}` |
+| | `ac(token)` | AC including effects (Shield's +5) |
+| Save | `saving_throw(token, ability, dc, roller, player, cover=0)` | `{success, auto_fail, natural, total, dc, text}`; spends one-shot effects (a save penalty, advantage) |
+| | `save_chance(token, ability, dc, cover=0)` | `{fail, percent_fail, advantage}`, no roll (area previews, enemy options) |
+| Spells | `spell(caster, name, level)` | a spec the engine runs: `mode` attack\|save\|darts\|heal\|effect\|narrate\|reaction, `casting`, `range`, `origin` self\|touch\|point, `area`, `save`, `damage`, `concentration`, `fail_conditions`, `on_fail`; raise `ValueError` with a message to refuse |
+| | `known_spells(caster)`, `damage_multiplier(token, type)` | the caster's spells; 0 / 0.5 / 1 / 2 for previews |
+| Skills | `skill_bonus(token, skill)`, `passive_perception(token)` | Hide (Stealth), Escape (Athletics or Acrobatics) |
 | Damage | `damage(target, parts, crit, ctx)` | applies `[{amount, type}]`; `{total, hp_after, dropped, dead, concentration_dc, text}` |
 | | `heal(token, amount)` | `{healed, text}` |
 | Conditions | `can_act(token)`, `can_react(token)` | bool |
@@ -158,7 +163,9 @@ The engine measures geometry and hands it over as an `AttackContext` (`distance`
 | | `initiative(token, roller)` | the `Roll` |
 | | `opportunity_attack(token)` | the attack spec used as a reaction, or `None` |
 
-Tokens (`tactics.state.Token`) carry the common fields (HP, AC, speed, conditions, attacks, saves, resistances). Put anything system-specific in `token.extra`. Attack specs are plain dicts: `{name, type: melee|ranged|melee_or_ranged, bonus, reach, range: [normal, long], damage: [{dice, type}], flags}`.
+Tokens (`tactics.state.Token`) carry the common fields (HP, AC, speed, conditions, attacks, saves, resistances, concentration, `effects`). Put anything system-specific in `token.extra`.
+
+Effects (`tactics/effects.py`) are small dicts on the affected token: who made it (`source`), when it ends (`ends`: the start or end of the source's next turn; `concentration`: with the source's concentration), the conditions it grants, and numbers your rules read (`ac`, `save_penalty`, `advantage_next`, `advantage_vs`, `grapple`, a repeat `save`). The engine runs their lifecycle; your rules only read them. Areas of effect are geometry (`tactics.grid.area`): a square is inside if its centre is, walls block the area, and shapes are true geometry, whatever the system. Attack specs are plain dicts: `{name, type: melee|ranged|melee_or_ranged, bonus, reach, range: [normal, long], damage: [{dice, type}], flags}`.
 
 `systems/dnd5e/tactics_rules.py` is the reference implementation (2014 rules), and `tests/test_tactics_rules_dnd5e.py` shows how to test one with scripted dice.
 

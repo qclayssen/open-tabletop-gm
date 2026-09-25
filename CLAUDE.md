@@ -33,14 +33,20 @@ scripts/                     dice.py, combat.py (initiative), tracker.py (condit
                              concentration, death saves -> <campaign>/tracker.json), paths.py
 scripts/tactics/             grid combat engine (stdlib only)
   grid.py                    5 ft squares, terrain legend, diagonals "5" | "5-10-5",
-                             Dijkstra movement, DMG corner line of sight and cover
+                             Dijkstra movement, DMG corner line of sight and cover,
+                             areas of effect (centre-of-square rule, walls block)
   state.py                   Encounter/Token/TurnState -> <campaign>/combat/encounter.json
                              (validated, atomic write, .bak kept)
   roller.py                  dice via scripts/dice.py parser; rolls tagged
                              engine | player | verbal; PendingRoll for player rolls
   rules.py                   thin system interface + loader (see SYSTEM-PORTING.md)
+  core.py                    CombatError, DecisionNeeded, rules_for, hostile, decide()
   engine.py                  initiative, turns, move + opportunity attacks, undo,
-                             attack, Dash/Disengage/Dodge, previews (hit %, OA warnings)
+                             attack (+ reactions, riders), Dash/Disengage/Dodge, previews
+  effects.py                 Token.effects lifecycle, concentration, grapples, Shield,
+                             Silvery Barbs
+  spells.py                  cast, preview (area, fail %), castable, monster area actions
+  actions.py                 Help, Hide, Escape, Ready, trigger
   ai.py                      numbered enemy options (deterministic) + choose
   maps.py                    display/maps/*.json (rectangles) -> engine grid
   sync.py                    tracker.json, display /stats + /combat, state.md,
@@ -50,7 +56,8 @@ scripts/tactics/             grid combat engine (stdlib only)
 scripts/tactics.md           the GM loop (loaded only at /gm combat grid)
 systems/dnd5e/
   tactics_rules.py           5e rules: advantage, crits, cover, resistances, 0 HP,
-                             death saves, SRD monster -> Token adapter
+                             death saves, saves and save chance, SRD monster -> Token
+  tactics_spells.py          spell name -> spec for a caster (SRD mechanics + BUILTIN)
   tactics_sheet.py           character sheet -> Token, and write-back after combat
   build_srd.py               SRD build; monsters carry structured `actions`
   lookup.py                  SRD lookup (data/ is generated and gitignored)
@@ -94,8 +101,8 @@ Details, findings, decisions and open items: `docs/milestones/` (one file per
 milestone; read the one you are working on).
 
 - [x] 1. Engine core, [x] 2. CLI and GM loop, [x] 3. Grid display
-- [ ] 4. Spells and templates (next: `docs/milestones/04-spells-templates.md`)
-- [ ] 5. Polish
+- [x] 4. Spells and templates
+- [ ] 5. Polish (next: `docs/milestones/05-polish.md`)
 
 At the end of a milestone: update its file (Shipped, Findings, Decisions,
 Open), tick it here, and keep this file under 150 lines.
@@ -110,8 +117,15 @@ Open), tick it here, and keep this file under 150 lines.
   `git -c credential.helper='!gh auth git-credential' push`.
 - Roll mode follows the campaign's `roll_mode`; every roll logs its source;
   "Roll for me" rolls only what the player has not supplied.
-- Nothing is guessed: unparseable SRD data keeps its raw text and a flag;
-  monster riders are "GM decides the rider" until milestone 4 says otherwise.
+- Nothing is guessed: unparseable SRD data keeps its raw text and a flag.
+  Riders that parse exactly (grapple, save or prone/condition, save for damage)
+  are applied; the rest prints as "GM decides: ...". Spells the engine cannot
+  run are still cast and narrated.
+- A paused command (exit 2) keeps its seed in `combat/pending.json`; the re-run
+  with `--roll` / `--react` replays the same engine dice.
+- The dnd-gm advisor council (Game Designer, Tactical Combat Designer, Grid
+  Strategist, ...) can be consulted as subagents for rulings; their advice is
+  recorded under Decisions in the milestone file.
 - Import the CLI as `tactics.cli`, never as a module named `combat`:
   `scripts/combat.py` (the initiative tracker) shadows it.
 - Another display (claude-dnd-skill) may hold port 5001 on this machine. Test
