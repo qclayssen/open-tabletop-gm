@@ -131,7 +131,8 @@ def test_choose_runs_the_numbered_option():
     enc = start(encounter([kairos(pos=(0, 0)), frog("frog-1", (1, 0))]), ["frog-1", "kairos"])
     res = ai.choose(enc, roller(15, 4), "frog-1", 1)
     assert "Bite -> Kairos" in res["text"] and enc.tokens["kairos"].hp == 3
-    assert "GM decides the rider: the target is grappled (escape DC 11)" in res["text"]
+    assert "Kairos is grappled and restrained (escape DC 11)." in res["text"]
+    assert "GM decides: The frog can't bite another target." in res["text"]
 
 
 # ─── the command line ─────────────────────────────────────────────────────────
@@ -246,3 +247,124 @@ def test_the_terminal_demo_plays_a_whole_fight(camp, capsys):
     out = capsys.readouterr().out
     assert res["ok"] and "$ combat.py start frog-pond" in out and "$ combat.py end" in out
     assert "### Grid combat: Frog Pond" in (camp / "session-log.md").read_text(encoding="utf-8")
+
+
+# ─── milestone 4: spells and reactions on the command line ────────────────────
+
+def _edit(camp, **turn):
+    """Rewrite encounter.json: Kairos's turn by default, tokens moved as asked."""
+    path = camp / "combat" / "encounter.json"
+    enc = json.loads(path.read_text(encoding="utf-8"))
+    for tid, (x, y) in turn.pop("pos", {}).items():
+        enc["tokens"][tid]["x"], enc["tokens"][tid]["y"] = x, y
+    actor = turn.pop("actor", "kairos")
+    enc["turn_index"] = enc["order"].index(actor)
+    enc["turn"] = {"actor": actor, "movement_budget": 30}
+    path.write_text(json.dumps(enc), encoding="utf-8")
+    return path
+
+
+def test_the_kairos_sheet_carries_his_spellcasting():
+    k = sheet_mod.read_sheet(KAIROS_MD, "kairos", (0, 0))
+    assert k.extra["spell_dc"] == 13 and k.extra["spell_attack"] == 5 and k.extra["level"] == 1
+    assert {"Fire Bolt", "Mind Sliver", "Shield", "Silvery Barbs", "Mage Armor",
+            "Magic Missile"} <= set(k.extra["spells"])
+    assert not any("choice" in s.lower() for s in k.extra["spells"])      # notes are not spells
+    assert k.extra["skills"]["stealth"] == 4 and k.extra["passive_perception"] == 11
+
+
+def test_cast_from_the_command_line_with_loose_spell_words(camp, capsys):
+    begin(capsys)
+    _edit(camp, pos={"frog-1": (6, 6)})
+    code, out = run(capsys, "cast", "kairos", "magic", "missile", "frog-1")
+    assert code == 2 and "Kairos rolls 1d4+1" in out
+    code, out = run(capsys, "cast", "kairos", "magic", "missile", "frog-1", "--roll", "3")
+    assert code == 0 and "3 darts hit Giant Frog 1 for 4 force each" in out
+    code, out = run(capsys, "status")
+    assert "Giant Frog 1 G7 6/18" in out
+
+
+def test_spells_and_preview_area_are_read_only(camp, capsys):
+    begin(capsys)
+    _edit(camp, pos={"frog-1": (6, 6)})
+    code, out = run(capsys, "spells", "kairos", "--json")
+    rows = {r["name"]: r for r in json.loads(out)["result"]["spells"]}
+    assert rows["Magic Missile"]["targeting"] == "darts" and not rows["Shield"]["ok"]
+    code, out = run(capsys, "preview-area", "kairos", "mind sliver", "frog-1")
+    assert code == 0 and out.startswith("Mind Sliver: Giant Frog 1 ") and "% to fail" in out
+
+
+def test_a_paused_reaction_replays_the_same_enemy_roll(camp, capsys, monkeypatch):
+    import random as _random
+    begin(capsys)
+    _edit(camp, actor="frog-1", pos={"frog-1": (2, 6)})       # next to Kairos on B7
+    hit = next(s for s in range(500) if 9 <= _random.Random(s).randint(1, 20) <= 16)
+    miss = next(s for s in range(500) if _random.Random(s).randint(1, 20) <= 3)
+    seeds = iter([hit, miss, miss, miss])
+    monkeypatch.setattr(cli.random, "randrange", lambda n: next(seeds))
+    code, out = run(capsys, "attack", "frog-1", "kairos")
+    assert code == 2 and "Silvery Barbs" in out and "Nothing has happened yet" in out
+    assert (camp / "combat" / "pending.json").exists()
+    total = out.split("(")[1].split(")")[0]
+    answers = ["--react", "no"]
+    for _ in range(3):
+        code, out = run(capsys, "attack", "frog-1", "kairos", *answers)
+        if code == 0:
+            break
+        assert "--react no --react yes or --react no" in out      # prior answers repeated
+        answers += ["--react", "no"]
+    assert code == 0 and f"Kairos: {total} vs AC 12, hit" in out   # the same roll, not a reroll
+    assert not (camp / "combat" / "pending.json").exists()
+
+
+def test_reactions_setting_and_status_reminders(camp, capsys):
+    begin(capsys)
+    _edit(camp, pos={"frog-1": (10, 6)})
+    code, out = run(capsys, "reactions", "kairos", "off")
+    assert code == 0 and "spell reactions off" in out
+    code, out = run(capsys, "ready", "kairos", "cast", "fire", "bolt", "--target", "frog-1",
+                    "--trigger", "a frog leaves the water")
+    assert code == 0 and "trigger kairos" in out
+    code, out = run(capsys, "status")
+    assert "concentrating: Fire Bolt (readied)" in out
+    assert "Kairos readied Fire Bolt at frog-1 when a frog leaves the water (trigger kairos)." in out
+
+
+def test_the_mephit_demo_shows_spells_and_a_breath_weapon(camp, capsys):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("tactics_demo_m", ROOT / "scripts" / "tactics" / "demo.py")
+    demo = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(demo)
+    res = demo.play(camp, seed=2, scenario="mephit")
+    out = capsys.readouterr().out
+    assert res["ok"] and "$ combat.py cast kairos \"fire bolt\" mephit-1" in out
+    assert "Frost Breath: 15 ft cone" in out and "preview-area" in out
+
+
+def test_an_up_front_react_does_not_shift_onto_the_next_question(camp, capsys, monkeypatch):
+    import random as _random
+    begin(capsys)
+    _edit(camp, actor="frog-1", pos={"frog-1": (2, 6)})
+    hit = next(s for s in range(500) if 9 <= _random.Random(s).randint(1, 20) <= 16)
+    monkeypatch.setattr(cli.random, "randrange", lambda n: hit)
+    code, out = run(capsys, "attack", "frog-1", "kairos", "--react", "yes")
+    assert code == 2 and "Silvery Barbs" in out
+    code, out = run(capsys, "attack", "frog-1", "kairos", "--react", "yes", "--react", "no",
+                    "--react", "no")
+    assert "casts Silvery Barbs" not in out
+
+
+def test_removing_a_condition_ends_the_effect_behind_it(camp, capsys):
+    begin(capsys)
+    path = _edit(camp, pos={"frog-1": (2, 6)})
+    enc = json.loads(path.read_text(encoding="utf-8"))
+    enc["tokens"]["kairos"]["conditions"] = ["grappled", "restrained"]
+    enc["tokens"]["kairos"]["effects"] = [{"name": "grapple", "source": "frog-1",
+                                           "grapple": {"escape_dc": 11},
+                                           "conditions": ["grappled", "restrained"],
+                                           "granted": ["grappled", "restrained"]}]
+    path.write_text(json.dumps(enc), encoding="utf-8")
+    code, out = run(capsys, "condition", "kairos", "remove", "grappled")
+    assert code == 0 and "ends grapple" in out
+    code, out = run(capsys, "status")
+    assert "grappled" not in out and "restrained" not in out

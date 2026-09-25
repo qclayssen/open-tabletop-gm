@@ -16,17 +16,29 @@ Actions (the current creature)
     dash | disengage | dodge | stand <token>
     death-save <token>
     undo-move                      take back the last move this turn
-    condition <token> add|remove <condition>     GM ruling (e.g. a grapple rider)
+    cast <token> "<spell>" [target|square ...] [--level N]
+                                   e.g. cast kairos "magic missile" frog-1 frog-2 frog-1
+    use <token> "<action>" <square>   a monster's area action (breath weapon)
+    help <token> <ally> <target> | hide <token> | escape <token>
+    ready <token> attack|cast|move [what] [--target X] --trigger "text"
+    trigger <token> [target]       the readied action happens now (a reaction)
+    reactions <token> ask|auto|off Shield / Silvery Barbs: ask the player, always, never
+    condition <token> add|remove <condition>     GM ruling (e.g. a rider the engine left to you)
     adjust <token> hp=N temp_hp=N ac=N           GM correction
     log [n]                        last n combat log lines
     reachable <token>              squares reachable walking and with Dash (for the display)
     targets <token>                every attack and target with hit chance (for the display)
+    spells <token>                 known spells, how they target, and whether they can be cast
+    preview-area <token> "<spell>" <square|target> [--level N]
+                                   who a spell would catch, chance to fail, expected damage
 
 Dice. Under roll_mode "players" a player's roll is asked for, never invented:
 the command stops (exit code 2, nothing changed) and says what to roll.
 Re-run the same command with --roll <natural result> (the die face, or the
 dice total, without modifiers); repeat --roll for several rolls. --for-me lets
-the engine roll this time. --react yes|no answers "take the opportunity attack?".
+the engine roll this time. --react yes|no answers a reaction prompt (an
+opportunity attack, Shield, Silvery Barbs); repeat it when several are asked.
+A paused command replays the same engine dice when re-run (combat/pending.json).
 
 Output is 1 to 4 plain lines for the GM; --json prints the full result.
 """
@@ -43,7 +55,7 @@ import sys
 
 from paths import find_campaign            # scripts/paths.py (on sys.path via tactics/__init__)
 
-from . import ai, engine, maps, state, sync
+from . import actions, ai, effects, engine, maps, spells, state, sync
 from .grid import parse_square
 from .roller import PendingRoll, Roller
 from .state import Encounter
@@ -51,7 +63,12 @@ from .state import Encounter
 _SCRIPTS = pathlib.Path(__file__).resolve().parents[1]
 
 _DISPLAY_CAMPAIGN = _SCRIPTS.parent / "display" / ".campaign"
-READ_ONLY = ("status", "options", "preview", "reachable", "targets", "log")
+READ_ONLY = ("status", "options", "preview", "reachable", "targets", "log", "spells",
+             "preview-area")
+# Flags that do not change what a command means: a re-run with them added is
+# the same command, so it replays the same engine dice (see _pending).
+OLD_FORM = "*"     # decision key for a --react given up front (opportunity attacks)
+_ANSWER_FLAGS = {"--roll": 1, "--react": 1, "--for-me": 0, "--player-roll": 0, "--json": 0}
 
 
 class Stop(Exception):
@@ -90,10 +107,60 @@ def _roll_mode(camp_dir) -> str:
 
 
 def _roller(args) -> Roller:
-    rng = random.Random(args.seed) if args.seed is not None else random.Random()
+    seed = args.seed if args.seed is not None else getattr(args, "_seed", None)
+    rng = random.Random(seed) if seed is not None else random.Random()
     return Roller(rng=rng, supplied=list(args.roll or []),
                   supplied_source="player" if args.player_roll else "verbal",
                   for_me=bool(args.for_me))
+
+
+# ─── paused commands ──────────────────────────────────────────────────────────
+#
+# A command that stops for a player's roll or decision changes nothing. When
+# the GM re-runs it with the answer, the engine must roll the same dice it
+# rolled before the pause (a monster's attack before Kairos decides on
+# Shield), so the seed and the decisions asked so far are kept in
+# combat/pending.json, keyed by the command line without the answer flags.
+
+def _canonical(argv: list) -> list:
+    out, skip = [], 0
+    for a in argv:
+        if skip:
+            skip -= 1
+            continue
+        key = a.split("=", 1)[0]
+        if key in _ANSWER_FLAGS:
+            skip = _ANSWER_FLAGS[key] if "=" not in a else 0
+            continue
+        out.append(a)
+    return out
+
+
+def _pending_path(camp_dir) -> pathlib.Path:
+    return pathlib.Path(camp_dir) / "combat" / "pending.json"
+
+
+def _load_pending(camp_dir, canon: list) -> dict:
+    try:
+        data = json.loads(_pending_path(camp_dir).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if data.get("cmd") == canon else {}
+
+
+def _save_pending(camp_dir, canon: list, seed, decisions: list) -> None:
+    path = _pending_path(camp_dir)
+    if not path.parent.exists():
+        return
+    path.write_text(json.dumps({"cmd": canon, "seed": seed, "decisions": decisions}),
+                    encoding="utf-8")
+
+
+def _clear_pending(camp_dir) -> None:
+    try:
+        _pending_path(camp_dir).unlink()
+    except OSError:
+        pass
 
 
 def _load(camp_dir) -> Encounter:
@@ -104,14 +171,32 @@ def _load(camp_dir) -> Encounter:
 
 
 def _reactions(enc, args) -> dict:
-    if not args.react:
+    """{decision key: bool}. Answers map, in order, onto the decisions this
+    command has asked so far (pending.json). With nothing pending, the first
+    answer covers any player creature's opportunity attack (the old form)."""
+    answers = [a == "yes" for a in (args.react or [])]
+    if not answers:
         return {}
-    return {t.id: args.react == "yes" for t in enc.tokens.values() if t.controller == "player"}
+    keys = getattr(args, "_decisions", []) or [OLD_FORM]
+    out = {}
+    for key, answer in zip(keys, answers):
+        if key == OLD_FORM:                  # an answer given before any question was asked
+            out.update({t.id: answer for t in enc.tokens.values()
+                        if t.controller == "player" and t.id not in out})
+        else:
+            out[key] = answer
+    return out
 
 
 def _next_hint(enc) -> str:
     if enc.status != "active":
         return ""
+    ready = actions.readied_lines(enc)
+    hint = _turn_hint(enc)
+    return "\n".join(ready + [hint]) if hint else "\n".join(ready)
+
+
+def _turn_hint(enc) -> str:
     t = enc.current
     if enc.turn.pending == "death_save":
         return f"Waiting for {t.name}'s death save: death-save {t.id} --roll <d20>."
@@ -199,9 +284,14 @@ def cmd_status(enc) -> str:
     parts = []
     for tid in enc.order:
         x = enc.tokens[tid]
-        cond = f" [{', '.join(x.conditions)}]" if x.conditions else ""
+        tags = list(x.conditions)
+        if x.concentration:
+            tags.append(f"concentrating: {x.concentration}")
+        tags += [e["name"] for e in x.effects if not e.get("conditions") and e.get("name")]
+        cond = f" [{', '.join(tags)}]" if tags else ""
         parts.append(f"{x.name} dead" if x.dead else f"{x.name} {x.square} {x.hp}/{x.max_hp}{cond}")
-    return f"{head}\n" + " | ".join(parts)
+    ready = actions.readied_lines(enc)
+    return f"{head}\n" + " | ".join(parts) + ("\n" + "\n".join(ready) if ready else "")
 
 
 def cmd_options(enc, ref):
@@ -213,10 +303,43 @@ def cmd_options(enc, ref):
         return f"{t.name} has nothing to do (cannot act or no targets): end-turn.", {"options": []}
     lines = [f"{t.name} ({t.square}, {t.hp}/{t.max_hp} HP). Pick one, then: choose {t.id} <n>"]
     lines += [f"{o['n']}. {o['label']}" for o in opts]
+    waiting = ai.recharging(enc, t)
+    if waiting:
+        lines.append(f"({', '.join(waiting)} recharging)")
     special = ai.specials(enc, t)
     if special:
         lines.append(f"(Or narrate a special the engine does not run: {', '.join(special)})")
     return "\n".join(lines), {"options": opts}
+
+
+def _split_name(enc, token, words: list, names: list) -> tuple:
+    """("spell or action name", [targets]) from loose words: the longest prefix
+    that names one of `names`, so both `cast kairos "magic missile" frog-1` and
+    `cast kairos magic missile frog-1` work."""
+    low = [n.lower() for n in names]
+    for i in range(len(words), 0, -1):
+        cand = " ".join(words[:i]).lower()
+        if cand in low or any(n.startswith(cand) for n in low) and i == 1:
+            return " ".join(words[:i]), words[i:]
+    return (words[0], words[1:]) if words else ("", [])
+
+
+def _cast(enc, roller, args) -> tuple:
+    c = engine._resolve(enc, args.token)
+    name, targets = _split_name(enc, c, args.words, engine.rules_for(enc).known_spells(c))
+    if not name:
+        raise Stop("Name the spell: cast <token> \"<spell>\" [targets].")
+    data = spells.cast(enc, roller, c, name, targets, args.level, _reactions(enc, args))
+    return data["text"], data
+
+
+def _use(enc, roller, args) -> tuple:
+    t = engine._resolve(enc, args.token)
+    if len(args.words) < 2:
+        raise Stop("use <token> \"<action>\" <square|target>")
+    name, rest = " ".join(args.words[:-1]), args.words[-1]
+    data = spells.use_action(enc, roller, t, name, rest, _reactions(enc, args))
+    return data["text"], data
 
 
 def _adjust(enc, args) -> str:
@@ -282,6 +405,38 @@ def run(args) -> int:
                              for t in legal) or "No target in range."
         elif cmd == "log":
             text = "\n".join(e["text"] for e in enc.log[-args.n:]) or "(empty log)"
+        elif cmd == "spells":
+            rows = spells.castable(enc, args.token)
+            data = {"spells": rows}
+            text = "; ".join(f"{r['name']}" + ("" if r["ok"] else f" (no: {r['reason'].rstrip('.')})")
+                             for r in rows) or "No spells."
+        elif cmd == "preview-area":
+            c = engine._resolve(enc, args.token)
+            name, targets = _split_name(enc, c, args.words, engine.rules_for(enc).known_spells(c))
+            data = spells.preview(enc, c, name, targets[0] if len(targets) == 1 else targets, args.level)
+            text = data["text"]
+        elif cmd == "cast":
+            text, data = _cast(enc, roller, args)
+        elif cmd == "use":
+            text, data = _use(enc, roller, args)
+        elif cmd == "help":
+            text = actions.help_action(enc, args.token, args.ally, args.target)["text"]
+        elif cmd == "hide":
+            data = actions.hide(enc, roller, args.token)
+            text = data["text"]
+        elif cmd == "escape":
+            text = actions.escape(enc, roller, args.token)["text"]
+        elif cmd == "ready":
+            data = actions.ready(enc, roller, args.token, args.kind, " ".join(args.what) or None,
+                                 args.target, args.trigger or "", args.level)
+            text = data["text"]
+        elif cmd == "trigger":
+            text = actions.trigger(enc, roller, args.token, args.target,
+                                   _reactions(enc, args))["text"]
+        elif cmd == "reactions":
+            t = engine._resolve(enc, args.token)
+            t.reactions = args.mode
+            text = f"{t.name}: spell reactions {args.mode}."
         elif cmd == "choose":
             t = engine._resolve(enc, args.token)
             if t.controller == "player":
@@ -292,7 +447,8 @@ def run(args) -> int:
             data = engine.move(enc, roller, args.token, args.square, _reactions(enc, args))
             text = data["text"]
         elif cmd == "attack":
-            data = engine.attack(enc, roller, args.token, args.target, args.attack)
+            data = engine.attack(enc, roller, args.token, args.target, args.attack,
+                                 _reactions(enc, args))
             text = data["text"]
         elif cmd in ("dash", "disengage", "dodge"):
             text = getattr(engine, cmd)(enc, args.token)["text"]
@@ -307,10 +463,27 @@ def run(args) -> int:
             text = engine.undo_move(enc)["text"]
         elif cmd == "end-turn":
             text = engine.end_turn(enc, roller)["text"]
+        elif cmd == "condition" and args.action == "remove" and args.condition.lower() == "concentration":
+            t = engine._resolve(enc, args.token)
+            if not t.concentration:
+                raise Stop(f"{t.name} is not concentrating.")
+            text = effects.end_concentration(enc, t, "GM ruling")
+            engine._log(enc, "condition", t.id, f"GM: {text}")
+        elif cmd == "condition" and args.action == "remove" and any(
+                args.condition.lower() in e.get("conditions", [])
+                for e in engine._resolve(enc, args.token).effects):
+            t = engine._resolve(enc, args.token)
+            names = effects.remove_granting(t, args.condition.lower())
+            t.remove_condition(args.condition)
+            text = f"{t.name}: {args.condition.lower()} removed (ends {', '.join(names)})."
+            engine._log(enc, "condition", t.id, f"GM: {text}")
         elif cmd == "condition":
             t = engine._resolve(enc, args.token)
             (t.add_condition if args.action == "add" else t.remove_condition)(args.condition)
             text = f"{t.name}: {args.condition.lower()} {'added' if args.action == 'add' else 'removed'}."
+            more = effects.check_incapacitated(enc, t) if args.action == "add" else []
+            if more:
+                text += " " + " ".join(more)
             engine._log(enc, "condition", t.id, f"GM: {text}")
         elif cmd == "adjust":
             text = _adjust(enc, args)
@@ -325,7 +498,7 @@ def run(args) -> int:
         sync.push_display(enc, enc.meta)
         if args.cmd == "choose" and enc.status == "active":
             text += "\nThen: end-turn"
-        elif args.cmd in ("start", "end-turn", "death-save"):
+        elif args.cmd in ("start", "end-turn", "death-save", "trigger"):
             hint = _next_hint(enc)
             if hint:
                 text += "\n" + hint
@@ -353,8 +526,8 @@ def _common(sub: bool) -> argparse.ArgumentParser:
                    help="the --roll values came from the player's dice roller")
     p.add_argument("--for-me", action="store_true", default=off,
                    help="Roll for me: the engine rolls the player's dice this time")
-    p.add_argument("--react", choices=["yes", "no"], default=none,
-                   help="answer a player's opportunity attack prompt")
+    p.add_argument("--react", choices=["yes", "no"], action="append", default=none,
+                   help="answer a reaction prompt (repeat for several, in the order asked)")
     p.add_argument("--seed", type=int, default=none, help="seed the engine's dice (demos, tests)")
     return p
 
@@ -390,6 +563,39 @@ def parser() -> argparse.ArgumentParser:
     for name in ("dash", "disengage", "dodge", "stand", "death-save", "reachable", "targets"):
         s = sub.add_parser(name, parents=c)
         s.add_argument("token")
+    s = sub.add_parser("cast", parents=c, help="cast a spell")
+    s.add_argument("token")
+    s.add_argument("words", nargs="+", metavar="spell [target ...]")
+    s.add_argument("--level", type=int, help="slot level (upcast)")
+    s = sub.add_parser("preview-area", parents=c, help="who a spell would hit, without casting")
+    s.add_argument("token")
+    s.add_argument("words", nargs="+", metavar="spell target")
+    s.add_argument("--level", type=int)
+    s = sub.add_parser("spells", parents=c, help="known spells and whether they can be cast")
+    s.add_argument("token")
+    s = sub.add_parser("use", parents=c, help="a monster's area action (breath weapon)")
+    s.add_argument("token")
+    s.add_argument("words", nargs="+", metavar="action square")
+    s = sub.add_parser("help", parents=c, help="Help: an ally's next attack on a target has advantage")
+    s.add_argument("token")
+    s.add_argument("ally")
+    s.add_argument("target")
+    for name in ("hide", "escape"):
+        s = sub.add_parser(name, parents=c)
+        s.add_argument("token")
+    s = sub.add_parser("ready", parents=c, help="ready an attack, a spell or a move")
+    s.add_argument("token")
+    s.add_argument("kind", choices=["attack", "cast", "move"])
+    s.add_argument("what", nargs="*", help="attack or spell name; the square for a move")
+    s.add_argument("--target", help="who or where")
+    s.add_argument("--trigger", help="the trigger, in words")
+    s.add_argument("--level", type=int)
+    s = sub.add_parser("trigger", parents=c, help="the readied action happens now")
+    s.add_argument("token")
+    s.add_argument("target", nargs="?")
+    s = sub.add_parser("reactions", parents=c, help="spell reactions: ask, auto or off")
+    s.add_argument("token")
+    s.add_argument("mode", choices=["ask", "auto", "off"])
     sub.add_parser("undo-move", parents=c)
     sub.add_parser("end-turn", parents=c)
     sub.add_parser("end", parents=c, help="end combat, write sheets and the session log")
@@ -406,11 +612,23 @@ def parser() -> argparse.ArgumentParser:
 
 
 def main(argv=None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
     args = parser().parse_args(argv)
     if isinstance(getattr(args, "attack", None), list):
         args.attack = " ".join(args.attack) or None
+    if getattr(args, "cmd", "") == "ready" and args.kind == "move" and args.what and not args.target:
+        args.target, args.what = args.what[0], []
+    canon = _canonical(argv)
+    camp_dir = None
     try:
-        return run(args)
+        camp_dir = _camp_dir(args)
+        pending = {} if args.cmd in READ_ONLY else _load_pending(camp_dir, canon)
+        args._seed = pending.get("seed", random.randrange(1 << 30))
+        args._decisions = list(pending.get("decisions", []))
+        code = run(args)
+        if args.cmd not in READ_ONLY:
+            _clear_pending(camp_dir)
+        return code
     except Stop as e:
         print(e.text)
         return e.code
@@ -418,14 +636,29 @@ def main(argv=None) -> int:
         print(str(e))
         return 1
     except PendingRoll as e:
+        if camp_dir is not None:
+            _save_pending(camp_dir, canon, args._seed, args._decisions)
         what = "the d20 face" if e.notation.startswith("1d20") else "the dice total"
         adv = f" with {e.advantage}" if e.advantage != "normal" else ""
-        prior = "".join(f"--roll {v} " for v in (args.roll or []))
+        prior = _prior(args)
         print(f"{e.who} rolls {e.notation}{adv} for {e.label}. Nothing has happened yet.\n"
               f"Re-run the same command with {prior}--roll <{what}, no modifier>, "
               f"or --for-me to let the engine roll.")
         return 2
     except engine.DecisionNeeded as e:
-        print(f"{e.prompt} Re-run the same command with --react yes or --react no.")
+        if camp_dir is not None:
+            keys = list(args._decisions)
+            if not keys and args.react:      # answers given up front keep their place
+                keys = [OLD_FORM] * len(args.react)
+            keys += [e.key] if e.key not in keys else []
+            _save_pending(camp_dir, canon, args._seed, keys)
+        print(f"{e.prompt} Nothing has happened yet.\n"
+              f"Re-run the same command with {_prior(args)}--react yes or --react no.")
         return 2
 
+
+def _prior(args) -> str:
+    """The answers already given, to repeat on the re-run."""
+    out = "".join(f"--roll {v} " for v in (args.roll or []))
+    out += "".join(f"--react {v} " for v in (args.react or []))
+    return out

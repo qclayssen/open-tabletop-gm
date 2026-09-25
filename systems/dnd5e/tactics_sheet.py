@@ -89,6 +89,27 @@ def _attack(row: list):
     return spec
 
 
+def _spell_names(block: str) -> list:
+    """Spell names from a "Known Spells" section: every bullet's comma list,
+    keeping only entries that look like names ("Fire Bolt", "Blindness/Deafness"),
+    not notes ("one more Quandrix cantrip of your choice")."""
+    names = []
+    for line in block.splitlines():
+        m = re.match(r"\s*-\s*\*\*[^*]+:\*\*\s*(.+)$", line)
+        if not m:
+            continue
+        for part in re.split(r",|\s\+\s", m.group(1)):
+            part = re.sub(r"\([^)]*\)", "", part).strip(" .*")
+            words = part.split()
+            if not words or len(words) > 4:
+                continue
+            if all(w[0].isupper() or w.lower() in ("of", "and", "the", "to", "from") for w in words) \
+                    and words[0][0].isupper() and re.fullmatch(r"[A-Za-z' /-]+", part):
+                if part.lower() not in (n.lower() for n in names):
+                    names.append(part)
+    return names
+
+
 def read_sheet(text: str, token_id: str, pos: tuple, path: str = "") -> Token:
     title = re.search(r"^#\s+(.+)$", text, re.M)
     if not title:
@@ -121,6 +142,20 @@ def read_sheet(text: str, token_id: str, pos: tuple, path: str = "") -> Token:
         if len(row) >= 3 and re.match(r"\d", row[0]):
             slots[str(_int(row[0]))] = {"total": _int(row[1]), "used": _int(row[2])}
 
+    skills = {}
+    for row in _table_rows(_section(text, "Skills"))[1:]:
+        if len(row) >= 3 and re.match(r"[+-]?\d", row[2]):
+            skills[re.sub(r"[^a-z]+", "-", row[0].lower()).strip("-")] = _int(row[2])
+    spell_dc = re.search(r"spell save DC\s*(\d+)", text, re.I)
+    spell_atk = re.search(r"spell attack\s*([+-]\d+)", text, re.I)
+    passive = re.search(r"Passive Perception\s*(\d+)", text, re.I)
+    level = _int(_field(text, "Level"), 1)
+    spells = _spell_names(_section(text, "Known Spells"))
+    for a in attacks + save_spells:                  # spells used as attacks are known too
+        if a.get("source") == "spell" or "dc" in a:
+            if a["name"].lower() not in (n.lower() for n in spells):
+                spells.append(a["name"])
+
     temp = _TEMP.search(text)
     death = _DEATH.search(text)
     hd = _HIT_DICE.search(text)
@@ -141,7 +176,10 @@ def read_sheet(text: str, token_id: str, pos: tuple, path: str = "") -> Token:
         source={"kind": "sheet", "path": path},
         extra={"ac_note": ac_text, "slots": slots, "save_spells": save_spells,
                "hit_dice": {"die": hd.group(2), "remaining": int(hd.group(3))} if hd else None,
-               "abilities": scores},
+               "abilities": scores, "skills": skills, "level": level, "spells": spells,
+               "spell_dc": int(spell_dc.group(1)) if spell_dc else None,
+               "spell_attack": int(spell_atk.group(1)) if spell_atk else None,
+               "passive_perception": int(passive.group(1)) if passive else None},
     )
 
 

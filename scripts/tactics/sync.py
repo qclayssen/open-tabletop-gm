@@ -79,14 +79,36 @@ def sync_tracker(camp_dir, enc, drop_monsters: bool = False) -> None:
 
 def snapshot(enc, meta: dict = None) -> dict:
     """Everything the grid view needs, as one JSON-able dict."""
+    def effect_names(t) -> list:
+        # Named effects worth showing on the map: not the ones that only grant
+        # a condition (the condition is shown already), no duplicates.
+        names = [e["name"] for e in t.effects if e.get("name") and not e.get("conditions")]
+        if "ac_before_mage_armor" in t.extra:
+            names.append("mage armor")
+        return list(dict.fromkeys(names))
+
+    def slots(t) -> dict:
+        return {str(lv): {"used": s.get("used", 0), "total": s.get("total", 0)}
+                for lv, s in sorted((t.extra.get("slots") or {}).items())}
+
+    cur = enc.current
     return {"status": enc.status, "round": enc.round,
-            "current": enc.current.id if enc.current else None,
+            "current": cur.id if cur else None,
             "order": enc.order, "grid": enc.grid, "meta": meta or {},
             "turn": {"movement_left": max(0, enc.turn.movement_budget - enc.turn.movement_used),
-                     "action_used": enc.turn.action_used, "pending": enc.turn.pending},
+                     "action_used": enc.turn.action_used, "pending": enc.turn.pending,
+                     "bonus_used": enc.turn.bonus_used,
+                     "reaction": bool(cur and not cur.reaction_used)},
             "tokens": [{"id": t.id, "name": t.name, "side": t.side, "x": t.x, "y": t.y,
                         "hp": t.hp, "max_hp": t.max_hp, "ac": t.ac, "conditions": t.conditions,
-                        "dead": t.dead, "controller": t.controller} for t in enc.tokens.values()],
+                        "dead": t.dead, "controller": t.controller,
+                        "concentration": t.concentration, "effects": effect_names(t),
+                        "reactions": t.reactions,
+                        "readied": (t.extra.get("readied") or {}).get("label") or None,
+                        "hidden": t.has("hidden"),
+                        "slots": slots(t) if t.side == "pc" else {}}
+                       # A hidden enemy is not drawn: players must not see where it is.
+                       for t in enc.tokens.values() if not (t.side == "enemy" and t.has("hidden"))],
             "log": enc.log[-8:]}
 
 

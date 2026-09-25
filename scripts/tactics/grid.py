@@ -12,6 +12,11 @@ Map rows are strings, one character per square, decoded through a legend:
 
 Diagonals: rule "5" (every square costs 5 ft, the 2014 default) or "5-10-5"
 (the DMG variant: every second diagonal costs 10 ft).
+
+Areas of effect (Grid.area): a square is in the area when its centre is inside
+the shape, boundary included. Shapes are true geometry (a sphere is round),
+never measured with movement distance. Walls block an area: a square whose
+centre has no clear line from the point of origin is left out.
 """
 
 from __future__ import annotations
@@ -322,3 +327,107 @@ class Grid:
             if hard < 4 and (best is None or level < best):
                 best = level
         return {"los": any_los, "cover": best if best is not None else 0}
+
+
+# ─── Areas of effect ──────────────────────────────────────────────────────────
+
+AREA_SHAPES = ("sphere", "cylinder", "cone", "line", "cube")
+_EPS = 1e-9
+
+
+def _unit(dx: float, dy: float):
+    n = math.hypot(dx, dy)
+    return (dx / n, dy / n) if n else (0.0, 0.0)
+
+
+def area(grid: "Grid", shape: str, size: int, caster: Pos, target: Pos = None,
+         width: int = SQUARE_FT, from_self: bool = True) -> dict:
+    """Squares inside an area of effect.
+
+    shape       sphere | cylinder (radius), cone | line (length), cube (side)
+    size        feet: radius, length or side
+    caster      the caster's square
+    target      the aim square: the centre of a sphere or cube placed at a point
+                (from_self False), or the direction of a cone, line or cube that
+                starts at the caster (from_self True)
+    width       a line's width in feet
+
+    The rule (documented in docs/milestones/04-spells-templates.md): a square
+    is affected if its centre is inside the shape, boundary included.
+      sphere/cylinder  round, centred on the middle of the target square (or
+                       of the caster's square when from_self)
+      cone/line        start where the line from the caster's centre toward the
+                       target leaves the caster's square; a cone is as wide as
+                       it is far from its origin; the caster is never inside
+      cube from self   the n x n block in front of the caster, in the nearest
+                       of 8 directions (a diagonal one touches the caster's corner)
+      cube at a point  the n x n block around the target square
+    Returns {"squares": [pos, ...] sorted, "origin": (x, y) point}.
+    """
+    if shape not in AREA_SHAPES:
+        raise ValueError(f"area shape must be one of {AREA_SHAPES}")
+    cells = size / SQUARE_FT
+    cx, cy = caster[0] + 0.5, caster[1] + 0.5
+    if target is None:
+        target = caster
+    tx, ty = target[0] + 0.5, target[1] + 0.5
+    if shape in ("cone", "line") and target == caster:
+        raise ValueError("aim a cone or line at another square")
+
+    candidates, origin = [], (cx, cy)
+    if shape in ("sphere", "cylinder"):
+        origin = (cx, cy) if from_self else (tx, ty)
+        r = cells
+        for x in range(math.floor(origin[0] - r), math.ceil(origin[0] + r) + 1):
+            for y in range(math.floor(origin[1] - r), math.ceil(origin[1] + r) + 1):
+                if math.hypot(x + 0.5 - origin[0], y + 0.5 - origin[1]) <= r + _EPS:
+                    candidates.append((x, y))
+    elif shape in ("cone", "line"):
+        dx, dy = tx - cx, ty - cy
+        scale = 0.5 / max(abs(dx), abs(dy))
+        origin = (cx + dx * scale, cy + dy * scale)
+        ux, uy = _unit(dx, dy)
+        half_w = width / SQUARE_FT / 2
+        reach = int(math.ceil(cells)) + 2
+        for x in range(caster[0] - reach, caster[0] + reach + 1):
+            for y in range(caster[1] - reach, caster[1] + reach + 1):
+                px, py = x + 0.5 - origin[0], y + 0.5 - origin[1]
+                along = px * ux + py * uy
+                across = abs(px * uy - py * ux)
+                if along <= _EPS or along > cells + _EPS:
+                    continue
+                limit = along / 2 if shape == "cone" else half_w
+                if across <= limit + _EPS:
+                    candidates.append((x, y))
+    else:                                                   # cube
+        n = max(1, int(round(cells)))
+        if from_self:
+            if target == caster:
+                raise ValueError("aim a cube from yourself at another square")
+            octant = round(math.atan2(ty - cy, tx - cx) / (math.pi / 4)) % 8
+            sx, sy = [(1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1), (0, -1), (1, -1)][octant]
+
+            def span(step, c):
+                if step > 0:
+                    return range(c + 1, c + n + 1)
+                if step < 0:
+                    return range(c - n, c)
+                lo = c - (n - 1) // 2
+                return range(lo, lo + n)
+            xs, ys = span(sx, caster[0]), span(sy, caster[1])
+            origin = (cx + sx * 0.5, cy + sy * 0.5)
+        else:
+            x0, y0 = target[0] - (n - 1) // 2, target[1] - (n - 1) // 2
+            xs, ys = range(x0, x0 + n), range(y0, y0 + n)
+            origin = (tx, ty)
+        candidates = [(x, y) for x in xs for y in ys]
+
+    squares = []
+    for q in candidates:
+        if not grid.in_bounds(q) or grid.blocks_sight(q):
+            continue
+        centre = (q[0] + 0.5, q[1] + 0.5)
+        if q != caster and grid._walled(origin, centre, skip={q, caster}):
+            continue                                        # no line of effect
+        squares.append(q)
+    return {"squares": sorted(squares, key=lambda q: (q[1], q[0])), "origin": origin}

@@ -109,5 +109,118 @@ class CombatEndpoints(unittest.TestCase):
         self.assertEqual(self.mod._input_queue, [])
 
 
+    def test_spell_reads_run_for_a_players_token_and_queue_nothing(self):
+        self.push(SNAP)
+        self.reply = (0, json.dumps({"text": "Fire Bolt", "result": {"spells": []}}))
+        for body in ({"cmd": "spells", "args": ["kairos"]},
+                     {"cmd": "preview-area", "args": ["kairos", "burning hands", "D7"]}):
+            code, res = self.do(body)
+            self.assertEqual((code, res["ok"]), (200, True))
+        self.assertEqual([c[0] for c in self.calls],
+                         [["spells", "kairos"], ["preview-area", "kairos", "burning hands", "D7"]])
+        self.assertEqual(self.mod._input_queue, [])
+
+    def test_new_actions_are_whitelisted_for_the_current_player(self):
+        self.push(SNAP)
+        bodies = [["cast", "kairos", "Magic Missile", "frog-1", "frog-1", "frog-1"],
+                  ["help", "kairos", "ally-1", "frog-1"], ["hide", "kairos"], ["escape", "kairos"],
+                  ["ready", "kairos", "attack", "Dagger", "--target", "frog-1",
+                   "--trigger=a frog comes close"],
+                  ["reactions", "kairos", "auto"]]
+        for cmd, *args in bodies:
+            code, body = self.do({"cmd": cmd, "args": args})
+            self.assertEqual(code, 200, cmd)
+        self.assertEqual([c[0] for c in self.calls], bodies)
+        self.assertEqual(len(self.mod._input_queue), len(bodies) - 1)   # reactions is a setting
+
+    def test_new_actions_refuse_another_token(self):
+        self.push(SNAP)
+        for cmd, args in (("cast", ["frog-1", "fire bolt", "kairos"]), ("help", ["frog-1", "frog-2", "kairos"]),
+                          ("hide", ["frog-1"]), ("reactions", ["frog-1", "off"])):
+            self.assertEqual(self.do({"cmd": cmd, "args": args})[0], 409, cmd)
+        self.assertEqual(self.calls, [])
+
+    def test_react_may_be_a_list_of_answers_capped_at_four(self):
+        self.push(SNAP)
+        self.do({"cmd": "move", "args": ["kairos", "D5"], "react": ["yes", "no", "maybe", "yes", "no", "yes"]})
+        extra = self.calls[-1][1]
+        self.assertEqual(extra, ["--json", "--react", "yes", "--react", "no", "--react", "yes"])
+
+    def test_args_are_capped_at_eight(self):
+        self.push(SNAP)
+        self.do({"cmd": "cast", "args": ["kairos", "magic missile"] + ["frog-1"] * 10})
+        self.assertEqual(len(self.calls[-1][0]), 1 + 8)
+
+    def test_flags_in_args_cannot_smuggle_answers(self):
+        self.push(SNAP)
+        code, body = self.do({"cmd": "attack", "args": ["kairos", "frog-1", "--roll", "20"]})
+        self.assertEqual(code, 400)
+        code, body = self.do({"cmd": "cast", "args": ["kairos", "fire bolt", "frog-1", "-c", "other"]})
+        self.assertEqual(code, 400)
+        self.assertEqual(self.calls, [])
+        code, body = self.do({"cmd": "cast", "args": ["kairos", "burning hands", "D7", "--level", "1"]})
+        self.assertEqual(code, 200)
+
+class Snapshot(unittest.TestCase):
+    """sync.snapshot carries what the spell and action UI shows."""
+
+    def test_spell_and_action_fields(self):
+        import sys
+        sys.path.insert(0, str(REPO / "scripts"))
+        from tactics import sync
+        from tactics.state import Encounter, Token
+        k = Token(id="kairos", name="Kairos", side="pc", x=1, y=6, hp=8, max_hp=8, ac=12,
+                  controller="player", concentration="Detect Magic", reactions="auto",
+                  conditions=["hidden"], effects=[{"name": "shield", "ac": 5},
+                                                  {"name": "web", "conditions": ["restrained"]}],
+                  extra={"readied": {"label": "Fire Bolt at frog-1"},
+                         "slots": {"1": {"used": 1, "total": 2}}})
+        f = Token(id="frog-1", name="Giant Frog 1", side="enemy", x=5, y=6, hp=18, max_hp=18, ac=11)
+        enc = Encounter(campaign="t", grid={"rows": ["......."] * 8},
+                        tokens={"kairos": k, "frog-1": f}, order=["kairos", "frog-1"], round=1)
+        enc.turn.bonus_used = True
+        snap = sync.snapshot(enc)
+        self.assertEqual((snap["turn"]["bonus_used"], snap["turn"]["reaction"]), (True, True))
+        tk = snap["tokens"][0]
+        self.assertEqual(tk["concentration"], "Detect Magic")
+        self.assertEqual(tk["effects"], ["shield"])
+        self.assertEqual((tk["reactions"], tk["readied"], tk["hidden"]), ("auto", "Fire Bolt at frog-1", True))
+        self.assertEqual(tk["slots"], {"1": {"used": 1, "total": 2}})
+        tf = snap["tokens"][1]
+        self.assertEqual((tf["readied"], tf["hidden"], tf["effects"]), (None, False, []))
+        for key in ("id", "name", "side", "x", "y", "hp", "max_hp", "ac", "conditions", "dead", "controller"):
+            self.assertIn(key, tk)
+        k.reaction_used = True
+        self.assertFalse(sync.snapshot(enc)["turn"]["reaction"])
+
+
 if __name__ == "__main__":
     unittest.main()
+
+    # ── second review pass ──
+    def test_monster_spells_and_previews_are_not_readable_from_a_browser(self):
+        self.push(SNAP)
+        code, body = self.do({"cmd": "spells", "args": ["frog-1"]})
+        self.assertEqual(code, 403)
+        code, body = self.do({"cmd": "preview-area", "args": ["frog-1", "fire bolt", "B7"]})
+        self.assertEqual(code, 403)
+        self.assertEqual(self.calls, [])
+        self.assertEqual(self.do({"cmd": "spells", "args": ["kairos"]})[0], 200)
+
+    def test_a_usage_error_is_an_error_not_a_pending_prompt(self):
+        self.push(SNAP)
+        self.reply = (2, "usage: combat.py cast ...\ncombat.py cast: error: argument --level: invalid int value: 'x'")
+        code, body = self.do({"cmd": "cast", "args": ["kairos", "fire bolt", "--level", "x"]})
+        self.assertIn("error", body)
+        self.assertNotIn("pending", body)
+        self.reply = (2, "Kairos rolls 1d20+5 for Fire Bolt vs Frog 1. Nothing has happened yet.")
+        code, body = self.do({"cmd": "cast", "args": ["kairos", "fire bolt", "frog-1"]})
+        self.assertIn("pending", body)
+
+    def test_the_reactions_setting_is_not_queued_for_the_gm(self):
+        self.push(SNAP)
+        self.reply = (0, json.dumps({"text": "Kairos: spell reactions auto.", "result": {}}))
+        code, body = self.do({"cmd": "reactions", "args": ["kairos", "auto"]})
+        self.assertTrue(body["ok"])
+        self.assertEqual(list(self.mod._input_queue), [])
+

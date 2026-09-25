@@ -162,3 +162,61 @@ def test_a_wall_on_the_top_or_left_edge_still_blocks_sight():
               ".....",
               "....."])
     assert not g.line_of_sight((0, 0), (0, 4))
+
+
+# ─── areas of effect (milestone 4) ────────────────────────────────────────────
+
+from tactics.grid import Grid, area, label, parse_square  # noqa: E402
+
+
+def _area(shape, size, caster, target=None, rows=None, **kw):
+    g = Grid(rows or ["." * 20] * 20)
+    return [label(q) for q in area(g, shape, size, caster, target, **kw)["squares"]]
+
+
+def test_a_15_ft_cone_east_is_one_one_three():
+    # Caster F6 (5, 5); origin on his east edge; width at distance d is d.
+    assert sorted(_area("cone", 15, (5, 5), (9, 5))) == ["G6", "H6", "I5", "I6", "I7"]
+
+
+def test_the_caster_is_never_in_his_own_cone_or_line():
+    assert "F6" not in _area("cone", 15, (5, 5), (5, 9))
+    assert "F6" not in _area("line", 30, (5, 5), (5, 0))
+
+
+def test_a_diagonal_cone_starts_at_the_casters_corner_and_is_symmetric():
+    sq = set(_area("cone", 15, (5, 5), (9, 9)))
+    assert sq == {"G7", "H7", "G8", "H8", "I8", "H9"}
+
+
+def test_a_20_ft_sphere_is_round_49_squares():
+    squares = _area("sphere", 20, (0, 0), (10, 10), from_self=False)
+    assert len(squares) == 49
+    assert "K7" in squares and "O11" in squares          # 4 squares straight out
+    assert "O15" not in squares                         # the corner of a 9x9 block is outside
+
+
+def test_a_line_is_as_wide_as_it_says():
+    assert _area("line", 20, (5, 5), (15, 5)) == ["G6", "H6", "I6", "J6"]
+    assert len(_area("line", 20, (5, 5), (15, 5), width=10)) == 12   # centres on the edge count
+
+
+def test_cubes_from_self_and_at_a_point():
+    assert sorted(_area("cube", 15, (5, 5), (9, 5))) == sorted(
+        ["G5", "H5", "I5", "G6", "H6", "I6", "G7", "H7", "I7"])
+    assert sorted(_area("cube", 15, (5, 5), (9, 9))) == sorted(
+        ["G7", "H7", "I7", "G8", "H8", "I8", "G9", "H9", "I9"])
+    assert sorted(_area("cube", 10, (0, 0), (5, 5), from_self=False)) == ["F6", "F7", "G6", "G7"]
+
+
+def test_walls_block_an_area_and_are_never_in_it():
+    rows = ["." * 10] * 3 + ["....#....."] + ["." * 10] * 6
+    squares = _area("sphere", 15, (0, 0), (4, 5), rows=rows, from_self=False)
+    assert "E4" not in squares                           # the wall itself
+    assert "E3" not in squares                           # 15 ft away, but behind the wall from E6
+    assert "E5" in squares and "D4" in squares and "F4" in squares
+
+
+def test_areas_stop_at_the_map_edge():
+    assert all(label(parse_square(s)) == s for s in _area("sphere", 10, (0, 0), (0, 0), from_self=False))
+    assert len(_area("sphere", 10, (0, 0), (0, 0), from_self=False)) == 6

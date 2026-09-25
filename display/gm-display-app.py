@@ -2508,9 +2508,14 @@ _combat_run_lock = threading.Lock()      # one engine command at a time
 _current_combat: Optional[dict] = None
 
 # Commands a browser may run. Mutating ones act only for player-controlled tokens.
-_COMBAT_READ = {"reachable", "preview", "targets", "status"}
+_COMBAT_READ = {"reachable", "preview", "targets", "status", "spells", "preview-area"}
 _COMBAT_WRITE = {"move", "attack", "dash", "disengage", "dodge", "stand",
-                 "undo-move", "end-turn", "death-save"}
+                 "undo-move", "end-turn", "death-save",
+                 "cast", "help", "hide", "escape", "ready", "reactions"}
+_COMBAT_MAX_ARGS = 8          # a spell name plus Magic Missile's three darts, with room
+_COMBAT_MAX_REACT = 4         # reaction answers in one re-run (--react, in the order asked)
+_COMBAT_ARG_FLAGS = {"cast": ("--level",), "preview-area": ("--level",),
+                     "ready": ("--level", "--target", "--trigger")}
 
 
 @app.route("/combat", methods=["POST"])
@@ -2559,16 +2564,34 @@ def combat_state():
 @app.route("/combat/do", methods=["POST"])
 def combat_do():
     """Body: {"cmd": "move", "args": ["kairos", "D5"], "rolls": [14], "for_me": false,
-    "react": "yes"|"no"|null}. Returns {"ok", "text", "result"} or {"pending": text}
+    "react": "yes"|"no"|["yes", "no", ...]|null}. Returns {"ok", "text", "result"} or {"pending": text}
     (a roll or decision is needed; nothing changed) or {"error": text}."""
     if not _token_ok():
         return "Forbidden", 403
     data = request.get_json(force=True, silent=True) or {}
     cmd = str(data.get("cmd", ""))
-    args = [str(a)[:40] for a in (data.get("args") or [])][:6]
+    raw = data.get("args") or []
+    if not isinstance(raw, list):
+        return jsonify({"error": "args must be a list"}), 400
+    args = [str(a)[:160] if str(a).startswith("--trigger=") else str(a)[:80]
+            for a in raw][:_COMBAT_MAX_ARGS]
     if cmd not in _COMBAT_READ | _COMBAT_WRITE:
         return jsonify({"error": f"unknown command {cmd!r}"}), 400
+    # Flags in args could smuggle in answers (--roll 20) or another campaign:
+    # only the few that shape a spell or a readied action pass.
+    allowed = _COMBAT_ARG_FLAGS.get(cmd, ())
+    for a in args:
+        if a.startswith("-") and a.split("=", 1)[0] not in allowed:
+            return jsonify({"error": f"flag {a.split('=', 1)[0]!r} is not allowed here"}), 400
     actor = None
+    if cmd in ("spells", "preview-area"):
+        # A monster's spell list and what an area would reveal are the GM's.
+        with _combat_lock:
+            snap = _current_combat or {}
+        tokens = {t.get("id"): t for t in snap.get("tokens", [])}
+        who = tokens.get(args[0]) if args else None
+        if not who or who.get("controller") != "player":
+            return jsonify({"error": "Only a player's own spells can be listed."}), 403
     if cmd in _COMBAT_WRITE:
         if not _rate_ok(request.remote_addr):
             return "Too Many Requests", 429
@@ -2591,9 +2614,14 @@ def combat_do():
         extra.append("--player-roll")
     if data.get("for_me"):
         extra.append("--for-me")
-    if data.get("react") in ("yes", "no"):
-        extra += ["--react", data["react"]]
+    react = data.get("react")
+    for answer in ([react] if isinstance(react, str) else react if isinstance(react, list)
+                   else [])[:_COMBAT_MAX_REACT]:
+        if answer in ("yes", "no"):
+            extra += ["--react", answer]
     code, out = _run_tactics([cmd, *args], extra)
+    if code == 2 and out.startswith("usage:"):     # argparse also exits with 2 on bad input
+        return jsonify({"error": out.splitlines()[-1]})
     if code == 2:
         return jsonify({"pending": out})
     if code != 0:
@@ -2602,7 +2630,7 @@ def combat_do():
         res = json.loads(out)
     except ValueError:
         return jsonify({"error": "Unreadable engine output."})
-    if cmd in _COMBAT_WRITE:
+    if cmd in _COMBAT_WRITE and cmd != "reactions":   # a setting, not an action to narrate
         # Queue the outcome as the player's action so the GM narrates it.
         text = re.sub(r"[`\\$]", "", res.get("text", ""))[:500]
         with _input_lock:

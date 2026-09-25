@@ -57,7 +57,8 @@ class ExistingOutputUnchanged(unittest.TestCase):
     def test_every_other_field_is_unchanged(self):
         for index, raw in BY_INDEX.items():
             rec = build_srd._norm_monster(raw)
-            rec.pop("actions")
+            for key in ("actions", "saves", "skills", "passive_perception"):   # engine-only fields
+                rec.pop(key, None)
             self.assertEqual(rec, GOLDEN[index]["record"], index)
 
     def test_formatted_lookup_text_is_unchanged(self):
