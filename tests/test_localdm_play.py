@@ -306,3 +306,25 @@ def test_no_shadow_when_the_turn_was_already_advised_or_one_is_running(tmp_path)
     s.handle("I study it.")              # advised this turn (saved notes): no review
     s.join_background(5)
     assert [r for r in c.roles() if r.startswith("advisor")] == ["advisor:historian"]
+
+
+def test_a_bare_number_with_no_roll_pending_never_reaches_the_model(tmp_path):
+    c = FakeClient(lambda m, msgs, role: (_ for _ in ()).throw(AssertionError("model called")))
+    b = FakeBridge([fight()], {"status": lambda a: Result(0, "Round 1.")})
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path, "council: off"), bridge=b)
+    out = s.handle("14")
+    assert out == ["No roll is waiting on you. Say what your character does."] and not c.calls
+
+
+def test_the_last_kill_closes_the_fight_without_a_second_end_turn(tmp_path):
+    snap = fight()
+    for t in snap["tokens"]:
+        if t["side"] == "enemy":
+            t["dead"], t["hp"] = True, 0
+    c = FakeClient(lambda m, msgs, role: "Narrated." + NULLS)
+    b = FakeBridge([snap], {"attack": lambda a: Result(0, "Kairos Fire Bolt: That ends Giant Frog."),
+                            "end": lambda a: Result(0, "Combat ended after round 1.")})
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path), bridge=b, combat="engine")
+    s.queue = [["end-turn"]]
+    out = s._engine(["attack", "kairos", "frog-1"])
+    assert ["end-turn"] not in b.ran and ["end"] in b.ran and out[-1] == "Combat ended after round 1."

@@ -79,3 +79,11 @@ def test_pending_markers():
 ])
 def test_only_allowlisted_player_commands_pass(cmd, expected):
     assert parse_player_command(cmd) == expected
+
+
+def test_resolve_names_joins_a_multi_word_token_name_into_its_id():
+    from localdm.bridge import resolve_names
+    toks = [{"id": "kairos", "name": "Kairos"}, {"id": "frog-1", "name": "Giant Frog"}]
+    assert resolve_names(["attack", "kairos", "Giant", "Frog"], toks) == ["attack", "kairos", "frog-1"]
+    assert resolve_names(["attack", "kairos", "frog-1", "fire", "bolt"], toks) \
+        == ["attack", "kairos", "frog-1", "fire", "bolt"]

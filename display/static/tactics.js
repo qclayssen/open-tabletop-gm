@@ -274,8 +274,23 @@
     s.addEventListener('pointerleave', () => {
       if ((ui.mode === 'move' || ui.mode === 'aim') && ui.armed !== ui.hover) { ui.hover = null; drawOverlay(); renderInfo(); }
     });
+    const keepL = el.board.scrollLeft, keepT = el.board.scrollTop;
     el.board.innerHTML = ''; el.board.appendChild(s);
+    el.board.scrollLeft = keepL; el.board.scrollTop = keepT;   // a re-render must not snap back to the corner
+    keepActorInView(cell);
     floaters();
+  }
+
+  // A map larger than the box scrolls; bring the acting token into view when it is off-screen.
+  function keepActorInView(cell) {
+    const t = (snap.tokens || []).find(k => k.id === snap.current);
+    const b = el.board;
+    if (!t || !b.clientWidth || !b.clientHeight) return;
+    const x0 = t.x * cell, y0 = t.y * cell, pad = cell;
+    if (x0 - pad < b.scrollLeft) b.scrollLeft = Math.max(0, x0 - pad);
+    else if (x0 + cell + pad > b.scrollLeft + b.clientWidth) b.scrollLeft = x0 + cell + pad - b.clientWidth;
+    if (y0 - pad < b.scrollTop) b.scrollTop = Math.max(0, y0 - pad);
+    else if (y0 + cell + pad > b.scrollTop + b.clientHeight) b.scrollTop = y0 + cell + pad - b.clientHeight;
   }
 
   // What the current mode says about a token: a ring class, a badge and words for screen readers.
@@ -1219,7 +1234,7 @@
       }
       const g = t._g, step = 120, start = performance.now();
       const frame = now => {
-        const k = Math.min((now - start) / step, pts.length - 1);
+        const k = Math.max(0, Math.min((now - start) / step, pts.length - 1));   // the frame time can predate `start`
         const i = Math.floor(k), f = k - i, a = pts[i], b = pts[Math.min(i + 1, pts.length - 1)];
         const px = a[0] + (b[0] - a[0]) * f, py = a[1] + (b[1] - a[1]) * f;
         g.setAttribute('transform', `translate(${(px - t.x) * C},${(py - t.y) * C})`);

@@ -32,7 +32,7 @@ if __package__ in (None, ""):                        # run as a script
     import localdm                                    # noqa: F401  (puts scripts/ on sys.path)
 
 from localdm import advisor, autopilot, context, display_bridge, llm, reply, triggers  # noqa: E402
-from localdm.bridge import Bridge, parse_player_command          # noqa: E402
+from localdm.bridge import Bridge, parse_player_command, resolve_names          # noqa: E402
 from localdm.memory import Memory                               # noqa: E402
 from localdm.summarizer import Summarizer                       # noqa: E402
 
@@ -201,6 +201,11 @@ class Session:
         ids = ", ".join(f"{t['id']} = {t['name']}" for t in snap["tokens"])
         return f"{self.bridge.run(['status']).text}\nToken ids: {ids}"
 
+    def _foes_down(self) -> bool:
+        snap = self.bridge.snapshot()
+        return bool(snap and snap["status"] == "active"
+                    and not any(t["side"] == "enemy" and not t["dead"] for t in snap["tokens"]))
+
     def _players_turn(self) -> bool:
         snap = self.bridge.snapshot()
         return bool(snap and snap["status"] == "active" and snap["current"]
@@ -230,7 +235,13 @@ class Session:
             self.memory.add("engine", end.text)
             return out + [end.text]
         if self.queue:                                 # the rest of the player's plan
-            return out + self._engine(self.queue.pop(0))
+            nxt = self.queue.pop(0)
+            if nxt[0] == "end-turn" and self.combat == "engine" and self._foes_down():
+                self.queue = []                        # the kill was the last act: close the fight once
+                end = self.bridge.run(["end"])
+                self.memory.add("engine", end.text)
+                return out + [end.text]
+            return out + self._engine(nxt)
         return out + self._enemy_phase()
 
     def _pick(self, menu: str) -> int:
@@ -296,6 +307,8 @@ class Session:
             if low in ("yes", "no", "y", "n"):
                 return self._engine(p["args"], p["rolls"], p.get("reacts", [])
                                     + ["yes" if low.startswith("y") else "no"])
+        if line.isdigit() and not self.pending:
+            return ["No roll is waiting on you. Say what your character does."]
         if line.startswith("/c "):
             try:
                 args = shlex.split(line[3:])
@@ -362,7 +375,8 @@ class Session:
             out.append(r.narration)
         args = parse_player_command(r.command) if r.command else None
         if args and self._players_turn():
-            out += self._engine(args)
+            snap = self.bridge.snapshot()
+            out += self._engine(resolve_names(args, snap["tokens"]) if snap else args)
         if not notes:                        # nobody advised this turn: review it
             self._start_shadow(line, r.narration)
         self.summarizer.maybe_start()

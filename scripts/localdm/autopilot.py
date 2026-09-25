@@ -263,6 +263,7 @@ def _line(raw: str, rng) -> str:
     return raw
 
 
+_LABEL = re.compile(r"^[^\[]*?\[[^\]]+\](?:\s*\[[^\]]+\])*\.\s*")     # "Retreat to P2 [keep distance] [beast]."
 _SKIP = re.compile(r"^(Then: end-turn|Next: options .*|Waiting for .*|.* cannot act: end-turn\.)$")
 
 
@@ -272,7 +273,7 @@ def narrate(engine_text: str, seed: str = "") -> str:
     rng = random.Random(zlib.crc32(f"{seed}|{engine_text}".encode("utf-8")))
     out = []
     for raw in engine_text.splitlines():
-        raw = re.sub(r"^\d+\. ", "", raw.strip())
+        raw = _LABEL.sub("", re.sub(r"^\d+\. ", "", raw.strip()), count=1)   # drop the enemy menu label
         if not raw or _SKIP.match(raw):
             continue
         # One engine line can hold several sentences (a move, then an attack).

@@ -116,3 +116,10 @@ def test_engine_combat_needs_no_model_for_actions_or_enemies(tmp_path, monkeypat
         said += s.handle("4" if s.pending else "Fire Bolt the frog!")
     assert any("Fire Bolt" in x for x in said)
     assert not {"enemy-pick", "dm"} & set(c.roles())
+
+
+def test_the_enemy_menu_label_is_not_narrated():
+    text = "Retreat to P2 [keep distance] [beast]. Giant Frog moves J5 to P2 (30 ft, 0 ft left)."
+    out = autopilot.narrate(text, seed="1")
+    assert "[" not in out and "keep distance" not in out and "P2" in out
+    assert autopilot.narrate("Move to A12 and Bite Kairos (60% to hit, ~2.7 dmg) [beast].") == ""
