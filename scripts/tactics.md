@@ -64,6 +64,7 @@ Nothing has happened yet. Do what the message says and run the same command agai
 - Common riders are applied by the engine: grapples (with the escape DC), save or be knocked prone, poison on a failed save, conditions with a save at the end of each turn. The target can `escape` with its action.
 - `GM decides: ...` is the part of a rider the engine does not run (for example "the frog can't bite another target"). Apply it by narrating, `condition` or `adjust`.
 - Breath weapons and other area actions appear in the enemy menu with their aim, save odds and recharge. `(Frost Breath recharging)` means it is not ready this turn.
+- `GM runs: Frightful Presence` after a Multiattack: that part is not an attack; narrate it (and `condition` if it applies).
 - `(Or narrate a special ...)` lists things the engine does not run. Use them only by narrating and `condition` or `adjust`.
 - Fix a mistake: `$T adjust kairos hp=5`, `$T undo-move` (before an action), `$T condition kairos remove concentration`.
 

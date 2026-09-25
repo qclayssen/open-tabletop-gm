@@ -36,7 +36,7 @@ SKILL_ABILITY = {"athletics": "str", "acrobatics": "dex", "sleight-of-hand": "de
 INCAPACITATING = {"incapacitated", "paralyzed", "petrified", "stunned", "unconscious"}
 # Conditions that set speed to 0.
 IMMOBILE = {"grappled", "restrained", "paralyzed", "petrified", "stunned", "unconscious"}
-# A melee hit within 5 ft against these is a critical hit (PHB appendix A).
+# A hit from within 5 ft against these is a critical hit (PHB appendix A).
 AUTO_CRIT_WITHIN_5 = {"paralyzed", "unconscious"}
 # Attacks against these have advantage.
 TARGET_GRANTS_ADV = {"blinded", "paralyzed", "petrified", "restrained", "stunned", "unconscious"}
@@ -90,7 +90,8 @@ class DnD5e(Rules):
 
     def reach(self, token) -> int:
         reaches = [a.get("reach", 5) for a in token.attacks
-                   if a.get("type") in ("melee", "melee_or_ranged")]
+                   if a.get("type") in ("melee", "melee_or_ranged")
+                   and "unparsed" not in a.get("flags", [])]
         return max(reaches, default=5)
 
     # ── conditions ───────────────────────────────────────────────────────────
@@ -208,7 +209,8 @@ class DnD5e(Rules):
             natural, total, ac, reaction_lines = res["natural"], res["total"], res["ac"], res["lines"]
         crit = natural == 20
         hit = crit or (natural != 1 and total >= ac)
-        if hit and ctx.melee and ctx.distance <= 5 and any(target.has(c) for c in AUTO_CRIT_WITHIN_5):
+        # PHB appendix A: any hit by an attacker within 5 ft, melee or ranged.
+        if hit and ctx.distance <= 5 and any(target.has(c) for c in AUTO_CRIT_WITHIN_5):
             crit = True
         out = {"hit": hit, "crit": crit, "natural": natural, "total": total, "ac": ac,
                "advantage": mode, "reasons": reasons, "damage": None}
@@ -490,6 +492,26 @@ def _speeds(speed: str) -> dict:
     return out
 
 
+# Upstream SRD data errors in parsed Multiattack routines, by monster index.
+# veteran: "two longsword attacks. If it has a shortsword drawn, it can also
+# make a shortsword attack" is three attacks, not the four the API lists.
+_MULTIATTACK_ERRATA = {
+    "veteran": [[{"action": "Longsword", "count": 2, "type": "melee"},
+                 {"action": "Shortsword", "count": 1, "type": "melee"}]],
+}
+
+
+def _other_actions(record: dict) -> list:
+    out = []
+    for a in record.get("actions", []):
+        if a.get("kind") == "attack":
+            continue
+        if a.get("kind") == "multiattack" and record.get("index") in _MULTIATTACK_ERRATA:
+            a = dict(a, multiattack=_MULTIATTACK_ERRATA[record["index"]])
+        out.append(a)
+    return out
+
+
 def token_from_monster(record: dict, token_id: str, name: str, pos: tuple,
                        side: str = "enemy") -> Token:
     """Build a token from an SRD monster record (lookup.lookup_record(..., "monster")).
@@ -525,7 +547,8 @@ def token_from_monster(record: dict, token_id: str, name: str, pos: tuple,
         condition_immunities=_defenses(record.get("condition_immunities")),
         source={"kind": "srd", "ref": record.get("index", "")},
         extra={"cr": record.get("cr"), "xp": record.get("xp"),
-               "actions": [a for a in record.get("actions", []) if a.get("kind") != "attack"],
+               "type": (record.get("type") or "").lower(), "int": record.get("int", 10),
+               "actions": _other_actions(record),
                "abilities": {ab: int(record.get(ab, 10)) for ab in ABILITIES},
                "skills": dict(record.get("skills") or {}),
                "passive_perception": record.get("passive_perception"),

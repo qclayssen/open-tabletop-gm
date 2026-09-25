@@ -141,8 +141,13 @@ def death_save(enc: Encounter, roller: Roller) -> dict:
     if enc.turn.pending != "death_save":
         raise CombatError(f"{t.name} has no death save to make.")
     mark = len(roller.log)
-    res = rules_for(enc).death_save(t, roller, player_rolls(enc, t, roller))
+    R = rules_for(enc)
+    res = R.death_save(t, roller, player_rolls(enc, t, roller))
     enc.turn.pending = ""
+    if res.get("revived"):
+        # Nat 20: back up with 1 HP and the rest of the turn (still prone). The
+        # budget was set to 0 while unconscious, so give the speed back.
+        enc.turn.movement_budget = R.speed(t)
     _log(enc, "death_save", t.id, res["text"], roller, mark)
     return res
 
@@ -192,6 +197,22 @@ def reachable(enc: Encounter, token_ref) -> dict:
             "dash": {label(p): c for p, c in every.items() if c > left}}
 
 
+def _oa(enc: Encounter, h, mover, square):
+    """(attack, AttackContext) for h's opportunity attack on mover as it leaves
+    square: the rules' choice if it reaches that far, else h's best melee attack
+    that does. Cover counts against opportunity attacks like any other."""
+    R, grid = rules_for(enc), enc.board()
+    dist = grid.distance(square, h.pos)
+    atk = R.opportunity_attack(h)
+    if atk is not None and atk.get("reach", 5) < dist:
+        longer = [a for a in h.attacks if a.get("type") in ("melee", "melee_or_ranged")
+                  and "unparsed" not in a.get("flags", []) and a.get("reach", 5) >= dist]
+        atk = max(longer, key=average_damage, default=None)
+    others = {t.pos for t in enc.tokens.values() if t.active and t.id not in (h.id, mover.id)}
+    cov = grid.cover(h.pos, square, creatures=others)["cover"]
+    return atk, AttackContext(distance=dist, melee=True, cover=cov, opportunity=True)
+
+
 def _provokers(enc: Encounter, mover, path) -> list:
     """[(step_index, hostile)] for hostiles whose reach the path leaves, in order.
     A creature gets one opportunity attack (one reaction) per move."""
@@ -235,8 +256,7 @@ def preview_move(enc: Encounter, token_ref, square) -> dict:
     left = remaining_movement(enc)
     warnings = []
     for i, h in _provokers(enc, t, path):
-        oa = R.opportunity_attack(h)
-        ctx = AttackContext(distance=grid.distance(path[i], h.pos), melee=True, opportunity=True)
+        oa, ctx = _oa(enc, h, t, path[i])
         warnings.append({"id": h.id, "name": h.name, "attack": oa["name"],
                          "hit_percent": R.hit_chance(h, t, oa, ctx)["percent"]})
     hazards = [label(p) for p in path[1:] if grid.terrain(p).get("hazard")]
@@ -308,9 +328,9 @@ def _move(enc: Encounter, roller: Roller, t, square, reactions: dict = None) -> 
             if not R.can_react(h):
                 continue
             h.reaction_used = True
-            ctx = AttackContext(distance=grid.distance(path[i], h.pos), melee=True, opportunity=True)
+            oa, ctx = _oa(enc, h, t, path[i])
             t.x, t.y = path[i]                  # the attack happens before the mover leaves
-            res = _resolve_attack(enc, roller, h, t, R.opportunity_attack(h), ctx, reactions)
+            res = _resolve_attack(enc, roller, h, t, oa, ctx, reactions)
             lines.append("Opportunity attack: " + res["text"])
         if not R.can_act(t) or R.speed(t) == 0:
             t.x, t.y = path[i]          # stopped where the attack landed
@@ -458,16 +478,19 @@ def attack(enc: Encounter, roller: Roller, attacker_ref, target_ref, attack_name
         raise CombatError(f"{t.name} is dead.")
     if t.id == a.id:
         raise CombatError(f"{a.name} cannot attack themselves.")
+    R = rules_for(enc)
     chosen = _find_attack(a, attack_name)
     candidates = [chosen] if chosen else [x for x in a.attacks if "unparsed" not in x.get("flags", [])]
-    reasons = []
+    legal, reasons = [], []
     for atk in candidates:
         ctx, why = _attack_context(enc, a, t, atk)
         if ctx:
-            break
-        reasons.append(why)
-    else:
+            legal.append((R.hit_chance(a, t, atk, ctx)["chance"] * average_damage(atk), atk, ctx))
+        else:
+            reasons.append(why)
+    if not legal:
         raise CombatError(reasons[0] if reasons else f"{a.name} cannot attack {t.name}.")
+    _exp, atk, ctx = max(legal, key=lambda x: x[0])     # no name given: the best legal attack
     mark = len(roller.log)
     res = _resolve_attack(enc, roller, a, t, atk, ctx, reactions)
     enc.turn.action_used = True
@@ -564,6 +587,119 @@ def reveal_hidden(enc: Encounter) -> list:
                     lines.append(f"{h.name} spots {t.name}.")
                     break
     return lines
+
+
+# ─── Multiattack ──────────────────────────────────────────────────────────────
+
+def multiattack_routines(token) -> list:
+    """The parsed Multiattack options of a creature: [[{"action", "count"}, ...], ...].
+    Empty when it has none, or when the SRD text could not be read exactly."""
+    for a in token.extra.get("actions", []):
+        if a.get("kind") == "multiattack" and a.get("multiattack") \
+                and "unparsed" not in a.get("flags", []):
+            return a["multiattack"]
+    return []
+
+
+def expand_routine(token, routine) -> tuple:
+    """(attack specs in the order they are made, names of the parts that are not
+    attacks, such as a dragon's Frightful Presence, which the GM runs)."""
+    by_name = {a["name"].lower(): a for a in token.attacks if "unparsed" not in a.get("flags", [])}
+    attacks, other = [], []
+    for item in routine:
+        spec = by_name.get(item["action"].lower())
+        if spec:
+            attacks += [spec] * int(item.get("count", 1))
+        else:
+            other.append(item["action"])
+    return attacks, other
+
+
+def routine_name(routine) -> str:
+    return ", ".join(i["action"] + (f" x{i['count']}" if i.get("count", 1) > 1 else "")
+                     for i in routine)
+
+
+def _down(t) -> bool:
+    """Dead, or at 0 HP (dying or stable)."""
+    return t.dead or t.hp <= 0
+
+
+def _best_target(enc: Encounter, a, atk):
+    """The conscious hostile this attack can hit for the most expected damage.
+    Hidden creatures are not candidates: the attacker does not know where they are."""
+    R, best = rules_for(enc), None
+    for h in enc.tokens.values():
+        if not (h.active and hostile(a, h)) or _down(h) or h.has("hidden"):
+            continue
+        ctx, _ = _attack_context(enc, a, h, atk)
+        if ctx:
+            exp = R.hit_chance(a, h, atk, ctx)["chance"] * average_damage(atk)
+            if best is None or exp > best[0]:
+                best = (exp, h)
+    return best[1] if best else None
+
+
+def multiattack(enc: Encounter, roller: Roller, attacker_ref, target_ref, routine: int = None,
+                reactions: dict = None) -> dict:
+    """Take the Multiattack action: every attack in one routine, as one action.
+
+    routine: 1-based option for creatures with several ("two scimitars and a
+    dagger, or two daggers"); default is the one with the most expected damage
+    against the target. Attacks the target cannot be hit with (out of reach)
+    go to the best other conscious hostile. When the target drops, the rest
+    switch to the next conscious hostile, never a downed one; if there is
+    none, they are not made. Parts that are not attacks are reported for the GM."""
+    a = _resolve(enc, attacker_ref)
+    t = _resolve(enc, target_ref)
+    _require_action(enc, a)
+    if not t.active:
+        raise CombatError(f"{t.name} is dead.")
+    if not hostile(a, t):
+        raise CombatError(f"{t.name} is not hostile to {a.name}.")
+    routines = multiattack_routines(a)
+    if not routines:
+        raise CombatError(f"{a.name} has no Multiattack the engine can run; use attack.")
+    R = rules_for(enc)
+
+    def expected(r):
+        total = 0.0
+        for atk in expand_routine(a, r)[0]:
+            ctx, _ = _attack_context(enc, a, t, atk)
+            if ctx:
+                total += R.hit_chance(a, t, atk, ctx)["chance"] * average_damage(atk)
+        return total
+
+    if routine is None:
+        idx = max(range(len(routines)), key=lambda i: expected(routines[i]))
+    elif 1 <= routine <= len(routines):
+        idx = routine - 1
+    else:
+        raise CombatError(f"{a.name} has Multiattack options 1 to {len(routines)}.")
+    attacks, other = expand_routine(a, routines[idx])
+    if not attacks:
+        raise CombatError(f"{a.name}'s Multiattack has no attack the engine can run.")
+    if not any(_attack_context(enc, a, t, atk)[0] for atk in attacks):
+        raise CombatError(_attack_context(enc, a, t, attacks[0])[1])
+
+    mark = len(roller.log)
+    lines, results = [], []
+    for atk in attacks:
+        target = t if not _down(t) and _attack_context(enc, a, t, atk)[0] else _best_target(enc, a, atk)
+        if target is None:
+            lines.append(f"{atk['name']}: no conscious target in reach, not made.")
+            continue
+        ctx, _ = _attack_context(enc, a, target, atk)
+        res = _resolve_attack(enc, roller, a, target, atk, ctx, reactions)
+        results.append(res)
+        lines.append(res["text"])
+    enc.turn.action_used = True
+    enc.turn.undo_locked = True
+    text = f"{a.name} Multiattack ({routine_name(routines[idx])}). " + " ".join(lines)
+    if other:
+        text += f" GM runs: {', '.join(other)}."
+    _log(enc, "multiattack", a.id, text, roller, mark)
+    return {"routine": idx + 1, "attacks": results, "other": other, "text": text}
 
 
 def _simple_action(enc: Encounter, token_ref, kind: str) -> dict:
