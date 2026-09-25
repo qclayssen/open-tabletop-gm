@@ -105,7 +105,10 @@ Hardware note: the reference machine has 16 GB of unified memory.
   the limit on this machine.
 - `qwen3:14b` escalated on every turn when the prompt said "ask instead of
   guessing". Fixed by wording ("null on almost every turn", scenery is yours to
-  invent) plus a 3-turn cooldown in code. The rerun did not escalate on scenery.
+  invent) plus a 3-turn cooldown in code. Rerun: 3 turns, 3 calls, 1470 prompt
+  tokens total, 95 s (from 480 s). It now swings the other way: asked "is this
+  sigil tied to the old frog cult?", it invented the link instead of escalating.
+  Tuning the escalate wording (or a lore keyword trigger) is open.
 - A thinking model as advisor spent its 300 tokens thinking and returned an
   empty answer. Advisor briefs now end with `/no_think` (unless `GM_NO_THINK=0`)
   and get 400 tokens.
