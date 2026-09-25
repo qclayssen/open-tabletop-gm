@@ -626,10 +626,11 @@ def _down(t) -> bool:
 
 
 def _best_target(enc: Encounter, a, atk):
-    """The conscious hostile this attack can hit for the most expected damage."""
+    """The conscious hostile this attack can hit for the most expected damage.
+    Hidden creatures are not candidates: the attacker does not know where they are."""
     R, best = rules_for(enc), None
     for h in enc.tokens.values():
-        if not (h.active and hostile(a, h)) or _down(h):
+        if not (h.active and hostile(a, h)) or _down(h) or h.has("hidden"):
             continue
         ctx, _ = _attack_context(enc, a, h, atk)
         if ctx:

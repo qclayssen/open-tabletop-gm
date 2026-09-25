@@ -354,6 +354,28 @@ def test_an_up_front_react_does_not_shift_onto_the_next_question(camp, capsys, m
     assert "casts Silvery Barbs" not in out
 
 
+def test_multiattack_takes_the_players_reaction_answers(camp, capsys, monkeypatch):
+    import random as _random
+    begin(capsys)
+    path = _edit(camp, actor="frog-1", pos={"frog-1": (2, 6)})
+    enc = json.loads(path.read_text(encoding="utf-8"))
+    enc["tokens"]["frog-1"]["extra"]["actions"].append(
+        {"name": "Multiattack", "kind": "multiattack", "flags": [],
+         "multiattack": [[{"action": "Bite", "count": 1}]]})
+    path.write_text(json.dumps(enc), encoding="utf-8")
+    hit = next(s for s in range(500) if 9 <= _random.Random(s).randint(1, 20) <= 16)
+    monkeypatch.setattr(cli.random, "randrange", lambda n: hit)
+    code, out = run(capsys, "multiattack", "frog-1", "kairos")
+    assert code == 2 and "Silvery Barbs" in out
+    answers = ["--react", "no"]
+    for _ in range(4):                      # Silvery Barbs, then Shield: one answer each
+        code, out = run(capsys, "multiattack", "frog-1", "kairos", *answers)
+        if code != 2:
+            break
+        answers += ["--react", "no"]
+    assert code == 0 and "Multiattack (Bite)" in out, out
+
+
 def test_removing_a_condition_ends_the_effect_behind_it(camp, capsys):
     begin(capsys)
     path = _edit(camp, pos={"frog-1": (2, 6)})

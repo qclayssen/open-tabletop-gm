@@ -452,7 +452,8 @@ def run(args) -> int:
                                  _reactions(enc, args))
             text = data["text"]
         elif cmd == "multiattack":
-            data = engine.multiattack(enc, roller, args.token, args.target, args.option)
+            data = engine.multiattack(enc, roller, args.token, args.target, args.option,
+                                      _reactions(enc, args))
             text = data["text"]
         elif cmd in ("dash", "disengage", "dodge"):
             text = getattr(engine, cmd)(enc, args.token)["text"]

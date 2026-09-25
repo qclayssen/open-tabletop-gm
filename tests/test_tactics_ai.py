@@ -46,6 +46,14 @@ def test_multiattack_switches_to_a_conscious_target_when_the_first_drops():
     assert enc.tokens["mira"].hp == 30 - 6 - 5
 
 
+def test_multiattack_does_not_retarget_onto_a_hidden_creature():
+    m = mira((2, 0))
+    m.add_condition("hidden")
+    enc = start(encounter([kairos(pos=(0, 0), hp=5), captain(), m]), ["cap", "kairos", "mira"])
+    engine.multiattack(enc, roller(15, 3), "cap", "kairos")
+    assert enc.tokens["mira"].hp == 30 and enc.tokens["mira"].has("hidden")
+
+
 def test_multiattack_never_turns_on_a_downed_pc():
     enc = start(encounter([kairos(pos=(0, 0), hp=5), captain()]), ["cap", "kairos"])
     res = engine.multiattack(enc, roller(15, 3), "cap", "kairos")
