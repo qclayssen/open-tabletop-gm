@@ -237,6 +237,10 @@
     const fogHatch = svg('pattern', { id: 'tx-fog-hatch', width: 8, height: 8, patternUnits: 'userSpaceOnUse',
                                       patternTransform: 'rotate(-45)' }, s.querySelector('defs'));
     svg('line', { x1: 0, y1: 0, x2: 0, y2: 8, class: 'tx-fog-line' }, fogHatch);
+    // Enemy reach: red, leaning the other way from the cover hatch so the two read apart.
+    const threatHatch = svg('pattern', { id: 'tx-threat-hatch', width: 7, height: 7, patternUnits: 'userSpaceOnUse',
+                                         patternTransform: 'rotate(-45)' }, s.querySelector('defs'));
+    svg('line', { x1: 0, y1: 0, x2: 0, y2: 7, class: 'tx-threat-line' }, threatHatch);
     const terrain = svg('g', {}, s);
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
       const name = terrainOf(rows[y][x]);
@@ -375,16 +379,22 @@
     if (ui.markLayer) ui.markLayer.innerHTML = '';
     if (ui.mode === 'aim') { drawAim(o); return; }
     if (ui.mode !== 'move' || !ui.reach) return;
-    const walk = ui.reach.walk || {};
-    const maxFt = Math.max(5, ...Object.values(walk));
-    for (const [sq, ft] of Object.entries(walk)) {
+    const walk = ui.reach.walk || {}, dash = ui.reach.dash || {};
+    // A fixed fill in its own colour (the old teal fade vanished on water), and a
+    // line round the edge of each range: the line, not the colour, carries the meaning.
+    for (const sq of Object.keys(walk)) {
       const p = parseSq(sq); if (!p) continue;
-      svg('rect', { x: p[0] * C + 1, y: p[1] * C + 1, width: C - 2, height: C - 2, class: 'tx-reach',
-                    style: `opacity:${(0.42 - 0.26 * ft / maxFt).toFixed(2)}` }, o);
+      svg('rect', { x: p[0] * C + 1, y: p[1] * C + 1, width: C - 2, height: C - 2, class: 'tx-reach' }, o);
     }
-    for (const sq of Object.keys(ui.reach.dash || {})) {
+    for (const sq of Object.keys(dash)) {
       const p = parseSq(sq); if (!p) continue;
       svg('rect', { x: p[0] * C + 3, y: p[1] * C + 3, width: C - 6, height: C - 6, class: 'tx-dash' }, o);
+    }
+    rangeEdge(o, closeHoles(walk), 'tx-reach-edge');
+    rangeEdge(o, closeHoles(Object.assign({}, walk, dash)), 'tx-dash-edge');
+    for (const sq of threatened().keys()) {
+      const p = parseSq(sq); if (!p) continue;
+      svg('rect', { x: p[0] * C, y: p[1] * C, width: C, height: C, class: 'tx-threat' }, o);
     }
     const pv = ui.hover && ui.preview[ui.hover];
     if (pv && pv.path) {
@@ -394,6 +404,54 @@
       const f = svg('text', { x: end[0] * C + C / 2, y: end[1] * C - 3, 'text-anchor': 'middle', class: 'tx-feet' }, o);
       f.textContent = pv.feet + ' ft';
     }
+  }
+
+  // A range with the mover's own square and any creature ringed by the range put
+  // back in, so the edge outlines the area rather than boxing each token.
+  function closeHoles(set) {
+    const out = Object.assign({}, set), me = current();
+    if (me) out[sqOf(me)] = 0;
+    for (const t of living()) {
+      const sq = sqOf(t);
+      if (sq in out) continue;
+      const n = [[0, -1], [0, 1], [-1, 0], [1, 0]].map(([dx, dy]) => [t.x + dx, t.y + dy])
+        .filter(([x, y]) => x >= 0 && y >= 0 && x < ui.W && y < ui.H);
+      if (n.every(([x, y]) => label(x, y) in out)) out[sq] = 0;
+    }
+    return out;
+  }
+
+  // The outline of a set of squares: a segment on every side that borders a square outside it.
+  function rangeEdge(layer, set, cls) {
+    let d = '';
+    for (const sq of Object.keys(set)) {
+      const p = parseSq(sq); if (!p) continue;
+      const [x, y] = [p[0] * C, p[1] * C];
+      if (!(label(p[0], p[1] - 1) in set)) d += `M${x},${y}h${C}`;
+      if (!(label(p[0], p[1] + 1) in set)) d += `M${x},${y + C}h${C}`;
+      if (!(label(p[0] - 1, p[1]) in set)) d += `M${x},${y}v${C}`;
+      if (!(label(p[0] + 1, p[1]) in set)) d += `M${x + C},${y}v${C}`;
+    }
+    if (d) svg('path', { d, class: cls }, layer);
+  }
+
+  // Squares inside the reach of a hostile creature that could make an opportunity
+  // attack now (snapshot `threat`, in feet; every square is 5 ft, diagonals too).
+  // Map: square -> names of the creatures threatening it.
+  function threatened() {
+    const me = current(), out = new Map();
+    if (!me) return out;
+    for (const t of living()) {
+      if (!t.threat || !hostile(me, t)) continue;
+      const r = Math.floor(t.threat / 5);
+      for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+        const x = t.x + dx, y = t.y + dy;
+        if ((!dx && !dy) || x < 0 || y < 0 || x >= ui.W || y >= ui.H) continue;
+        const sq = label(x, y);
+        out.set(sq, (out.get(sq) || []).concat(t.name));
+      }
+    }
+    return out;
   }
 
   // The template under the pointer: squares, creatures caught, allies in a warning colour.
@@ -547,6 +605,8 @@
     if (ui.mode === 'move' && ui.reach) {
       const walk = (ui.reach.walk || {})[sq], dash = (ui.reach.dash || {})[sq];
       bits.push(walk !== undefined ? `${walk} ft away` : dash !== undefined ? `${dash} ft away, needs Dash` : 'out of reach');
+      const by = threatened().get(sq);
+      if (by) bits.push(`inside ${by.join(' and ')}'s reach`);
     }
     return bits.map(b => b[0].toUpperCase() + b.slice(1)).join('. ') + '.';
   }
@@ -642,7 +702,8 @@
     if (ui.mode === 'move') {
       const pv = ui.hover && ui.preview[ui.hover];
       s += '<br>' + (pv ? esc(pv.text) + (ui.armed === ui.hover ? ' <em>Tap again to move.</em>' : '')
-                        : 'Pick a square. Shaded: walking range. Dashed: needs Dash.');
+                        : 'Pick a square. Outlined: walking range. Dashed: needs Dash.' +
+                          (threatened().size ? ' <span class="tx-legend">Red hatching: inside an enemy\'s reach; leaving it can provoke.</span>' : ''));
       if (pv && pv.opportunity_attacks && pv.opportunity_attacks.length)
         s += '<br><span class="tx-warn">This move provokes an opportunity attack.</span>';
     } else if (ui.mode === 'attack') {

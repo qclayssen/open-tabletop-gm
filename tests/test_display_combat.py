@@ -208,6 +208,28 @@ class Snapshot(unittest.TestCase):
         k.reaction_used = True
         self.assertFalse(sync.snapshot(enc)["turn"]["reaction"])
 
+    def test_threat_is_opportunity_attack_reach(self):
+        """`threat` is the reach (ft) a creature can make an opportunity attack at
+        right now, the same test the engine's move uses; 0 when it cannot."""
+        import sys
+        sys.path.insert(0, str(REPO / "scripts"))
+        from tactics import sync
+        from tactics.state import Encounter, Token
+        bite = {"name": "Bite", "type": "melee", "bonus": 3, "reach": 10,
+                "damage": [{"dice": "1d6+1", "type": "piercing"}], "flags": []}
+        k = Token(id="kairos", name="Kairos", side="pc", x=1, y=1, hp=8, max_hp=8, ac=12,
+                  controller="player")
+        f = Token(id="frog-1", name="Giant Frog 1", side="enemy", x=3, y=1, hp=18, max_hp=18,
+                  ac=11, attacks=[bite])
+        g = Token(id="frog-2", name="Giant Frog 2", side="enemy", x=5, y=1, hp=18, max_hp=18, ac=11)
+        enc = Encounter(campaign="t", grid={"rows": ["......."] * 4},
+                        tokens={"kairos": k, "frog-1": f, "frog-2": g},
+                        order=["kairos", "frog-1", "frog-2"], round=1)
+        threat = {t["id"]: t["threat"] for t in sync.snapshot(enc)["tokens"]}
+        self.assertEqual(threat, {"kairos": 0, "frog-1": 10, "frog-2": 0})
+        f.reaction_used = True
+        self.assertEqual(sync.snapshot(enc)["tokens"][1]["threat"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()
