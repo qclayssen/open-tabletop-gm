@@ -214,7 +214,7 @@ def test_walls_block_an_area_and_are_never_in_it():
     squares = _area("sphere", 15, (0, 0), (4, 5), rows=rows, from_self=False)
     assert "E4" not in squares                           # the wall itself
     assert "E3" not in squares                           # 15 ft away, but behind the wall from E6
-    assert "E5" in squares and "D4" in squares and "D3" in squares
+    assert "E5" in squares and "D4" in squares and "F4" in squares
 
 
 def test_areas_stop_at_the_map_edge():
