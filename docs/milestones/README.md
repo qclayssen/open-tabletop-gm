@@ -9,6 +9,7 @@ One file per milestone. `CLAUDE.md` holds only what every session needs (rules, 
 | 3 | [Grid display](03-grid-display.md) | done | [#2](https://github.com/qclayssen/open-tabletop-gm/pull/2) |
 | 4 | [Spells and templates](04-spells-templates.md) | done | [#5](https://github.com/qclayssen/open-tabletop-gm/pull/5) |
 | 5 | [Polish](05-polish.md) | next | |
+| 6 | [Local DM with a smarter advisor](06-local-dm.md) | in review | |
 
 ## Template
 

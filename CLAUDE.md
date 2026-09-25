@@ -54,6 +54,8 @@ scripts/tactics/             grid combat engine (stdlib only)
   cli.py                     the GM commands; run via scripts/tactics/combat.py
   demo.py                    scripted Kairos vs 2 giant frogs, in a temp campaign
 scripts/tactics.md           the GM loop (loaded only at /gm combat grid)
+scripts/localdm/             local DM loop: one small-model call per turn, advisors on a
+                             smarter model (play.py REPL; see docs/milestones/06-local-dm.md)
 systems/dnd5e/
   tactics_rules.py           5e rules: advantage, crits, cover, resistances, 0 HP,
                              death saves, saves and save chance, SRD monster -> Token
@@ -90,6 +92,7 @@ python3 systems/dnd5e/build_srd.py --no-fvtt      # build SRD data (network)
 python3 systems/dnd5e/lookup.py monster "giant frog" --json
 python3 scripts/tactics/demo.py --seed 4          # scripted fight, prints every command
 python3 scripts/tactics/combat.py --help          # GM command reference
+python3 scripts/localdm/play.py -c <campaign>     # play on a local model (docs/model-configs/omniroute-local-dm.md)
 bash display/start-display.sh                     # display on http://localhost:5001
 bash display/start-display.sh --lan               # LAN mode (phones, tablets)
 GM_DISPLAY_PORT=5055 python3 display/gm-display-app.py   # a second display (tests)
@@ -103,6 +106,7 @@ milestone; read the one you are working on).
 - [x] 1. Engine core, [x] 2. CLI and GM loop, [x] 3. Grid display
 - [x] 4. Spells and templates
 - [ ] 5. Polish (next: `docs/milestones/05-polish.md`)
+- [ ] 6. Local DM with a smarter advisor (`docs/milestones/06-local-dm.md`)
 
 At the end of a milestone: update its file (Shipped, Findings, Decisions,
 Open), tick it here, and keep this file under 150 lines.
