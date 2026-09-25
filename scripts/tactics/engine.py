@@ -322,7 +322,8 @@ def _move(enc: Encounter, roller: Roller, t, square, reactions: dict = None) -> 
     enc.turn.diag_parity = grid.step_costs(path[:stop_at + 1], opts, parity0)[1]
     enc.turn.moves.append({"from": list(start), "to": list(t.pos), "feet": used,
                            "parity": parity0})
-    if lines:
+    after = fx.after_move(enc, t) + reveal_hidden(enc)
+    if lines or after:
         enc.turn.undo_locked = True
     if stop_at == 0 and len(path) > 1:
         text = f"{t.name} is stopped at {t.square} before taking a step."
@@ -334,8 +335,7 @@ def _move(enc: Encounter, roller: Roller, t, square, reactions: dict = None) -> 
     hazards = [label(p) for p in path[1:stop_at + 1] if grid.terrain(p).get("hazard")]
     if hazards:
         text += f" Enters hazard at {', '.join(hazards)} (GM decides the effect)."
-    lines += fx.after_move(enc, t) + reveal_hidden(enc)
-    text = " ".join([text] + lines)
+    text = " ".join([text] + lines + after)
     _log(enc, "move", t.id, text, roller, mark)
     return {"path": [label(p) for p in path[:stop_at + 1]], "feet": used,
             "stopped": stop_at < len(path) - 1, "opportunity_attacks": len(lines), "text": text}
@@ -544,6 +544,7 @@ def _apply_riders(enc: Encounter, roller: Roller, a, t, atk: dict, reactions: di
                 dur = f" ({eff['duration']})" if eff.get("duration") else ""
                 again = ", saves again at the end of each turn" if eff.get("repeat") else ""
                 lines.append(f"{t.name} is {cond}{dur}{again}.")
+                lines += fx.check_incapacitated(enc, t)
     return lines
 
 

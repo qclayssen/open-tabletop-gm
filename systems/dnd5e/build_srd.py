@@ -457,7 +457,8 @@ _RIDER_SHAPES = [
     ("save_condition", re.compile(r"(?:and )?" + _SAVE_HEAD + r" or (?:be|become) (knocked prone|poisoned|frightened|"
                                   r"blinded|deafened|paralyzed|restrained|stunned|charmed|incapacitated)"
                                   r"(?: for (\d+ (?:round|minute|hour)s?|\d+ (?:round|minute|hour)))?", re.I)),
-    ("repeat", re.compile(r"(?:the target|a creature) can repeat the saving throw at the end of each of its turns, "
+    ("repeat", re.compile(r"(?:the (?:\w+ )?target|the creature|a creature) can repeat the saving throw "
+                          r"at the end of each of its turns, "
                           r"ending the effect on itself on a success", re.I)),
 ]
 
@@ -469,8 +470,9 @@ def _rider_effects(rider: str) -> tuple:
     effects, leftover = [], []
     for sentence in re.split(r"(?<=\.)\s+", rider.strip()):
         rest = sentence
-        if re.search(r"\bif the target is (?!a creature,)", sentence, re.I):
-            leftover.append(sentence)              # "a creature other than an elf": GM checks
+        plain = re.sub(r"\bif the target is a creature,", "", sentence, flags=re.I)
+        if re.search(r"\b(if|unless)\b", plain, re.I):
+            leftover.append(sentence)              # "other than an elf", "isn't already grappling"
             continue
         for kind, rx in _RIDER_SHAPES:
             m = rx.search(rest)

@@ -44,7 +44,10 @@ def _held(enc, t):
 
 
 def _grapple_attack(atk) -> bool:
-    return any(e.get("kind") == "grapple" for e in atk.get("rider_effects", []))
+    """A grappling attack that cannot be used on anyone else while it holds ("the
+    frog can't bite another target"); a crab's other claw can still grab."""
+    return (any(e.get("kind") == "grapple" for e in atk.get("rider_effects", []))
+            and "another target" in atk.get("rider_rest", ""))
 
 
 def _conc_break(enc, R, target, hit_chance: float, exp: float) -> float:

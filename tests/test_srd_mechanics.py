@@ -115,3 +115,17 @@ def test_breath_weapons_carry_area_usage_and_conditions():
     assert dust["rider_effects"] == [{"kind": "save", "ability": "dex", "dc": 10,
                                       "condition": "blinded", "duration": "1 minute",
                                       "repeat": "end"}]
+
+
+def test_riders_with_any_condition_stay_text():
+    effects, rest = build_srd._rider_effects(
+        "and the target is grappled (escape DC 14) if the devil isn't already grappling a creature")
+    assert effects == [] and "isn't already grappling" in rest
+
+
+def test_repeat_save_wordings():
+    effects, rest = build_srd._rider_effects(
+        "and the target must succeed on a DC 11 Constitution saving throw or be poisoned for 1 minute. "
+        "The creature can repeat the saving throw at the end of each of its turns, ending the effect "
+        "on itself on a success")
+    assert effects[0]["repeat"] == "end" and not rest

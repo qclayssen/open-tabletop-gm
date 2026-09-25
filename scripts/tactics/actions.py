@@ -124,7 +124,9 @@ def ready(enc, roller: Roller, token_ref, kind: str, what: str = None, target: s
         if spec["casting"] != "action" or spec["mode"] == "reaction":
             raise CombatError(f"Only a spell with a casting time of 1 action can be readied, "
                               f"not {spec['name']}.")
+        spells._check_economy(enc, t, spec)       # the bonus-action spell rule applies too
         lv = spells._check_slot(t, spec)
+        enc.turn.spells.append({"level": spec["level"], "casting": "action"})
         if lv:
             t.extra["slots"][lv]["used"] += 1
         name = f"{spec['name']} (readied)"

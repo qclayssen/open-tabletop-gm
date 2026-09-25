@@ -41,6 +41,18 @@ BUILTIN = {
     "hideous laughter": {"fail_conditions": ["prone", "incapacitated"], "repeat": "end"},
     "entangle": {"fail_conditions": ["restrained"]},
     "web": {"fail_conditions": ["restrained"]},
+    # The SRD fields say the wrong thing for these: narrate, or fix the shape.
+    "disintegrate": {"area": None},                  # one target; the cube is for objects
+    "false life": {"narrate": True},                 # temporary HP, not healing
+    "aid": {"narrate": True},                        # raises maximum HP
+    "control water": {"narrate": True},
+    "fire storm": {"narrate": True},                 # ten separate cubes
+    "phantasmal killer": {"narrate": True},          # frightened first, damage each turn
+    "chain lightning": {"narrate": True},            # several targets
+    "scorching ray": {"narrate": True},              # three rays, three attacks
+    "eldritch blast": {"narrate_from_level": 5},     # one beam per tier above level 4
+    "plane shift": {"narrate": True},
+    "ray of enfeeblement": {"narrate": True},
 }
 
 # SRD flags the engine can live with once BUILTIN fills the gap.
@@ -190,6 +202,8 @@ def resolve(caster, name: str, level: int = None) -> dict:
         spec["mode"] = "effect"
         spec["effect"] = m["effect"]
     else:
+        spec["mode"] = "narrate"
+    if m.get("narrate") or char_level >= m.get("narrate_from_level", 99):
         spec["mode"] = "narrate"
     blocking = {"range_unparsed", "area_placement", "damage_unparsed", "save_effect", "effect"}
     if spec["mode"] not in ("narrate", "reaction") and blocking & set(spec["flags"]):

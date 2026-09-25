@@ -67,6 +67,7 @@ READ_ONLY = ("status", "options", "preview", "reachable", "targets", "log", "spe
              "preview-area")
 # Flags that do not change what a command means: a re-run with them added is
 # the same command, so it replays the same engine dice (see _pending).
+OLD_FORM = "*"     # decision key for a --react given up front (opportunity attacks)
 _ANSWER_FLAGS = {"--roll": 1, "--react": 1, "--for-me": 0, "--player-roll": 0, "--json": 0}
 
 
@@ -176,11 +177,14 @@ def _reactions(enc, args) -> dict:
     answers = [a == "yes" for a in (args.react or [])]
     if not answers:
         return {}
-    keys = getattr(args, "_decisions", []) or []
+    keys = getattr(args, "_decisions", []) or [OLD_FORM]
     out = {}
-    if not keys:
-        out = {t.id: answers[0] for t in enc.tokens.values() if t.controller == "player"}
-    out.update(dict(zip(keys, answers)))
+    for key, answer in zip(keys, answers):
+        if key == OLD_FORM:                  # an answer given before any question was asked
+            out.update({t.id: answer for t in enc.tokens.values()
+                        if t.controller == "player" and t.id not in out})
+        else:
+            out[key] = answer
     return out
 
 
@@ -465,10 +469,21 @@ def run(args) -> int:
                 raise Stop(f"{t.name} is not concentrating.")
             text = effects.end_concentration(enc, t, "GM ruling")
             engine._log(enc, "condition", t.id, f"GM: {text}")
+        elif cmd == "condition" and args.action == "remove" and any(
+                args.condition.lower() in e.get("conditions", [])
+                for e in engine._resolve(enc, args.token).effects):
+            t = engine._resolve(enc, args.token)
+            names = effects.remove_granting(t, args.condition.lower())
+            t.remove_condition(args.condition)
+            text = f"{t.name}: {args.condition.lower()} removed (ends {', '.join(names)})."
+            engine._log(enc, "condition", t.id, f"GM: {text}")
         elif cmd == "condition":
             t = engine._resolve(enc, args.token)
             (t.add_condition if args.action == "add" else t.remove_condition)(args.condition)
             text = f"{t.name}: {args.condition.lower()} {'added' if args.action == 'add' else 'removed'}."
+            more = effects.check_incapacitated(enc, t) if args.action == "add" else []
+            if more:
+                text += " " + " ".join(more)
             engine._log(enc, "condition", t.id, f"GM: {text}")
         elif cmd == "adjust":
             text = _adjust(enc, args)
@@ -632,7 +647,10 @@ def main(argv=None) -> int:
         return 2
     except engine.DecisionNeeded as e:
         if camp_dir is not None:
-            keys = args._decisions + ([e.key] if e.key not in args._decisions else [])
+            keys = list(args._decisions)
+            if not keys and args.react:      # answers given up front keep their place
+                keys = [OLD_FORM] * len(args.react)
+            keys += [e.key] if e.key not in keys else []
             _save_pending(camp_dir, canon, args._seed, keys)
         print(f"{e.prompt} Nothing has happened yet.\n"
               f"Re-run the same command with {_prior(args)}--react yes or --react no.")

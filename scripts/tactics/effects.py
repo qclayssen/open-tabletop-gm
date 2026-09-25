@@ -27,14 +27,28 @@ from .roller import Roller
 
 # ─── adding and removing ──────────────────────────────────────────────────────
 
+# Conditions that outlast the effect that caused them: a creature knocked prone
+# by Hideous Laughter is still prone when the laughter ends.
+PERSISTS = {"prone"}
+
+
 def add(token, effect: dict) -> list:
-    """Attach an effect; returns the conditions it could not grant (immunity)."""
+    """Attach an effect; returns the conditions it could not grant (immunity).
+    effect["granted"] records the conditions this effect added, so removing it
+    never strips a condition the creature already had for another reason."""
     immune = {c.lower() for c in token.condition_immunities}
-    blocked = [c for c in effect.get("conditions", []) if c in immune]
-    effect = dict(effect, conditions=[c for c in effect.get("conditions", []) if c not in immune])
+    wanted = effect.get("conditions", [])
+    blocked = [c for c in wanted if c in immune]
+    kept = [c for c in wanted if c not in immune]
+    for c in kept:
+        if c in PERSISTS:
+            token.add_condition(c)
+    tracked = [c for c in kept if c not in PERSISTS]
+    effect = dict(effect, conditions=tracked,
+                  granted=[c for c in tracked if not token.has(c)])
     effect.setdefault("armed", False)
     token.effects.append(effect)
-    for c in effect["conditions"]:
+    for c in tracked:
         token.add_condition(c)
     return blocked
 
@@ -43,9 +57,30 @@ def remove(token, effect: dict) -> None:
     if effect in token.effects:
         token.effects.remove(effect)
     still = {c for e in token.effects for c in e.get("conditions", [])}
-    for c in effect.get("conditions", []):
+    for c in effect.get("granted", effect.get("conditions", [])):
         if c not in still:
             token.remove_condition(c)
+
+
+def remove_granting(token, condition: str) -> list:
+    """Remove every effect that grants `condition` (a GM ruling). Returns their names."""
+    gone = [e for e in token.effects if condition in e.get("conditions", [])]
+    for e in gone:
+        remove(token, e)
+    return [e.get("name", "effect") for e in gone]
+
+
+def check_incapacitated(enc, token) -> list:
+    """A creature that can no longer act (paralyzed, stunned, dropped) loses
+    concentration and lets go of what it grapples."""
+    R = rules_for(enc)
+    if R.can_act(token) and not token.dead:
+        return []
+    lines = []
+    if token.concentration:
+        lines.append(end_concentration(enc, token, "incapacitated"))
+    lines += release(enc, token, "incapacitated")
+    return lines
 
 
 def ac_bonus(token) -> int:
@@ -73,6 +108,10 @@ def start_of_turn(enc, token) -> list:
     lines = []
     for t in enc.tokens.values():
         for e in list(t.effects):
+            if e.get("expires_round") is not None and e["expires_round"] <= enc.round \
+                    and e.get("source") == token.id:
+                remove(t, e)                       # "within 1 minute" (10 rounds)
+                continue
             if e.get("source") != token.id:
                 continue
             if e.get("ends") == "start":
@@ -179,19 +218,16 @@ def after_damage(enc, roller: Roller, target, dmg: dict) -> list:
         return []
     R = rules_for(enc)
     lines = []
-    if target.concentration:
-        if not R.can_act(target) or target.dead:
-            lines.append(end_concentration(enc, target, "incapacitated"))
-        elif dmg.get("concentration_dc"):
-            res = R.saving_throw(target, "con", dmg["concentration_dc"], roller,
-                                 player_rolls(enc, target, roller))
-            lines.append("Concentration: " + res["text"])
-            if not res["success"]:
-                lines.append(end_concentration(enc, target))
-    if not R.can_act(target) or target.dead:
-        lines += release(enc, target, "incapacitated")
+    if target.concentration and R.can_act(target) and not target.dead and dmg.get("concentration_dc"):
+        res = R.saving_throw(target, "con", dmg["concentration_dc"], roller,
+                             player_rolls(enc, target, roller))
+        lines.append("Concentration: " + res["text"])
+        if not res["success"]:
+            lines.append(end_concentration(enc, target))
+    lines += check_incapacitated(enc, target)
     if target.dead:
-        target.effects = [e for e in target.effects if not e.get("grapple")]
+        for e in list(target.effects):             # nothing holds or affects a corpse
+            remove(target, e)
     return lines
 
 
@@ -249,7 +285,8 @@ def silvery_barbs(enc, roller: Roller, caster, rolled_by, what: str, natural: in
     keep = min(natural, r.natural)
     new_total = total - natural + keep
     who = beneficiary if beneficiary is not None else caster
-    add(who, {"name": "silvery barbs", "source": caster.id, "advantage_next": True})
+    add(who, {"name": "silvery barbs", "source": caster.id, "advantage_next": True,
+              "expires_round": enc.round + 10})
     lines = [f"{caster.name} casts Silvery Barbs (level {lv} slot): {rolled_by.name} rerolls "
              f"{r.natural}, keeps {keep} ({new_total}). {who.name} gains advantage on the next roll."]
     return keep, new_total, lines

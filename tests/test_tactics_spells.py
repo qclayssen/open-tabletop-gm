@@ -402,3 +402,93 @@ def test_a_grappling_frog_keeps_biting_its_target_and_stays_put():
     assert bites and all(o["target"] == "kairos" for o in bites)
     assert "keeps grapple" in bites[0]["label"]
     assert not any(o["kind"] in ("retreat", "dash") for o in opts)
+
+
+# ─── review fixes (each pinned by a regression test) ──────────────────────────
+
+def test_a_paralyzed_grappler_lets_go():
+    k, f = caster(pos=(0, 0), spells=KAIROS_SPELLS + ["Hold Person"]), frog("frog-1", (1, 0))
+    k.extra["slots"]["2"] = {"total": 1, "used": 0}
+    k.reactions = "off"
+    enc = fight(f, k)
+    engine.attack(enc, roller(15, 4), "frog-1", "kairos")
+    engine.end_turn(enc, roller())
+    k.remove_condition("restrained")                     # a test shortcut: let him cast
+    k.remove_condition("grappled")
+    k.effects[0]["conditions"] = []
+    k.add_condition("grappled")
+    k.effects[0]["conditions"] = ["grappled"]
+    spells.cast(enc, roller(2), "kairos", "hold person", ["frog-1"])    # WIS 2 + 0: fails
+    assert f.has("paralyzed") and not k.has("grappled")
+
+
+def test_a_hidden_caster_keeps_advantage_on_a_spell_attack():
+    k, f = caster(), frog("frog-1", (4, 0))
+    k.add_condition("hidden")
+    enc = fight(k, f)
+    # Advantage: the player's kept d20 is supplied as one value (the engine keeps the higher).
+    res = spells.cast(enc, roller(supplied=[18, 7]), "kairos", "fire bolt", ["frog-1"])
+    assert "advantage" in res["text"] and not k.has("hidden")
+
+
+def test_ready_respects_the_bonus_action_spell_rule():
+    k = caster(spells=KAIROS_SPELLS + ["Healing Word"])
+    enc = fight(k, frog("frog-1", (4, 0)))
+    spells.cast(enc, roller(supplied=[2]), "kairos", "healing word", ["kairos"])
+    with pytest.raises(CombatError, match="only a 1-action cantrip"):
+        actions.ready(enc, roller(), "kairos", "cast", "magic missile", "frog-1")
+    assert k.extra["slots"]["1"]["used"] == 1
+
+
+def test_undo_cannot_bring_back_a_released_grapple():
+    k, f = caster(pos=(0, 0)), frog("frog-1", (1, 0))
+    k.reactions = "off"
+    enc = fight(f, k)
+    engine.attack(enc, roller(15, 4), "frog-1", "kairos")
+    enc.turn.action_used, enc.turn.undo_locked = True, False
+    k.reaction_used = True                               # no opportunity attack
+    engine.move(enc, roller(), "frog-1", "D1")
+    assert not k.has("grappled") and not engine.can_undo(enc)
+
+
+def test_ending_an_effect_keeps_prone_and_other_conditions():
+    goblin = monster("goblin", "goblin-1", (3, 0))
+    goblin.add_condition("poisoned")                     # from something else
+    enc = fight(caster(), goblin)
+    e = {"name": "hideous laughter", "source": "kairos", "conditions": ["prone", "incapacitated", "poisoned"]}
+    fx.add(goblin, e)
+    fx.remove(goblin, goblin.effects[0])
+    assert goblin.has("prone") and goblin.has("poisoned") and not goblin.has("incapacitated")
+
+
+def test_nothing_clings_to_a_corpse():
+    k, f = caster(pos=(0, 0)), frog("frog-1", (1, 0))
+    k.reactions = "off"
+    enc = fight(f, k)
+    engine.attack(enc, roller(15, 4), "frog-1", "kairos")
+    f.hp = 1
+    enc.turn_index, enc.turn.actor = 1, "kairos"
+    enc.turn.action_used = False
+    k.effects[0]["conditions"], k.conditions = [], []    # let him act for the test
+    spells.cast(enc, roller(supplied=[15, 7]), "kairos", "fire bolt", ["frog-1"])
+    assert f.dead and not f.effects and not fx.grappling(enc, f)
+
+
+def test_mass_heals_and_temporary_hp_spells_do_not_crash_or_heal_wrongly():
+    k = caster(spells=KAIROS_SPELLS + ["False Life", "Mass Cure Wounds"])
+    k.extra["slots"]["5"] = {"total": 1, "used": 0}
+    heal = {"casting": "action", "range": 0, "origin": "self", "concentration": False, "flags": []}
+    k.extra["spellbook"] = {
+        "false life": dict(heal, name="False Life", level=1, heal={"slot": {"1": "1d4+4"}}),
+        "mass cure wounds": dict(heal, name="Mass Cure Wounds", level=5, range=60, origin="point",
+                                 area={"shape": "sphere", "size": 30},
+                                 heal={"slot": {"5": "3d8+MOD"}})}
+    assert RULES.spell(k, "false life")["mode"] == "narrate"        # temp HP: the GM's
+    ally, f = caster(pos=(2, 0)), frog("frog-1", (3, 0))
+    ally.id, ally.name, ally.hp = "mira", "Mira", 1
+    k.hp = 2
+    enc = fight(k, ally, f)
+    f.hp = 5
+    # 3d8+3 = 10 + 3 for each of Kairos and Mira; the frog in the area is not healed.
+    spells.cast(enc, roller(supplied=[10, 10]), "kairos", "mass cure wounds", ["B1"])
+    assert (k.hp, ally.hp, f.hp) == (8, 8, 5)

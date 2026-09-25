@@ -221,11 +221,10 @@ def cast(enc, roller: Roller, caster_ref, spell: str, targets: list = None, leve
         c.concentration = None                   # holding the spell ends as it is released
     if spec["concentration"]:
         lines += fx.start_concentration(enc, c, spec["name"])
-    if c.has("hidden"):
+    mode = spec["mode"]
+    if c.has("hidden") and mode != "attack":     # a spell attack keeps its advantage, then reveals
         c.remove_condition("hidden")
         lines.append(f"{c.name} is no longer hidden.")
-
-    mode = spec["mode"]
     if mode == "attack":
         res = _resolve_attack(enc, roller, c, tg["target"], spec["attack"], tg["ctx"], reactions)
         lines.append(res["text"])
@@ -242,8 +241,13 @@ def cast(enc, roller: Roller, caster_ref, spell: str, targets: list = None, leve
     elif mode == "darts":
         lines += _darts(enc, roller, c, spec, tg["darts"], reactions)
     elif mode == "heal":
-        r = roller.roll(spec["heal"], c.name, f"{spec['name']} healing", player=player_rolls(enc, c))
-        lines.append(rules_for(enc).heal(tg["target"], r.total)["text"])
+        # An area heal (Mass Cure Wounds) heals the caster's side in the area.
+        who = [tg["target"]] if tg["target"] else [t for t in tg["affected"] if not hostile(c, t)]
+        for t in who:
+            r = roller.roll(spec["heal"], c.name, f"{spec['name']} healing", player=player_rolls(enc, c))
+            lines.append(rules_for(enc).heal(t, r.total)["text"])
+        if not who:
+            lines.append("Nobody on your side is in the area.")
     elif mode == "effect":
         lines.append(_effect(c, tg["target"], spec))
     else:
@@ -304,6 +308,7 @@ def _resolve_saves(enc, roller, c, name, affected, save, damage, origin_sq, reac
                                  + (" (saves again at the end of each turn)." if repeat else "."))
                 if blocked:
                     lines.append(f"{t.name} is immune to {', '.join(blocked)}.")
+                lines += fx.check_incapacitated(enc, t)
             if on_fail:
                 fx.add(t, dict(on_fail, source=c.id))
                 if on_fail.get("save_penalty"):
@@ -317,6 +322,7 @@ def _resolve_saves(enc, roller, c, name, affected, save, damage, origin_sq, reac
                                "repeat": eff.get("repeat")})
                     dur = f" ({eff['duration']})" if eff.get("duration") else ""
                     lines.append(f"{t.name} is {cond}{dur}.")
+                    lines += fx.check_incapacitated(enc, t)
     return lines
 
 

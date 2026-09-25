@@ -339,3 +339,32 @@ def test_the_mephit_demo_shows_spells_and_a_breath_weapon(camp, capsys):
     out = capsys.readouterr().out
     assert res["ok"] and "$ combat.py cast kairos \"fire bolt\" mephit-1" in out
     assert "Frost Breath: 15 ft cone" in out and "preview-area" in out
+
+
+def test_an_up_front_react_does_not_shift_onto_the_next_question(camp, capsys, monkeypatch):
+    import random as _random
+    begin(capsys)
+    _edit(camp, actor="frog-1", pos={"frog-1": (2, 6)})
+    hit = next(s for s in range(500) if 9 <= _random.Random(s).randint(1, 20) <= 16)
+    monkeypatch.setattr(cli.random, "randrange", lambda n: hit)
+    code, out = run(capsys, "attack", "frog-1", "kairos", "--react", "yes")
+    assert code == 2 and "Silvery Barbs" in out
+    code, out = run(capsys, "attack", "frog-1", "kairos", "--react", "yes", "--react", "no",
+                    "--react", "no")
+    assert "casts Silvery Barbs" not in out
+
+
+def test_removing_a_condition_ends_the_effect_behind_it(camp, capsys):
+    begin(capsys)
+    path = _edit(camp, pos={"frog-1": (2, 6)})
+    enc = json.loads(path.read_text(encoding="utf-8"))
+    enc["tokens"]["kairos"]["conditions"] = ["grappled", "restrained"]
+    enc["tokens"]["kairos"]["effects"] = [{"name": "grapple", "source": "frog-1",
+                                           "grapple": {"escape_dc": 11},
+                                           "conditions": ["grappled", "restrained"],
+                                           "granted": ["grappled", "restrained"]}]
+    path.write_text(json.dumps(enc), encoding="utf-8")
+    code, out = run(capsys, "condition", "kairos", "remove", "grappled")
+    assert code == 0 and "ends grapple" in out
+    code, out = run(capsys, "status")
+    assert "grappled" not in out and "restrained" not in out
