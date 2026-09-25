@@ -45,13 +45,15 @@ def _join(*parts) -> str:
 
 class Session:
     def __init__(self, campaign, client, models, *, camp_dir, bridge=None,
-                 show_notes: bool = False, budget: int = 12000):
+                 show_notes: bool = False, budget: int = 12000, reasoning="env"):
         self.campaign = campaign
         self.client, self.models = client, models
         self.camp_dir = pathlib.Path(camp_dir)
         self.bridge = bridge or Bridge(campaign, self.camp_dir)
         self.memory = Memory(self.camp_dir)
-        self.summarizer = Summarizer(client, models.fast, self.memory)
+        # reasoning_effort for local-tier calls; advisors (cloud) get none sent.
+        self.reasoning = llm.reasoning_from_env() if reasoning == "env" else reasoning
+        self.summarizer = Summarizer(client, models.fast, self.memory, reasoning=self.reasoning)
         self.show_notes, self.budget = show_notes, budget
         self.pending = None            # {"args": [...], "rolls": [...]} while the player rolls
         self.saved_notes = ""          # from /advise, used by the next DM call
@@ -71,7 +73,8 @@ class Session:
                                       self.memory.summary(), self.memory.unsummarized(),
                                       engine=engine, notes=notes, player=player, task=task,
                                       budget=self.budget)
-        return reply.parse(self.client.chat(self.models.dm, msgs, max_tokens=500, role="dm").text)
+        return reply.parse(self.client.chat(self.models.dm, msgs, max_tokens=500, role="dm",
+                                            reasoning=self.reasoning).text)
 
     def _consult(self, names, question, model=None) -> str:
         recent = "\n".join(f"{context.LABEL[t['role']]}: {t['text']}"
@@ -139,7 +142,8 @@ class Session:
             text = reply.strip_think(self.client.chat(
                 self.models.fast, [{"role": "system", "content": ENEMY_PICK},
                                  {"role": "user", "content": menu}],
-                max_tokens=16, temperature=0.2, role="enemy-pick").text)
+                max_tokens=16, temperature=0.2, role="enemy-pick",
+                reasoning=self.reasoning).text)
         except llm.LLMError:
             return 1
         m = re.search(r"\d+", text)

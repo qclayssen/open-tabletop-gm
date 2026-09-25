@@ -10,6 +10,10 @@ Environment:
     GM_ADVISOR_MODEL  escalations and triggers             (default dm-advisor)
     GM_COUNCIL_MODEL  /advise council                      (default dm-council)
     GM_FAST_MODEL     enemy picks and summaries            (default: GM_DM_MODEL)
+    GM_REASONING      reasoning_effort sent on local-tier calls (dm, picks,
+                      summaries): none (default), low, medium, high, or off to
+                      send nothing. Qwen3.5 ignores /no_think and spends its
+                      whole budget reasoning unless this is "none".
 """
 from __future__ import annotations
 
@@ -82,12 +86,14 @@ class Client:
         self._lock = threading.Lock()
 
     def chat(self, model: str, messages: list, *, max_tokens: int = 600,
-             temperature: float = 0.8, role: str = "dm") -> Reply:
+             temperature: float = 0.8, role: str = "dm", reasoning: str | None = None) -> Reply:
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
         body = {"model": model, "messages": messages, "max_tokens": max_tokens,
                 "temperature": temperature, "stream": False}
+        if reasoning:
+            body["reasoning_effort"] = reasoning
         start = time.monotonic()
         data = self.transport(f"{self.base_url}/v1/chat/completions", body, headers, self.timeout)
         try:
@@ -111,6 +117,11 @@ class Client:
             self.usage_log.parent.mkdir(parents=True, exist_ok=True)
             with open(self.usage_log, "a", encoding="utf-8") as f:
                 f.write(json.dumps(row) + "\n")
+
+
+def reasoning_from_env() -> str | None:
+    value = os.environ.get("GM_REASONING", "none").strip().lower()
+    return None if value in ("", "off") else value
 
 
 def totals(path) -> list:

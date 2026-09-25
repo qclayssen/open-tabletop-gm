@@ -20,8 +20,9 @@ PROMPT = ("You keep the running summary of a tabletop roleplaying session. Merge
 
 class Summarizer:
     def __init__(self, client, model: str, memory, *, keep: int = 6, batch: int = 8,
-                 words: int = 250):
+                 words: int = 250, reasoning: str | None = None):
         self.client, self.model, self.memory = client, model, memory
+        self.reasoning = reasoning
         self.keep, self.batch, self.words = keep, batch, words
         self.last_error = ""
         self._thread = None
@@ -41,7 +42,8 @@ class Summarizer:
                                                 f"{self.memory.summary() or '(empty)'}\n\n"
                                                 f"## New turns\n{new}"}]
         text = strip_think(self.client.chat(self.model, messages, max_tokens=self.words * 2,
-                                            temperature=0.3, role="summary").text)
+                                            temperature=0.3, role="summary",
+                                            reasoning=self.reasoning).text)
         if not text:
             return False
         self.memory.set_summary(text, upto)

@@ -235,3 +235,12 @@ def test_the_fast_model_picks_for_enemies(tmp_path):
     Session("demo", c, models, camp_dir=camp_dir(tmp_path, "council: off"), bridge=b).handle("/c end-turn")
     assert ("dm-fast", "enemy-pick") in [(m, r) for m, r, _ in c.calls]
     assert llm.Models("a").fast == "a"
+
+
+def test_local_calls_send_reasoning_none_and_advisors_send_nothing(tmp_path, monkeypatch):
+    monkeypatch.delenv("GM_REASONING", raising=False)
+    replies = iter(['X\n{"escalate": "lore of the cult?"}', "Y" + NULLS])
+    c = FakeClient(lambda m, msgs, role: "Note." if role.startswith("advisor") else next(replies))
+    Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path), bridge=FakeBridge()).handle("hm")
+    assert {r for role, r in c.reasoning if role == "dm"} == {"none"}
+    assert {r for role, r in c.reasoning if role.startswith("advisor")} == {None}

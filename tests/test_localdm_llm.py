@@ -83,3 +83,17 @@ def test_models_url_and_key_come_from_the_environment(monkeypatch):
     assert (m.dm, m.advisor, m.council) == ("qwen3:14b", "dm-advisor", "dm-council")
     c = llm.Client()
     assert c.base_url == "http://ollama:11434" and c.api_key == "ok"
+
+
+def test_reasoning_effort_is_sent_only_when_asked(monkeypatch):
+    seen = []
+    c = llm.Client(base_url="http://x", api_key="", transport=fake(seen=seen))
+    c.chat("m", [])
+    c.chat("m", [], reasoning="none")
+    assert "reasoning_effort" not in seen[0][1] and seen[1][1]["reasoning_effort"] == "none"
+    monkeypatch.delenv("GM_REASONING", raising=False)
+    assert llm.reasoning_from_env() == "none"
+    monkeypatch.setenv("GM_REASONING", "off")
+    assert llm.reasoning_from_env() is None
+    monkeypatch.setenv("GM_REASONING", "Medium")
+    assert llm.reasoning_from_env() == "medium"

@@ -18,11 +18,14 @@ class FakeClient:
     def __init__(self, responder):
         self.responder = responder
         self.calls = []
+        self.reasoning = []
         self._lock = threading.Lock()
 
-    def chat(self, model, messages, *, max_tokens=600, temperature=0.8, role="dm"):
+    def chat(self, model, messages, *, max_tokens=600, temperature=0.8, role="dm",
+             reasoning=None):
         with self._lock:
             self.calls.append((model, role, messages))
+            self.reasoning.append((role, reasoning))
         text = self.responder(model, messages, role)
         return llm.Reply(text, model, 100, 10, 0.0)
 
