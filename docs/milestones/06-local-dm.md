@@ -141,6 +141,52 @@ Hardware note: the reference machine has 16 GB of unified memory.
 - A boss at 2x the top PC max HP made a giant frog (18) a boss against a level
   1 wizard (8); 3x fixes that.
 
+## Combat autopilot (no model in a fight)
+
+Live runs, 5 maps (frog-pond, detention-bog, firejolt-rooftops, mage-tower,
+blank), 4 local DMs (Ollama, M1 Pro 16 GB), 5 or 6 player turns each, the DM
+model reading every action:
+
+| DM model | Commands written | Accepted by the engine | Avg s per DM call | Fights finished |
+|---|---|---|---|---|
+| qwen3.5:4b | 0 of 26 turns (writes `{"token","target"}` objects) | 0 | 7.7 | 0 of 5 |
+| gemma4:e4b | 14 of 24 | 5 | 6.9 | 0 of 5 |
+| qwen3.5:9b | 14 of 27 | 2 | 20.8 | 0 of 5 |
+| qwen3:14b | 20 of 28 | 9 | 18.9 | 0 of 5 |
+
+Small models also invented damage ("you hit for 7") and mixed up names, and a
+local advisor (qwen3.5:9b, no `reasoning_effort` sent) answered with nothing.
+
+So grid combat now runs on code (`--combat engine`, the default; `GM_COMBAT`):
+
+- `scripts/localdm/autopilot.py`: the player's line to engine commands by
+  keywords (attack, cast, throw, move to C5, back away, dash, dodge, end turn),
+  target names ("frog 2", "the second frog", "it", "nearest", "wounded") and the
+  sheet's attacks and spells. Equal targets get a one-line question. Talk goes to
+  the model as before. Results are templated from the engine text, so every
+  number is the engine's.
+- `scripts/tactics/policy.py` and `choose <token> auto`: enemy picks with no
+  model. Profiles from the stat block (beast, pack, mindless, skirmisher,
+  artillery, brute; `extra.traits` and `extra.alignment` are now kept) re-score
+  `ai.options()`; `ai_difficulty: easy | normal | deadly` in state.md sets a
+  seeded softmax. A downed PC is attacked only by the hungry dead, or on deadly
+  by a smart evil foe. Design from two expert reviews (game-AI: utility scoring,
+  archetypes, softmax difficulty; 5e: Ammann-style creature behaviour).
+- The model speaks only at a kill, a PC down, a crit or the end (`--flavor big`),
+  or never (`--flavor off`). A won fight runs `end` by itself.
+- Fixed on the way: a Silvery Barbs question during an enemy turn was read as a
+  roll request (the re-run hint lists `--roll`), so typed numbers piled up
+  forever; every `--react` answer is now replayed in order.
+
+Rerun with the autopilot, same maps, qwen3.5:4b only for big moments: 3 of 5
+fights won and ended, 1 lost (wolf vs a level 1 wizard), 2 to 3 DM calls per
+fight instead of about 11, 0 s per ordinary turn.
+
+Open: on firejolt-rooftops the cafe walls block every shot and neither side
+closes in (the menu offers no approach when no attack reaches; the autopilot
+does not step to a square with line of sight). Pack Tactics is not applied by
+`rules.advantage()`. Local advisors need `reasoning_effort: none`.
+
 ## Open
 
 - Raise OmniRoute `requestQueue.maxWaitMs` (15 s) if `dm-local` should work
