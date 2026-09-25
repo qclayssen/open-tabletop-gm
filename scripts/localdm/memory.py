@@ -37,6 +37,22 @@ class Memory:
             with open(self._transcript, "a", encoding="utf-8") as f:
                 f.write(json.dumps({"role": role, "text": text}, ensure_ascii=False) + "\n")
 
+    def seed_from_tail(self, limit: int = 6) -> int:
+        """A campaign with no transcript yet starts from what the display already showed
+        (session_tail.json: the opening scene, or the last exchanges of a resumed game)."""
+        path = self.dir.parent / "session_tail.json"
+        if self.turns() or not path.exists():
+            return 0
+        try:
+            chunks = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return 0
+        texts = [c["text"].strip() for c in chunks
+                 if isinstance(c, dict) and isinstance(c.get("text"), str) and c["text"].strip()]
+        for text in texts[-limit:]:
+            self.add("dm", text)
+        return len(texts[-limit:])
+
     def turns(self) -> list:
         with self._lock:
             if not self._transcript.exists():
