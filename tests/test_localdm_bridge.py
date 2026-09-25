@@ -63,6 +63,9 @@ def test_pending_markers():
     assert Result(2, "Take it? Re-run the same command with --react yes or --react no.").needs_react
     assert not Result(2, "usage: combat.py [--roll ROLL] [--react {yes,no}]").needs_roll
     assert not Result(2, "usage: combat.py [--react {yes,no}]").needs_react
+    react = Result(2, "Wolf hits Kairos (12). Cast Silvery Barbs? Nothing has happened yet.\n"
+                      "Re-run the same command with --roll 7 --react yes or --react no.")
+    assert react.needs_react and not react.needs_roll
 
 
 @pytest.mark.parametrize("cmd,expected", [

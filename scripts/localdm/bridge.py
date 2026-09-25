@@ -24,11 +24,14 @@ class Result:
     # The engine's own wording; argparse usage text also mentions --roll.
     @property
     def needs_roll(self) -> bool:
-        return self.code == 2 and "Re-run the same command with" in self.text and "--roll" in self.text
+        # A reaction question also lists the dice already rolled as --roll N.
+        return (self.code == 2 and "Re-run the same command with" in self.text
+                and "--roll" in self.text and not self.needs_react)
 
     @property
     def needs_react(self) -> bool:
-        return self.code == 2 and "Re-run the same command with --react" in self.text
+        return (self.code == 2 and "Re-run the same command with" in self.text
+                and "--react yes or --react no" in self.text)
 
 
 def parse_player_command(cmd: str):

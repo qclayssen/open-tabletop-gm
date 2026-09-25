@@ -27,13 +27,16 @@ if __package__ in (None, ""):                        # run as a script
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
     import localdm                                    # noqa: F401  (puts scripts/ on sys.path)
 
-from localdm import advisor, context, llm, reply, triggers      # noqa: E402
+from localdm import advisor, autopilot, context, llm, reply, triggers      # noqa: E402
 from localdm.bridge import Bridge, parse_player_command          # noqa: E402
 from localdm.memory import Memory                               # noqa: E402
 from localdm.summarizer import Summarizer                       # noqa: E402
 
 ENEMY_PICK = ("You choose actions for monsters in a tabletop fight. Reply with only the "
               "number of the best option for this creature.\n/no_think")
+BIG_MOMENT = ("In one or two vivid sentences, add colour to the big moment in the Engine "
+              "section (a kill, a fall, the end of the fight). No numbers. Then the JSON "
+              "line with null for both fields.")
 NARRATE = ("Narrate what the Engine section says just happened, in 1 to 4 sentences. "
            "Then the JSON line with null for both fields.")
 MAX_ENEMY_TURNS = 20
@@ -44,6 +47,11 @@ SHADOW = ("Review the latest exchange against the campaign notes. In at most 3 s
 _OPTION = re.compile(r"^(\d+)\. ", re.M)
 
 
+def _hint(res) -> str:
+    return ("Type yes or no." if res.needs_react
+            else "Roll it and type the number on the die (no modifier).")
+
+
 def _join(*parts) -> str:
     return "\n\n".join(p for p in parts if p)
 
@@ -51,7 +59,8 @@ def _join(*parts) -> str:
 class Session:
     def __init__(self, campaign, client, models, *, camp_dir, bridge=None,
                  show_notes: bool = False, budget: int = 12000, reasoning="env",
-                 local_client=None, shadow: bool = False):
+                 local_client=None, shadow: bool = False, combat: str = "model",
+                 flavor: str = "big"):
         self.campaign = campaign
         self.client, self.models = client, models      # client: advisors
         self.local = local_client or client            # local: dm, picks, summaries
@@ -66,6 +75,12 @@ class Session:
         self.pending = None            # {"args": [...], "rolls": [...]} while the player rolls
         self.saved_notes = ""          # from /advise, used by the next DM call
         self.turn = 0
+        # combat "engine": the player's line is parsed, enemies pick by the
+        # engine's policy and results are templated (autopilot.py); the model
+        # speaks only at big moments (flavor "big") or never (flavor "off").
+        self.combat, self.flavor = combat, flavor
+        self.queue = []                # engine commands left in the player's plan
+        self.last_target = ""
         self.last_escalation = -ESCALATE_EVERY
         # Shadow advisor: after each player turn, one advisor reviews it in the
         # background; its notes guide the next turn. Local DMs almost never
@@ -140,11 +155,27 @@ class Session:
         return [f"[GM notes]\n{notes}"] if self.show_notes and notes else []
 
     def _narrate(self, engine_text: str) -> list:
+        if self.combat == "engine":
+            return self._template(engine_text)
         notes = _join(self._take_notes(), self._trigger_notes())
         r = self._dm(engine=engine_text, notes=notes, task=NARRATE)
         if r.narration:
             self.memory.add("dm", r.narration)
         return self._notes_out(notes) + ([r.narration] if r.narration else [])
+
+    def _template(self, engine_text: str) -> list:
+        prose = autopilot.narrate(engine_text, seed=str(self.turn))
+        notes = ""
+        if self.flavor != "off" and autopilot.big_moment(engine_text):
+            notes = self._trigger_notes()
+            try:
+                r = self._dm(engine=engine_text, notes=notes, task=BIG_MOMENT)
+                prose = _join(prose, r.narration)
+            except llm.LLMError:
+                pass
+        if prose:
+            self.memory.add("dm", prose)
+        return self._notes_out(notes) + ([prose] if prose else [])
 
     # ── engine ─────────────────────────────────────────────────────────────
 
@@ -160,21 +191,31 @@ class Session:
         return bool(snap and snap["status"] == "active" and snap["current"]
                     and snap["current"]["controller"] == "player")
 
-    def _engine(self, args, rolls=(), react=None, narrate=True) -> list:
-        full = list(args) + [x for n in rolls for x in ("--roll", str(n))]
-        if react:
-            full += ["--react", react]
+    def _engine(self, args, rolls=(), reacts=(), narrate=True) -> list:
+        # Every answer so far is replayed, in order: the CLI keeps the seed and
+        # maps the n-th --react onto the n-th question it asked.
+        full = (list(args) + [x for n in rolls for x in ("--roll", str(n))]
+                + [x for a in reacts for x in ("--react", a)])
         res = self.bridge.run(full)
         if res.needs_roll or res.needs_react:
-            self.pending = {"args": list(args), "rolls": list(rolls)}
-            hint = ("Type yes or no." if res.needs_react
-                    else "Roll it and type the number on the die (no modifier).")
-            return [f"{res.text}\n{hint}"]
+            self.pending = {"args": list(args), "rolls": list(rolls), "reacts": list(reacts)}
+            return [f"{res.text}\n{_hint(res)}"]
         self.pending = None
+        if args[0] == "choose" and res.code == 0:      # an enemy turn that waited on a reaction
+            end = self.bridge.run(["end-turn"])
+            res = type(res)(res.code, f"{res.text}\n{end.text}")
         self.memory.add("engine", res.text)
         if res.code != 0:
+            self.queue = []
             return [f"(engine) {res.text}"]
         out = self._narrate(res.text) if narrate else [res.text]
+        if self.combat == "engine" and "All enemies are down" in res.text:
+            self.queue = []
+            end = self.bridge.run(["end"])             # write sheets, tracker, session log
+            self.memory.add("engine", end.text)
+            return out + [end.text]
+        if self.queue:                                 # the rest of the player's plan
+            return out + self._engine(self.queue.pop(0))
         return out + self._enemy_phase()
 
     def _pick(self, menu: str) -> int:
@@ -204,11 +245,12 @@ class Session:
                 log.append(opts.text)
                 break
             if _OPTION.search(opts.text):
-                args = ["choose", tid, str(self._pick(opts.text))]
+                n = "auto" if self.combat == "engine" else str(self._pick(opts.text))
+                args = ["choose", tid, n]
                 res = self.bridge.run(args)
                 if res.needs_roll or res.needs_react:
                     self.pending = {"args": args, "rolls": []}
-                    return self._flush(log) + [res.text]
+                    return self._flush(log) + [f"{res.text}\n{_hint(res)}"]
                 log.append(res.text)
             else:
                 log.append(opts.text)
@@ -233,11 +275,12 @@ class Session:
             return []
         if self.pending:
             low = line.lower()
+            p = self.pending
             if line.isdigit():
-                return self._engine(self.pending["args"], self.pending["rolls"] + [int(line)])
+                return self._engine(p["args"], p["rolls"] + [int(line)], p.get("reacts", []))
             if low in ("yes", "no", "y", "n"):
-                return self._engine(self.pending["args"], self.pending["rolls"],
-                                    react="yes" if low.startswith("y") else "no")
+                return self._engine(p["args"], p["rolls"], p.get("reacts", [])
+                                    + ["yes" if low.startswith("y") else "no"])
         if line.startswith("/c "):
             try:
                 args = shlex.split(line[3:])
@@ -267,7 +310,27 @@ class Session:
         return [f"{role}  {model}  {calls} calls  {p} in  {c} out"
                 for role, model, calls, p, c in rows] or ["(no calls yet)"]
 
+    def _autopilot(self, line: str):
+        """Output for a combat action parsed without a model, or None."""
+        if self.combat != "engine" or not self._players_turn():
+            return None
+        from tactics import state
+        enc = state.load(state.encounter_path(self.camp_dir))
+        p = autopilot.plan(line, enc, enc.current.id, self.last_target)
+        if p is None:
+            return None
+        self.turn += 1
+        self.memory.add("player", line)
+        if p.ask:
+            return [p.ask]
+        self.last_target = p.target or self.last_target
+        self.queue = [list(c) for c in p.cmds[1:]]
+        return self._engine(p.cmds[0])
+
     def _player_turn(self, line: str) -> list:
+        auto = self._autopilot(line)
+        if auto is not None:
+            return auto
         notes = _join(self._take_notes(), self._trigger_notes())
         engine = self._engine_context()
         self.turn += 1
@@ -300,6 +363,12 @@ def main(argv=None) -> int:
     ap.add_argument("--show-gm-notes", action="store_true",
                     help="print advisor notes (spoilers: for a GM, not a player)")
     ap.add_argument("--budget", type=int, default=12000, help="prompt size budget, in characters")
+    ap.add_argument("--combat", choices=["engine", "model"],
+                    default=os.environ.get("GM_COMBAT", "engine"),
+                    help="engine (default): grid combat runs with no model call except "
+                         "big moments; model: the DM model reads actions and picks for enemies")
+    ap.add_argument("--flavor", choices=["big", "off"], default=os.environ.get("GM_FLAVOR", "big"),
+                    help="engine combat: one model line at a kill, a fall or the end (big), or none")
     ap.add_argument("--no-shadow", action="store_true",
                     help="no background advisor review after each turn (also GM_SHADOW=0)")
     args = ap.parse_args(argv)
@@ -314,7 +383,8 @@ def main(argv=None) -> int:
     models = llm.Models.from_env()
     shadow = not args.no_shadow and os.environ.get("GM_SHADOW", "1") != "0"
     s = Session(args.campaign, client, models, camp_dir=camp_dir, local_client=local,
-                show_notes=args.show_gm_notes, budget=args.budget, shadow=shadow)
+                show_notes=args.show_gm_notes, budget=args.budget, shadow=shadow,
+                combat=args.combat, flavor=args.flavor)
     print(f"Local DM: {models.dm} via {local.base_url}; advisor {models.advisor} via "
           f"{client.base_url}. /quit to stop.")
     while True:
