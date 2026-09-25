@@ -93,7 +93,7 @@ def load_state(campaign: str) -> WorldState:
     if not fpath.exists():
         return WorldState()
     
-    with open(fpath) as f:
+    with open(fpath, encoding="utf-8") as f:
         data = json.load(f)
     
     state = WorldState()
@@ -139,9 +139,9 @@ def save_state(state: WorldState, campaign: str) -> None:
     
     # Atomic write
     tmp = fpath.with_suffix(".tmp")
-    with open(tmp, "w") as f:
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
-    tmp.rename(fpath)
+    os.replace(tmp, fpath)
 
 
 def log_faction_event(campaign: str, event: str) -> None:
@@ -150,7 +150,7 @@ def log_faction_event(campaign: str, event: str) -> None:
     lpath.parent.mkdir(parents=True, exist_ok=True)
     
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with open(lpath, "a") as f:
+    with open(lpath, "a", encoding="utf-8") as f:
         f.write(f"\n## {timestamp}\n{event}\n")
 
 
