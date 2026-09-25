@@ -48,6 +48,7 @@ scripts/tactics/             grid combat engine (stdlib only)
   spells.py                  cast, preview (area, fail %), castable, monster area actions
   actions.py                 Help, Hide, Escape, Ready, trigger
   ai.py                      numbered enemy options (deterministic) + choose
+  sight.py                   fog of war (squares a PC sees) and cover from one creature
   maps.py                    display/maps/*.json (rectangles) -> engine grid
   sync.py                    tracker.json, display /stats + /combat, state.md,
                              sheets (.bak) and session-log.md on end
@@ -101,8 +102,7 @@ Details, findings, decisions and open items: `docs/milestones/` (one file per
 milestone; read the one you are working on).
 
 - [x] 1. Engine core, [x] 2. CLI and GM loop, [x] 3. Grid display
-- [x] 4. Spells and templates
-- [ ] 5. Polish (next: `docs/milestones/05-polish.md`)
+- [x] 4. Spells and templates, [x] 5. Polish
 
 At the end of a milestone: update its file (Shipped, Findings, Decisions,
 Open), tick it here, and keep this file under 150 lines.
