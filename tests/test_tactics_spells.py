@@ -536,3 +536,14 @@ def test_a_hidden_enemy_is_not_in_the_players_snapshot():
     ids = [t["id"] for t in sync.snapshot(enc)["tokens"]]
     assert ids == ["kairos"]
 
+
+
+def test_a_spell_cached_from_an_older_srd_build_is_looked_up_again():
+    # An SRD built before spell mechanics had "casting" also had no "range":
+    # Fire Bolt fell back to 5 ft. The stale cache entry is replaced, not used.
+    k, f = caster(), frog("frog-1", (6, 0))           # 30 ft away
+    k.extra["spellbook"] = {"fire bolt": {"damage_type": "fire", "attack": "ranged",
+                                          "damage_at_level": {"1": "1d10"}}}
+    enc = fight(k, f)
+    spells.cast(enc, roller(supplied=[15, 7]), "kairos", "fire bolt", ["frog-1"])
+    assert f.hp == 11 and k.extra["spellbook"]["fire bolt"]["range"] == 120

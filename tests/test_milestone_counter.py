@@ -38,6 +38,8 @@ class MilestoneCounterTests(unittest.TestCase):
         cls.mod = _import_app()
         # Bypass token gate
         cls.mod._token_ok = lambda: True
+        # Never write the real display/stats.json: the next display would show Aldric
+        cls.mod._persist_stats = lambda: None
         cls.client = cls.mod.app.test_client()
 
     def setUp(self):

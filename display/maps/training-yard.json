@@ -1,0 +1,20 @@
+{
+ "name": "Training Yard",
+ "width": 12,
+ "height": 9,
+ "diagonals": "5",
+ "info": "A walled practice yard behind the dormitories. Hay bales give half cover, the mud is difficult terrain, and the stone wall blocks sight. Two kobolds have slipped in over the back fence.",
+ "base": "floor",
+ "features": [
+  {"type": "wall", "x": 6, "y": 0, "w": 1, "h": 3, "label": "Stone wall"},
+  {"type": "feature", "x": 7, "y": 4, "w": 1, "h": 2, "label": "Hay bales"},
+  {"type": "feature", "x": 3, "y": 2, "w": 1, "h": 1},
+  {"type": "difficult", "x": 3, "y": 6, "w": 3, "h": 2, "label": "Mud"},
+  {"type": "water", "x": 9, "y": 7, "w": 2, "h": 1, "label": "Trough"}
+ ],
+ "spawns": [
+  {"id": "K", "name": "Kairos", "color": "quan", "x": 1, "y": 4},
+  {"id": "1", "name": "Kobold 1", "color": "danger", "x": 10, "y": 1},
+  {"id": "2", "name": "Kobold 2", "color": "danger", "x": 10, "y": 5}
+ ]
+}
