@@ -13,6 +13,8 @@ always agree.
 
 from __future__ import annotations
 
+import re
+
 from .grid import label
 
 FOG_MODES = ("hide", "dim", "off")
@@ -58,13 +60,14 @@ def redact_log(enc, entries: list, visible) -> list:
                    key=len, reverse=True)
     if not names:
         return list(entries)
+    # Whole names only: "Giant Frog 1" must not match inside "Giant Frog 12".
+    pattern = re.compile(r"(?<!\w)(?:" + "|".join(re.escape(n) for n in names) + r")(?!\w)")
+    ids = {t.id for t in enc.tokens.values() if t.name in names}
     out = []
     for e in entries:
         text = e.get("text", "")
-        if any(n in text for n in names) or e.get("actor") in {t.id for t in enc.tokens.values()
-                                                               if t.name in names}:
-            for n in names:
-                text = text.replace(n, "an unseen creature")
+        if pattern.search(text) or e.get("actor") in ids:
+            text = pattern.sub("an unseen creature", text)
             text = text[:1].upper() + text[1:]
             e = dict(e, text=text, actor="", rolls=[])
         out.append(e)

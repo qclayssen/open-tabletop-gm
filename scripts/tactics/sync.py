@@ -110,7 +110,9 @@ def snapshot(enc, meta: dict = None) -> dict:
             # Squares no PC can see are dimmed; in "hide" mode the creatures there are left out.
             "fog": None if visible is None else {"mode": sight.fog_mode(enc),
                                                  "visible": sorted(label(p) for p in visible)},
-            "turn": {"movement_left": _movement_left(enc),
+            # An unseen creature's action economy would tell the players how it moves.
+            "turn": {} if hidden_turn else {
+                     "movement_left": _movement_left(enc),
                      "action_used": enc.turn.action_used, "pending": enc.turn.pending,
                      "bonus_used": enc.turn.bonus_used,
                      "reaction": bool(cur and not cur.reaction_used)},

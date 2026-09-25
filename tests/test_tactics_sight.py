@@ -151,6 +151,7 @@ def test_an_unseen_enemy_is_not_named_anywhere_in_the_snapshot():
     assert snap["current"] is None and snap["unseen_turn"] is True
     assert snap["log"][-1] == {"round": 1, "actor": "", "kind": "move",
                                "text": "An unseen creature moves E1 to F1.", "rolls": []}
+    assert snap["turn"] == {}
     assert "Goblin" not in json.dumps(snap)
     assert enc.log[-1]["text"] == "Goblin moves E1 to F1."   # the GM's log is untouched
 
@@ -173,3 +174,14 @@ def test_the_sidebar_turn_order_hides_unseen_enemies(monkeypatch):
     sync.push_display(enc)
     stats = dict(sent)["/stats"]["turn_order"]
     assert stats["order"] == ["Kairos"] and stats["current"] == "Enemy turn"
+
+
+def test_redaction_matches_whole_names_only():
+    enc = fight()
+    enc.tokens["goblin-1"].name = "Giant Frog 1"
+    enc.tokens["kairos"].name = "Giant Frog 12"                 # in view
+    out = sight.redact_log(enc, [{"text": "Giant Frog 12 waits.", "actor": "kairos", "rolls": [1]},
+                                 {"text": "Giant Frog 1 hops.", "actor": "goblin-1", "rolls": [1]}],
+                           sight.fog(enc))
+    assert [e["text"] for e in out] == ["Giant Frog 12 waits.", "An unseen creature hops."]
+    assert out[0]["rolls"] == [1] and out[1]["rolls"] == []
