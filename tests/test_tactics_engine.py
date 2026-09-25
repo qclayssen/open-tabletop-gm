@@ -311,3 +311,26 @@ def test_roll_for_me_keeps_the_rolls_already_made():
     res = engine.attack(enc, r, "kairos", "frog-1", "fire bolt")
     assert res["total"] == 19 and res["damage"]["total"] == 7
     assert [x["source"] for x in enc.log[-1]["rolls"]] == ["player", "engine"]
+
+
+def test_a_natural_20_death_save_gives_the_speed_back_for_the_turn():
+    k = kairos(hp=0)
+    k.add_condition("unconscious")
+    k.add_condition("prone")
+    enc = start(encounter([k, frog("frog-1", (6, 6))]), ["kairos", "frog-1"])
+    assert enc.turn.pending == "death_save" and engine.remaining_movement(enc) == 0
+    engine.death_save(enc, roller(supplied=[20]))
+    assert k.hp == 1 and engine.remaining_movement(enc) == 30      # still prone: stand for 15
+
+
+def test_a_readied_move_uses_the_movers_speed_not_the_current_creatures():
+    # Regression: remaining_movement read the current creature (here a frog
+    # slowed to 10 ft), not the one making the readied move.
+    from tactics import actions
+    k, f = kairos(pos=(0, 0)), frog("frog-1", (6, 6))
+    enc = start(encounter([k, f]), ["kairos", "frog-1"])
+    actions.ready(enc, roller(), "kairos", "move", target="A5")
+    engine.end_turn(enc, roller())
+    f.speed = 10
+    res = actions.trigger(enc, roller(), "kairos")
+    assert k.square == "A5", res["text"]

@@ -77,6 +77,11 @@ def sync_tracker(camp_dir, enc, drop_monsters: bool = False) -> None:
 
 # ─── display ──────────────────────────────────────────────────────────────────
 
+def _movement_left(enc) -> int:
+    from . import engine                   # the engine's own count (speed changes mid-turn)
+    return engine.remaining_movement(enc) if enc.status == "active" and enc.order else 0
+
+
 def snapshot(enc, meta: dict = None) -> dict:
     """Everything the grid view needs, as one JSON-able dict."""
     def effect_names(t) -> list:
@@ -95,7 +100,7 @@ def snapshot(enc, meta: dict = None) -> dict:
     return {"status": enc.status, "round": enc.round,
             "current": cur.id if cur else None,
             "order": enc.order, "grid": enc.grid, "meta": meta or {},
-            "turn": {"movement_left": max(0, enc.turn.movement_budget - enc.turn.movement_used),
+            "turn": {"movement_left": _movement_left(enc),
                      "action_used": enc.turn.action_used, "pending": enc.turn.pending,
                      "bonus_used": enc.turn.bonus_used,
                      "reaction": bool(cur and not cur.reaction_used)},

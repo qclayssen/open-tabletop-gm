@@ -32,6 +32,7 @@ Spells on the grid: area templates with a preview, saving throws, concentration,
 
 ## Findings
 
+- **Speed changes mid-turn** (found after the merge, in a second browser pass): the turn's movement was fixed when the turn started, so a creature that broke a grapple kept 0 ft. `remaining_movement` now follows the speed against the speed at the start of the turn (`TurnState.base_speed`); this also covers waking on a natural 20, which had its own special case.
 - **Upstream spell data is mostly usable as is.** 319 SRD spells: 194 have no attack, save, damage or healing ("effect": illusions, utility), 10 have saves whose outcome is "other", 5 lines are walls placed at range. A line's width is only in the text ("5 feet wide" or "5-foot-wide").
 - **Mind Sliver and Silvery Barbs are not in the SRD.** Their numbers are written by hand in `tactics_spells.py` (no rules text).
 - **Rider shapes are few.** 151 SRD attack riders; grapple, save or prone, save for poison and save or condition cover 59 of them. Qualifiers ("a creature other than an elf or undead", "a Medium or smaller creature") are never structured: the engine does not know creature types or sizes yet.

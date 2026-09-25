@@ -58,7 +58,19 @@ def _require_action(enc: Encounter, token) -> None:
 
 
 def remaining_movement(enc: Encounter) -> int:
-    return max(0, enc.turn.movement_budget - enc.turn.movement_used)
+    """Feet left this turn. Speed changes during the turn count: a creature that
+    breaks a grapple, or wakes on a natural 20, gets its speed back; one
+    grappled mid-turn has none left. Counted for the turn's own actor (a readied
+    move swaps in the mover's turn while someone else is current)."""
+    turn = enc.turn
+    t = enc.tokens.get(turn.actor) or enc.current
+    if t is None:
+        return 0
+    now = rules_for(enc).speed(t)
+    if now == 0:
+        return 0
+    base = now if turn.base_speed is None else turn.base_speed
+    return max(0, turn.movement_budget + (now - base) - turn.movement_used)
 
 
 def move_options(enc: Encounter, token) -> MoveOptions:
@@ -109,7 +121,7 @@ def _start_turn(enc: Encounter, roller: Roller) -> dict:
     t.reaction_used = False
     t.dodging = False                      # Dodge lasts until the start of your next turn
     lines = fx.start_of_turn(enc, t)
-    enc.turn = TurnState(actor=t.id, movement_budget=R.speed(t))
+    enc.turn = TurnState(actor=t.id, movement_budget=R.speed(t), base_speed=R.speed(t))
     lines += _recharge(enc, roller, t)
     text = " ".join(lines + [f"{t.name}'s turn."])
     if t.hp == 0 and not t.dead and not t.stable and not R.can_act(t):
@@ -144,10 +156,8 @@ def death_save(enc: Encounter, roller: Roller) -> dict:
     R = rules_for(enc)
     res = R.death_save(t, roller, player_rolls(enc, t, roller))
     enc.turn.pending = ""
-    if res.get("revived"):
-        # Nat 20: back up with 1 HP and the rest of the turn (still prone). The
-        # budget was set to 0 while unconscious, so give the speed back.
-        enc.turn.movement_budget = R.speed(t)
+    # Nat 20: back up with 1 HP and the rest of the turn (still prone); the
+    # speed comes back through remaining_movement.
     _log(enc, "death_save", t.id, res["text"], roller, mark)
     return res
 
@@ -291,7 +301,7 @@ def move(enc: Encounter, roller: Roller, token_ref, square, reactions: dict = No
         if not R.can_act(t):
             raise CombatError(f"{t.name} cannot act.")
         saved_turn = enc.turn
-        enc.turn = TurnState(actor=t.id, movement_budget=R.speed(t))
+        enc.turn = TurnState(actor=t.id, movement_budget=R.speed(t), base_speed=R.speed(t))
         try:
             return _move(enc, roller, t, square, reactions)
         finally:
