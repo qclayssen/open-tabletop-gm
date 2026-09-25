@@ -66,7 +66,9 @@ same payloads as `display/send.py`) and registers the campaign at startup. The
 terminal output does not change. The endpoint, first match wins:
 `--display-url URL`, `GM_DISPLAY_URL`, `http://localhost:${GM_DISPLAY_PORT}`,
 a port number in `display/.port` (nothing in this repo writes it; a local
-launcher may), then `http://localhost:5001`.
+launcher may), then `http://localhost:5001`. Grid combat updates (HP, turn
+order, the map) go to the same display: `play.py` exports the URL as
+`GM_DISPLAY_URL` for the tactics engine.
 
 Port 5001 may belong to another display app: leave it running and point the
 local DM at its own display.
@@ -87,8 +89,10 @@ python3 scripts/localdm/play.py -c strixhaven-kairos
 Only DM narration is sent, one event per turn with paragraphs kept. GM notes
 (even with `--show-gm-notes`), engine lines, roll prompts, `/usage` and model
 errors stay in the terminal. A display that is down or refuses the request
-prints one warning and play goes on; the campaign is registered on the first
-send that gets through. `--no-display` sends nothing.
+prints one warning and play goes on, with no new attempt for 30 seconds; the
+campaign is registered on the first send that gets through. The LAN token in
+`display/.token` is only sent to localhost. `--no-display` sends nothing to any
+display, grid combat included.
 
 ## Ollama settings for 16 GB
 

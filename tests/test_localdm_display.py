@@ -5,6 +5,7 @@ from __future__ import annotations
 import builtins
 import http.server
 import json
+import os
 import socket
 import threading
 
@@ -18,10 +19,11 @@ NARRATION = "The quad bell tolls.\n\nMage Tower shadows stretch across the grass
 
 
 class FakeDisplay:
-    """Records every POST /chunk body and header. status: the reply code."""
+    """Records every POST /chunk body and header, and other POSTs by path.
+    status: the reply code."""
 
     def __init__(self, status=204):
-        self.posts, self.headers, self.status = [], [], status
+        self.posts, self.headers, self.other, self.status = [], [], [], status
         owner = self
 
         class Handler(http.server.BaseHTTPRequestHandler):
@@ -30,6 +32,8 @@ class FakeDisplay:
                 if self.path == "/chunk":
                     owner.posts.append(json.loads(body.decode("utf-8")))
                     owner.headers.append({k.lower(): v for k, v in self.headers.items()})
+                else:
+                    owner.other.append((self.path, json.loads(body.decode("utf-8") or "null")))
                 self.send_response(owner.status)
                 self.end_headers()
 
@@ -91,6 +95,11 @@ def test_register_sends_the_campaign_and_token(display, tmp_path):
     assert display.headers[0].get("x-dnd-token") == "t0k"
 
 
+def test_the_token_stays_on_this_machine():
+    assert display_bridge.Display("http://192.0.2.7:5001", "c", token="t0k").token == ""
+    assert display_bridge.Display("http://localhost:5051", "c", token="t0k").token == "t0k"
+
+
 def test_long_narration_splits_on_paragraphs():
     paras = ["a" * 2000, "b" * 2000, "c" * 100]
     assert display_bridge.split_paragraphs("\n\n".join(paras)) == [
@@ -118,6 +127,8 @@ def test_a_late_display_gets_the_campaign_first(tmp_path):
     late = FakeDisplay()
     try:
         d.url = late.url
+        assert not d.narrate("Too soon.")                  # backing off after the failure
+        d.retry_at = 0.0
         assert d.narrate("Hello.")
         assert late.posts == [{"campaign": "demo"}, {"text": "Hello."}]
     finally:
@@ -144,11 +155,12 @@ def run_repl(monkeypatch, tmp_path, lines, *argv, env=None):
     (root / "campaigns" / "demo").mkdir(parents=True)
     (root / "campaigns" / "demo" / "state.md").write_text("# Campaign: demo\n",
                                                           encoding="utf-8")
+    # setenv first so monkeypatch restores what play.main writes to os.environ
     for k in ("GM_DISPLAY_URL", "GM_DISPLAY_PORT", "GM_LOCAL_URL", "GM_DM_MODEL",
-              "GM_ADVISOR_MODEL", "GM_FAST_MODEL", "GM_COUNCIL_MODEL"):
-        monkeypatch.delenv(k, raising=False)
+              "GM_ADVISOR_MODEL", "GM_FAST_MODEL", "GM_COUNCIL_MODEL", "TACTICS_NO_DISPLAY"):
+        monkeypatch.setenv(k, "")
+        monkeypatch.delenv(k)
     monkeypatch.setenv("GM_CAMPAIGN_ROOT", str(root))
-    monkeypatch.setenv("TACTICS_NO_DISPLAY", "1")
     for k, v in (env or {}).items():
         monkeypatch.setenv(k, v)
 
@@ -188,6 +200,16 @@ def test_no_display_sends_nothing(monkeypatch, tmp_path, capsys, display):
                     "--display-url", display.url, "--no-display") == 0
     assert "The quad bell tolls." in capsys.readouterr().out
     assert display.posts == []
+    assert os.environ.get("TACTICS_NO_DISPLAY") == "1"      # grid combat pushes too
+
+
+def test_grid_combat_pushes_follow_the_display(monkeypatch, tmp_path, display):
+    from tactics import sync
+    assert run_repl(monkeypatch, tmp_path, [], "--display-url", display.url) == 0
+    assert os.environ.get("GM_DISPLAY_URL") == display.url
+    monkeypatch.setenv("GM_DISPLAY_PORT", "5001")           # the URL wins over the port
+    sync._post("/combat", {"status": "none"})
+    assert display.other == [("/combat", {"status": "none"})]
 
 
 def test_a_stopped_display_is_not_fatal(monkeypatch, tmp_path, capsys):

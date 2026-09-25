@@ -13,8 +13,9 @@ die (no modifier), or yes / no for a reaction. Other commands:
     /quit                     stop
 
 Environment: see llm.py (GM_LLM_URL, GM_DM_MODEL, GM_ADVISOR_MODEL, ...).
-Narration is mirrored to the display at GM_DISPLAY_URL, else
-http://localhost:${GM_DISPLAY_PORT:-5001} (see display_bridge.py).
+Narration is mirrored to the display at --display-url, GM_DISPLAY_URL,
+localhost:$GM_DISPLAY_PORT, display/.port, else localhost:5001 (display_bridge.py);
+grid combat updates follow the same display.
 """
 from __future__ import annotations
 
@@ -386,10 +387,10 @@ def main(argv=None) -> int:
     ap.add_argument("--no-shadow", action="store_true",
                     help="no background advisor review after each turn (also GM_SHADOW=0)")
     ap.add_argument("--display-url", default="", metavar="URL",
-                    help="display to mirror narration to (default: GM_DISPLAY_URL, "
-                         "else http://localhost:${GM_DISPLAY_PORT:-5001})")
+                    help="display for narration and grid combat (default: GM_DISPLAY_URL, "
+                         "localhost:$GM_DISPLAY_PORT, display/.port, else localhost:5001)")
     ap.add_argument("--no-display", action="store_true",
-                    help="do not mirror narration to the display")
+                    help="send nothing to any display (narration or grid combat)")
     args = ap.parse_args(argv)
     camp_dir = find_campaign(args.campaign)
     if not camp_dir.exists():
@@ -409,7 +410,10 @@ def main(argv=None) -> int:
     display = display_bridge.from_args(args.campaign, url=args.display_url,
                                        disabled=args.no_display)
     if display:
+        os.environ["GM_DISPLAY_URL"] = display.url     # grid combat pushes (tactics/sync.py) follow
         display.register()
+    else:
+        os.environ["TACTICS_NO_DISPLAY"] = "1"
     while True:
         try:
             line = input("> ")

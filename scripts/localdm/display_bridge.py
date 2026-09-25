@@ -12,7 +12,9 @@ Endpoint, first match wins:
     display/.port                 a port number, if a local launcher wrote one
     http://localhost:5001         display/.scheme picks https when present
 
-A display that is down never stops play: one warning on stderr, then silence.
+A display that is down never stops play: one warning on stderr, then silence,
+and no new attempt for RETRY_AFTER seconds so a host that drops packets does
+not stall every turn. The LAN token goes to local hosts only.
 Only text the caller passes to narrate() is sent; the caller keeps GM notes,
 engine lines and errors out of it.
 """
@@ -23,6 +25,7 @@ import os
 import pathlib
 import ssl
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -30,6 +33,7 @@ import urllib.request
 DISPLAY_DIR = pathlib.Path(__file__).resolve().parents[2] / "display"
 DEFAULT_PORT = 5001
 TIMEOUT = 2.0
+RETRY_AFTER = 30.0          # seconds without a send after a failure
 CHUNK_LIMIT = 3500            # send.py splits text bodies above this many characters
 _LOCAL_HOSTS = ("localhost", "127.0.0.1", "::1")
 
@@ -86,15 +90,19 @@ class Display:
                  display_dir=DISPLAY_DIR, err=None):
         self.url = url.rstrip("/")
         self.campaign = campaign
+        parts = urllib.parse.urlsplit(self.url)
+        # display/.token guards this machine's display; never hand it to another host.
+        if parts.hostname not in _LOCAL_HOSTS:
+            token = ""
         self.token = _read(pathlib.Path(display_dir) / ".token") if token is None else token
         self.timeout = timeout
         self.err = err or sys.stderr
         self.registered = False
         self.warned = False
+        self.retry_at = 0.0
         self._ctx = None
-        parts = urllib.parse.urlsplit(self.url)
-        if parts.scheme == "https" and parts.hostname in _LOCAL_HOSTS:
-            self._ctx = ssl.create_default_context()      # the display's self-signed cert
+        if parts.scheme == "https":           # the display's cert is self-signed (setup_tls.py)
+            self._ctx = ssl.create_default_context()
             self._ctx.check_hostname = False
             self._ctx.verify_mode = ssl.CERT_NONE
 
@@ -115,6 +123,7 @@ class Display:
         return self._warn("not reachable")
 
     def _warn(self, why: str) -> bool:
+        self.retry_at = time.monotonic() + RETRY_AFTER
         if not self.warned:
             self.warned = True
             print(f"(display {why} at {self.url}; narration stays in the terminal)",
@@ -129,6 +138,8 @@ class Display:
         """Send one turn's narration; registers first if startup could not."""
         text = (text or "").strip()
         if not text:
+            return False
+        if time.monotonic() < self.retry_at:
             return False
         if not self.registered and not self.register():
             return False
