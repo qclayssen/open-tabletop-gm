@@ -155,6 +155,25 @@ body.tx-min #tx-panel .tx-body, body.tx-min #tx-panel .tx-strip { display: none;
 .tx-mark.tx-ready { fill: var(--tx-accent); }
 .tx-mark-t { font: 800 8px Figtree, system-ui, sans-serif; fill: #fff; }
 
+/* ── fog of war, cover shading, condition badges, keyboard cursor ── */
+.tx-fog { fill: var(--tx-void); fill-opacity: .55; pointer-events: none; }
+.tx-fog-hatch { fill: url(#tx-fog-hatch); pointer-events: none; }
+.tx-fog-line { stroke: var(--tx-paper); stroke-opacity: .18; stroke-width: 1.5; }
+.tx-nolos { fill: url(#tx-hatch); pointer-events: none; }
+.tx-hatch-line { stroke: var(--tx-ink); stroke-opacity: .45; stroke-width: 2.5; }
+.tx-cov2 { fill: var(--tx-brass); fill-opacity: .2; pointer-events: none; }
+.tx-cov5 { fill: var(--tx-brass); fill-opacity: .42; pointer-events: none; }
+.tx-eye { fill: none; stroke: var(--tx-accent); stroke-width: 2; stroke-dasharray: 3 3; pointer-events: none; }
+.tx-cond { fill: var(--tx-ink); stroke: var(--tx-panel); stroke-width: 1; }
+.tx-cond.tx-cond-more { fill: var(--tx-muted); }
+.tx-cond-t { font: 800 7px Figtree, system-ui, sans-serif; fill: var(--tx-panel); }
+.tx-cursor { fill: none; stroke: var(--tx-brass); stroke-width: 3; pointer-events: none; }
+.tx-board:focus { outline: none; }
+.tx-board:focus-visible { outline: 2px solid var(--tx-brass); outline-offset: 1px; }
+.tx-sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.tx-legend { font-size: 11px; color: var(--tx-muted); }
+
 /* ── spell templates ── */
 .tx-aiming { cursor: crosshair; }
 .tx-tpl { fill: var(--tx-spell); fill-opacity: .55; stroke: var(--tx-spell); stroke-opacity: 1; stroke-width: 1.5; pointer-events: none; }
@@ -180,4 +199,6 @@ body.tx-min #tx-panel .tx-body, body.tx-min #tx-panel .tx-strip { display: none;
 
 @media (prefers-reduced-motion: reduce) {
   .tx-tok.tx-now .tx-ring, #tx-banner.tx-flash, .tx-float { animation: none; }
+  .tx-float { display: none; }                   /* the log and the HP bar already say it */
+  #tx-panel, #tx-panel * { scroll-behavior: auto !important; transition: none !important; }
 }
