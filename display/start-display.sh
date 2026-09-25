@@ -5,6 +5,11 @@
 #   bash start-display.sh              # localhost only, HTTP (default)
 #   bash start-display.sh --lan        # LAN mode, HTTP  ← use this for home/trusted networks
 #   bash start-display.sh --lan --tls  # LAN mode, HTTPS ← use this on public/untrusted networks
+#   bash start-display.sh --campaign NAME   # also point the display at a campaign
+#
+# --campaign shows that campaign's last exchanges on reconnect, checks the SRD
+# data, and says when a grid fight is waiting to resume. Without it, the display
+# keeps the campaign it had last time (display/.campaign).
 #
 # HTTP is the default. Guests and new devices connect instantly with no setup.
 # TLS adds encryption but requires a one-time certificate install on each device.
@@ -17,6 +22,9 @@ CERT_SERVER_PID="$DISPLAY_DIR/.cert-server.pid"
 # ── Parse flags ───────────────────────────────────────────────────────────────
 LAN_FLAG=""
 TLS_MODE=false
+CAMPAIGN=""
+PORT="${GM_DISPLAY_PORT:-5001}"
+export GM_DISPLAY_PORT="$PORT"
 
 # UTF-8 mode for the server and anything it spawns. Unlike per-call-site
 # encoding= this also fixes open()'s DEFAULT, which is what bites on a
@@ -26,12 +34,23 @@ export PYTHONUTF8=1
 export PYTHONIOENCODING=utf-8
 
 
-for arg in "$@"; do
-  case "$arg" in
+while [[ $# -gt 0 ]]; do
+  case "$1" in
     --lan) LAN_FLAG="--lan" ;;
     --tls) TLS_MODE=true ;;
+    --campaign) CAMPAIGN="${2:-}"; shift ;;
+    --campaign=*) CAMPAIGN="${1#--campaign=}" ;;
   esac
+  shift
 done
+
+# Check the campaign exists before killing a running display for it.
+if [[ -n "$CAMPAIGN" ]]; then
+  python3 "$DISPLAY_DIR/preflight.py" "$CAMPAIGN" > "$DISPLAY_DIR/.preflight" || {
+    cat "$DISPLAY_DIR/.preflight"; rm -f "$DISPLAY_DIR/.preflight"; exit 1; }
+else
+  python3 "$DISPLAY_DIR/preflight.py" > "$DISPLAY_DIR/.preflight"
+fi
 
 if $TLS_MODE && [[ -z "$LAN_FLAG" ]]; then
   echo "Error: --tls requires --lan (TLS is only meaningful for network access)"
@@ -91,8 +110,11 @@ $TLS_MODE && APP_ARGS="$APP_ARGS --tls"
 
 nohup python3 "$DISPLAY_DIR/gm-display-app.py" $APP_ARGS > "$LOG" 2>&1 &
 echo $! > "$PID_FILE"
+# send.py, push_stats.py, check_input.py and autorun_wait.py read this when
+# GM_DISPLAY_PORT is not set, so they reach this display on any port.
+echo "$PORT" > "$DISPLAY_DIR/.port"
 
-LOCAL_URL="${SCHEME}://localhost:5001"
+LOCAL_URL="${SCHEME}://localhost:${PORT}"
 
 # Wait up to 5 s for the server to become ready
 for i in $(seq 1 10); do
@@ -100,7 +122,13 @@ for i in $(seq 1 10); do
   if curl -sk "$LOCAL_URL/ping" > /dev/null 2>&1; then
     echo ""
     echo "Display started — $LOCAL_URL"
-    [[ -n "$LAN_IP" ]] && echo "LAN access:     ${SCHEME}://${LAN_IP}:5001"
+    [[ -n "$LAN_IP" ]] && echo "LAN access:     ${SCHEME}://${LAN_IP}:${PORT}"
+    if [[ -n "$CAMPAIGN" ]]; then
+      python3 "$DISPLAY_DIR/send.py" --set-campaign "$CAMPAIGN" < /dev/null > /dev/null 2>&1
+      echo "Campaign:       $CAMPAIGN  (continue it in your GM chat: /gm load $CAMPAIGN)"
+    fi
+    sed 's/^/Note: /' "$DISPLAY_DIR/.preflight" 2>/dev/null
+    rm -f "$DISPLAY_DIR/.preflight"
 
     if $TLS_MODE; then
       echo ""
@@ -125,7 +153,7 @@ for i in $(seq 1 10); do
       echo "  Mac (other than this machine):"
       echo "    Open cert.pem → Keychain Access → mark as Always Trust"
       echo ""
-      echo "  Step 2 — open  https://${LAN_IP}:5001  in the device browser."
+      echo "  Step 2 — open  https://${LAN_IP}:${PORT}  in the device browser."
       echo "  No further warnings after the cert is trusted."
       echo ""
       echo "  The cert server on :8080 runs until the display is stopped."

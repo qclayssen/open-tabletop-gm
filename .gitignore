@@ -43,3 +43,5 @@ probe/results/*.log
 # Draft docs (not ready to publish)
 docs/DISCUSSION-DRAFT.md
 docs/PR-DRAFT.md
+display/.port
+display/.preflight

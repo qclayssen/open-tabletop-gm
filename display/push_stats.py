@@ -79,7 +79,25 @@ import urllib.request
 _DISPLAY_DIR = os.path.dirname(os.path.abspath(__file__))
 _SCHEME_FILE = os.path.join(_DISPLAY_DIR, ".scheme")
 _SCHEME = open(_SCHEME_FILE, encoding="utf-8").read().strip() if os.path.exists(_SCHEME_FILE) else "http"
-FLASK_URL  = f"{_SCHEME}://localhost:5001/stats"
+_PORT_FILE = os.path.join(_DISPLAY_DIR, ".port")
+
+
+def _display_port() -> int:
+    raw = os.environ.get("GM_DISPLAY_PORT", "").strip()
+    if not raw:
+        try:
+            with open(_PORT_FILE, encoding="utf-8") as handle:
+                raw = handle.read().strip()
+        except OSError:
+            raw = ""
+    try:
+        return int(raw or "5001")
+    except ValueError:
+        return 5001
+
+
+_PORT = _display_port()
+FLASK_URL  = f"{_SCHEME}://localhost:{_PORT}/stats"
 TOKEN_FILE = os.path.join(_DISPLAY_DIR, ".token")
 TIMEOUT    = 2.0
 
