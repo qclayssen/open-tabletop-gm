@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
 """demo.py: a scripted grid fight, run from the terminal.
 
-    python3 scripts/tactics/demo.py [--seed N] [--keep]
+    python3 scripts/tactics/demo.py [--seed N] [--scenario frogs|mephit] [--keep]
 
-Level 1 Kairos (tests/fixtures/Kairos_Level1.md) against two SRD giant frogs
-on the Frog Pond map. Everything happens in a throwaway campaign folder, so
-no real campaign is touched. Each line shows the exact command a GM would
-run and what it printed:
+Level 1 Kairos (tests/fixtures/Kairos_Level1.md) in a throwaway campaign
+folder, so no real campaign is touched. Each line shows the exact command a
+GM would run and what it printed.
 
-  - the frogs play as the GM would: `options`, then `choose 1`
-  - Kairos plays as a player would: a Fire Bolt at the closest frog, with
-    --for-me standing in for the player's own dice
+  frogs   two SRD giant frogs on Frog Pond (deadly: their bites grapple and
+          restrain, which gives the other frog advantage)
+  mephit  one SRD ice mephit in the Firejolt Cafe: its Frost Breath is a 15 ft
+          cone with a DEX save (recharge 6), it is vulnerable to Fire Bolt, and
+          Kairos keeps Shield on auto
+
+  - enemies play as the GM would: `options`, then `choose 1`
+  - Kairos plays as a player would, with --for-me standing in for his dice
   - `end` writes the sheet, the tracker and the session log
 
 Needs the SRD dataset (python3 systems/dnd5e/build_srd.py --no-fvtt).
@@ -58,12 +62,21 @@ def _run(*argv, seed=None):
     return code, out
 
 
-def play(camp: pathlib.Path, seed: int = 7, max_rounds: int = 10) -> dict:
+SCENARIOS = {
+    "frogs": ["frog-pond", "--pc", "Kairos@B7", "--monster", "giant frog@J5",
+              "--monster", "giant frog@M11"],
+    "mephit": ["firejolt-rooftops", "--pc", "Kairos@F8", "--monster", "ice mephit@I3"],
+}
+
+
+def play(camp: pathlib.Path, seed: int = 7, max_rounds: int = 10, scenario: str = "frogs") -> dict:
     step = seed * 1000
-    code, _ = _run("start", "frog-pond", "--pc", "Kairos@B7",
-                   "--monster", "giant frog@J5", "--monster", "giant frog@M11", seed=step)
+    code, _ = _run("start", *SCENARIOS[scenario], seed=step)
     if code:
         return {"ok": False}
+    if scenario == "mephit":
+        _run("reactions", "kairos", "auto")
+        _run("spells", "kairos")
     path = state.encounter_path(camp)
     while True:
         step += 1
@@ -77,7 +90,11 @@ def play(camp: pathlib.Path, seed: int = 7, max_rounds: int = 10) -> dict:
         elif actor.controller == "player":
             if actor.hp > 0:
                 target = min(foes, key=lambda f: (max(abs(f.x - actor.x), abs(f.y - actor.y)), f.hp))
-                _run("attack", actor.id, target.id, "fire", "bolt", "--for-me", seed=step)
+                if scenario == "mephit":
+                    _run("preview-area", actor.id, "fire bolt", target.id)
+                    _run("cast", actor.id, "fire bolt", target.id, "--for-me", seed=step)
+                else:
+                    _run("attack", actor.id, target.id, "fire", "bolt", "--for-me", seed=step)
         else:
             code, text = _run("options", actor.id)
             if code == 0 and "\n1. " in text:
@@ -90,8 +107,9 @@ def play(camp: pathlib.Path, seed: int = 7, max_rounds: int = 10) -> dict:
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description="Kairos vs two giant frogs on the Frog Pond.")
+    ap = argparse.ArgumentParser(description="Kairos in a scripted grid fight.")
     ap.add_argument("--seed", type=int, default=7, help="engine dice seed (same seed, same fight)")
+    ap.add_argument("--scenario", choices=sorted(SCENARIOS), default="frogs")
     ap.add_argument("--keep", action="store_true", help="keep the demo campaign folder")
     args = ap.parse_args(argv)
     tmp = pathlib.Path(tempfile.mkdtemp(prefix="tactics-demo-"))
@@ -100,7 +118,7 @@ def main(argv=None) -> int:
     camp = make_campaign(tmp)
     res = {}
     try:
-        res = play(camp, args.seed)
+        res = play(camp, args.seed, scenario=args.scenario)
         if res.get("ok"):
             print("\n--- session-log.md ---")
             print((camp / "session-log.md").read_text(encoding="utf-8").strip())

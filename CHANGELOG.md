@@ -12,6 +12,21 @@ This project is the LLM-agnostic, system-flexible fork of [claude-dnd-skill](htt
 
 ## [Unreleased]
 
+### Added: grid combat milestone 4, spells and templates
+- Areas of effect on the grid (sphere, cylinder, cone, line, cube): a square is caught if its centre is inside the shape; walls block the area.
+- `cast`: spell attacks, saves (one damage roll per area, a save per creature, cover on DEX saves), Magic Missile darts, healing, Mage Armor; spells the engine cannot run still spend their slot and are narrated. The bonus-action spell rule and slot levels are enforced; nothing is spent on a refused cast.
+- `preview-area`: every creature a spell would catch, its chance to fail and the expected damage, allies flagged. `spells` lists what can be cast and why not.
+- Concentration (a CON save per damage instance, one spell at a time, effects end with it), timed effects (Mind Sliver's penalty, Shield until the caster's next turn), repeat saves at the end of a turn.
+- Reactions: Shield and Silvery Barbs, offered only when they would change the outcome; per-token `reactions ask|auto|off`. A paused command replays the same enemy dice when re-run.
+- Structured monster riders: grapples with an escape DC (and restrained while grappled), save or be knocked prone, save for poison damage, conditions with a repeat save. Qualified riders stay text for the GM.
+- Help, Hide (Stealth vs passive Perception, needs total cover), Escape, Ready and `trigger`.
+- Enemy options include breath weapons and other area save actions, aimed and scored by save chance; recharge and per-day use are tracked.
+- SRD build: spell mechanics, monster save proficiencies, skills and passive Perception.
+- `demo.py --scenario mephit`: Kairos against an ice mephit.
+
+### Fixed
+- `scripts/world.py` read and wrote its files without `encoding="utf-8"`.
+
 ## [0.15.0] — 2026-09-16 — Creature defenses, narration badges, and a working SRD build
 
 Ten fixes in one release, so an existing install updates once and receives all

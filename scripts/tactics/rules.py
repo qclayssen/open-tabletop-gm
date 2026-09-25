@@ -9,7 +9,10 @@ The contract, grouped the way SYSTEM-PORTING.md documents it:
 
   attack        attack(attacker, target, attack, ctx, roller, player) -> dict
                 hit_chance(attacker, target, attack, ctx) -> dict (no roll; for previews)
-  save          saving_throw(token, ability, dc, roller, player) -> dict
+  save          saving_throw(token, ability, dc, roller, player, cover=0) -> dict
+                save_chance(token, ability, dc, cover=0) -> dict (no roll; for previews)
+  spells        spell(caster, name, level=None) -> spec dict (see systems/dnd5e/tactics_spells.py)
+                ac(token) -> AC with effects (Shield); skill_bonus(token, skill) -> int
   damage        damage(target, parts, crit, ctx) -> dict ; heal(token, amount) -> dict
   conditions    can_act(token), can_react(token), death_save(token, roller, player) -> dict
   movement      speed(token), crawling(token), stand_up_cost(token), reach(token)
@@ -43,6 +46,8 @@ class AttackContext:
     long_range: bool = False      # beyond normal range, within long range
     hostile_adjacent: bool = False  # a hostile that can act is within 5 ft of the attacker
     opportunity: bool = False     # made as a reaction to leaving reach
+    react: object = None          # engine hook for reactions to a hit (Shield, Silvery Barbs):
+                                  # react(natural, total, ac) -> {"natural", "total", "ac", "lines"}
 
 
 class Rules:
@@ -94,7 +99,32 @@ class Rules:
         Shown on every option and target before the player commits."""
         raise NotImplementedError
 
-    def saving_throw(self, token, ability: str, dc: int, roller, player: bool) -> dict:
+    def saving_throw(self, token, ability: str, dc: int, roller, player: bool,
+                     cover: int = 0) -> dict:
+        raise NotImplementedError
+
+    def save_chance(self, token, ability: str, dc: int, cover: int = 0) -> dict:
+        """{"fail": 0..1, "percent_fail": int, "advantage": str} without rolling."""
+        raise NotImplementedError
+
+    def spell(self, caster, name: str, level: int = None) -> dict:
+        """What casting `name` does, resolved for this caster and slot level.
+        Raises ValueError with a message for the GM when it cannot be cast."""
+        raise NotImplementedError
+
+    def ac(self, token) -> int:
+        raise NotImplementedError
+
+    def known_spells(self, caster) -> list:
+        return []
+
+    def damage_multiplier(self, token, dtype: str) -> float:
+        return 1.0
+
+    def passive_perception(self, token) -> int:
+        raise NotImplementedError
+
+    def skill_bonus(self, token, skill: str) -> int:
         raise NotImplementedError
 
     def damage(self, target, parts: list, crit: bool = False, ctx: AttackContext = None) -> dict:

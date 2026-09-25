@@ -7,6 +7,7 @@
   --tx-floor: #DCE3E2; --tx-wall: #39474F; --tx-water: #8FB4C4; --tx-difficult: #A9B58C;
   --tx-feature: #D9C8A0; --tx-void: #2A2F3A; --tx-hazard: #D9A3A0; --tx-grid: rgba(27,40,48,.14);
   --tx-quan: #1E7F74; --tx-lore: #B8752E; --tx-heal: #2E7D4F;
+  --tx-spell: #C2541B; --tx-warnc: #D9A21B;
 }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
   --tx-paper: #0F171B; --tx-panel: #162127; --tx-ink: #DCE6E8; --tx-muted: #93A5AC;
@@ -14,6 +15,7 @@
   --tx-floor: #1E2A2F; --tx-wall: #6C7E87; --tx-water: #2F5667; --tx-difficult: #4B5936;
   --tx-feature: #5E5236; --tx-void: #07090D; --tx-hazard: #6B3434; --tx-grid: rgba(220,230,232,.10);
   --tx-quan: #4FB8A8; --tx-lore: #D2A24A; --tx-heal: #6FCB8E;
+  --tx-spell: #F08A4B; --tx-warnc: #F2C94C;
 } }
 :root[data-theme="dark"] {
   --tx-paper: #0F171B; --tx-panel: #162127; --tx-ink: #DCE6E8; --tx-muted: #93A5AC;
@@ -21,6 +23,7 @@
   --tx-floor: #1E2A2F; --tx-wall: #6C7E87; --tx-water: #2F5667; --tx-difficult: #4B5936;
   --tx-feature: #5E5236; --tx-void: #07090D; --tx-hazard: #6B3434; --tx-grid: rgba(220,230,232,.10);
   --tx-quan: #4FB8A8; --tx-lore: #D2A24A; --tx-heal: #6FCB8E;
+  --tx-spell: #F08A4B; --tx-warnc: #F2C94C;
 }
 
 /* ── placement: over the narration column, which flows below while combat is on ── */
@@ -34,6 +37,10 @@
   box-shadow: 0 10px 30px rgba(0,0,0,.35);
 }
 #tx-panel[hidden] { display: none; }
+/* The spell list and longer turn info can outgrow the panel: the panel
+   scrolls rather than letting content spill past its border. */
+#tx-panel { overflow-y: auto; }
+#tx-panel .tx-head, #tx-panel .tx-strip { flex: none; }
 body.tx-sidebar-hidden #tx-panel { left: 60px; }
 body.tx-on #text-scroll { padding-top: calc(min(62vh, 640px) + 90px); }
 body.tx-on.tx-min #text-scroll { padding-top: 130px; }
@@ -43,6 +50,7 @@ body.tx-min #tx-panel .tx-body, body.tx-min #tx-panel .tx-strip { display: none;
      z-index 6 to 8) and below dialogs and device approvals (10 and up).
      "Hide map" folds the panel down to its header. */
   #tx-panel { z-index: 9; left: 6px; right: 6px; top: 6px; max-height: calc(100vh - 84px); }
+  #tx-panel .tx-body { flex: none; }
   body.tx-on #text-scroll { padding-top: calc(70vh + 70px); }
 }
 
@@ -69,6 +77,7 @@ body.tx-min #tx-panel .tx-body, body.tx-min #tx-panel .tx-strip { display: none;
   background: var(--tx-paper); border: 1px solid var(--tx-line); font-size: 12px; min-width: 84px;
 }
 .tx-chip.tx-now { border-color: var(--tx-brass); box-shadow: 0 0 0 1px var(--tx-brass); }
+.tx-chip > span:last-child { max-width: 230px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tx-chip.tx-dead { opacity: .45; text-decoration: line-through; }
 .tx-hpbar { height: 4px; background: var(--tx-line); border-radius: 2px; overflow: hidden; }
 .tx-hpbar i { display: block; height: 100%; background: var(--tx-heal); }
@@ -76,6 +85,9 @@ body.tx-min #tx-panel .tx-body, body.tx-min #tx-panel .tx-strip { display: none;
 
 .tx-body { display: grid; grid-template-columns: minmax(0, 1fr) 250px; gap: 10px; min-height: 0; }
 @media (max-width: 1100px) { .tx-body { grid-template-columns: 1fr; } }
+/* Side by side: the side column scrolls on its own so the map stays in view. */
+@media (min-width: 1101px) { .tx-side { max-height: calc(100vh - 290px); overflow-y: auto; padding-right: 2px; } }
+.tx-side > * { flex: none; }
 .tx-board {
   align-self: start; overflow: auto; max-height: min(62vh, 640px); background: var(--tx-paper);
   border: 1px solid var(--tx-line); border-radius: 6px; touch-action: manipulation;
@@ -88,6 +100,22 @@ body.tx-min #tx-panel .tx-body, body.tx-min #tx-panel .tx-strip { display: none;
 .tx-warn { color: var(--tx-danger); font-weight: 600; }
 .tx-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .tx-attacks { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; }
+.tx-status { color: var(--tx-ink); }
+.tx-ff { display: inline-block; margin-top: 2px; }
+
+/* ── spell list, reactions toggle ── */
+.tx-spells { display: flex; flex-wrap: wrap; gap: 6px; width: 100%;
+  border-top: 1px solid var(--tx-line); padding-top: 6px; }
+.tx-spells .tx-group { flex-basis: 100%; margin: 4px 0 0; font: 700 12px Figtree, system-ui, sans-serif;
+  color: var(--tx-muted); text-transform: uppercase; letter-spacing: .04em; }
+.tx-btn.tx-spell { display: flex; flex-direction: column; align-items: flex-start; text-align: left;
+  flex: 1 1 140px; max-width: 100%; }
+.tx-meta { font-weight: 400; font-size: 11px; color: var(--tx-muted); margin-top: 1px; }
+.tx-btn[aria-pressed="true"] .tx-meta, .tx-btn.tx-primary .tx-meta { color: inherit; opacity: .85; }
+.tx-note { font-size: 12px; color: var(--tx-muted); align-self: center; }
+.tx-react-row { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 4px;
+  border-top: 1px dashed var(--tx-line); padding-top: 6px; margin-top: 2px; }
+.tx-btn.tx-small { min-height: 30px; padding: 4px 9px; font-size: 12px; }
 .tx-prompt {
   border: 1px solid var(--tx-brass); border-radius: 6px; padding: 10px; display: grid; gap: 8px;
   background: var(--tx-paper);
@@ -117,6 +145,26 @@ body.tx-min #tx-panel .tx-body, body.tx-min #tx-panel .tx-strip { display: none;
 .tx-tok text { pointer-events: none; }
 .tx-pct { font: 700 11px Figtree, system-ui, sans-serif; fill: #fff; }
 .tx-pct-bg { fill: var(--tx-danger); }
+.tx-pct-bg.tx-ally { fill: var(--tx-warnc); }
+.tx-pct-bg.tx-ally + .tx-pct { fill: #1B2830; }
+.tx-tok.tx-pick .tx-ring { opacity: 1; stroke: var(--tx-accent); stroke-dasharray: 5 3; }
+.tx-tok.tx-off { opacity: .55; }
+.tx-tok.tx-hidden { opacity: .6; }
+.tx-mark { stroke: var(--tx-panel); stroke-width: 1.5; }
+.tx-mark.tx-conc { fill: var(--tx-brass); }
+.tx-mark.tx-ready { fill: var(--tx-accent); }
+.tx-mark-t { font: 800 8px Figtree, system-ui, sans-serif; fill: #fff; }
+
+/* ── spell templates ── */
+.tx-aiming { cursor: crosshair; }
+.tx-tpl { fill: var(--tx-spell); fill-opacity: .55; stroke: var(--tx-spell); stroke-opacity: 1; stroke-width: 1.5; pointer-events: none; }
+.tx-tpl.tx-ally { fill: var(--tx-warnc); fill-opacity: .55; stroke: var(--tx-warnc); }
+.tx-tpl.tx-off { fill: var(--tx-muted); fill-opacity: .28; stroke: var(--tx-muted); }
+.tx-tpl-ring { fill: var(--tx-spell); fill-opacity: .12; stroke: var(--tx-spell); stroke-width: 2; stroke-dasharray: 6 4; pointer-events: none; }
+.tx-aim { fill: none; stroke: var(--tx-ink); stroke-width: 2; stroke-dasharray: 3 3; pointer-events: none; }
+.tx-aim.tx-armed { stroke: var(--tx-spell); stroke-width: 3; stroke-dasharray: none; }
+.tx-caught { fill: none; stroke: var(--tx-danger); stroke-width: 3; pointer-events: none; }
+.tx-caught.tx-ally { stroke: var(--tx-warnc); stroke-width: 4; stroke-dasharray: 4 2; }
 .tx-float { font: 800 16px Figtree, system-ui, sans-serif; paint-order: stroke; stroke: var(--tx-panel); stroke-width: 4; pointer-events: none; animation: tx-rise 1.3s ease-out forwards; }
 .tx-float.tx-dmg { fill: var(--tx-danger); }
 .tx-float.tx-heal { fill: var(--tx-heal); }

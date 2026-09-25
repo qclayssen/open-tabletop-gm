@@ -188,7 +188,87 @@ def _norm_spell(r: dict) -> dict:
         "ritual":       r.get("ritual", False),
         "classes":      [c.get("name", c) if isinstance(c, dict) else str(c)
                          for c in r.get("classes", [])],
+        "mechanics":    _spell_mechanics(r),
     }
+
+
+# ─── Structured spell mechanics ───────────────────────────────────────────────
+#
+# What the tactical engine needs to cast a spell on the grid, read from
+# upstream's fields (never from the prose, except a line's width, which only
+# the text gives). `flags` empty means the engine can run the spell's numbers
+# without GM judgment; effects beyond damage and healing (conditions, walls,
+# summons) are always the GM's.
+#
+#   {"casting": action|bonus|reaction|other, "range": feet, "origin": self|touch|point,
+#    "attack": melee|ranged, "save": {"ability", "on_success": half|none|other},
+#    "damage": {"type", "slot": {level: dice}} | {"type", "character": {level: dice}},
+#    "heal": {"slot": {level: dice}}, "area": {"shape", "size", "width"},
+#    "concentration": bool, "flags": [...]}
+
+_CASTING = {"1 action": "action", "1 bonus action": "bonus", "1 reaction": "reaction"}
+_LINE_WIDTH = re.compile(r"(?:(\d+) feet wide|(\d+)-foot-wide)")
+
+
+def _spell_mechanics(r: dict) -> dict:
+    flags = []
+    rng = str(r.get("range", "")).strip()
+    out = {"casting": _CASTING.get(str(r.get("casting_time", "")).strip(), "other"),
+           "concentration": bool(r.get("concentration"))}
+    m = re.match(r"^(\d+) feet$", rng)
+    if rng.lower().startswith("self"):
+        out["range"], out["origin"] = 0, "self"
+    elif rng.lower() == "touch":
+        out["range"], out["origin"] = 5, "touch"
+    elif m:
+        out["range"], out["origin"] = int(m.group(1)), "point"
+    else:
+        flags.append("range_unparsed")
+    if r.get("attack_type") in ("melee", "ranged"):
+        out["attack"] = r["attack_type"]
+    dc = r.get("dc")
+    if isinstance(dc, dict):
+        ability = (dc.get("dc_type") or {}).get("index", "")
+        success = dc.get("dc_success", "none")
+        out["save"] = {"ability": ability[:3], "on_success": success}
+        if success not in ("half", "none"):
+            flags.append("save_effect")
+    damage = r.get("damage")
+    if isinstance(damage, list):                     # a few records carry a list
+        damage = damage[0] if len(damage) == 1 else None
+        if damage is None:
+            flags.append("damage_unparsed")
+    if isinstance(damage, dict):
+        dtype = (damage.get("damage_type") or {}).get("index", "")
+        if damage.get("damage_at_slot_level"):
+            out["damage"] = {"type": dtype, "slot": {str(k): str(v).replace(" ", "")
+                             for k, v in damage["damage_at_slot_level"].items()}}
+        elif damage.get("damage_at_character_level"):
+            out["damage"] = {"type": dtype, "character": {str(k): str(v).replace(" ", "")
+                             for k, v in damage["damage_at_character_level"].items()}}
+        else:
+            flags.append("damage_unparsed")
+        if "damage" in out and any(not re.fullmatch(r"\d+d\d+([+-]\d+)?|\d+", v)
+                                   for v in (out["damage"].get("slot")
+                                             or out["damage"].get("character")).values()):
+            flags.append("damage_unparsed")          # "1d6 + MOD" and the like
+    heal = r.get("heal_at_slot_level")
+    if isinstance(heal, dict):
+        out["heal"] = {"slot": {str(k): str(v).replace(" ", "") for k, v in heal.items()}}
+    area = r.get("area_of_effect")
+    if isinstance(area, dict) and area.get("type") in ("sphere", "cube", "cone", "line", "cylinder"):
+        out["area"] = {"shape": area["type"], "size": int(area.get("size") or 0)}
+        if area["type"] == "line":
+            w = _LINE_WIDTH.search(_join_desc(r.get("desc", [])))
+            out["area"]["width"] = int(w.group(1) or w.group(2)) if w else 5
+            if not w:
+                flags.append("width_assumed")
+            if out.get("origin") != "self":
+                flags.append("area_placement")       # walls: shaped by the caster, not a blast
+    if not any(k in out for k in ("attack", "save", "damage", "heal")):
+        flags.append("effect")                       # nothing the engine can resolve by itself
+    out["flags"] = sorted(set(flags))
+    return out
 
 
 def _norm_equipment(r: dict) -> dict:
@@ -303,7 +383,29 @@ def _norm_monster(r: dict) -> dict:
         "condition_immunities": _flat("condition_immunities"),
         "actions": [_norm_monster_action(a) for a in r.get("actions", [])
                     if isinstance(a, dict)],
+        **_proficiencies(r),
     }
+
+
+def _proficiencies(r: dict) -> dict:
+    """Save proficiencies ("saving-throw-dex": 6) and skills ("skill-stealth": 3)
+    as {"saves": {"dex": 6}, "skills": {"stealth": 3}}, plus passive Perception
+    from the senses block. Abilities without a proficiency are left out: the
+    engine falls back to the ability modifier."""
+    saves, skills = {}, {}
+    for p in r.get("proficiencies") or []:
+        idx = ((p or {}).get("proficiency") or {}).get("index", "")
+        if not isinstance(p.get("value"), int):
+            continue
+        if idx.startswith("saving-throw-"):
+            saves[idx[len("saving-throw-"):][:3]] = p["value"]
+        elif idx.startswith("skill-"):
+            skills[idx[len("skill-"):]] = p["value"]
+    out = {"saves": saves, "skills": skills}
+    senses = r.get("senses") or {}
+    if isinstance(senses, dict) and isinstance(senses.get("passive_perception"), int):
+        out["passive_perception"] = senses["passive_perception"]
+    return out
 
 
 # ─── Structured monster actions ───────────────────────────────────────────────
@@ -338,6 +440,78 @@ def _damage_part(d: dict):
         return None
     return {"dice": str(d["damage_dice"]).replace(" ", ""),
             "type": (d.get("damage_type") or {}).get("index", "")}
+
+
+# Common rider shapes the engine applies itself. Anything else in a rider stays
+# text for the GM ("rider_rest"). Size conditions ("a Medium or smaller
+# creature") are never structured: tokens carry no size yet.
+_ABILITY = {"strength": "str", "dexterity": "dex", "constitution": "con",
+            "intelligence": "int", "wisdom": "wis", "charisma": "cha"}
+_SAVE_HEAD = (r"(?:if the target is a creature, )?(?:the target|it|each creature in that area) "
+              r"must (?:succeed on|make) a DC (\d+) (\w+) saving throw")
+_RIDER_SHAPES = [
+    ("grapple", re.compile(r"(?:and |if the target is a creature, )?(?:the target|it) is grappled \(escape DC (\d+)\)", re.I)),
+    ("restrained", re.compile(r"until this grapple ends, the (?:target|creature) is restrained", re.I)),
+    ("save_damage", re.compile(r"(?:and )?" + _SAVE_HEAD + r"(?:, taking| or take) \d+ \(([^)]*)\) ([a-z]+) damage"
+                               r"(?: on a failed save)?(, or half as much damage on a successful one)?", re.I)),
+    ("save_condition", re.compile(r"(?:and )?" + _SAVE_HEAD + r" or (?:be|become) (knocked prone|poisoned|frightened|"
+                                  r"blinded|deafened|paralyzed|restrained|stunned|charmed|incapacitated)"
+                                  r"(?: for (\d+ (?:round|minute|hour)s?|\d+ (?:round|minute|hour)))?", re.I)),
+    ("repeat", re.compile(r"(?:the (?:\w+ )?target|the creature|a creature) can repeat the saving throw "
+                          r"at the end of each of its turns, "
+                          r"ending the effect on itself on a success", re.I)),
+]
+
+
+def _rider_effects(rider: str) -> tuple:
+    """(effects, leftover text) for a rider. Effects:
+    {"kind": "grapple", "escape_dc", "restrained"} and
+    {"kind": "save", "ability", "dc", "condition" | "damage", "on_success", "duration", "repeat"}."""
+    effects, leftover = [], []
+    for sentence in re.split(r"(?<=\.)\s+", rider.strip()):
+        rest = sentence
+        plain = re.sub(r"\bif the target is a creature,", "", sentence, flags=re.I)
+        if re.search(r"\b(if|unless)\b", plain, re.I):
+            leftover.append(sentence)              # "other than an elf", "isn't already grappling"
+            continue
+        for kind, rx in _RIDER_SHAPES:
+            m = rx.search(rest)
+            if not m:
+                continue
+            if kind == "grapple":
+                effects.append({"kind": "grapple", "escape_dc": int(m.group(1)), "restrained": False})
+            elif kind == "restrained":
+                grapple = next((e for e in effects if e["kind"] == "grapple"), None)
+                if grapple is None:
+                    continue
+                grapple["restrained"] = True
+            elif kind == "save_damage":
+                dice = m.group(3).replace(" ", "")
+                if not re.fullmatch(r"\d+d\d+([+-]\d+)?", dice) or m.group(2).lower() not in _ABILITY:
+                    continue
+                effects.append({"kind": "save", "ability": _ABILITY[m.group(2).lower()],
+                                "dc": int(m.group(1)),
+                                "damage": [{"dice": dice, "type": m.group(4).lower()}],
+                                "on_success": "half" if m.group(5) else "none"})
+            elif kind == "save_condition":
+                if m.group(2).lower() not in _ABILITY:
+                    continue
+                cond = m.group(3).lower().replace("knocked prone", "prone")
+                eff = {"kind": "save", "ability": _ABILITY[m.group(2).lower()],
+                       "dc": int(m.group(1)), "condition": cond}
+                if m.group(4):
+                    eff["duration"] = m.group(4)
+                effects.append(eff)
+            elif kind == "repeat":
+                last = next((e for e in reversed(effects) if e.get("condition")), None)
+                if last is None:
+                    continue
+                last["repeat"] = "end"
+            rest = rest[:m.start()] + rest[m.end():]
+        rest = re.sub(r"^[\s,.]*(?:and|or)?[\s,.]*", "", rest).strip(" ,.")
+        if re.search(r"[a-z]{3}", rest, re.I):
+            leftover.append(rest[0].upper() + rest[1:] + ".")
+    return effects, " ".join(leftover)
 
 
 def _norm_monster_action(a: dict) -> dict:
@@ -429,6 +603,11 @@ def _norm_monster_action(a: dict) -> dict:
         if rest:
             out["rider"] = rest
             flags.append("rider")
+            effects, leftover = _rider_effects(rest)
+            if effects:
+                out["rider_effects"] = effects
+                if leftover:
+                    out["rider_rest"] = leftover
         if a.get("dc"):
             flags.append("rider")                      # save attached to an attack
 
@@ -444,6 +623,19 @@ def _norm_monster_action(a: dict) -> dict:
         if text_half != (out["dc"]["on_success"] == "half"):
             out["dc"]["on_success"] = None
             flags.append("success_conflict")
+        # What happens besides the damage: a condition on a failed save is
+        # structured like an attack rider; anything else is text for the GM.
+        after = re.split(r"half as much damage on a successful one\.|damage on a failed save\.", desc, 1)
+        tail = after[1].strip() if len(after) > 1 else ""
+        if not out.get("damage") or tail:
+            effects, leftover = _rider_effects(desc if not out.get("damage") else tail)
+            effects = [e for e in effects if e.get("condition")]
+            if effects:
+                out["rider_effects"] = effects
+            rest = leftover if not out.get("damage") else (leftover if effects else tail)
+            if out.get("damage") and rest:
+                out["rider"] = rest
+                flags.append("rider")
         area = _AREA.search(desc)
         if area:
             out["area"] = {"shape": area.group(2), "size": int(area.group(1))}

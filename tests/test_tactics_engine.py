@@ -95,9 +95,11 @@ def test_leaving_reach_provokes_an_opportunity_attack():
     enc = start(encounter([kairos(), frog("frog-1", (1, 0))]), ["kairos", "frog-1"])
     # Every 3-step path A1 -> D1 leaves the frog's reach on its last step.
     # Bite: d20 15 + 3 = 18 vs AC 12, hit; 1d6+1 with a 4 = 5. Kairos 8 -> 3.
+    # The bite's rider grapples and restrains him (speed 0): he stops where it hit.
     res = engine.move(enc, roller(15, 4), "kairos", "D1")
     k = enc.tokens["kairos"]
-    assert res["opportunity_attacks"] == 1 and k.hp == 3 and k.square == "D1"
+    assert res["opportunity_attacks"] == 1 and k.hp == 3 and k.square == "C1"
+    assert res["stopped"] and k.has("grappled") and k.has("restrained")
     assert enc.tokens["frog-1"].reaction_used
     assert not engine.can_undo(enc)
     assert "Opportunity attack" in enc.log[-1]["text"]
