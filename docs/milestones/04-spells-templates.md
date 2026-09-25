@@ -24,7 +24,11 @@ Spells on the grid: area templates with a preview, saving throws, concentration,
 
 ## Display
 
-(Filled in by the display work: cast list, template preview on hover, affected tokens highlighted, Help, Hide, Escape and Ready buttons.)
+- `display/static/tactics.js` and `tactics.css`: **Cast** opens the spell list (cantrips, then each level with slots left; unavailable spells greyed with the engine's reason; a reactions Ask / Auto / Off toggle). Area spells enter an aim mode: hovering a square draws the template from `preview-area` (debounced, cached per square) with each caught creature's fail % badge; allies caught are drawn in a warning colour with a "Friendly fire" line and a confirm before casting. Single-target spells badge every hostile with hit % or fail %; Magic Missile picks 1 or 3 darts in order; self and narrated spells cast at once. **Help**, **Hide**, **Escape** (when grappled) and **Ready** (attack or spell, target, then a trigger in words) are live. Tokens show a "C" marker while concentrating and an "R" marker with a readied action; hidden tokens are dimmed. Reaction prompts (Shield, Silvery Barbs, opportunity attacks) show Yes / No and answers accumulate in order.
+- `display/gm-display-app.py`: `spells` and `preview-area` are reads; `cast`, `help`, `hide`, `escape`, `ready`, `reactions` are writes for the current player only; up to 8 args; `react` may be a list (4 at most); flags inside `args` are refused except `--level` (cast, preview-area) and `--level`, `--target`, `--trigger` (ready), so a browser cannot smuggle `--roll 20` or another campaign.
+- `scripts/tactics/sync.py` snapshot: per token `concentration`, `effects`, `reactions`, `readied`, `hidden`, `slots`; turn `bonus_used` and `reaction`.
+- Verified in Chromium at 1400 px and 375 px: Burning Hands aim with friendly fire, Mind Sliver badges, three darts, Detect Magic concentration, Ready and its marker, Hide refusal, keyboard Enter and Escape.
+- Not yet: an upcast (`--level`) picker; readying a move from the browser.
 
 ## Findings
 
