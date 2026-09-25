@@ -112,6 +112,25 @@ Hardware note: the reference machine has 16 GB of unified memory.
 - A thinking model as advisor spent its 300 tokens thinking and returned an
   empty answer. Advisor briefs now end with `/no_think` (unless `GM_NO_THINK=0`)
   and get 400 tokens.
+- DM benchmark, 2026-09-25, same 3-turn scene (look for Tobin, inspect a stone,
+  ask a lore question), M1 Pro 16 GB, `GM_REASONING=none`:
+
+  | DM | Time | Advisor asked | Notes |
+  |---|---|---|---|
+  | `qwen3.5:9b` (Ollama) | 23 s | never | best local prose, ends turns on a choice; invents lore |
+  | `gemma4:e4b` (Ollama) | 31 s | never | grounded, does not invent lore, no choices offered |
+  | `qwen3:14b` (Ollama) | 110 s | once (lore) | a rusted bicycle in a fantasy pond |
+  | `qwen3.5:4b` (Ollama) | 48 s | once (lore) | decided the PC's action; fine for picks and summaries only |
+  | Haiku 4.5 (OmniRoute `fast`) | 23 s | once (lore), the intended behaviour | best continuity; replies run long |
+
+  Local models almost never escalate on their own: the case for an always-on
+  background advisor (open).
+- Qwen3.5 ignores `/no_think` and Ollama's `think: false`: it spent all 500
+  tokens reasoning and returned empty narration. `reasoning_effort: "none"` works
+  (now sent on local-tier calls, `GM_REASONING`).
+- OmniRoute's request queue times out any request at 15 s
+  (`requestQueue.maxWaitMs`), which kills local calls; `GM_LOCAL_URL` sends the
+  local tier straight to Ollama.
 - Argparse usage text contains `--roll`, so "needs a roll" must key on the
   engine's own "Re-run the same command with" wording.
 - A boss at 2x the top PC max HP made a giant frog (18) a boss against a level

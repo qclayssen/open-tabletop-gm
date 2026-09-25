@@ -36,6 +36,16 @@ export GM_FAST_MODEL=dm-fast                   # defaults to GM_DM_MODEL if unse
 python3 scripts/localdm/play.py -c <campaign>
 ```
 
+Recommended (hybrid): local tier straight to Ollama, advisors through OmniRoute.
+OmniRoute's request queue times out any request after 15 s, too short for a
+local model loading or writing a long reply:
+
+```bash
+GM_LOCAL_URL=http://localhost:11434 GM_DM_MODEL=qwen3.5:9b GM_FAST_MODEL=qwen3.5:4b \
+GM_ADVISOR_MODEL=dm-advisor GM_COUNCIL_MODEL=dm-council \
+  python3 scripts/localdm/play.py -c <campaign>
+```
+
 Without OmniRoute, point straight at Ollama (everything local, advisor included):
 
 ```bash
