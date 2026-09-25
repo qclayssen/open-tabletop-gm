@@ -152,6 +152,48 @@ class ReadyPanelQueue(unittest.TestCase):
         self.assertEqual(again.getvalue(), "")
 
 
+class NonUtf8Console(unittest.TestCase):
+    """On Windows the GM's shell reads stdout through a cp1252 pipe. A roll or
+    an action with a character outside cp1252 ("→" in an advantage roll) must
+    come out as UTF-8, not crash the script."""
+
+    def _cp1252_stdout(self):
+        buf = io.BytesIO()
+        return buf, io.TextIOWrapper(buf, encoding="cp1252", write_through=True)
+
+    def test_check_input_prints_any_character(self):
+        mod = _load_check_input()
+        tmp = Path(tempfile.mkdtemp())
+        mod.NARRATION_TARGET, mod.ROLL_PREFS = tmp / "n", tmp / "r"
+        mod.TOKEN_FILE, mod.QUEUE_FILE = tmp / ".token", tmp / "player_input.json"
+        mod.READY_FILE, mod.DRAIN_URL = tmp / ".input_queue", "http://127.0.0.1:9/unreachable"
+        mod.CONSUMED_URL = "http://127.0.0.1:9/unreachable"
+        mod.READY_FILE.write_text("[Kairos]: I point → north", encoding="utf-8")
+        buf, out = self._cp1252_stdout()
+        real = sys.stdout
+        sys.stdout = out
+        try:
+            mod.main()
+        finally:
+            sys.stdout = real
+        self.assertIn("[Kairos]: I point → north", buf.getvalue().decode("utf-8"))
+
+    def test_send_prints_any_character(self):
+        spec = importlib.util.spec_from_file_location("send_under_test", str(DISPLAY / "send.py"))
+        send = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(send)
+        buf, out = self._cp1252_stdout()
+        real = sys.stdout
+        sys.stdout = out
+        try:
+            send.utf8_stdout()
+            print("Kairos rolls 1d20: [12, 7] → keep 12 (advantage) = 12")
+            sys.stdout.flush()
+        finally:
+            sys.stdout = real
+        self.assertIn("→ keep 12", buf.getvalue().decode("utf-8"))
+
+
 class NoDoubleDelivery(unittest.TestCase):
     """If the display answers with an error it still owns the queue, so the
     file must not be read (the app would deliver the same actions again)."""

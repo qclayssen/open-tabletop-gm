@@ -375,6 +375,16 @@ def _build_stats_payload(args) -> "dict | None":
     return {"players": list(players.values())}
 
 
+
+def utf8_stdout() -> None:
+    """Print UTF-8 whatever the console codepage. On Windows the GM's shell reads
+    stdout through a cp1252 pipe, where "→" in a roll would raise."""
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Send text to the DnD display server.")
     parser.add_argument(
@@ -464,6 +474,7 @@ def main() -> None:
              "Surfaces a clear stderr line on mismatch — use during dev/debug.")
 
     args = parser.parse_args()
+    utf8_stdout()
 
     # Three categories of flags drive whether to read stdin:
     #   1. Content flags (--player/--npc/--dice/--tutor/--action): body REQUIRED.

@@ -111,9 +111,13 @@ def _print_entries(entries: list) -> None:
 
 def _take_ready_queue(token: str) -> list:
     """Read and delete .input_queue, then clear the display's "Queued" badge."""
+    # Move the file aside before reading: the app truncates and rewrites it,
+    # and a read in between would see it empty and then delete the new action.
+    taken = READY_FILE.with_name(READY_FILE.name + ".taken")
     try:
-        text = READY_FILE.read_text(encoding="utf-8")
-        READY_FILE.unlink()
+        os.replace(READY_FILE, taken)
+        text = taken.read_text(encoding="utf-8")
+        taken.unlink()
     except OSError:
         return []
     entries = []
@@ -130,7 +134,18 @@ def _take_ready_queue(token: str) -> list:
     return entries
 
 
+
+def utf8_stdout() -> None:
+    """Print UTF-8 whatever the console codepage. On Windows the GM's shell reads
+    stdout through a cp1252 pipe, where "→" in a roll would raise."""
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
+
+
 def main() -> None:
+    utf8_stdout()
     token = TOKEN_FILE.read_text(encoding="utf-8").strip() if TOKEN_FILE.exists() else ""
     ready = _take_ready_queue(token)
     # Primary: HTTP drain — clears memory and file atomically

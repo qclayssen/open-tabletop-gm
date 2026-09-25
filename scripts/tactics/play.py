@@ -541,6 +541,8 @@ def main(argv=None, ask=input, out=print) -> int:
         os.environ["TACTICS_NO_DISPLAY"] = "1"
     camp, name = make_campaign(tmp, args.sheet, "auto" if args.auto_dice else "players")
     color = not args.no_color and sys.stdout.isatty() and not os.environ.get("NO_COLOR")
+    if color and os.name == "nt":
+        os.system("")           # turns on escape codes in a classic cmd.exe / PowerShell window
     game = Game(camp, sc, name, seed=args.seed, ask=ask, out=out, color=color)
     result = "quit"
     try:
