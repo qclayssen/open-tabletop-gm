@@ -98,6 +98,13 @@ def snapshot(enc, meta: dict = None) -> dict:
         return {str(lv): {"used": s.get("used", 0), "total": s.get("total", 0)}
                 for lv, s in sorted((t.extra.get("slots") or {}).items())}
 
+    from .core import rules_for
+    R = rules_for(enc)
+
+    def threat(t) -> int:
+        """Opportunity-attack reach in feet right now (engine._provokers' test), else 0."""
+        return R.reach(t) if t.active and R.can_react(t) and R.opportunity_attack(t) else 0
+
     from . import sight
     visible = sight.fog(enc)
     cur = enc.current
@@ -122,7 +129,7 @@ def snapshot(enc, meta: dict = None) -> dict:
                         "concentration": t.concentration, "effects": effect_names(t),
                         "reactions": t.reactions,
                         "readied": (t.extra.get("readied") or {}).get("label") or None,
-                        "hidden": t.has("hidden"),
+                        "hidden": t.has("hidden"), "threat": threat(t),
                         "slots": slots(t) if t.side == "pc" else {}}
                        # A hidden or unseen enemy is not drawn: players must not see where it is.
                        for t in enc.tokens.values() if sight.shown(enc, t, visible)],
