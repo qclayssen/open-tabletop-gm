@@ -368,7 +368,10 @@ Tutor block always goes **last** in the send sequence.
 11. **3 NPCs** with relationship web → npcs.md.
 12. **3-5 Quest Seeds** → world.md.
 13. Write state.md: session count 0, starting location, system, system version (from step 2), `_display_running` flag.
-14. Confirm. Offer `/gm character new`.
+14. **If the display is running**, point it at the new campaign and wipe the previous one's text and party (otherwise the screen keeps showing the last campaign until the first narration):
+    `python3 <skill-base>/display/send.py --set-campaign <name> < /dev/null && python3 <skill-base>/display/push_stats.py --clear`
+    Push the party with `--replace-players --json` once characters exist (see `scripts/startup.md`).
+15. Confirm. Offer `/gm character new`.
 
 ### `/gm load <campaign-name>`
 1. Read `~/open-tabletop-gm/campaigns/<name>/state.md` — confirm it exists.

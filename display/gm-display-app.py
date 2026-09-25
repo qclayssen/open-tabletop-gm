@@ -111,6 +111,8 @@ STATS_FILE    = os.path.join(_DISPLAY_DIR, "stats.json")
 TOKEN_FILE    = os.path.join(_DISPLAY_DIR, ".token")
 # Port override so a second display (tests, a demo) can run beside a live one.
 # The tactics engine honours the same variable when it pushes updates.
+# The GM scripts find a non-default port in display/.port, which only
+# start-display.sh writes: a test display must not take over the live one.
 _PORT         = int(os.environ.get("GM_DISPLAY_PORT", "5001") or 5001)
 INPUT_FILE    = os.path.join(_DISPLAY_DIR, "player_input.json")
 TRIGGER_FILE  = os.path.join(_DISPLAY_DIR, ".input_trigger")
@@ -1068,6 +1070,9 @@ _input_lock = threading.Lock()
 # send.py --wait polls GET /dice-request/<id> to know when the GM can move on.
 _dice_pending: dict = {}
 _dice_pending_lock = threading.Lock()
+# Finished requests keep their roll texts so --wait can print them to the GM.
+_dice_done: dict = {}           # request_id → [roll text, ...], oldest first
+_DICE_DONE_KEEP = 50
 
 
 def _dice_pending_snapshot() -> list:
@@ -2083,9 +2088,13 @@ def player_dice():
                 matched = next((c for c in entry["chars"] if c.lower() == ci), None)
                 if matched is not None:
                     entry["chars"].discard(matched)
+                    entry.setdefault("results", []).append(text)
                     pending_changed = True
                     if not entry["chars"]:
                         _dice_pending.pop(req_id, None)
+                        _dice_done[req_id] = entry["results"]
+                        while len(_dice_done) > _DICE_DONE_KEEP:
+                            _dice_done.pop(next(iter(_dice_done)))
     if pending_changed:
         _broadcast({"dice_pending": _dice_pending_snapshot()})
 
@@ -2184,19 +2193,22 @@ def dice_request():
 def dice_request_status(request_id):
     """Poll a dice request's completion state.
 
-    Returns 200 with {complete, pending, label, started_at}. A request that
-    never existed (or has already fully drained) reports complete=True with
-    an empty pending list — send.py --wait treats both identically.
+    Returns 200 with {complete, pending, results, label, started_at}. results
+    holds each roll's text so far. A finished request keeps its results (the
+    last _DICE_DONE_KEEP of them); one that never existed reports complete=True
+    with empty pending and results.
     """
     if not _token_ok():
         return "Forbidden", 403
     with _dice_pending_lock:
         entry = _dice_pending.get(request_id)
         if entry is None or not entry["chars"]:
-            return jsonify({"complete": True, "pending": []}), 200
+            return jsonify({"complete": True, "pending": [],
+                            "results": list(_dice_done.get(request_id, []))}), 200
         return jsonify({
             "complete": False,
             "pending": sorted(entry["chars"]),
+            "results": list(entry.get("results", [])),
             "label": entry["meta"].get("label", ""),
             "started_at": entry["started_at"],
         }), 200

@@ -67,7 +67,24 @@ import urllib.request
 _DIR        = pathlib.Path(__file__).parent
 _SCHEME_FILE = _DIR / ".scheme"
 _SCHEME = _SCHEME_FILE.read_text(encoding="utf-8").strip() if _SCHEME_FILE.exists() else "http"
-BASE_URL    = f"{_SCHEME}://localhost:5001"
+_PORT_FILE = _DIR / ".port"
+
+
+def _display_port() -> int:
+    raw = os.environ.get("GM_DISPLAY_PORT", "").strip()
+    if not raw:
+        try:
+            raw = _PORT_FILE.read_text(encoding="utf-8").strip()
+        except OSError:
+            raw = ""
+    try:
+        return int(raw or "5001")
+    except ValueError:
+        return 5001
+
+
+_PORT = _display_port()
+BASE_URL    = f"{_SCHEME}://localhost:{_PORT}"
 FLASK_URL   = f"{BASE_URL}/chunk"
 STATS_URL   = f"{BASE_URL}/stats"
 HEALTH_URL  = f"{BASE_URL}/health"
@@ -399,7 +416,7 @@ def main() -> None:
     parser.add_argument("--dc", type=int, metavar="N",
         help='Optional DC; displayed informationally on the phone.')
     parser.add_argument("--wait", action="store_true",
-        help='With --dice-request: block until every prescribed character has rolled '
+        help='With --dice-request: block until every prescribed character has rolled, then print each roll on stdout '
              '(polls /dice-request/<id>). Exits non-zero on timeout.')
     parser.add_argument("--wait-timeout", type=int, default=120, metavar="SECONDS",
         help='Timeout for --wait (default 120s). On timeout, prints still-pending '
@@ -526,6 +543,8 @@ def main() -> None:
                         continue
                     if st.get("complete"):
                         print(f"send.py: all rolls received.", file=sys.stderr)
+                        for line in st.get("results") or []:
+                            print(line, flush=True)
                         break
                     remaining = st.get("pending") or []
                     if remaining != last_pending:

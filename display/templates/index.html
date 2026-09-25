@@ -4672,26 +4672,27 @@ function renderReplayBatch(items) {
 }
 
 function clearDisplay(then) {
-  // Fade out, wipe, fade back in, then call the callback.
+  // Wipe now, then fade back in and call the callback. Wiping after the fade
+  // instead would also erase text that arrives during it: /gm new sends its
+  // opening narration right after the clear.
   textContent.style.opacity = '0';
+  // Abort any in-progress typewriter
+  charQueue        = [];
+  isTyping         = false;
+  _currentInlineEl = null;
+  if (currentCursor && currentCursor.parentNode) {
+    currentCursor.parentNode.removeChild(currentCursor);
+  }
+  currentCursor = null;
+  currentEl     = null;
+  clearTimeout(idleTimer);
+
+  textContent.innerHTML = '';
+  textScroll.scrollTop  = 0;
+  userScrolledUp = false;
+  _hideProcessingIndicator();
   setTimeout(() => {
-    // Abort any in-progress typewriter
-    charQueue        = [];
-    isTyping         = false;
-    _currentInlineEl = null;
-    if (currentCursor && currentCursor.parentNode) {
-      currentCursor.parentNode.removeChild(currentCursor);
-    }
-    currentCursor = null;
-    currentEl     = null;
-    clearTimeout(idleTimer);
-
-    textContent.innerHTML = '';
-    textScroll.scrollTop  = 0;
-    userScrolledUp = false;
     textContent.style.opacity = '1';
-    _hideProcessingIndicator();
-
     if (then) then();
   }, 370); // matches the CSS transition duration
 }
