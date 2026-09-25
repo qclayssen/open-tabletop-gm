@@ -54,6 +54,20 @@ GM_LLM_URL=http://localhost:11434 GM_DM_MODEL=qwen3:14b GM_ADVISOR_MODEL=qwen3:1
 ```
 
 `GM_NO_THINK=0` stops the `/no_think` suffix (only Qwen3 understands it).
+`GM_REASONING` sets `reasoning_effort` on local calls: `none` (default; Qwen3.5
+ignores `/no_think` and otherwise returns empty turns), `low`/`medium`/`high` to
+let it think, `off` to send nothing.
+`GM_SHADOW=0` (or `--no-shadow`) turns off the background advisor review.
+
+## Ollama settings for 16 GB
+
+```bash
+launchctl setenv OLLAMA_CONTEXT_LENGTH 8192     # default 4096 gets tight as the summary grows
+launchctl setenv OLLAMA_MAX_LOADED_MODELS 2     # DM + fast model; use 1 under memory pressure
+```
+
+Restart Ollama afterwards. Heavy swap (check `sysctl vm.swapusage`) triples
+local latency.
 
 ## Reading the cost
 

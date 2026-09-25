@@ -94,7 +94,13 @@ Hardware note: the reference machine has 16 GB of unified memory.
   `triggers`, `advisor`, `summarizer`, `play`; prompts in `scripts/localdm/prompts/`.
 - `GM_FAST_MODEL` (added after the first live run): enemy picks and summaries
   can go to a smaller, faster local model; defaults to `GM_DM_MODEL`.
-- 63 tests in `tests/test_localdm_*.py` (fake model; the bridge and one end to
+- Shadow advisor (after the benchmark): after a player turn nobody advised, one
+  advisor reviews it in a background thread; its notes feed the next DM call.
+  "nothing" answers are dropped. `GM_SHADOW=0` or `--no-shadow` turns it off.
+  Live: 3 Haiku reviews at 2 to 4 s each, never on the player's critical path.
+- `GM_REASONING` (reasoning_effort on local calls) and `GM_LOCAL_URL` (local
+  tier straight to Ollama); see Findings.
+- 69 tests in `tests/test_localdm_*.py` (fake model; the bridge and one end to
   end test use the real engine). Plan: `docs/superpowers/plans/2026-09-25-local-dm.md`.
 - Setup: `docs/model-configs/omniroute-local-dm.md`.
 
@@ -123,8 +129,7 @@ Hardware note: the reference machine has 16 GB of unified memory.
   | `qwen3.5:4b` (Ollama) | 48 s | once (lore) | decided the PC's action; fine for picks and summaries only |
   | Haiku 4.5 (OmniRoute `fast`) | 23 s | once (lore), the intended behaviour | best continuity; replies run long |
 
-  Local models almost never escalate on their own: the case for an always-on
-  background advisor (open).
+  Local models almost never escalate on their own, hence the shadow advisor.
 - Qwen3.5 ignores `/no_think` and Ollama's `think: false`: it spent all 500
   tokens reasoning and returned empty narration. `reasoning_effort: "none"` works
   (now sent on local-tier calls, `GM_REASONING`).
@@ -139,6 +144,13 @@ Hardware note: the reference machine has 16 GB of unified memory.
   `spells-templates` (e856ed0), not by this branch.
 
 ## Open
+
+- Raise OmniRoute `requestQueue.maxWaitMs` (15 s) if `dm-local` should work
+  through the router; the hybrid setup does not need it.
+- Under memory pressure (9 GB of swap in use) `qwen3.5:9b` went from about 8 s
+  to 23 to 35 s per call. Close heavy apps, or set `OLLAMA_MAX_LOADED_MODELS=1`.
+- Ollama serves a 4096-token context by default; set `OLLAMA_CONTEXT_LENGTH=8192`
+  before the summary and recent turns grow past it.
 
 - Live combat through the REPL needs the SRD data (`systems/dnd5e/build_srd.py`).
 - No display output yet (`display/send.py`); the REPL prints to the terminal.
