@@ -102,18 +102,35 @@ class Session:
         except OSError:
             return ""
 
+    def _digest(self) -> str:
+        return _join(context.state_digest(self._state()), context.sheet_digest(self.camp_dir))
+
+    AGENCY_FIX = ("Your last draft wrote speech, thoughts or feelings for the player's "
+                  "character. Rewrite it: narrate only the world's and the NPCs' response, "
+                  "and never say what the player's character says, thinks or feels.")
+
     def _dm(self, *, player="", engine="", notes="", task="") -> reply.DMReply:
-        msgs = context.build_messages(context.dm_prompt(), context.state_digest(self._state()),
-                                      self.memory.summary(), self.memory.unsummarized(),
-                                      engine=engine, notes=notes, player=player, task=task,
-                                      budget=self.budget)
-        return reply.parse(self.local.chat(self.models.dm, msgs, max_tokens=500, role="dm",
-                                            reasoning=self.reasoning).text)
+        digest = self._digest()
+
+        def call(extra_task):
+            msgs = context.build_messages(context.dm_prompt(), digest,
+                                          self.memory.summary(), self.memory.unsummarized(),
+                                          engine=engine, notes=notes, player=player,
+                                          task=extra_task, budget=self.budget)
+            return reply.parse(self.local.chat(self.models.dm, msgs, max_tokens=500, role="dm",
+                                               reasoning=self.reasoning).text)
+
+        r = call(task)
+        if reply.speaks_for_player(r.narration):          # guardrail: one corrective retry
+            retry = call(f"{task}\n{self.AGENCY_FIX}".strip())
+            if not reply.speaks_for_player(retry.narration):
+                return retry
+        return r
 
     def _consult(self, names, question, model=None) -> str:
         recent = "\n".join(f"{context.LABEL[t['role']]}: {t['text']}"
                            for t in self.memory.unsummarized()[-6:] if t["role"] in context.LABEL)
-        ctx = _join(context.state_digest(self._state()), self.memory.summary(), recent)
+        ctx = _join(self._digest(), self.memory.summary(), recent)
         return advisor.consult(self.client, model or self.models.advisor, names, question, ctx)
 
     def _trigger_notes(self) -> str:

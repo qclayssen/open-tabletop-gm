@@ -46,6 +46,32 @@ def state_digest(state_md: str, sections=DIGEST_SECTIONS, limit: int = 3000) -> 
     return "\n\n".join(parts)[:limit]
 
 
+SHEET_SECTIONS = ("Identity", "Combat Stats", "Features & Traits", "Equipment & Inventory")
+
+
+def sheet_digest(camp_dir, sections=SHEET_SECTIONS, limit: int = 1800) -> str:
+    """The player character's sheet, trimmed: who they are, what they carry.
+
+    Keeps the DM from inventing gear or abilities. Reads characters/*.md; the
+    first sheet found is the player's (solo table).
+    """
+    try:
+        sheet = sorted((pathlib.Path(camp_dir) / "characters").glob("*.md"))[0]
+        text = sheet.read_text(encoding="utf-8")
+    except (OSError, IndexError):
+        return ""
+    heads = list(re.finditer(r"^#{2,3} +(.+?)\s*$", text, re.M))
+    parts = []
+    for i, m in enumerate(heads):
+        if m.group(1) not in sections:
+            continue
+        end = heads[i + 1].start() if i + 1 < len(heads) else len(text)
+        body = [ln for ln in text[m.end():end].splitlines() if ln.strip()]
+        if body:
+            parts.append(f"### Player character: {m.group(1)}\n" + "\n".join(body))
+    return "\n\n".join(parts)[:limit]
+
+
 def council_setting(state_md: str) -> str:
     m = _COUNCIL.search(state_md or "")
     return "off" if m and m.group(1).lower() == "off" else "auto"
