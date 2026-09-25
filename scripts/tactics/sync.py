@@ -22,6 +22,7 @@ import os
 import pathlib
 import re
 import shutil
+import urllib.parse
 
 from .grid import label
 
@@ -48,10 +49,15 @@ def _post(path: str, payload: dict) -> None:
         return
     ps = _push_stats()
     url = ps.FLASK_URL.replace("/stats", path)
+    base = os.environ.get("GM_DISPLAY_URL", "").strip().rstrip("/")
     port = os.environ.get("GM_DISPLAY_PORT", "").strip()
-    if port.isdigit():                      # a display on another port (see gm-display-app.py)
+    if base:                                # a display anywhere (localdm/play.py sets it)
+        url = base + path
+    elif port.isdigit():                    # a display on another port (see gm-display-app.py)
         url = url.replace("localhost:5001", f"localhost:{port}")
-    ps._send(url, json.dumps(payload).encode("utf-8"), ps._read_token())
+    host = urllib.parse.urlsplit(url).hostname
+    token = ps._read_token() if host in ("localhost", "127.0.0.1", "::1") else ""
+    ps._send(url, json.dumps(payload).encode("utf-8"), token)
 
 
 # ─── tracker.json ─────────────────────────────────────────────────────────────

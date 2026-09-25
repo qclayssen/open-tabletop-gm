@@ -255,6 +255,9 @@ def _attack_plans(enc, t, R, squares) -> list:
     return [p for p in plans if p["kind"] != "attack" or (p["target"], p["attack"]) not in in_multi]
 
 
+ALL = 99          # options(limit=ALL): every plan, for policy.pick
+
+
 def options(enc, token_ref, limit: int = 5) -> list:
     t = engine._resolve(enc, token_ref)
     R = engine.rules_for(enc)
@@ -439,10 +442,10 @@ def _label(o) -> str:
     return f"Hold position and Dodge{tags}"
 
 
-def choose(enc, roller, token_ref, n: int, reactions: dict = None) -> dict:
+def choose(enc, roller, token_ref, n: int, reactions: dict = None, limit: int = 5) -> dict:
     """Run option n for this creature. Returns {"option", "text"}."""
     t = engine._resolve(enc, token_ref)
-    opts = options(enc, t)
+    opts = options(enc, t, limit)
     pick = next((o for o in opts if o["n"] == n), None)
     if pick is None:
         raise engine.CombatError(f"{t.name} has no option {n} (options 1 to {len(opts)}).")

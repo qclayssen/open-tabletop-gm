@@ -548,12 +548,25 @@ def token_from_monster(record: dict, token_id: str, name: str, pos: tuple,
         source={"kind": "srd", "ref": record.get("index", "")},
         extra={"cr": record.get("cr"), "xp": record.get("xp"),
                "type": (record.get("type") or "").lower(), "int": record.get("int", 10),
+               "traits": _traits(record), "alignment": record.get("alignment", ""),
                "actions": _other_actions(record),
                "abilities": {ab: int(record.get(ab, 10)) for ab in ABILITIES},
                "skills": dict(record.get("skills") or {}),
                "passive_perception": record.get("passive_perception"),
                "usage": _usage(record.get("actions", []))},
     )
+
+
+def _traits(record: dict) -> list:
+    """Trait names ("Pack Tactics") from the description paragraphs before the actions."""
+    names = []
+    for para in (record.get("description") or "").split("\n\n"):
+        if para.startswith("Action"):
+            break
+        m = re.match(r"([A-Z][\w' /-]{2,40}?)(?: \([^)]*\))?: ", para)
+        if m:
+            names.append(m.group(1).strip())
+    return names
 
 
 def _usage(actions: list) -> dict:
