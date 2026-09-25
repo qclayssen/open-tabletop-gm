@@ -88,6 +88,9 @@ def _cover_from(enc, origin_sq, t) -> int:
 def _check_economy(enc, c, spec) -> None:
     if spec["mode"] == "reaction":
         raise CombatError(f"{spec['name']} is a reaction: the engine offers it when its trigger happens.")
+    if spec["casting"] == "reaction":
+        raise CombatError(f"{spec['name']} is a reaction the engine does not run: "
+                          "the GM narrates it when its trigger happens.")
     if spec["casting"] not in ("action", "bonus"):
         raise CombatError(f"{spec['name']} takes longer than an action to cast.")
     if spec["casting"] == "bonus":

@@ -328,3 +328,14 @@ def test_reactions_setting_and_status_reminders(camp, capsys):
     code, out = run(capsys, "status")
     assert "concentrating: Fire Bolt (readied)" in out
     assert "Kairos readied Fire Bolt at frog-1 when a frog leaves the water (trigger kairos)." in out
+
+
+def test_the_mephit_demo_shows_spells_and_a_breath_weapon(camp, capsys):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("tactics_demo_m", ROOT / "scripts" / "tactics" / "demo.py")
+    demo = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(demo)
+    res = demo.play(camp, seed=2, scenario="mephit")
+    out = capsys.readouterr().out
+    assert res["ok"] and "$ combat.py cast kairos \"fire bolt\" mephit-1" in out
+    assert "Frost Breath: 15 ft cone" in out and "preview-area" in out
