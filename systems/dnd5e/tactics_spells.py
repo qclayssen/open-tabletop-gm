@@ -73,9 +73,16 @@ def _srd(key: str):
         rec = lookup.lookup_record(key, category="spell")
     except Exception:                                       # noqa: BLE001  no dataset
         return None
-    if not rec or _key(rec.get("name")) != key or "mechanics" not in rec:
+    if not rec or _key(rec.get("name")) != key or not _current(rec.get("mechanics")):
         return None
     return dict(rec["mechanics"], name=rec["name"], level=int(rec.get("level", 0)))
+
+
+def _current(mech) -> bool:
+    """A dataset built by an older build_srd.py has mechanics without "casting"
+    (and no "range": every attack spell would fall back to 5 ft). Treat it as
+    missing so the caster gets the "build the SRD" message, not a wrong range."""
+    return isinstance(mech, dict) and "casting" in mech
 
 
 def known(caster) -> list:
@@ -99,6 +106,9 @@ def mechanics(caster, key: str) -> dict:
     file is self-contained and a later cast needs no SRD lookup)."""
     book = caster.extra.setdefault("spellbook", {})
     base = book.get(key)
+    if base is not None and not _current(base):
+        del book[key]                    # cached from a stale dataset: look it up again
+        base = None
     if base is None:
         base = _srd(key)
         if base is not None:

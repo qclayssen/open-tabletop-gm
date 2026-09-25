@@ -125,6 +125,8 @@ For a local model via LM Studio, add your provider config:
 
 The skill walks you through world creation, tone selection, and character setup. Everything is saved to plain Markdown files you can read and edit directly.
 
+To play with the browser display (story, party sidebar, dice and player input on `http://localhost:5001`), follow [docs/FIRST-SESSION.md](docs/FIRST-SESSION.md).
+
 ---
 
 ## Versioning & updates
@@ -249,6 +251,14 @@ bash display/start-display.sh --lan    # LAN mode (phones, tablets, TV), HTTP
 bash display/start-display.sh --lan --tls  # LAN mode, HTTPS (public/untrusted networks)
 open http://localhost:5001
 ```
+
+**Continue a campaign in one step:**
+
+```bash
+bash display/start-display.sh --campaign my-campaign    # add --lan for phones and tablets
+```
+
+then `/gm load my-campaign` in your GM chat. `--campaign` points the display at that campaign, checks the 5e SRD data grid combat needs (and tells you to rebuild it if it is missing or out of date), and says when a grid fight was left in progress: its battle map comes back on its own, and the GM resumes it. When the GM starts a fight (`/gm combat grid <map>`), the map appears above the story and you play your turns by clicking. See [docs/TACTICAL-COMBAT.md](docs/TACTICAL-COMBAT.md).
 
 Runs entirely independently of the LLM. If the display isn't running, all scripts fail silently — nothing breaks.
 

@@ -296,6 +296,26 @@ class Grid:
         """True if some line from a corner of a to a corner of b clears every wall."""
         return self.cover(a, b)["los"]
 
+    def _sees(self, a: Pos, b: Pos) -> bool:
+        """line_of_sight without the cover count: stops at the first clear line."""
+        if tuple(a) == tuple(b):
+            return True
+        cached = self.__dict__.get("_cover_cache", {}).get((tuple(a), tuple(b), frozenset()))
+        if cached is not None:
+            return cached["los"]
+        return any(not self._walled(c, t, skip=(a, b))
+                   for c in self._corners(a) for t in self._corners(b))
+
+    def visible_from(self, origin: Pos) -> set:
+        """Every square with a line of sight from origin (the line_of_sight
+        rule). For fog of war and the sight overlay."""
+        key = tuple(origin)
+        cache = self.__dict__.setdefault("_visible_cache", {})
+        if key not in cache:
+            cache[key] = frozenset((x, y) for y in range(self.height) for x in range(self.width)
+                                   if self._sees(key, (x, y)))
+        return set(cache[key])
+
     def cover(self, attacker: Pos, target: Pos, creatures=frozenset()) -> dict:
         """DMG grid cover: from the attacker's best corner, trace lines to the
         four corners of the target's square; 1-2 blocked = half (+2 AC),

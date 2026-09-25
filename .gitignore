@@ -9,6 +9,7 @@ display/cert.pem
 display/key.pem
 display/.campaign
 display/.input_queue
+display/.input_queue.tmp
 display/.input_trigger
 display/.autorun-session
 display/.approved_devices.json
@@ -43,3 +44,5 @@ probe/results/*.log
 # Draft docs (not ready to publish)
 docs/DISCUSSION-DRAFT.md
 docs/PR-DRAFT.md
+display/.port
+display/.preflight

@@ -64,4 +64,4 @@ python3 -c "import sys; sys.path.insert(0, 'scripts'); from tactics import maps;
 
 It prints the map as text (`.` floor, `#` wall, `,` difficult, `~` water, `^` hazard, `o` feature, `_` void), or a clear error naming the rectangle that is wrong. `python3 -m pytest tests/test_tactics_cli.py` also checks that every map in this folder loads.
 
-The five maps here are ported from the player-facing tabs of `display/static/reference/strixhaven_map_table.html`.
+`training-yard.json` is the tutorial map (`scripts/tactics/play.py tutorial`, see `docs/TUTORIAL.md`). The other five maps are ported from the player-facing tabs of `display/static/reference/strixhaven_map_table.html`.

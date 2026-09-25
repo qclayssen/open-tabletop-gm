@@ -35,6 +35,16 @@ SESSION_FILE = os.path.join(DISPLAY_DIR, ".autorun-session")
 CAMP_FILE = os.path.join(DISPLAY_DIR, ".campaign")
 TOKEN_FILE = os.path.join(DISPLAY_DIR, ".token")
 SCHEME_FILE = os.path.join(DISPLAY_DIR, ".scheme")
+PORT_FILE = os.path.join(DISPLAY_DIR, ".port")
+_PORT = 5001
+try:
+    _raw = os.environ.get("GM_DISPLAY_PORT", "").strip()
+    if not _raw:
+        with open(PORT_FILE, encoding="utf-8") as handle:
+            _raw = handle.read().strip()
+    _PORT = int(_raw or "5001")
+except (OSError, ValueError):
+    pass
 
 # Invalidate any previous wait loop by writing a new session id (python write — TCC-ok)
 my_session = secrets.token_hex(8)
@@ -113,7 +123,7 @@ if content:
             ctx.check_hostname = False
             ctx.verify_mode = ssl.CERT_NONE
         req = urllib.request.Request(
-            f"{scheme}://localhost:5001/queue/consumed",
+            f"{scheme}://localhost:{_PORT}/queue/consumed",
             data=b"", method="POST",
             headers={"X-DND-Token": token},
         )

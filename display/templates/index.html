@@ -163,7 +163,7 @@
   #text-scroll.sidebar-hidden { padding-left: 60px; }
   /* When the settings column is collapsed, the prose reclaims the right space
      (only the small toggle row remains up there). */
-  #text-scroll.controls-hidden { padding-right: 120px; }
+  #text-scroll.controls-hidden { padding-right: 160px; }  /* clears Phone Mode and the Settings toggle */
 
   /* ── "New ↓" pill — appears when the reader has scrolled up and fresh
        narration has arrived below. Tap to jump back to the newest text. ── */
@@ -2320,13 +2320,14 @@
   }
 
   /* Main-display "Waiting on…" badge while a DM dice-request is unresolved.
-     Hidden in input-only (phone) mode so it stays a DM-side indicator only. */
+     Hidden in input-only (phone) mode so it stays a DM-side indicator only.
+     Docked under the scene name; the story moves down while it shows. */
   #dice-pending-badge {
     display: none;
     position: fixed;
-    top: 50%;
+    top: 56px;
     left: 50%;
-    transform: translate(-50%, -50%);
+    transform: translateX(-50%);
     z-index: 60;
     background: rgba(20,12,4,0.92);
     color: #f4e2a8;
@@ -2339,9 +2340,10 @@
     box-shadow: 0 0 22px rgba(0,0,0,0.6), 0 0 0 0 rgba(255,220,140,0.5);
     animation: dpb-pulse 1.6s ease-in-out infinite;
     pointer-events: none;
-    max-width: 80vw;
+    max-width: min(420px, max(240px, calc(100vw - 460px)));
   }
   #dice-pending-badge.visible { display: block; }
+  body:has(#dice-pending-badge.visible) #text-scroll { padding-top: 124px; }
   #dice-pending-badge .dpb-label {
     display: block;
     font-weight: 400;
@@ -4672,26 +4674,27 @@ function renderReplayBatch(items) {
 }
 
 function clearDisplay(then) {
-  // Fade out, wipe, fade back in, then call the callback.
+  // Wipe now, then fade back in and call the callback. Wiping after the fade
+  // instead would also erase text that arrives during it: /gm new sends its
+  // opening narration right after the clear.
   textContent.style.opacity = '0';
+  // Abort any in-progress typewriter
+  charQueue        = [];
+  isTyping         = false;
+  _currentInlineEl = null;
+  if (currentCursor && currentCursor.parentNode) {
+    currentCursor.parentNode.removeChild(currentCursor);
+  }
+  currentCursor = null;
+  currentEl     = null;
+  clearTimeout(idleTimer);
+
+  textContent.innerHTML = '';
+  textScroll.scrollTop  = 0;
+  userScrolledUp = false;
+  _hideProcessingIndicator();
   setTimeout(() => {
-    // Abort any in-progress typewriter
-    charQueue        = [];
-    isTyping         = false;
-    _currentInlineEl = null;
-    if (currentCursor && currentCursor.parentNode) {
-      currentCursor.parentNode.removeChild(currentCursor);
-    }
-    currentCursor = null;
-    currentEl     = null;
-    clearTimeout(idleTimer);
-
-    textContent.innerHTML = '';
-    textScroll.scrollTop  = 0;
-    userScrolledUp = false;
     textContent.style.opacity = '1';
-    _hideProcessingIndicator();
-
     if (then) then();
   }, 370); // matches the CSS transition duration
 }
@@ -7495,6 +7498,9 @@ function _initDicePad() {
     // Label / DC line.
     const baseLabel = (req.label || '').trim();
     labelEl.value = baseLabel;
+    // The last roll's result belongs to the last request, not this one.
+    const resultLine = document.getElementById('dp-result-line');
+    if (resultLine) resultLine.textContent = '';
     if (boundEl) {
       const dcStr = (req.dc != null) ? ` · DC ${req.dc}` : '';
       const desc  = baseLabel || (reqSpec === '1d20' ? 'Roll d20' : `Roll ${reqSpec}`);

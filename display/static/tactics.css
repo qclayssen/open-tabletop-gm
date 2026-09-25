@@ -1,25 +1,31 @@
-/* tactics.css: the grid combat panel. Colour tokens follow the Strixhaven
-   reference page (display/static/reference/strixhaven_map_table.html). */
+/* tactics.css: the grid combat panel. Terrain and side colours follow the
+   Strixhaven reference page (display/static/reference/strixhaven_map_table.html);
+   the panel's frame (paper, panel, ink, lines, accent) follows the display's own
+   brass-on-brown and vellum themes so the panel reads as part of the game.
+   --tx-move is the walking-range overlay: a colour no terrain uses. */
 
 :root {
-  --tx-paper: #E8EDEE; --tx-panel: #F4F7F7; --tx-ink: #1B2830; --tx-muted: #5A6A72;
-  --tx-line: #C3CDD0; --tx-accent: #1E7F74; --tx-brass: #A87A26; --tx-danger: #A33A3A;
+  --tx-paper: #F3E7CB; --tx-panel: #FBF3E1; --tx-ink: #2D2314; --tx-muted: #6E5A3A;
+  --tx-line: #D6C39A; --tx-accent: #8C5F14; --tx-brass: #A87A26; --tx-danger: #A33A3A;
+  --tx-move: #6B3F08; --tx-banner: #7A5010;
   --tx-floor: #DCE3E2; --tx-wall: #39474F; --tx-water: #8FB4C4; --tx-difficult: #A9B58C;
   --tx-feature: #D9C8A0; --tx-void: #2A2F3A; --tx-hazard: #D9A3A0; --tx-grid: rgba(27,40,48,.14);
   --tx-quan: #1E7F74; --tx-lore: #B8752E; --tx-heal: #2E7D4F;
   --tx-spell: #C2541B; --tx-warnc: #D9A21B;
 }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
-  --tx-paper: #0F171B; --tx-panel: #162127; --tx-ink: #DCE6E8; --tx-muted: #93A5AC;
-  --tx-line: #2C3B42; --tx-accent: #4FB8A8; --tx-brass: #D2A24A; --tx-danger: #E0716F;
+  --tx-paper: #140F09; --tx-panel: #1D160E; --tx-ink: #E6D8B8; --tx-muted: #A8977A;
+  --tx-line: #3A2E1E; --tx-accent: #C9A15A; --tx-brass: #D2A24A; --tx-danger: #E0716F;
+  --tx-move: #F4E6BE; --tx-banner: #D2A24A;
   --tx-floor: #1E2A2F; --tx-wall: #6C7E87; --tx-water: #2F5667; --tx-difficult: #4B5936;
   --tx-feature: #5E5236; --tx-void: #07090D; --tx-hazard: #6B3434; --tx-grid: rgba(220,230,232,.10);
   --tx-quan: #4FB8A8; --tx-lore: #D2A24A; --tx-heal: #6FCB8E;
   --tx-spell: #F08A4B; --tx-warnc: #F2C94C;
 } }
 :root[data-theme="dark"] {
-  --tx-paper: #0F171B; --tx-panel: #162127; --tx-ink: #DCE6E8; --tx-muted: #93A5AC;
-  --tx-line: #2C3B42; --tx-accent: #4FB8A8; --tx-brass: #D2A24A; --tx-danger: #E0716F;
+  --tx-paper: #140F09; --tx-panel: #1D160E; --tx-ink: #E6D8B8; --tx-muted: #A8977A;
+  --tx-line: #3A2E1E; --tx-accent: #C9A15A; --tx-brass: #D2A24A; --tx-danger: #E0716F;
+  --tx-move: #F4E6BE; --tx-banner: #D2A24A;
   --tx-floor: #1E2A2F; --tx-wall: #6C7E87; --tx-water: #2F5667; --tx-difficult: #4B5936;
   --tx-feature: #5E5236; --tx-void: #07090D; --tx-hazard: #6B3434; --tx-grid: rgba(220,230,232,.10);
   --tx-quan: #4FB8A8; --tx-lore: #D2A24A; --tx-heal: #6FCB8E;
@@ -56,8 +62,10 @@ body.tx-min #tx-panel .tx-body, body.tx-min #tx-panel .tx-strip { display: none;
 
 .tx-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .tx-title { font-weight: 600; }
+/* The header speaks in the display's voice; numbers and buttons stay in sans. */
+.tx-title, #tx-banner { font-family: 'Cinzel', Georgia, serif; letter-spacing: .04em; }
 .tx-title .tx-sub { color: var(--tx-muted); font-weight: 400; }
-#tx-banner { flex: 1; text-align: center; font-weight: 700; color: var(--tx-brass); min-height: 1.4em; }
+#tx-banner { flex: 1; text-align: center; font-weight: 700; color: var(--tx-banner); min-height: 1.4em; }
 #tx-banner.tx-flash { animation: tx-flash 1.4s ease; }
 @keyframes tx-flash { 0% { transform: scale(1.25); opacity: 0; } 30% { opacity: 1; } 100% { transform: scale(1); } }
 .tx-btn {
@@ -131,8 +139,12 @@ body.tx-min #tx-panel .tx-body, body.tx-min #tx-panel .tx-strip { display: none;
 
 /* ── board ── */
 .tx-cell-lbl { font: 600 11px Figtree, system-ui, sans-serif; fill: var(--tx-ink); paint-order: stroke; stroke-width: 3; }
-.tx-reach { fill: var(--tx-accent); pointer-events: none; }
-.tx-dash { fill: none; stroke: var(--tx-accent); stroke-width: 2; stroke-dasharray: 4 3; pointer-events: none; }
+.tx-reach { fill: var(--tx-move); fill-opacity: .26; pointer-events: none; }
+.tx-dash { fill: none; stroke: var(--tx-move); stroke-opacity: .7; stroke-width: 1.5; stroke-dasharray: 4 3; pointer-events: none; }
+.tx-reach-edge { fill: none; stroke: var(--tx-move); stroke-width: 2.5; stroke-linecap: square; pointer-events: none; }
+.tx-dash-edge { fill: none; stroke: var(--tx-move); stroke-width: 2; stroke-dasharray: 6 4; stroke-opacity: .8; pointer-events: none; }
+.tx-threat { fill: url(#tx-threat-hatch); pointer-events: none; }
+.tx-threat-line { stroke: var(--tx-danger); stroke-opacity: .75; stroke-width: 1.5; }
 .tx-path { fill: none; stroke: var(--tx-brass); stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
 .tx-path.tx-risky { stroke: var(--tx-danger); }
 .tx-feet { font: 700 12px Figtree, system-ui, sans-serif; fill: var(--tx-ink); paint-order: stroke; stroke: var(--tx-panel); stroke-width: 4; pointer-events: none; }
@@ -154,6 +166,25 @@ body.tx-min #tx-panel .tx-body, body.tx-min #tx-panel .tx-strip { display: none;
 .tx-mark.tx-conc { fill: var(--tx-brass); }
 .tx-mark.tx-ready { fill: var(--tx-accent); }
 .tx-mark-t { font: 800 8px Figtree, system-ui, sans-serif; fill: #fff; }
+
+/* ── fog of war, cover shading, condition badges, keyboard cursor ── */
+.tx-fog { fill: var(--tx-void); fill-opacity: .55; pointer-events: none; }
+.tx-fog-hatch { fill: url(#tx-fog-hatch); pointer-events: none; }
+.tx-fog-line { stroke: var(--tx-paper); stroke-opacity: .18; stroke-width: 1.5; }
+.tx-nolos { fill: url(#tx-hatch); pointer-events: none; }
+.tx-hatch-line { stroke: var(--tx-ink); stroke-opacity: .45; stroke-width: 2.5; }
+.tx-cov2 { fill: var(--tx-brass); fill-opacity: .2; pointer-events: none; }
+.tx-cov5 { fill: var(--tx-brass); fill-opacity: .42; pointer-events: none; }
+.tx-eye { fill: none; stroke: var(--tx-accent); stroke-width: 2; stroke-dasharray: 3 3; pointer-events: none; }
+.tx-cond { fill: var(--tx-ink); stroke: var(--tx-panel); stroke-width: 1; }
+.tx-cond.tx-cond-more { fill: var(--tx-muted); }
+.tx-cond-t { font: 800 7px Figtree, system-ui, sans-serif; fill: var(--tx-panel); }
+.tx-cursor { fill: none; stroke: var(--tx-brass); stroke-width: 3; pointer-events: none; }
+.tx-board:focus { outline: none; }
+.tx-board:focus-visible { outline: 2px solid var(--tx-brass); outline-offset: 1px; }
+.tx-sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.tx-legend { font-size: 11px; color: var(--tx-muted); }
 
 /* ── spell templates ── */
 .tx-aiming { cursor: crosshair; }
@@ -180,4 +211,6 @@ body.tx-min #tx-panel .tx-body, body.tx-min #tx-panel .tx-strip { display: none;
 
 @media (prefers-reduced-motion: reduce) {
   .tx-tok.tx-now .tx-ring, #tx-banner.tx-flash, .tx-float { animation: none; }
+  .tx-float { display: none; }                   /* the log and the HP bar already say it */
+  #tx-panel, #tx-panel * { scroll-behavior: auto !important; transition: none !important; }
 }

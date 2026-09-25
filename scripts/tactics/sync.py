@@ -24,6 +24,8 @@ import re
 import shutil
 import urllib.parse
 
+from .grid import label
+
 _SKILL = pathlib.Path(__file__).resolve().parents[2]
 _push = None
 
@@ -102,11 +104,28 @@ def snapshot(enc, meta: dict = None) -> dict:
         return {str(lv): {"used": s.get("used", 0), "total": s.get("total", 0)}
                 for lv, s in sorted((t.extra.get("slots") or {}).items())}
 
+    from .core import rules_for
+    R = rules_for(enc)
+
+    def threat(t) -> int:
+        """Opportunity-attack reach in feet right now (engine._provokers' test), else 0."""
+        return R.reach(t) if t.active and R.can_react(t) and R.opportunity_attack(t) else 0
+
+    from . import sight
+    visible = sight.fog(enc)
     cur = enc.current
+    seen = {t.id for t in enc.tokens.values() if sight.shown(enc, t, visible)}
+    # An unseen creature's turn: no id, no name, no position (the display says "Enemy turn").
+    hidden_turn = bool(cur and cur.id not in seen)
     return {"status": enc.status, "round": enc.round,
-            "current": cur.id if cur else None,
-            "order": enc.order, "grid": enc.grid, "meta": meta or {},
-            "turn": {"movement_left": _movement_left(enc),
+            "current": None if hidden_turn or not cur else cur.id, "unseen_turn": hidden_turn,
+            "order": [i for i in enc.order if i in seen], "grid": enc.grid, "meta": meta or {},
+            # Squares no PC can see are dimmed; in "hide" mode the creatures there are left out.
+            "fog": None if visible is None else {"mode": sight.fog_mode(enc),
+                                                 "visible": sorted(label(p) for p in visible)},
+            # An unseen creature's action economy would tell the players how it moves.
+            "turn": {} if hidden_turn else {
+                     "movement_left": _movement_left(enc),
                      "action_used": enc.turn.action_used, "pending": enc.turn.pending,
                      "bonus_used": enc.turn.bonus_used,
                      "reaction": bool(cur and not cur.reaction_used)},
@@ -116,19 +135,24 @@ def snapshot(enc, meta: dict = None) -> dict:
                         "concentration": t.concentration, "effects": effect_names(t),
                         "reactions": t.reactions,
                         "readied": (t.extra.get("readied") or {}).get("label") or None,
-                        "hidden": t.has("hidden"),
+                        "hidden": t.has("hidden"), "threat": threat(t),
                         "slots": slots(t) if t.side == "pc" else {}}
-                       # A hidden enemy is not drawn: players must not see where it is.
-                       for t in enc.tokens.values() if not (t.side == "enemy" and t.has("hidden"))],
-            "log": enc.log[-8:]}
+                       # A hidden or unseen enemy is not drawn: players must not see where it is.
+                       for t in enc.tokens.values() if sight.shown(enc, t, visible)],
+            "log": sight.redact_log(enc, enc.log[-8:], visible)}
 
 
 def push_display(enc, meta: dict = None) -> None:
     if not display_enabled():
         return
-    live = [t for t in (enc.tokens[i] for i in enc.order) if t.active]
+    from . import sight
+    visible = sight.fog(enc)
+    live = [t for t in (enc.tokens[i] for i in enc.order)
+            if t.active and sight.shown(enc, t, visible)]       # the sidebar is the players' too
+    cur = enc.current
     turn_order = None if enc.status != "active" else {
-        "order": [t.name for t in live], "current": enc.current.name if enc.current else "",
+        "order": [t.name for t in live],
+        "current": cur.name if cur and cur in live else "Enemy turn" if cur else "",
         "round": enc.round}
     players = [{"name": t.name, "conditions": list(t.conditions),
                 "hp": {"current": t.hp, "max": t.max_hp, "temp": t.temp_hp}}

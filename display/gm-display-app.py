@@ -111,6 +111,8 @@ STATS_FILE    = os.path.join(_DISPLAY_DIR, "stats.json")
 TOKEN_FILE    = os.path.join(_DISPLAY_DIR, ".token")
 # Port override so a second display (tests, a demo) can run beside a live one.
 # The tactics engine honours the same variable when it pushes updates.
+# The GM scripts find a non-default port in display/.port, which only
+# start-display.sh writes: a test display must not take over the live one.
 _PORT         = int(os.environ.get("GM_DISPLAY_PORT", "5001") or 5001)
 INPUT_FILE    = os.path.join(_DISPLAY_DIR, "player_input.json")
 TRIGGER_FILE  = os.path.join(_DISPLAY_DIR, ".input_trigger")
@@ -371,9 +373,13 @@ def _check_auto_trigger() -> None:
         content    = "\n".join(lines)
         _staged.clear()
 
+    # Write aside, then rename: check_input.py may move .input_queue away at any
+    # moment, and a half-written file it moved would lose the action.
     try:
-        with open(QUEUE_FILE, "w", encoding="utf-8") as f:
+        tmp = QUEUE_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
             f.write(content)
+        os.replace(tmp, QUEUE_FILE)
     except Exception:
         char_names = []
 
@@ -573,7 +579,7 @@ SCENES: dict[str, dict] = {
     "temple": {
         "keywords": [
             "temple", "shrine", "altar", "holy", "sacred", "chapel",
-            "prayer", "cleric", "incense", "lantern", "pew", "nave",
+            "prayer", "cleric", "incense", "pew", "nave",
             "pale flame",
         ],
         "colors": ["#0e0c18", "#1a1428"],
@@ -792,6 +798,14 @@ _current_scene_name: str = "tavern"   # default — we start in the inn
 _scene_buffer: list[str] = []
 _BUFFER_WINDOW = 20   # analyse last N cleaned chunks together
 
+# A keyword counts as a whole word, with or without a common ending: "ales",
+# "innkeepers" and "burning" match; "pale", "dinner" and "barely" do not.
+_SCENE_PATTERNS: dict[str, re.Pattern] = {
+    name: re.compile(r"\b(?:" + "|".join(re.escape(kw) for kw in scene["keywords"])
+                     + r")(?:s|es|ed|ing)?\b")
+    for name, scene in SCENES.items()
+}
+
 
 def _detect_scene(text: str) -> Optional[dict]:
     global _current_scene_name, _scene_buffer
@@ -804,8 +818,7 @@ def _detect_scene(text: str) -> Optional[dict]:
 
     scores: dict[str, int] = {}
     for scene_name in SCENE_PRIORITY:
-        scene = SCENES[scene_name]
-        score = sum(window.count(kw) for kw in scene["keywords"])
+        score = len(_SCENE_PATTERNS[scene_name].findall(window))
         if score > 0:
             scores[scene_name] = score
 
@@ -1068,6 +1081,21 @@ _input_lock = threading.Lock()
 # send.py --wait polls GET /dice-request/<id> to know when the GM can move on.
 _dice_pending: dict = {}
 _dice_pending_lock = threading.Lock()
+# Finished requests keep their roll texts so --wait can print them to the GM.
+_dice_done: dict = {}           # request_id → [roll text, ...], oldest first
+_dice_cancelled: set = set()    # ids in _dice_done that the GM cancelled
+_DICE_DONE_KEEP = 50
+
+
+def _dice_finish(req_id: str, results: list, cancelled: bool = False) -> None:
+    """Keep a finished request's rolls for --wait. Caller holds _dice_pending_lock."""
+    _dice_done[req_id] = results
+    if cancelled:
+        _dice_cancelled.add(req_id)
+    while len(_dice_done) > _DICE_DONE_KEEP:
+        oldest = next(iter(_dice_done))
+        del _dice_done[oldest]
+        _dice_cancelled.discard(oldest)
 
 
 def _dice_pending_snapshot() -> list:
@@ -2083,9 +2111,11 @@ def player_dice():
                 matched = next((c for c in entry["chars"] if c.lower() == ci), None)
                 if matched is not None:
                     entry["chars"].discard(matched)
+                    entry.setdefault("results", []).append(text)
                     pending_changed = True
                     if not entry["chars"]:
                         _dice_pending.pop(req_id, None)
+                        _dice_finish(req_id, entry["results"])
     if pending_changed:
         _broadcast({"dice_pending": _dice_pending_snapshot()})
 
@@ -2184,19 +2214,23 @@ def dice_request():
 def dice_request_status(request_id):
     """Poll a dice request's completion state.
 
-    Returns 200 with {complete, pending, label, started_at}. A request that
-    never existed (or has already fully drained) reports complete=True with
-    an empty pending list — send.py --wait treats both identically.
+    Returns 200 with {complete, pending, results, label, started_at}, plus
+    cancelled once the GM cancelled it. results holds each roll's text so far. A finished request keeps its results (the
+    last _DICE_DONE_KEEP of them); one that never existed reports complete=True
+    with empty pending and results.
     """
     if not _token_ok():
         return "Forbidden", 403
     with _dice_pending_lock:
         entry = _dice_pending.get(request_id)
         if entry is None or not entry["chars"]:
-            return jsonify({"complete": True, "pending": []}), 200
+            return jsonify({"complete": True, "pending": [],
+                            "cancelled": request_id in _dice_cancelled,
+                            "results": list(_dice_done.get(request_id, []))}), 200
         return jsonify({
             "complete": False,
             "pending": sorted(entry["chars"]),
+            "results": list(entry.get("results", [])),
             "label": entry["meta"].get("label", ""),
             "started_at": entry["started_at"],
         }), 200
@@ -2208,7 +2242,9 @@ def dice_request_cancel(request_id):
     if not _token_ok():
         return "Forbidden", 403
     with _dice_pending_lock:
-        _dice_pending.pop(request_id, None)
+        entry = _dice_pending.pop(request_id, None)
+        if entry is not None:
+            _dice_finish(request_id, entry.get("results", []), cancelled=True)
     _broadcast({"dice_pending": _dice_pending_snapshot(), "dice_request_cancelled": request_id})
     return "", 204
 
@@ -2508,7 +2544,7 @@ _combat_run_lock = threading.Lock()      # one engine command at a time
 _current_combat: Optional[dict] = None
 
 # Commands a browser may run. Mutating ones act only for player-controlled tokens.
-_COMBAT_READ = {"reachable", "preview", "targets", "status", "spells", "preview-area"}
+_COMBAT_READ = {"reachable", "preview", "targets", "status", "spells", "preview-area", "sight"}
 _COMBAT_WRITE = {"move", "attack", "dash", "disengage", "dodge", "stand",
                  "undo-move", "end-turn", "death-save",
                  "cast", "help", "hide", "escape", "ready", "reactions"}
@@ -2592,6 +2628,14 @@ def combat_do():
         who = tokens.get(args[0]) if args else None
         if not who or who.get("controller") != "player":
             return jsonify({"error": "Only a player's own spells can be listed."}), 403
+    if cmd == "sight":
+        # Cover shading from a creature the players can see (the snapshot leaves
+        # out hidden and unseen ones), counting only the creatures they can see.
+        with _combat_lock:
+            snap = _current_combat or {}
+        if not args or args[0] not in {t.get("id") for t in snap.get("tokens", [])}:
+            return jsonify({"error": "No such creature on the map."}), 403
+        args = [args[0], "--players"]
     if cmd in _COMBAT_WRITE:
         if not _rate_ok(request.remote_addr):
             return "Too Many Requests", 429

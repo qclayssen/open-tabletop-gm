@@ -11,6 +11,12 @@
  * Modes (ui.mode): move, attack (weapon), cast (the spell list), aim (an area
  * spell following the pointer), spell (a single-target spell), darts (Magic
  * Missile), help and ready. Escape cancels any of them.
+ *
+ * Overlays: fog of war (squares no PC sees, from the snapshot) and, with the
+ * Cover button on, cover and line of sight from one selected creature (the
+ * engine's `sight` command). Keyboard: the map is one tab stop with a square
+ * cursor; arrow keys move it, Enter or Space acts on the square (as a click),
+ * Escape cancels, Home jumps to the creature whose turn it is, C toggles cover.
  */
 (function () {
   'use strict';
@@ -27,7 +33,11 @@
   const ui = { mode: null, kind: null, reach: null, targets: null, attack: null, preview: {},
                hover: null, armed: null, busy: false, lastMove: null, toastTimer: 0, hoverTimer: 0,
                spells: null, spell: null, singles: null, darts: null, dartsText: '',
-               helpTarget: null, readyWhat: null, readyStep: null };
+               helpTarget: null, readyWhat: null, readyStep: null,
+               cursor: null, sight: false, sightFrom: null, sightData: null, sightKey: '' };
+  const CONDITION_CODES = { blinded: 'Bl', charmed: 'Ch', deafened: 'De', exhaustion: 'Ex', frightened: 'Fr',
+    grappled: 'Gr', incapacitated: 'In', invisible: 'Iv', paralyzed: 'Pa', petrified: 'Pe', poisoned: 'Po',
+    prone: 'Pr', restrained: 'Re', stunned: 'St', unconscious: 'Un' };
   const el = {};
 
   // ── helpers ──────────────────────────────────────────────────────────────
@@ -74,16 +84,21 @@
     p.innerHTML =
       '<header class="tx-head"><div class="tx-title"><span id="tx-map"></span> <span class="tx-sub">Round <span id="tx-round">1</span></span></div>' +
       '<div id="tx-banner" role="status" aria-live="polite"></div>' +
+      '<button class="tx-btn" id="tx-cover" type="button" aria-pressed="false" title="Shade cover and line of sight from a creature (C)">Cover</button>' +
       '<button class="tx-btn" id="tx-min" type="button" aria-expanded="true">Hide map</button></header>' +
-      '<div id="tx-strip" class="tx-strip" aria-label="Initiative order"></div>' +
-      '<div class="tx-body"><div id="tx-board" class="tx-board"></div>' +
+      '<div id="tx-strip" class="tx-strip" role="list" aria-label="Initiative order"></div>' +
+      '<div class="tx-body"><div id="tx-board" class="tx-board" tabindex="0" role="application" aria-roledescription="battle map"' +
+      ' aria-label="Battle map" aria-describedby="tx-keys"></div>' +
+      '<p id="tx-keys" class="tx-sr">Arrow keys move the square cursor. Enter or Space acts on the square, as a click. ' +
+      'Escape cancels. Home goes to the creature whose turn it is. C shades cover.</p>' +
+      '<div id="tx-say" class="tx-sr" aria-live="polite"></div>' +
       '<div class="tx-side"><div id="tx-info" class="tx-info" aria-live="polite"></div>' +
       '<div id="tx-actions" class="tx-actions" role="toolbar" aria-label="Actions"></div>' +
       '<div id="tx-prompt" class="tx-prompt" hidden></div>' +
       '<ol id="tx-log" class="tx-log" aria-label="Combat log"></ol></div></div>' +
       '<div id="tx-toast" class="tx-toast" role="status" hidden></div>';
     document.body.appendChild(p);
-    for (const id of ['map', 'round', 'banner', 'min', 'strip', 'board', 'info', 'actions', 'prompt', 'log', 'toast'])
+    for (const id of ['map', 'round', 'banner', 'cover', 'min', 'strip', 'board', 'info', 'actions', 'prompt', 'log', 'toast', 'say'])
       el[id] = document.getElementById('tx-' + id);
     el.panel = p;
     el.min.addEventListener('click', () => {
@@ -92,6 +107,12 @@
       el.min.setAttribute('aria-expanded', String(!min));
     });
     document.addEventListener('keydown', e => { if (e.key === 'Escape' && ui.mode) { clearMode(); render(); } });
+    el.cover.addEventListener('click', toggleSight);
+    el.board.addEventListener('keydown', onBoardKey);
+    el.board.addEventListener('focus', () => { if (!ui.cursor) placeCursor(homeSquare()); else say(describeSquare(ui.cursor)); drawCursor(); });
+    el.board.addEventListener('blur', drawCursor);
+    try { ui.sight = localStorage.getItem('tx-cover') === '1'; } catch (e) { /* storage blocked */ }
+    el.cover.setAttribute('aria-pressed', String(ui.sight));
     const ts = document.getElementById('text-scroll');
     if (ts) new MutationObserver(syncSidebar).observe(ts, { attributes: true, attributeFilter: ['class'] });
     syncSidebar();
@@ -134,9 +155,11 @@
     if (!prev || prev.current !== snap.current) {
       clearMode(); ui.spells = null;
       const t = current();
-      el.banner.textContent = t ? (t.controller === 'player' ? 'Your turn, ' + t.name : t.name + "'s turn") : '';
+      el.banner.textContent = t ? (t.controller === 'player' ? 'Your turn, ' + t.name : t.name + "'s turn") : snap.unseen_turn ? 'Enemy turn' : '';
       flash();
+      if (t && t.controller === 'player') ui.sightFrom = t.id;
     }
+    if (ui.sight) loadSight();
     render();
     animate();
     announceRolls();
@@ -181,6 +204,8 @@
       const tg = tags(t);
       const c = document.createElement('div');
       c.className = 'tx-chip' + (id === snap.current ? ' tx-now' : '') + (t.dead ? ' tx-dead' : '');
+      c.setAttribute('role', 'listitem');
+      if (id === snap.current) c.setAttribute('aria-current', 'true');
       if (tg.length) c.title = tg.join(', ');
       c.innerHTML = `<span>${esc(t.name)}</span><span class="tx-hpbar" role="img" aria-label="${t.hp} of ${t.max_hp} HP"><i class="${pct <= 25 ? 'tx-low' : ''}" style="width:${pct}%"></i></span>` +
         `<span>${t.dead ? 'dead' : t.hp + '/' + t.max_hp + ' HP'}${tg.length ? ' · ' + esc(tg.join(', ')) : ''}</span>`;
@@ -206,12 +231,25 @@
     const s = svg('svg', { viewBox: `0 0 ${W * C} ${H * C}`, width: W * cell, height: H * cell,
                            role: 'group', 'aria-label': `Battle map, ${W} by ${H} squares` });
     if (ui.mode === 'aim') s.classList.add('tx-aiming');
+    const hatch = svg('pattern', { id: 'tx-hatch', width: 6, height: 6, patternUnits: 'userSpaceOnUse',
+                                   patternTransform: 'rotate(45)' }, svg('defs', {}, s));
+    svg('line', { x1: 0, y1: 0, x2: 0, y2: 6, class: 'tx-hatch-line' }, hatch);
+    const fogHatch = svg('pattern', { id: 'tx-fog-hatch', width: 8, height: 8, patternUnits: 'userSpaceOnUse',
+                                      patternTransform: 'rotate(-45)' }, s.querySelector('defs'));
+    svg('line', { x1: 0, y1: 0, x2: 0, y2: 8, class: 'tx-fog-line' }, fogHatch);
+    // Enemy reach: red, leaning the other way from the cover hatch so the two read apart.
+    const threatHatch = svg('pattern', { id: 'tx-threat-hatch', width: 7, height: 7, patternUnits: 'userSpaceOnUse',
+                                         patternTransform: 'rotate(-45)' }, s.querySelector('defs'));
+    svg('line', { x1: 0, y1: 0, x2: 0, y2: 7, class: 'tx-threat-line' }, threatHatch);
     const terrain = svg('g', {}, s);
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
       const name = terrainOf(rows[y][x]);
       svg('rect', { x: x * C, y: y * C, width: C, height: C, style: 'fill:' + fillFor(name) }, terrain);
       if (name === 'difficult') svg('path', { d: `M${x * C + 9},${y * C + 23} l6,-10 l6,10`, style: 'stroke:var(--tx-ink);stroke-opacity:.3;fill:none' }, terrain);
     }
+    drawFog(svg('g', { 'aria-hidden': 'true' }, s), W, H);
+    ui.sightLayer = svg('g', { 'aria-hidden': 'true' }, s);
+    drawSight();
     const grid = svg('g', { style: 'stroke:var(--tx-grid)' }, s);
     for (let i = 0; i <= W; i++) svg('line', { x1: i * C, y1: 0, x2: i * C, y2: H * C }, grid);
     for (let j = 0; j <= H; j++) svg('line', { x1: 0, y1: j * C, x2: W * C, y2: j * C }, grid);
@@ -225,11 +263,14 @@
     ui.tokenLayer = svg('g', {}, s);
     ui.markLayer = svg('g', { 'aria-hidden': 'true' }, s);
     ui.floatLayer = svg('g', {}, s);
+    ui.cursorLayer = svg('g', { 'aria-hidden': 'true' }, s);
     ui.svg = s;
     for (const t of snap.tokens || []) drawToken(t);
     drawOverlay();
+    drawCursor();
     s.addEventListener('pointermove', onHover);
     s.addEventListener('click', onBoardClick);
+    s.setAttribute('aria-hidden', 'true');          // the board itself speaks: see describe()
     s.addEventListener('pointerleave', () => {
       if ((ui.mode === 'move' || ui.mode === 'aim') && ui.armed !== ui.hover) { ui.hover = null; drawOverlay(); renderInfo(); }
     });
@@ -285,7 +326,7 @@
     const mark = markFor(t);
     if (mark && mark.cls) cls.push(...mark.cls.split(' '));
     const tg = tags(t);
-    const g = svg('g', { class: cls.join(' '), 'data-id': t.id, tabindex: t.dead ? -1 : 0, role: 'button',
+    const g = svg('g', { class: cls.join(' '), 'data-id': t.id, role: 'button',
       'aria-label': `${t.name}, ${t.dead ? 'dead' : t.hp + ' of ' + t.max_hp + ' HP'}, ${label(t.x, t.y)}` +
         (tg.length ? ', ' + tg.join(', ') : '') + (mark && mark.say ? ', ' + mark.say : '') }, ui.tokenLayer);
     const col = t.side === 'enemy' ? 'var(--tx-danger)' : t.side === 'pc' ? 'var(--tx-quan)' : 'var(--tx-lore)';
@@ -302,12 +343,28 @@
       // Small corner markers: C = concentrating (top left), R = a readied action (top right).
       if (t.concentration) marker(g, t.x * C + 5, t.y * C + 5, 'C', 'tx-conc');
       if (t.readied) marker(g, t.x * C + C - 5, t.y * C + 5, 'R', 'tx-ready');
+      conditionBadges(g, t);
     }
     if (mark && mark.badge) badge(g, t, mark.badge, mark.ally ? 'tx-ally' : '');
     const title = svg('title', {}, g); title.textContent = t.name + (tg.length ? ' (' + tg.join(', ') + ')' : '');
     g.addEventListener('click', e => { e.stopPropagation(); onToken(t, e); });
-    g.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToken(t, null); } });
     t._g = g;
+  }
+
+  // Up to two condition badges along the bottom edge, "+n" for the rest (the
+  // full list is in the token's title, its label and the initiative strip).
+  function conditionBadges(g, t) {
+    const list = (t.conditions || []).filter(c => c !== 'hidden');
+    if (!list.length) return;
+    const shown = list.length > 2 ? list.slice(0, 1) : list;
+    const codes = shown.map(c => CONDITION_CODES[c] || c.slice(0, 2).replace(/^./, m => m.toUpperCase()));
+    if (list.length > shown.length) codes.push('+' + (list.length - shown.length));
+    codes.forEach((code, i) => {
+      const x = t.x * C + 1 + i * 15, y = t.y * C + C - 17;
+      svg('rect', { x, y, width: 14, height: 10, rx: 2.5, class: 'tx-cond' + (code[0] === '+' ? ' tx-cond-more' : '') }, g);
+      const tx = svg('text', { x: x + 7, y: y + 7.8, 'text-anchor': 'middle', class: 'tx-cond-t' }, g);
+      tx.textContent = code;
+    });
   }
 
   function marker(g, x, y, text, cls) {
@@ -322,16 +379,22 @@
     if (ui.markLayer) ui.markLayer.innerHTML = '';
     if (ui.mode === 'aim') { drawAim(o); return; }
     if (ui.mode !== 'move' || !ui.reach) return;
-    const walk = ui.reach.walk || {};
-    const maxFt = Math.max(5, ...Object.values(walk));
-    for (const [sq, ft] of Object.entries(walk)) {
+    const walk = ui.reach.walk || {}, dash = ui.reach.dash || {};
+    // A fixed fill in its own colour (the old teal fade vanished on water), and a
+    // line round the edge of each range: the line, not the colour, carries the meaning.
+    for (const sq of Object.keys(walk)) {
       const p = parseSq(sq); if (!p) continue;
-      svg('rect', { x: p[0] * C + 1, y: p[1] * C + 1, width: C - 2, height: C - 2, class: 'tx-reach',
-                    style: `opacity:${(0.42 - 0.26 * ft / maxFt).toFixed(2)}` }, o);
+      svg('rect', { x: p[0] * C + 1, y: p[1] * C + 1, width: C - 2, height: C - 2, class: 'tx-reach' }, o);
     }
-    for (const sq of Object.keys(ui.reach.dash || {})) {
+    for (const sq of Object.keys(dash)) {
       const p = parseSq(sq); if (!p) continue;
       svg('rect', { x: p[0] * C + 3, y: p[1] * C + 3, width: C - 6, height: C - 6, class: 'tx-dash' }, o);
+    }
+    rangeEdge(o, closeHoles(walk), 'tx-reach-edge');
+    rangeEdge(o, closeHoles(Object.assign({}, walk, dash)), 'tx-dash-edge');
+    for (const sq of threatened().keys()) {
+      const p = parseSq(sq); if (!p) continue;
+      svg('rect', { x: p[0] * C, y: p[1] * C, width: C, height: C, class: 'tx-threat' }, o);
     }
     const pv = ui.hover && ui.preview[ui.hover];
     if (pv && pv.path) {
@@ -341,6 +404,54 @@
       const f = svg('text', { x: end[0] * C + C / 2, y: end[1] * C - 3, 'text-anchor': 'middle', class: 'tx-feet' }, o);
       f.textContent = pv.feet + ' ft';
     }
+  }
+
+  // A range with the mover's own square and any creature ringed by the range put
+  // back in, so the edge outlines the area rather than boxing each token.
+  function closeHoles(set) {
+    const out = Object.assign({}, set), me = current();
+    if (me) out[sqOf(me)] = 0;
+    for (const t of living()) {
+      const sq = sqOf(t);
+      if (sq in out) continue;
+      const n = [[0, -1], [0, 1], [-1, 0], [1, 0]].map(([dx, dy]) => [t.x + dx, t.y + dy])
+        .filter(([x, y]) => x >= 0 && y >= 0 && x < ui.W && y < ui.H);
+      if (n.every(([x, y]) => label(x, y) in out)) out[sq] = 0;
+    }
+    return out;
+  }
+
+  // The outline of a set of squares: a segment on every side that borders a square outside it.
+  function rangeEdge(layer, set, cls) {
+    let d = '';
+    for (const sq of Object.keys(set)) {
+      const p = parseSq(sq); if (!p) continue;
+      const [x, y] = [p[0] * C, p[1] * C];
+      if (!(label(p[0], p[1] - 1) in set)) d += `M${x},${y}h${C}`;
+      if (!(label(p[0], p[1] + 1) in set)) d += `M${x},${y + C}h${C}`;
+      if (!(label(p[0] - 1, p[1]) in set)) d += `M${x},${y}v${C}`;
+      if (!(label(p[0] + 1, p[1]) in set)) d += `M${x + C},${y}v${C}`;
+    }
+    if (d) svg('path', { d, class: cls }, layer);
+  }
+
+  // Squares inside the reach of a hostile creature that could make an opportunity
+  // attack now (snapshot `threat`, in feet; every square is 5 ft, diagonals too).
+  // Map: square -> names of the creatures threatening it.
+  function threatened() {
+    const me = current(), out = new Map();
+    if (!me) return out;
+    for (const t of living()) {
+      if (!t.threat || !hostile(me, t)) continue;
+      const r = Math.floor(t.threat / 5);
+      for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+        const x = t.x + dx, y = t.y + dy;
+        if ((!dx && !dy) || x < 0 || y < 0 || x >= ui.W || y >= ui.H) continue;
+        const sq = label(x, y);
+        out.set(sq, (out.get(sq) || []).concat(t.name));
+      }
+    }
+    return out;
   }
 
   // The template under the pointer: squares, creatures caught, allies in a warning colour.
@@ -375,9 +486,153 @@
                   class: 'tx-aim' + (ui.armed === ui.hover ? ' tx-armed' : '') }, o);
   }
 
+  // ── fog of war, cover shading, keyboard cursor ───────────────────────────
+  const fogSet = () => (snap && snap.fog ? new Set(snap.fog.visible || []) : null);
+
+  function drawFog(layer, W, H) {
+    const seen = fogSet(); if (!seen) return;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++)
+      if (!seen.has(label(x, y))) {
+        svg('rect', { x: x * C, y: y * C, width: C, height: C, class: 'tx-fog' }, layer);
+        svg('rect', { x: x * C, y: y * C, width: C, height: C, class: 'tx-fog-hatch' }, layer);   // not colour alone
+      }
+  }
+
+  // From the selected creature: no line of sight is hatched dark, three-quarters
+  // cover darker than half. Squares in plain view are left as they are.
+  function drawSight() {
+    const layer = ui.sightLayer; if (!layer) return;
+    layer.innerHTML = '';
+    const d = ui.sight && ui.sightData; if (!d) return;
+    const from = tokenById(d.from); if (!from || sqOf(from) !== d.square) return;
+    const vis = new Set(d.visible || []);
+    const rows = (snap.grid && snap.grid.rows) || [];
+    for (let y = 0; y < (ui.H || 0); y++) for (let x = 0; x < (ui.W || 0); x++) {
+      const sq = label(x, y);
+      if (terrainOf(rows[y][x]) === 'wall') continue;
+      const cls = !vis.has(sq) ? 'tx-nolos' : d.cover[sq] === 'half' ? 'tx-cov2' : d.cover[sq] === 'three-quarters' ? 'tx-cov5' : '';
+      if (cls) svg('rect', { x: x * C, y: y * C, width: C, height: C, class: cls }, layer);
+    }
+    svg('circle', { cx: from.x * C + C / 2, cy: from.y * C + C / 2, r: C / 2 + 2, class: 'tx-eye' }, layer);
+  }
+
+  function toggleSight() {
+    ui.sight = !ui.sight;
+    try { localStorage.setItem('tx-cover', ui.sight ? '1' : '0'); } catch (e) { /* storage blocked */ }
+    el.cover.setAttribute('aria-pressed', String(ui.sight));
+    if (ui.sight) loadSight(); else { drawSight(); renderInfo(); }
+  }
+
+  function sightSource() {
+    let t = ui.sightFrom && tokenById(ui.sightFrom);
+    if (!t || t.dead) {
+      const c = current();
+      t = c && c.controller === 'player' ? c : living().find(x => x.controller === 'player') || living().find(x => x.side === 'pc');
+    }
+    return t || null;
+  }
+
+  // Asked again whenever a creature moves (cover depends on who stands where).
+  async function loadSight() {
+    const t = sightSource(); if (!t) return;
+    ui.sightFrom = t.id;
+    const key = t.id + '|' + living().map(x => x.id + sqOf(x)).join(',');
+    if (key === ui.sightKey && ui.sightData) { drawSight(); return; }
+    ui.sightKey = key;
+    const res = await call('sight', [t.id]);
+    if (ui.sightKey !== key) return;
+    if (res.error) { toast(res.error, 'error'); return; }
+    ui.sightData = res.result || null;
+    drawSight(); renderInfo();
+    if (ui.sightData && ui.sightData.text) say(ui.sightData.text);
+  }
+
+  function selectSight(t) {
+    ui.sightFrom = t.id; ui.sightData = null; ui.sightKey = '';
+    loadSight();
+  }
+
+  function sightLine() {
+    const d = ui.sight && ui.sightData;
+    let s = d && d.text ? '<br><span class="tx-status">' + esc(d.text) + '</span>' +
+      '<br><span class="tx-legend">Hatched: no line of sight. Dark gold: three-quarters cover. Light gold: half cover.</span>' : '';
+    if (snap && snap.fog) s += '<br><span class="tx-legend">Shadowed squares: no one in the party can see there.</span>';
+    return s;
+  }
+
+  function say(text) { if (el.say) { el.say.textContent = ''; el.say.textContent = text; } }
+
+  function homeSquare() {
+    const t = current() || sightSource();
+    return t ? [t.x, t.y] : [0, 0];
+  }
+
+  function placeCursor(p) {
+    ui.cursor = [Math.max(0, Math.min((ui.W || 1) - 1, p[0])), Math.max(0, Math.min((ui.H || 1) - 1, p[1]))];
+    drawCursor();
+    const sq = label(ui.cursor[0], ui.cursor[1]);
+    hoverSquare(sq);
+    say(describeSquare(ui.cursor));
+  }
+
+  function drawCursor() {
+    const layer = ui.cursorLayer; if (!layer) return;
+    layer.innerHTML = '';
+    if (!ui.cursor || document.activeElement !== el.board) return;
+    svg('rect', { x: ui.cursor[0] * C + 1.5, y: ui.cursor[1] * C + 1.5, width: C - 3, height: C - 3, class: 'tx-cursor' }, layer);
+  }
+
+  // Words for one square: where it is, what is there, and what the current mode says about it.
+  function describeSquare(p) {
+    const sq = label(p[0], p[1]);
+    const rows = (snap && snap.grid && snap.grid.rows) || [];
+    const bits = [sq, terrainOf((rows[p[1]] || '')[p[0]] || '.')];
+    const t = (snap.tokens || []).find(x => x.x === p[0] && x.y === p[1] && !x.dead) ||
+              (snap.tokens || []).find(x => x.x === p[0] && x.y === p[1]);
+    if (t) {
+      const tg = tags(t), mark = markFor(t);
+      bits.push(`${t.name}${t.side === 'enemy' ? ' (enemy)' : ''}, ${t.dead ? 'dead' : t.hp + ' of ' + t.max_hp + ' HP'}` +
+                (tg.length ? ', ' + tg.join(', ') : '') + (mark && mark.say ? ', ' + mark.say : ''));
+    }
+    const seen = fogSet();
+    if (seen && !seen.has(sq)) bits.push('out of sight');
+    const d = ui.sight && ui.sightData;
+    if (d && d.square !== sq) {
+      const from = (tokenById(d.from) || {}).name || 'the selected creature';
+      bits.push(!(d.visible || []).includes(sq) ? `no line of sight from ${from}` :
+                d.cover[sq] ? `${d.cover[sq]} cover from ${from}` : `in clear view of ${from}`);
+    }
+    if (ui.mode === 'move' && ui.reach) {
+      const walk = (ui.reach.walk || {})[sq], dash = (ui.reach.dash || {})[sq];
+      bits.push(walk !== undefined ? `${walk} ft away` : dash !== undefined ? `${dash} ft away, needs Dash` : 'out of reach');
+      const by = threatened().get(sq);
+      if (by) bits.push(`inside ${by.join(' and ')}'s reach`);
+    }
+    return bits.map(b => b[0].toUpperCase() + b.slice(1)).join('. ') + '.';
+  }
+
+  function onBoardKey(e) {
+    if (!snap) return;
+    const step = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] }[e.key];
+    const at = ui.cursor || homeSquare();
+    if (step) { e.preventDefault(); placeCursor([at[0] + step[0], at[1] + step[1]]); return; }
+    if (e.key === 'Home') { e.preventDefault(); placeCursor(homeSquare()); return; }
+    if ((e.key === 'c' || e.key === 'C') && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); toggleSight(); return; }
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      if (!ui.cursor) { placeCursor(at); return; }
+      const t = (snap.tokens || []).find(x => x.x === ui.cursor[0] && x.y === ui.cursor[1] && !x.dead);
+      // A keyboard user has already previewed the square by moving onto it, as a mouse hovers.
+      if (t) onToken(t, { pointerType: 'mouse' });
+      else clickSquare(label(ui.cursor[0], ui.cursor[1]), 'mouse');
+    }
+  }
+
   // ── side panel: info, actions, log ───────────────────────────────────────
   function renderSide() {
     const t = current();
+    // Rebuilding the buttons would drop keyboard focus: put it back on the same button.
+    const had = el.actions.contains(document.activeElement) ? document.activeElement.textContent : null;
     el.actions.innerHTML = '';
     renderInfo();
     if (t && myTurn() && !(snap.turn && snap.turn.pending === 'death_save')) {
@@ -406,6 +661,10 @@
     } else if (t && myTurn()) {
       button('Roll death save', () => act('death-save', [t.id]), { primary: true });
     }
+    if (had !== null) {
+      const again = [...el.actions.querySelectorAll('button')].find(b => b.textContent === had && !b.disabled);
+      if (again) again.focus();
+    }
     el.log.innerHTML = '';
     for (const e of (snap.log || []).slice(-8)) {
       const li = document.createElement('li'); li.textContent = e.text; el.log.appendChild(li);
@@ -415,10 +674,10 @@
 
   function renderInfo() {
     const t = current();
-    if (!t) { el.info.innerHTML = ''; return; }
-    if (!myTurn()) { el.info.innerHTML = `<strong>${esc(t.name)}</strong> is acting. The GM narrates their turn.` + statusLine(t); return; }
+    if (!t) { el.info.innerHTML = snap.unseen_turn ? 'A creature you cannot see is acting. The GM narrates.' : ''; return; }
+    if (!myTurn()) { el.info.innerHTML = `<strong>${esc(t.name)}</strong> is acting. The GM narrates their turn.` + statusLine(t) + sightLine(); return; }
     if (snap.turn && snap.turn.pending === 'death_save') { el.info.innerHTML = `<strong>${esc(t.name)}</strong> is dying: roll a death save.`; return; }
-    el.info.innerHTML = infoText(t);
+    el.info.innerHTML = infoText(t) + (ui.mode ? '' : sightLine());
   }
 
   function economy() {
@@ -443,7 +702,8 @@
     if (ui.mode === 'move') {
       const pv = ui.hover && ui.preview[ui.hover];
       s += '<br>' + (pv ? esc(pv.text) + (ui.armed === ui.hover ? ' <em>Tap again to move.</em>' : '')
-                        : 'Pick a square. Shaded: walking range. Dashed: needs Dash.');
+                        : 'Pick a square. Outlined: walking range. Dashed: needs Dash.' +
+                          (threatened().size ? ' <span class="tx-legend">Red hatching: inside an enemy\'s reach; leaving it can provoke.</span>' : ''));
       if (pv && pv.opportunity_attacks && pv.opportunity_attacks.length)
         s += '<br><span class="tx-warn">This move provokes an opportunity attack.</span>';
     } else if (ui.mode === 'attack') {
@@ -727,7 +987,10 @@
 
   function onHover(evt) {
     if (evt.pointerType === 'touch') return;
-    const sq = cellAt(evt);
+    hoverSquare(cellAt(evt));
+  }
+
+  function hoverSquare(sq) {
     if (ui.mode === 'aim') {
       if (!sq || sq === ui.hover) return;
       ui.hover = sq; ui.armed = null;
@@ -770,18 +1033,21 @@
     return ui.preview[sq];
   }
 
-  async function onBoardClick(evt) {
-    if (ui.busy) return;
+  function onBoardClick(evt) {
     const sq = cellAt(evt);
-    if (!sq) return;
-    if (ui.mode === 'aim') return clickAim(evt, sq);
+    if (sq) clickSquare(sq, evt.pointerType);
+  }
+
+  async function clickSquare(sq, pointerType) {
+    if (ui.busy) return;
+    if (ui.mode === 'aim') return clickAim({ pointerType }, sq);
     if (ui.mode === 'ready' && ui.readyStep === 'target' && ui.readyWhat && ui.readyWhat.area) return readyFinish(sq);
     if (ui.mode !== 'move' || !ui.reach) return;
     const t = current(); if (!t) return;
     if (!inReach(sq)) return;
     // A mouse has already previewed on hover: one click moves. Touch (or no
     // hover yet): the first tap previews, a second tap on the same square moves.
-    const hovered = evt.pointerType === 'mouse' && ui.hover === sq && ui.preview[sq];
+    const hovered = pointerType === 'mouse' && ui.hover === sq && ui.preview[sq];
     if (!hovered && ui.armed !== sq) {
       ui.hover = sq; ui.armed = sq;
       await previewTo(sq);
@@ -824,6 +1090,8 @@
   }
 
   function onToken(t, evt) {
+    // With cover shading on and no action under way, a click picks whose view to shade.
+    if (ui.sight && !ui.mode && !t.dead && t.id !== ui.sightFrom) { selectSight(t); return; }
     if (ui.busy || !myTurn()) return;
     const me = current();
     if (ui.mode === 'aim') { if (!t.dead) clickAim(evt, sqOf(t)); return; }

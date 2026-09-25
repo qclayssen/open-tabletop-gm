@@ -120,6 +120,21 @@ class CombatEndpoints(unittest.TestCase):
                          [["spells", "kairos"], ["preview-area", "kairos", "burning hands", "D7"]])
         self.assertEqual(self.mod._input_queue, [])
 
+    def test_sight_runs_only_from_a_creature_on_the_players_map(self):
+        # The snapshot leaves out hidden and unseen enemies: no sight from them,
+        # and the engine is always asked for the players' view.
+        self.push(SNAP)
+        self.reply = (0, json.dumps({"text": "From Kairos (B7): ...", "result": {"cover": {}}}))
+        code, res = self.do({"cmd": "sight", "args": ["frog-1"]})
+        self.assertEqual((code, res["ok"]), (200, True))
+        self.assertEqual(self.calls, [(["sight", "frog-1", "--players"], ["--json"])])
+        code, res = self.do({"cmd": "sight", "args": ["goblin-9"]})
+        self.assertEqual(code, 403)
+        code, res = self.do({"cmd": "sight", "args": ["kairos", "--players"]})
+        self.assertEqual(code, 400)                    # flags from the browser are refused
+        self.assertEqual(len(self.calls), 1)
+        self.assertEqual(self.mod._input_queue, [])
+
     def test_new_actions_are_whitelisted_for_the_current_player(self):
         self.push(SNAP)
         bodies = [["cast", "kairos", "Magic Missile", "frog-1", "frog-1", "frog-1"],
@@ -192,6 +207,28 @@ class Snapshot(unittest.TestCase):
             self.assertIn(key, tk)
         k.reaction_used = True
         self.assertFalse(sync.snapshot(enc)["turn"]["reaction"])
+
+    def test_threat_is_opportunity_attack_reach(self):
+        """`threat` is the reach (ft) a creature can make an opportunity attack at
+        right now, the same test the engine's move uses; 0 when it cannot."""
+        import sys
+        sys.path.insert(0, str(REPO / "scripts"))
+        from tactics import sync
+        from tactics.state import Encounter, Token
+        bite = {"name": "Bite", "type": "melee", "bonus": 3, "reach": 10,
+                "damage": [{"dice": "1d6+1", "type": "piercing"}], "flags": []}
+        k = Token(id="kairos", name="Kairos", side="pc", x=1, y=1, hp=8, max_hp=8, ac=12,
+                  controller="player")
+        f = Token(id="frog-1", name="Giant Frog 1", side="enemy", x=3, y=1, hp=18, max_hp=18,
+                  ac=11, attacks=[bite])
+        g = Token(id="frog-2", name="Giant Frog 2", side="enemy", x=5, y=1, hp=18, max_hp=18, ac=11)
+        enc = Encounter(campaign="t", grid={"rows": ["......."] * 4},
+                        tokens={"kairos": k, "frog-1": f, "frog-2": g},
+                        order=["kairos", "frog-1", "frog-2"], round=1)
+        threat = {t["id"]: t["threat"] for t in sync.snapshot(enc)["tokens"]}
+        self.assertEqual(threat, {"kairos": 0, "frog-1": 10, "frog-2": 0})
+        f.reaction_used = True
+        self.assertEqual(sync.snapshot(enc)["tokens"][1]["threat"], 0)
 
 
 if __name__ == "__main__":
