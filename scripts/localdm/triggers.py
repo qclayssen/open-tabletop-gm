@@ -2,7 +2,8 @@
 
 Read from the combat snapshot only, so they cost nothing to check. Each has a
 stable key (fight, creature) and fires once; the caller remembers seen keys.
-A boss is an enemy with at least twice the highest PC max HP.
+A boss is an enemy with at least three times the highest PC max HP (twice
+made a giant frog a boss against a level 1 wizard).
 """
 from __future__ import annotations
 
@@ -31,7 +32,7 @@ def check(snap) -> list:
                      "and how should these enemies fight?", ("tactician", "director"))]
     top = max((t["max_hp"] for t in pcs), default=0)
     for t in enemies:
-        if top and t["max_hp"] >= 2 * top:
+        if top and t["max_hp"] >= 3 * top:
             found.append(Trigger(f"boss:{fight}:{t['id']}",
                                  f"{t['name']} is a boss-level foe here. How should it be "
                                  "staged and played?", ("director", "tactician")))
