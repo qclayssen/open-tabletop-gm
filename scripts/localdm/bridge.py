@@ -45,6 +45,23 @@ def parse_player_command(cmd: str):
     return args
 
 
+def resolve_names(args: list, tokens: list) -> list:
+    """Replace a token's display name ("Giant Frog", split by shlex) with its id."""
+    names = {t["name"].lower(): t["id"] for t in tokens}
+    out, i = list(args[:1]), 1
+    while i < len(args):
+        for n in (3, 2, 1):
+            hit = names.get(" ".join(args[i:i + n]).lower())
+            if hit:
+                out.append(hit)
+                i += n
+                break
+        else:
+            out.append(args[i])
+            i += 1
+    return out
+
+
 class Bridge:
     def __init__(self, campaign: str, camp_dir):
         self.campaign = campaign

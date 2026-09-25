@@ -4734,8 +4734,9 @@ function handleIncomingText(text) {
 
   // Enqueue — preprocess markdown to typed segment items
   const cleaned = text
+    .replace(/\x1b\[[\d;?]*[a-zA-Z]/g, '')       // whole ANSI sequences first
     .replace(/[\x00-\x08\x0b-\x1f\x7f]/g, '')  // strip control chars (keep \n \t)
-    .replace(/\[[\d;?]*[a-zA-Z]/g, '')           // strip leftover CSI remnants
+    .replace(/\[\d[\d;]*[mKJH]/g, '')             // leftover CSI remnants; never a plain [word]
     .replace(/\r/g, '')
     .replace(/\t/g, '  ');
   for (const item of _mdParse(cleaned)) {
@@ -4760,8 +4761,9 @@ function renderReplay(text) {
   // Render historical text instantly (no typewriter) when browser reconnects.
   flushNewBlock();
   const cleaned = text
+    .replace(/\x1b\[[\d;?]*[a-zA-Z]/g, '')
     .replace(/[\x00-\x08\x0b-\x1f\x7f]/g, '')
-    .replace(/\[[\d;?]*[a-zA-Z]/g, '')
+    .replace(/\[\d[\d;]*[mKJH]/g, '')
     .replace(/\r/g, '')
     .replace(/\t/g, '  ');
   if (!cleaned.trim()) return;

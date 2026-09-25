@@ -232,3 +232,9 @@ class TailLogicTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_the_page_never_strips_a_plain_bracketed_word():
+    html = (Path(__file__).resolve().parent.parent / "display" / "templates" / "index.html").read_text(encoding="utf-8")
+    assert ".replace(/\\[[\\d;?]*[a-zA-Z]/g" not in html          # it ate "[keep" and "[beast]" from the narration
+    assert html.count("\\x1b\\[[\\d;?]*[a-zA-Z]") == 2  # live text and replay both strip whole ANSI codes
