@@ -19,11 +19,17 @@ _SCRIPTS = str(pathlib.Path(__file__).resolve().parents[2] / "scripts")
 if _SCRIPTS not in sys.path:
     sys.path.insert(0, _SCRIPTS)
 
+from tactics import effects as fx               # noqa: E402
 from tactics.roller import average             # noqa: E402
 from tactics.rules import AttackContext, Rules  # noqa: E402
 from tactics.state import Token                   # noqa: E402
 
 ABILITIES = ("str", "dex", "con", "int", "wis", "cha")
+SKILL_ABILITY = {"athletics": "str", "acrobatics": "dex", "sleight-of-hand": "dex", "stealth": "dex",
+                 "arcana": "int", "history": "int", "investigation": "int", "nature": "int",
+                 "religion": "int", "animal-handling": "wis", "insight": "wis", "medicine": "wis",
+                 "perception": "wis", "survival": "wis", "deception": "cha", "intimidation": "cha",
+                 "performance": "cha", "persuasion": "cha"}
 
 # Conditions that stop a creature taking actions or reactions (incapacitated,
 # directly or through another condition).
@@ -100,6 +106,12 @@ class DnD5e(Rules):
         """PHB p197. 10+ succeeds, nat 20 regains 1 HP, nat 1 is two failures."""
         r = roller.roll("1d20", token.name, "death save", player=player)
         ds = token.death_saves
+        value, note = r.natural, ""
+        penalty = fx.take(token, lambda e: e.get("save_penalty"))
+        if penalty:                 # a death save is a saving throw: it spends the penalty
+            p = roller.roll(penalty["save_penalty"], token.name, f"{penalty['name']} penalty")
+            value -= p.total
+            note = f" (-{p.total} {penalty['name']})"
         if r.natural == 20:
             token.hp = 1
             ds.update(successes=0, failures=0)
@@ -109,12 +121,12 @@ class DnD5e(Rules):
         elif r.natural == 1:
             ds["failures"] += 2
             text = f"{token.name} death save: nat 1, two failures ({ds['failures']}/3)."
-        elif r.natural >= 10:
+        elif value >= 10:
             ds["successes"] += 1
-            text = f"{token.name} death save: {r.natural}, success ({ds['successes']}/3)."
+            text = f"{token.name} death save: {value}{note}, success ({ds['successes']}/3)."
         else:
             ds["failures"] += 1
-            text = f"{token.name} death save: {r.natural}, failure ({ds['failures']}/3)."
+            text = f"{token.name} death save: {value}{note}, failure ({ds['failures']}/3)."
         if ds["failures"] >= 3:
             token.dead = True
             text += f" {token.name} dies."
@@ -134,6 +146,12 @@ class DnD5e(Rules):
                 dis.append(f"{attacker.name} is {c}")
         if attacker.has("invisible"):
             adv.append(f"{attacker.name} is invisible")
+        if attacker.has("hidden"):
+            adv.append(f"{attacker.name} is hidden")
+        if any(e.get("advantage_vs") == target.id for e in attacker.effects):
+            adv.append(f"helped against {target.name}")
+        if any(e.get("advantage_next") for e in attacker.effects):
+            adv.append("Silvery Barbs")
         for c in sorted(TARGET_GRANTS_ADV):
             if target.has(c):
                 adv.append(f"{target.name} is {c}")
@@ -141,6 +159,8 @@ class DnD5e(Rules):
             (adv if ctx.distance <= 5 else dis).append(f"{target.name} is prone")
         if target.has("invisible"):
             dis.append(f"{target.name} is invisible")
+        if target.has("hidden"):
+            dis.append(f"{target.name} is hidden")
         if self._dodging(target):
             dis.append(f"{target.name} is dodging")
         if not ctx.melee:
@@ -162,7 +182,7 @@ class DnD5e(Rules):
         """Exact chance to hit, for previews (BG3-style percentages on every
         option). Uses the same advantage and cover logic as attack()."""
         mode, reasons = self.advantage(attacker, target, ctx)
-        need = target.ac + ctx.cover - int(attack.get("bonus", 0))   # natural roll needed
+        need = self.ac(target) + ctx.cover - int(attack.get("bonus", 0))   # natural roll needed
         need = min(max(need, 2), 20)                                  # nat 1 misses, nat 20 hits
         p = (21 - need) / 20
         if mode == "advantage":
@@ -175,14 +195,22 @@ class DnD5e(Rules):
                player: bool) -> dict:
         mode, reasons = self.advantage(attacker, target, ctx)
         bonus = int(attack.get("bonus", 0))
-        ac = target.ac + ctx.cover
+        ac = self.ac(target) + ctx.cover
         r = roller.roll(f"1d20{bonus:+d}", attacker.name, f"{attack['name']} vs {target.name}",
                         player=player, advantage=mode)
-        crit = r.natural == 20
-        hit = crit or (r.natural != 1 and r.total >= ac)
+        # One-shot advantages are spent by the roll they helped.
+        fx.take(attacker, lambda e: e.get("advantage_vs") == target.id)
+        fx.take(attacker, lambda e: e.get("advantage_next"))
+        natural, total = r.natural, r.total
+        reaction_lines = []
+        if ctx.react and (natural == 20 or (natural != 1 and total >= ac)):
+            res = ctx.react(natural, total, ac)
+            natural, total, ac, reaction_lines = res["natural"], res["total"], res["ac"], res["lines"]
+        crit = natural == 20
+        hit = crit or (natural != 1 and total >= ac)
         if hit and ctx.melee and ctx.distance <= 5 and any(target.has(c) for c in AUTO_CRIT_WITHIN_5):
             crit = True
-        out = {"hit": hit, "crit": crit, "natural": r.natural, "total": r.total, "ac": ac,
+        out = {"hit": hit, "crit": crit, "natural": natural, "total": total, "ac": ac,
                "advantage": mode, "reasons": reasons, "damage": None}
         if hit:
             parts = []
@@ -191,40 +219,114 @@ class DnD5e(Rules):
                                 player=player, crit=crit)
                 parts.append({"amount": d.total, "type": p.get("type", "")})
             out["damage"] = self.damage(target, parts, crit=crit, ctx=ctx)
-        tag = " (CRIT)" if crit else " (nat 1)" if r.natural == 1 else ""
+        tag = " (CRIT)" if crit else " (nat 1)" if natural == 1 else ""
         adv = f", {mode}" if mode != "normal" else ""
         cover = f", +{ctx.cover} cover" if ctx.cover else ""
-        text = (f"{attacker.name} {attack['name']} -> {target.name}: {r.total} vs AC {ac}"
-                f"{cover}{adv}, {'hit' if hit else 'miss'}{tag}.")
+        text = " ".join(reaction_lines + [
+            f"{attacker.name} {attack['name']} -> {target.name}: {total} vs AC {ac}"
+            f"{cover}{adv}, {'hit' if hit else 'miss'}{tag}."])
         if out["damage"]:
             text += " " + out["damage"]["text"]
         if hit and attack.get("rider"):
             out["rider"] = attack["rider"]
-            first = re.sub(r"^(and|or)\s+", "", attack["rider"].split(". ")[0].rstrip("."))
-            text += f" GM decides the rider: {first}."
+            if attack.get("rider_effects"):         # the engine applies these; the rest is the GM's
+                if attack.get("rider_rest"):
+                    text += f" GM decides: {attack['rider_rest'].rstrip('.')}."
+            else:
+                first = re.sub(r"^(and|or)\s+", "", attack["rider"].split(". ")[0].rstrip("."))
+                text += f" GM decides the rider: {first}."
         out["text"] = text
         return out
 
     # ── save ─────────────────────────────────────────────────────────────────
-    def saving_throw(self, token, ability: str, dc: int, roller, player: bool) -> dict:
+    def _save_mode(self, token, ability: str) -> tuple:
+        adv, dis = [], []
+        if ability == "dex":
+            if token.has("restrained"):
+                dis.append("restrained")
+            elif self._dodging(token):
+                adv.append("dodging")
+        if any(e.get("advantage_next") for e in token.effects):
+            adv.append("Silvery Barbs")
+        if adv and not dis:
+            return "advantage", adv
+        if dis and not adv:
+            return "disadvantage", dis
+        return "normal", adv + dis
+
+    def save_bonus(self, token, ability: str, cover: int = 0) -> int:
+        return int(token.saves.get(ability, 0)) + (cover if ability == "dex" else 0)
+
+    def saving_throw(self, token, ability: str, dc: int, roller, player: bool,
+                     cover: int = 0) -> dict:
+        """PHB p179. Cover adds to DEX saves (PHB p196). A Mind Sliver penalty is
+        spent by the next save of any kind; Silvery Barbs' advantage likewise."""
         ability = ability.lower()[:3]
         if ability in ("str", "dex") and any(token.has(c) for c in AUTO_FAIL_STR_DEX):
             return {"success": False, "auto_fail": True, "natural": None, "total": None, "dc": dc,
                     "text": f"{token.name} automatically fails the {ability.upper()} save."}
-        mode = "normal"
-        if ability == "dex":
-            if token.has("restrained"):
-                mode = "disadvantage"
-            elif self._dodging(token):
-                mode = "advantage"
-        bonus = int(token.saves.get(ability, 0))
+        mode, _ = self._save_mode(token, ability)
+        bonus = self.save_bonus(token, ability, cover)
         r = roller.roll(f"1d20{bonus:+d}", token.name, f"{ability.upper()} save DC {dc}",
                         player=player, advantage=mode)
-        ok = r.total >= dc
-        return {"success": ok, "auto_fail": False, "natural": r.natural, "total": r.total,
+        fx.take(token, lambda e: e.get("advantage_next"))
+        total, notes = r.total, []
+        if cover and ability == "dex":
+            notes.append(f"+{cover} cover")
+        penalty = fx.take(token, lambda e: e.get("save_penalty"))
+        if penalty:
+            p = roller.roll(penalty["save_penalty"], token.name, f"{penalty['name']} penalty")
+            total -= p.total
+            notes.append(f"-{p.total} {penalty['name']}")
+        ok = total >= dc
+        note = f" ({', '.join(notes)})" if notes else ""
+        adv = f", {mode}" if mode != "normal" else ""
+        return {"success": ok, "auto_fail": False, "natural": r.natural, "total": total,
                 "dc": dc, "advantage": mode,
-                "text": f"{token.name} {ability.upper()} save: {r.total} vs DC {dc}, "
+                "text": f"{token.name} {ability.upper()} save: {total} vs DC {dc}{note}{adv}, "
                         f"{'success' if ok else 'failure'}."}
+
+    def save_chance(self, token, ability: str, dc: int, cover: int = 0) -> dict:
+        """Chance to FAIL a save, for previews. A natural 1 or 20 is not special
+        on saves (PHB p179). A pending Mind Sliver penalty counts as its average."""
+        ability = ability.lower()[:3]
+        if ability in ("str", "dex") and any(token.has(c) for c in AUTO_FAIL_STR_DEX):
+            return {"fail": 1.0, "percent_fail": 100, "advantage": "auto fail"}
+        mode, _ = self._save_mode(token, ability)
+        bonus = self.save_bonus(token, ability, cover)
+        pen = next((e for e in token.effects if e.get("save_penalty")), None)
+        if pen:
+            bonus -= average(pen["save_penalty"])
+        need = dc - bonus                      # natural roll needed to succeed
+        succeed = min(max((21 - need) / 20, 0.0), 1.0)
+        if mode == "advantage":
+            succeed = 1 - (1 - succeed) ** 2
+        elif mode == "disadvantage":
+            succeed = succeed ** 2
+        fail = 1 - succeed
+        return {"fail": fail, "percent_fail": round(fail * 100), "advantage": mode}
+
+    def ac(self, token) -> int:
+        return token.ac + fx.ac_bonus(token)
+
+    def skill_bonus(self, token, skill: str) -> int:
+        skill = skill.lower()
+        skills = token.extra.get("skills") or {}
+        if skill in skills:
+            return int(skills[skill])
+        ability = SKILL_ABILITY.get(skill, "dex")
+        scores = token.extra.get("abilities") or {}
+        if ability in scores:
+            return _mod(scores[ability])
+        return token.dex_mod if ability == "dex" else int(token.saves.get(ability, 0))
+
+    def passive_perception(self, token) -> int:
+        if token.extra.get("passive_perception"):
+            return int(token.extra["passive_perception"])
+        return 10 + self.skill_bonus(token, "perception")
+
+    def spell(self, caster, name: str, level: int = None) -> dict:
+        return _spells_module().resolve(caster, name, level)
 
     # ── damage ───────────────────────────────────────────────────────────────
     def damage(self, target, parts: list, crit: bool = False, ctx: AttackContext = None) -> dict:
@@ -392,8 +494,9 @@ def token_from_monster(record: dict, token_id: str, name: str, pos: tuple,
         for k in ("reach", "range"):
             if k in a["attack"]:
                 spec[k] = a["attack"][k]
-        if a.get("rider"):
-            spec["rider"] = a["rider"]
+        for k in ("rider", "rider_effects", "rider_rest"):
+            if a.get(k):
+                spec[k] = a[k]
         attacks.append(spec)
     return Token(
         id=token_id, name=name, side=side, x=pos[0], y=pos[1],
@@ -401,15 +504,48 @@ def token_from_monster(record: dict, token_id: str, name: str, pos: tuple,
         speed=speeds.get("walk", 30), swim_speed=speeds.get("swim", 0),
         dex_mod=_mod(record.get("dex", 10)),
         attacks=attacks,
-        saves={ab: _mod(record.get(ab, 10)) for ab in ABILITIES},
+        saves={ab: int((record.get("saves") or {}).get(ab, _mod(record.get(ab, 10))))
+               for ab in ABILITIES},
         resistances=_defenses(record.get("resistances")),
         immunities=_defenses(record.get("immunities")),
         vulnerabilities=_defenses(record.get("vulnerabilities")),
         condition_immunities=_defenses(record.get("condition_immunities")),
         source={"kind": "srd", "ref": record.get("index", "")},
         extra={"cr": record.get("cr"), "xp": record.get("xp"),
-               "actions": [a for a in record.get("actions", []) if a.get("kind") != "attack"]},
+               "actions": [a for a in record.get("actions", []) if a.get("kind") != "attack"],
+               "abilities": {ab: int(record.get(ab, 10)) for ab in ABILITIES},
+               "skills": dict(record.get("skills") or {}),
+               "passive_perception": record.get("passive_perception"),
+               "usage": _usage(record.get("actions", []))},
     )
+
+
+def _usage(actions: list) -> dict:
+    """Limited-use actions: {"Fire Breath": {"charged": True}} for "recharge on
+    roll", {"Name": {"left": n}} for "per day" (the whole fight counts as one day)."""
+    out = {}
+    for a in actions:
+        u = a.get("usage") or {}
+        if u.get("type") == "recharge on roll":
+            out[a["name"]] = {"charged": True, "dice": u.get("dice", "1d6"),
+                              "min": int(u.get("min_value", 6))}
+        elif u.get("type") == "per day":
+            out[a["name"]] = {"left": int(u.get("times", 1))}
+        elif u.get("type") in ("recharge after rest",):
+            out[a["name"]] = {"left": 1}
+    return out
+
+
+def _spells_module():
+    import importlib.util
+    name = "tactics_spells_dnd5e"
+    if name not in sys.modules:
+        spec = importlib.util.spec_from_file_location(
+            name, pathlib.Path(__file__).with_name("tactics_spells.py"))
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[name] = mod
+        spec.loader.exec_module(mod)
+    return sys.modules[name]
 
 
 def _sheet_module():

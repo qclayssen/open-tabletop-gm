@@ -51,6 +51,8 @@ class Token:
     reaction_used: bool = False
     dodging: bool = False        # took the Dodge action; cleared at the start of their next turn
     concentration: str = None
+    effects: list = field(default_factory=list)     # timed and linked effects, see effects.py
+    reactions: str = "ask"       # spell reactions (Shield, Silvery Barbs): ask | auto | off
     source: dict = field(default_factory=dict)      # {"kind": "srd", "ref": "giant-frog"} | {"kind": "sheet", ...}
     extra: dict = field(default_factory=dict)       # system-specific data (spell slots, ...)
 
@@ -90,6 +92,7 @@ class TurnState:
     moves: list = field(default_factory=list)   # [{"from": [x,y], "to": [x,y], "feet": n}] for undo
     undo_locked: bool = False    # an action, reaction or roll happened since the last move
     pending: str = ""            # "death_save": must be rolled before anything else this turn
+    spells: list = field(default_factory=list)  # [{"level": n, "casting": "action"|"bonus"}] cast this turn
 
 
 @dataclass
@@ -180,6 +183,8 @@ def validate(enc: Encounter) -> list:
             problems.append(f"{t.id}: hp {t.hp} outside 0..{t.max_hp}")
         if t.temp_hp < 0:
             problems.append(f"{t.id}: negative temp hp")
+        if t.reactions not in ("ask", "auto", "off"):
+            problems.append(f"{t.id}: reactions {t.reactions!r} not ask|auto|off")
     for tid in enc.order:
         if tid not in enc.tokens:
             problems.append(f"turn order names unknown token {tid!r}")

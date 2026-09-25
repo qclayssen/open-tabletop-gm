@@ -131,7 +131,8 @@ def test_choose_runs_the_numbered_option():
     enc = start(encounter([kairos(pos=(0, 0)), frog("frog-1", (1, 0))]), ["frog-1", "kairos"])
     res = ai.choose(enc, roller(15, 4), "frog-1", 1)
     assert "Bite -> Kairos" in res["text"] and enc.tokens["kairos"].hp == 3
-    assert "GM decides the rider: the target is grappled (escape DC 11)" in res["text"]
+    assert "Kairos is grappled and restrained (escape DC 11)." in res["text"]
+    assert "GM decides: The frog can't bite another target." in res["text"]
 
 
 # ─── the command line ─────────────────────────────────────────────────────────

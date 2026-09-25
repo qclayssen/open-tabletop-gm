@@ -22,64 +22,21 @@ reaction or roll locks it in.
 
 from __future__ import annotations
 
-from . import rules as rules_mod
+from . import effects as fx
+from .core import (CombatError, DecisionNeeded, hostile, log, player_rolls,  # noqa: F401
+                   resolve, rules_for)
 from .grid import MoveOptions, label, parse_square
 from .roller import PendingRoll, Roller, average
 from .rules import AttackContext
 from .state import Encounter, TurnState
 
-_RULES_CACHE = {}
-
-
-class CombatError(Exception):
-    """An illegal command. The message is safe to show the GM as-is."""
-
-
-class DecisionNeeded(Exception):
-    """A player-controlled creature must choose before the action can resolve."""
-
-    def __init__(self, who: str, kind: str, prompt: str, options: list):
-        self.who, self.kind, self.prompt, self.options = who, kind, prompt, options
-        super().__init__(prompt)
-
-    def to_dict(self) -> dict:
-        return {"who": self.who, "kind": self.kind, "prompt": self.prompt, "options": self.options}
-
-
-# ─── Helpers ──────────────────────────────────────────────────────────────────
-
-def rules_for(enc: Encounter):
-    if enc.system not in _RULES_CACHE:
-        _RULES_CACHE[enc.system] = rules_mod.load(enc.system)
-    return _RULES_CACHE[enc.system]
-
-
-def hostile(a, b) -> bool:
-    friends = {"pc", "ally"}
-    if a.side == "neutral" or b.side == "neutral" or a.id == b.id:
-        return False
-    return (a.side in friends) != (b.side in friends)
-
-
-def player_rolls(enc: Encounter, token, roller: Roller) -> bool:
-    """Does a human roll this token's dice right now?"""
-    return token.controller == "player" and enc.roll_mode == "players"
+# Older names, kept for callers (cli, ai, tests).
+_log = log
+_resolve = resolve
 
 
 def average_damage(attack: dict) -> float:
     return sum(average(p["dice"]) for p in attack.get("damage", []))
-
-
-def _log(enc: Encounter, kind: str, actor: str, text: str, roller: Roller = None, mark: int = 0) -> None:
-    rolls = [r.to_dict() for r in roller.log[mark:]] if roller else []
-    enc.log.append({"round": enc.round, "actor": actor, "kind": kind, "text": text, "rolls": rolls})
-
-
-def _resolve(enc: Encounter, ref):
-    try:
-        return enc.token(ref) if isinstance(ref, str) else ref
-    except KeyError as e:
-        raise CombatError(str(e.args[0])) from None
 
 
 def _require_turn(enc: Encounter, token) -> None:
@@ -151,8 +108,10 @@ def _start_turn(enc: Encounter, roller: Roller) -> dict:
     t = enc.current
     t.reaction_used = False
     t.dodging = False                      # Dodge lasts until the start of your next turn
+    lines = fx.start_of_turn(enc, t)
     enc.turn = TurnState(actor=t.id, movement_budget=R.speed(t))
-    text = f"{t.name}'s turn."
+    lines += _recharge(enc, roller, t)
+    text = " ".join(lines + [f"{t.name}'s turn."])
     if t.hp == 0 and not t.dead and not t.stable and not R.can_act(t):
         enc.turn.pending = "death_save"
         try:
@@ -160,6 +119,21 @@ def _start_turn(enc: Encounter, roller: Roller) -> dict:
         except PendingRoll:
             text += f" {t.name} must roll a death save."
     return {"actor": t.id, "text": text}
+
+
+def _recharge(enc: Encounter, roller: Roller, t) -> list:
+    """Roll to recharge spent "recharge on roll" actions at the start of the
+    creature's turn (MM p11), before its options are listed."""
+    lines = []
+    for name, u in (t.extra.get("usage") or {}).items():
+        if "charged" in u and not u["charged"] and t.active:
+            mark = len(roller.log)
+            r = roller.roll(u.get("dice", "1d6"), t.name, f"{name} recharge")
+            u["charged"] = r.natural >= u.get("min", 6)
+            text = f"{name} {'recharges' if u['charged'] else 'does not recharge'} (rolled {r.natural})."
+            log(enc, "recharge", t.id, text, roller, mark)
+            lines.append(text)
+    return lines
 
 
 def death_save(enc: Encounter, roller: Roller) -> dict:
@@ -179,6 +153,8 @@ def end_turn(enc: Encounter, roller: Roller) -> dict:
     if enc.turn.pending == "death_save":
         raise CombatError(f"{enc.current.name} must make a death save before the turn ends.")
     ender = enc.current
+    mark = len(roller.log)
+    ending = fx.end_of_turn(enc, ender, roller)
     n = len(enc.order)
     for _ in range(n):
         enc.turn_index += 1
@@ -187,11 +163,14 @@ def end_turn(enc: Encounter, roller: Roller) -> dict:
             enc.round += 1
         if enc.current.active:
             break
+        fx.start_of_turn(enc, enc.current)     # a dead creature's effects still expire
+        fx.end_of_turn(enc, enc.current, roller)
     else:
         raise CombatError("Nobody is left to act.")
-    _log(enc, "end_turn", ender.id, f"{ender.name} ends their turn.")
+    _log(enc, "end_turn", ender.id, " ".join([f"{ender.name} ends their turn."] + ending),
+         roller, mark)
     start = _start_turn(enc, roller)
-    text = f"Round {enc.round}. {start['text']}"
+    text = " ".join(ending + [f"Round {enc.round}. {start['text']}"])
     if not any(t.active and t.side == "enemy" for t in enc.tokens.values()):
         text += " All enemies are down."
     return {"actor": enc.current.id, "round": enc.round, "text": text}
@@ -276,14 +255,32 @@ def preview_move(enc: Encounter, token_ref, square) -> dict:
             "opportunity_attacks": warnings, "hazards": hazards, "text": text}
 
 
-def move(enc: Encounter, roller: Roller, token_ref, square, reactions: dict = None) -> dict:
+def move(enc: Encounter, roller: Roller, token_ref, square, reactions: dict = None,
+         as_reaction: bool = False) -> dict:
     """Move along the cheapest path. Opportunity attacks resolve just before the
     mover leaves reach; if the mover drops, it stops where it was hit.
 
-    reactions: {hostile_id: bool} decisions for player-controlled hostiles.
-    GM-controlled creatures always take the opportunity attack."""
+    reactions: {hostile_id: bool} decisions for player-controlled hostiles, plus
+    "<id>:shield" style keys for spell reactions (see core.decide).
+    GM-controlled creatures always take the opportunity attack.
+    as_reaction: a readied move outside the mover's turn (up to its speed; the
+    turn's movement budget is not touched)."""
     t = _resolve(enc, token_ref)
+    R = rules_for(enc)
+    if as_reaction:
+        if not R.can_act(t):
+            raise CombatError(f"{t.name} cannot act.")
+        saved_turn = enc.turn
+        enc.turn = TurnState(actor=t.id, movement_budget=R.speed(t))
+        try:
+            return _move(enc, roller, t, square, reactions)
+        finally:
+            enc.turn = saved_turn
     _require_turn(enc, t)
+    return _move(enc, roller, t, square, reactions)
+
+
+def _move(enc: Encounter, roller: Roller, t, square, reactions: dict = None) -> dict:
     R = rules_for(enc)
     grid, opts, dest, path, feet = _plan(enc, t, square)
     left = remaining_movement(enc)
@@ -312,7 +309,8 @@ def move(enc: Encounter, roller: Roller, token_ref, square, reactions: dict = No
                 continue
             h.reaction_used = True
             ctx = AttackContext(distance=grid.distance(path[i], h.pos), melee=True, opportunity=True)
-            res = R.attack(h, t, R.opportunity_attack(h), ctx, roller, player_rolls(enc, h, roller))
+            t.x, t.y = path[i]                  # the attack happens before the mover leaves
+            res = _resolve_attack(enc, roller, h, t, R.opportunity_attack(h), ctx, reactions)
             lines.append("Opportunity attack: " + res["text"])
         if not R.can_act(t) or R.speed(t) == 0:
             t.x, t.y = path[i]          # stopped where the attack landed
@@ -336,6 +334,7 @@ def move(enc: Encounter, roller: Roller, token_ref, square, reactions: dict = No
     hazards = [label(p) for p in path[1:stop_at + 1] if grid.terrain(p).get("hazard")]
     if hazards:
         text += f" Enters hazard at {', '.join(hazards)} (GM decides the effect)."
+    lines += fx.after_move(enc, t) + reveal_hidden(enc)
     text = " ".join([text] + lines)
     _log(enc, "move", t.id, text, roller, mark)
     return {"path": [label(p) for p in path[:stop_at + 1]], "feet": used,
@@ -450,7 +449,8 @@ def attack_options(enc: Encounter, attacker_ref) -> list:
     return out
 
 
-def attack(enc: Encounter, roller: Roller, attacker_ref, target_ref, attack_name: str = None) -> dict:
+def attack(enc: Encounter, roller: Roller, attacker_ref, target_ref, attack_name: str = None,
+           reactions: dict = None) -> dict:
     a = _resolve(enc, attacker_ref)
     t = _resolve(enc, target_ref)
     _require_action(enc, a)
@@ -469,11 +469,98 @@ def attack(enc: Encounter, roller: Roller, attacker_ref, target_ref, attack_name
     else:
         raise CombatError(reasons[0] if reasons else f"{a.name} cannot attack {t.name}.")
     mark = len(roller.log)
-    res = rules_for(enc).attack(a, t, atk, ctx, roller, player_rolls(enc, a, roller))
+    res = _resolve_attack(enc, roller, a, t, atk, ctx, reactions)
     enc.turn.action_used = True
     enc.turn.undo_locked = True
     _log(enc, "attack", a.id, res["text"], roller, mark)
     return res
+
+
+def _resolve_attack(enc: Encounter, roller: Roller, a, t, atk: dict, ctx, reactions: dict = None) -> dict:
+    """One attack roll with everything around it: reactions to the hit (Silvery
+    Barbs, Shield), damage, concentration saves, riders, and the attacker
+    giving away a hidden position."""
+    R = rules_for(enc)
+    reactions = reactions or {}
+    ctx.react = lambda natural, total, ac: fx.on_hit(enc, roller, a, t, natural, total, ac, reactions)
+    res = R.attack(a, t, atk, ctx, roller, player_rolls(enc, a, roller))
+    extra = fx.after_damage(enc, roller, t, res.get("damage"))
+    if res.get("hit") and atk.get("rider_effects") and t.active:
+        extra += _apply_riders(enc, roller, a, t, atk, reactions)
+    if a.has("hidden"):
+        a.remove_condition("hidden")
+        extra.append(f"{a.name} is no longer hidden.")
+    if extra:
+        res["text"] = " ".join([res["text"]] + extra)
+    return res
+
+
+def _apply_riders(enc: Encounter, roller: Roller, a, t, atk: dict, reactions: dict) -> list:
+    """Structured riders (build_srd._rider_effects): grapples, save or be
+    knocked prone / take a condition, save for extra damage."""
+    R = rules_for(enc)
+    lines = []
+    immune = {c.lower() for c in t.condition_immunities}
+    for eff in atk["rider_effects"]:
+        if t.dead:
+            break
+        if eff["kind"] == "grapple":
+            if fx.find(t, source=a.id, name="grapple"):
+                continue
+            conds = ["grappled"] + (["restrained"] if eff.get("restrained") else [])
+            blocked = fx.add(t, {"name": "grapple", "source": a.id,
+                                 "grapple": {"escape_dc": eff["escape_dc"]}, "conditions": conds})
+            got = [c for c in conds if c not in blocked]
+            lines.append(f"{t.name} is {' and '.join(got) or 'not grappled (immune)'}"
+                         f" (escape DC {eff['escape_dc']}).")
+            continue
+        res = R.saving_throw(t, eff["ability"], eff["dc"], roller, player_rolls(enc, t, roller))
+        lines.append(res["text"])
+        if eff.get("damage"):
+            if res["success"] and eff.get("on_success") != "half":
+                continue
+            parts = []
+            for p in eff["damage"]:
+                d = roller.roll(p["dice"], a.name, f"{atk['name']} rider damage",
+                                player=player_rolls(enc, a, roller))
+                amt = d.total // 2 if res["success"] else d.total
+                parts.append({"amount": amt, "type": p.get("type", "")})
+            dmg = R.damage(t, parts)
+            lines.append(dmg["text"])
+            lines += fx.after_damage(enc, roller, t, dmg)
+        elif not res["success"] and eff.get("condition"):
+            cond = eff["condition"]
+            if cond in immune:
+                lines.append(f"{t.name} is immune to being {cond}.")
+            elif cond == "prone":
+                t.add_condition("prone")
+                lines.append(f"{t.name} is knocked prone.")
+            else:
+                fx.add(t, {"name": atk["name"], "source": a.id, "conditions": [cond],
+                           "save": {"ability": eff["ability"], "dc": eff["dc"]},
+                           "repeat": eff.get("repeat")})
+                dur = f" ({eff['duration']})" if eff.get("duration") else ""
+                again = ", saves again at the end of each turn" if eff.get("repeat") else ""
+                lines.append(f"{t.name} is {cond}{dur}{again}.")
+    return lines
+
+
+def reveal_hidden(enc: Encounter) -> list:
+    """A hidden creature that any hostile can now see with no cover at all is
+    found (the GM can still rule otherwise with `condition`)."""
+    R, grid = rules_for(enc), enc.board()
+    lines = []
+    for t in enc.tokens.values():
+        if not (t.active and t.has("hidden")):
+            continue
+        for h in enc.tokens.values():
+            if h.active and hostile(t, h) and R.can_act(h):
+                cov = grid.cover(h.pos, t.pos)
+                if cov["los"] and cov["cover"] == 0:
+                    t.remove_condition("hidden")
+                    lines.append(f"{h.name} spots {t.name}.")
+                    break
+    return lines
 
 
 def _simple_action(enc: Encounter, token_ref, kind: str) -> dict:
