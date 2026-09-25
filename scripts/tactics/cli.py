@@ -6,7 +6,8 @@ Setup and flow
     start <map> --pc NAME@SQ [--pc ...] --monster "SRD NAME@SQ" [...] [--ally "SRD NAME@SQ"]
     status                         whose turn, positions, HP
     options <token>                numbered choices for a GM-controlled creature
-    choose <token> <n>             run option n
+    choose <token> <n>|auto        run option n, or let the engine pick (ai_difficulty
+                                   easy|normal|deadly in state.md, or --difficulty)
     end-turn                       next creature in initiative
     end                            finish: write sheets, tracker, session log
 
@@ -56,7 +57,7 @@ import sys
 
 from paths import find_campaign            # scripts/paths.py (on sys.path via tactics/__init__)
 
-from . import actions, ai, effects, engine, maps, spells, state, sync
+from . import actions, ai, effects, engine, maps, policy, spells, state, sync
 from .grid import parse_square
 from .roller import PendingRoll, Roller
 from .state import Encounter
@@ -105,6 +106,16 @@ def _roll_mode(camp_dir) -> str:
         return "players"
     m = re.search(r"roll_mode\W+(players|auto)\b", text)
     return m.group(1) if m else "players"
+
+
+def _difficulty(camp_dir) -> str:
+    """ai_difficulty: easy | normal | deadly in state.md (for choose <token> auto)."""
+    try:
+        text = (camp_dir / "state.md").read_text(encoding="utf-8")
+    except OSError:
+        return "normal"
+    m = re.search(r"ai_difficulty\W+(easy|normal|deadly)\b", text)
+    return m.group(1) if m else "normal"
 
 
 def _roller(args) -> Roller:
@@ -442,8 +453,15 @@ def run(args) -> int:
             t = engine._resolve(enc, args.token)
             if t.controller == "player":
                 raise Stop(f"{t.name} is player-controlled: use move/attack for the player's choice.")
-            data = ai.choose(enc, roller, t, args.n, _reactions(enc, args))
-            text = f"{data['option']['n']}. {data['text']}"
+            if args.n == "auto":
+                data = policy.choose_auto(enc, roller, t, args.difficulty or _difficulty(camp_dir),
+                                          _reactions(enc, args))
+                text = f"{data['option']['label']} [{data['profile']}]. {data['text']}"
+            elif args.n.isdigit():
+                data = ai.choose(enc, roller, t, int(args.n), _reactions(enc, args))
+                text = f"{data['option']['n']}. {data['text']}"
+            else:
+                raise Stop(f"choose {t.id} <n>: an option number, or auto.")
         elif cmd == "move":
             data = engine.move(enc, roller, args.token, args.square, _reactions(enc, args))
             text = data["text"]
@@ -554,9 +572,10 @@ def parser() -> argparse.ArgumentParser:
     sub.add_parser("status", parents=c, help="round, turn, positions, HP")
     s = sub.add_parser("options", parents=c, help="numbered choices for a creature")
     s.add_argument("token")
-    s = sub.add_parser("choose", parents=c, help="run a numbered option")
+    s = sub.add_parser("choose", parents=c, help="run a numbered option, or auto")
     s.add_argument("token")
-    s.add_argument("n", type=int)
+    s.add_argument("n", help="option number, or auto: the engine picks (no model)")
+    s.add_argument("--difficulty", choices=list(policy.DIFFICULTY))
     for name in ("move", "preview"):
         s = sub.add_parser(name, parents=c)
         s.add_argument("token")
