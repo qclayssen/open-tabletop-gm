@@ -24,6 +24,9 @@ Actions (the current creature)
     ready <token> attack|cast|move [what] [--target X] --trigger "text"
     trigger <token> [target]       the readied action happens now (a reaction)
     reactions <token> ask|auto|off Shield / Silvery Barbs: ask the player, always, never
+    sight <token>                  who it sees, and with what cover (the display's cover shading)
+    fog hide|dim|off               display fog of war: squares no PC sees are dimmed; "hide"
+                                   also leaves out the creatures there (the default)
     condition <token> add|remove <condition>     GM ruling (e.g. a rider the engine left to you)
     adjust <token> hp=N temp_hp=N ac=N           GM correction
     log [n]                        last n combat log lines
@@ -56,7 +59,7 @@ import sys
 
 from paths import find_campaign            # scripts/paths.py (on sys.path via tactics/__init__)
 
-from . import actions, ai, effects, engine, maps, spells, state, sync
+from . import actions, ai, effects, engine, maps, sight, spells, state, sync
 from .grid import parse_square
 from .roller import PendingRoll, Roller
 from .state import Encounter
@@ -65,7 +68,7 @@ _SCRIPTS = pathlib.Path(__file__).resolve().parents[1]
 
 _DISPLAY_CAMPAIGN = _SCRIPTS.parent / "display" / ".campaign"
 READ_ONLY = ("status", "options", "preview", "reachable", "targets", "log", "spells",
-             "preview-area")
+             "preview-area", "sight")
 # Flags that do not change what a command means: a re-run with them added is
 # the same command, so it replays the same engine dice (see _pending).
 OLD_FORM = "*"     # decision key for a --react given up front (opportunity attacks)
@@ -434,6 +437,15 @@ def run(args) -> int:
         elif cmd == "trigger":
             text = actions.trigger(enc, roller, args.token, args.target,
                                    _reactions(enc, args))["text"]
+        elif cmd == "sight":
+            data = sight.sight(enc, args.token, players=args.players)
+            text = data["text"]
+        elif cmd == "fog":
+            enc.meta["fog"] = args.mode
+            text = f"Fog of war: {args.mode}." + {
+                "hide": " The display dims what no PC sees and hides the creatures there.",
+                "dim": " The display dims what no PC sees; every creature stays shown.",
+                "off": " The display shows the whole map."}[args.mode]
         elif cmd == "reactions":
             t = engine._resolve(enc, args.token)
             t.reactions = args.mode
@@ -605,6 +617,12 @@ def parser() -> argparse.ArgumentParser:
     s = sub.add_parser("reactions", parents=c, help="spell reactions: ask, auto or off")
     s.add_argument("token")
     s.add_argument("mode", choices=["ask", "auto", "off"])
+    s = sub.add_parser("sight", parents=c, help="who a creature sees, and with what cover")
+    s.add_argument("token")
+    s.add_argument("--players", action="store_true",
+                   help="only what the players can see (the display passes this)")
+    s = sub.add_parser("fog", parents=c, help="display fog of war: hide, dim or off")
+    s.add_argument("mode", choices=list(sight.FOG_MODES))
     sub.add_parser("undo-move", parents=c)
     sub.add_parser("end-turn", parents=c)
     sub.add_parser("end", parents=c, help="end combat, write sheets and the session log")

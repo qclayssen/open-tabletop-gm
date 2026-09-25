@@ -82,4 +82,6 @@ It writes HP, spell slots and death saves to the character sheet (backup `.bak`)
 
 - `$T status`: round, whose turn, everyone's square, HP, conditions, concentration and readied actions.
 - `$T log 5`: the last five things that happened.
+- `$T sight kairos`: who Kairos sees and with what cover (the display's Cover shading, as text). Use it when a player asks "can I see it?" or "is it behind cover?"; never work cover out yourself.
+- `$T fog hide|dim|off`: fog of war on the display. `hide` (default) dims squares no PC sees and leaves out the creatures there; `dim` only dims; `off` shows everything. It never changes a rule or what you read here.
 - Rolls follow `roll_mode` in state.md: `players` (default) asks the player for their dice; `auto` rolls everything. Enemy dice are always rolled by the engine.
