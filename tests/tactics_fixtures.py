@@ -94,3 +94,36 @@ def start(enc, order):
     enc.round, enc.turn_index = 1, 0
     engine._start_turn(enc, roller())
     return enc
+
+
+# ─── spells (milestone 4) ─────────────────────────────────────────────────────
+
+_SPELLS = {r["index"]: _build._norm_spell(r) for r in json.loads(
+    (ROOT / "tests" / "fixtures" / "srd_spells_sample.json").read_text(encoding="utf-8"))}
+spells_rules = _tr._spells_module()
+
+
+def srd_spell(key: str):
+    """Stands in for tactics_spells._srd: the real SRD records in the fixture."""
+    r = _SPELLS.get(key.replace(" ", "-").replace("/", "-"))
+    return dict(r["mechanics"], name=r["name"], level=r["level"]) if r else None
+
+
+spells_rules._srd = srd_spell
+
+KAIROS_SPELLS = ["Fire Bolt", "Mind Sliver", "Minor Illusion", "Silvery Barbs", "Shield",
+                 "Mage Armor", "Magic Missile", "Detect Magic"]
+
+
+def caster(pos=(0, 0), hp=8, controller="player", spells=None, slots=2) -> Token:
+    """Kairos with his spellcasting: DC 13, +5, level 1, two level 1 slots."""
+    k = kairos(pos=pos, hp=hp, controller=controller)
+    k.extra.update(spells=list(spells or KAIROS_SPELLS), spell_dc=13, spell_attack=5, level=1,
+                   slots={"1": {"total": slots, "used": 0}}, passive_perception=11,
+                   skills={"stealth": 4, "athletics": -1, "acrobatics": 2},
+                   abilities={"str": 8, "dex": 15, "con": 14, "int": 17, "wis": 12, "cha": 8})
+    return k
+
+
+def monster(index, tid, pos, name=None) -> Token:
+    return token_from_monster(_build._norm_monster(_RAW[index]), tid, name or tid.replace("-", " ").title(), pos)

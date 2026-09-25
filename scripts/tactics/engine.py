@@ -490,6 +490,8 @@ def _resolve_attack(enc: Encounter, roller: Roller, a, t, atk: dict, ctx, reacti
     if a.has("hidden"):
         a.remove_condition("hidden")
         extra.append(f"{a.name} is no longer hidden.")
+    if res.get("gm_note"):
+        extra.append(res["gm_note"])
     if extra:
         res["text"] = " ".join([res["text"]] + extra)
     return res

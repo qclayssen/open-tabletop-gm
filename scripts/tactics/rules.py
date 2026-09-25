@@ -115,6 +115,15 @@ class Rules:
     def ac(self, token) -> int:
         raise NotImplementedError
 
+    def known_spells(self, caster) -> list:
+        return []
+
+    def damage_multiplier(self, token, dtype: str) -> float:
+        return 1.0
+
+    def passive_perception(self, token) -> int:
+        raise NotImplementedError
+
     def skill_bonus(self, token, skill: str) -> int:
         raise NotImplementedError
 

@@ -231,7 +231,7 @@ class DnD5e(Rules):
             out["rider"] = attack["rider"]
             if attack.get("rider_effects"):         # the engine applies these; the rest is the GM's
                 if attack.get("rider_rest"):
-                    text += f" GM decides: {attack['rider_rest'].rstrip('.')}."
+                    out["gm_note"] = f"GM decides: {attack['rider_rest'].rstrip('.')}."
             else:
                 first = re.sub(r"^(and|or)\s+", "", attack["rider"].split(". ")[0].rstrip("."))
                 text += f" GM decides the rider: {first}."
@@ -327,6 +327,19 @@ class DnD5e(Rules):
 
     def spell(self, caster, name: str, level: int = None) -> dict:
         return _spells_module().resolve(caster, name, level)
+
+    def known_spells(self, caster) -> list:
+        return list(caster.extra.get("spells", []))
+
+    def damage_multiplier(self, token, dtype: str) -> float:
+        """For previews: 0 immune, 0.5 resistant, 2 vulnerable (unconditional entries only)."""
+        dtype = (dtype or "").lower()
+        if not dtype:
+            return 1.0
+        if dtype in _plain(token.immunities):
+            return 0.0
+        mult = 0.5 if dtype in _plain(token.resistances) else 1.0
+        return mult * (2 if dtype in _plain(token.vulnerabilities) else 1)
 
     # ── damage ───────────────────────────────────────────────────────────────
     def damage(self, target, parts: list, crit: bool = False, ctx: AttackContext = None) -> dict:
