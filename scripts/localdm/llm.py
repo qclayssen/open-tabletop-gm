@@ -9,6 +9,7 @@ Environment:
     GM_DM_MODEL       every turn, enemy picks, summaries   (default dm-local)
     GM_ADVISOR_MODEL  escalations and triggers             (default dm-advisor)
     GM_COUNCIL_MODEL  /advise council                      (default dm-council)
+    GM_FAST_MODEL     enemy picks and summaries            (default: GM_DM_MODEL)
 """
 from __future__ import annotations
 
@@ -42,12 +43,17 @@ class Models:
     dm: str = "dm-local"
     advisor: str = "dm-advisor"
     council: str = "dm-council"
+    fast: str = ""                 # enemy picks and summaries; empty means dm
+
+    def __post_init__(self):
+        self.fast = self.fast or self.dm
 
     @classmethod
     def from_env(cls) -> "Models":
         return cls(os.environ.get("GM_DM_MODEL") or cls.dm,
                    os.environ.get("GM_ADVISOR_MODEL") or cls.advisor,
-                   os.environ.get("GM_COUNCIL_MODEL") or cls.council)
+                   os.environ.get("GM_COUNCIL_MODEL") or cls.council,
+                   os.environ.get("GM_FAST_MODEL") or "")
 
 
 def _http(url: str, body: dict, headers: dict, timeout: float) -> dict:

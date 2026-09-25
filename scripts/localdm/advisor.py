@@ -5,6 +5,7 @@ Advisors only advise the GM: short, concrete, never for the players' eyes.
 """
 from __future__ import annotations
 
+import os
 import pathlib
 from concurrent.futures import ThreadPoolExecutor
 
@@ -33,8 +34,10 @@ def brief(name: str) -> str:
         raise ValueError(f"No advisor {name!r}. Pick one of: {', '.join(ADVISORS)}, or council.")
     own = (BRIEFS / f"{name}.md").read_text(encoding="utf-8").strip()
     shared = (BRIEFS / "_shared.md").read_text(encoding="utf-8").strip()
-    return (f"{own}\n\n{shared}\n\nAnswer the GM in at most {MAX_WORDS} words: concrete "
+    text = (f"{own}\n\n{shared}\n\nAnswer the GM in at most {MAX_WORDS} words: concrete "
             "suggestions, no preamble, nothing addressed to the players.")
+    # A local thinking model as advisor spent its whole budget thinking (empty answers).
+    return text + "\n/no_think" if os.environ.get("GM_NO_THINK", "1") != "0" else text
 
 
 def pick(question: str, limit: int = 3) -> list:
@@ -59,7 +62,7 @@ def parse_advise(text: str):
 
 
 def consult(client, model: str, names, question: str, context: str, *,
-            max_tokens: int = 300) -> str:
+            max_tokens: int = 400) -> str:
     names = list(dict.fromkeys(names))
 
     def ask(name):

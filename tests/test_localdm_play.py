@@ -211,3 +211,27 @@ def test_start_a_real_fight_and_let_the_frogs_act(real_camp):
     assert "enemy-pick" in c.roles()
     assert {"advisor:tactician", "advisor:director"} <= set(c.roles())
     assert out[-1] == "Stuff happens." or s.pending is not None
+
+
+def test_escalations_are_rate_limited(tmp_path):
+    def responder(model, msgs, role):
+        return "Note." if role.startswith("advisor") else 'Hm.\n{"escalate": "cult lore?"}'
+
+    c = FakeClient(responder)
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path), bridge=FakeBridge())
+    for _ in range(4):
+        s.handle("I look.")
+    advised = [i for i, r in enumerate(c.roles()) if r.startswith("advisor")]
+    assert len(advised) == 2                      # turns 1 and 4, not 2 and 3
+
+
+def test_the_fast_model_picks_for_enemies(tmp_path):
+    models = llm.Models("dm-local", "dm-advisor", "dm-council", "dm-fast")
+    c = FakeClient(lambda m, msgs, role: "1" if role == "enemy-pick" else "Ok." + NULLS)
+    b = FakeBridge([fight(current="frog-1", controller="gm"), fight()], {
+        "end-turn": lambda a: Result(0, "ok"),
+        "options": lambda a: Result(0, "Frog\n1. Bite Kairos"),
+        "choose": lambda a: Result(0, "1. Bite: miss.")})
+    Session("demo", c, models, camp_dir=camp_dir(tmp_path, "council: off"), bridge=b).handle("/c end-turn")
+    assert ("dm-fast", "enemy-pick") in [(m, r) for m, r, _ in c.calls]
+    assert llm.Models("a").fast == "a"

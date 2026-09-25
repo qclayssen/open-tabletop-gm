@@ -35,6 +35,7 @@ ENEMY_PICK = ("You choose actions for monsters in a tabletop fight. Reply with o
 NARRATE = ("Narrate what the Engine section says just happened, in 1 to 4 sentences. "
            "Then the JSON line with null for both fields.")
 MAX_ENEMY_TURNS = 20
+ESCALATE_EVERY = 3            # player turns between two DM-asked escalations
 _OPTION = re.compile(r"^(\d+)\. ", re.M)
 
 
@@ -50,10 +51,12 @@ class Session:
         self.camp_dir = pathlib.Path(camp_dir)
         self.bridge = bridge or Bridge(campaign, self.camp_dir)
         self.memory = Memory(self.camp_dir)
-        self.summarizer = Summarizer(client, models.dm, self.memory)
+        self.summarizer = Summarizer(client, models.fast, self.memory)
         self.show_notes, self.budget = show_notes, budget
         self.pending = None            # {"args": [...], "rolls": [...]} while the player rolls
         self.saved_notes = ""          # from /advise, used by the next DM call
+        self.turn = 0
+        self.last_escalation = -ESCALATE_EVERY
 
     # ── model calls ────────────────────────────────────────────────────────
 
@@ -134,7 +137,7 @@ class Session:
         valid = _OPTION.findall(menu)
         try:
             text = reply.strip_think(self.client.chat(
-                self.models.dm, [{"role": "system", "content": ENEMY_PICK},
+                self.models.fast, [{"role": "system", "content": ENEMY_PICK},
                                  {"role": "user", "content": menu}],
                 max_tokens=16, temperature=0.2, role="enemy-pick").text)
         except llm.LLMError:
@@ -222,8 +225,11 @@ class Session:
     def _player_turn(self, line: str) -> list:
         notes = _join(self._take_notes(), self._trigger_notes())
         engine = self._engine_context()
+        self.turn += 1
         r = self._dm(player=line, engine=engine, notes=notes)
-        if r.escalate:                                   # at most once per turn
+        # Small models escalate far too often (every turn in the first live run).
+        if r.escalate and self.turn - self.last_escalation >= ESCALATE_EVERY:
+            self.last_escalation = self.turn
             notes = _join(notes, self._consult(advisor.pick(r.escalate), r.escalate))
             r = self._dm(player=line, engine=engine, notes=notes)
         self.memory.add("player", line)
