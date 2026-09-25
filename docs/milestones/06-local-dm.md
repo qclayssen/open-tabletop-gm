@@ -31,6 +31,7 @@ engine (`scripts/tactics/`) still owns every rule.
 | `advisor.py` | Loads the advisor briefs, picks 2 or 3 for a question by keyword, and asks them in parallel (threads). Each answer is at most about 150 words. |
 | `summarizer.py` | In a background thread, folds older transcript turns into `summary.md` using the local model. |
 | `play.py` | The terminal REPL: `python3 scripts/localdm/play.py -c <campaign>`. |
+| `display_bridge.py` | Mirrors each turn's narration to the Flask display (`GM_DISPLAY_URL`, else `localhost:${GM_DISPLAY_PORT:-5001}`); best effort, `--no-display` to switch off. |
 | `prompts/` | `dm.md` (persona and output contract), `advisors/*.md` (copied from the dnd-gm advisor council). |
 
 ### Model tiers (OmniRoute combos)

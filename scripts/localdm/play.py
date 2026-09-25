@@ -2,6 +2,7 @@
 """play.py: run a session on a small local model, with a smarter advisor on call.
 
     python3 scripts/localdm/play.py -c <campaign> [--show-gm-notes] [--budget 12000]
+                                    [--display-url URL | --no-display]
 
 Type what your character does. While a roll is pending, type the number on the
 die (no modifier), or yes / no for a reaction. Other commands:
@@ -12,6 +13,9 @@ die (no modifier), or yes / no for a reaction. Other commands:
     /quit                     stop
 
 Environment: see llm.py (GM_LLM_URL, GM_DM_MODEL, GM_ADVISOR_MODEL, ...).
+Narration is mirrored to the display at --display-url, GM_DISPLAY_URL,
+localhost:$GM_DISPLAY_PORT, display/.port, else localhost:5001 (display_bridge.py);
+grid combat updates follow the same display.
 """
 from __future__ import annotations
 
@@ -27,7 +31,7 @@ if __package__ in (None, ""):                        # run as a script
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
     import localdm                                    # noqa: F401  (puts scripts/ on sys.path)
 
-from localdm import advisor, autopilot, context, llm, reply, triggers      # noqa: E402
+from localdm import advisor, autopilot, context, display_bridge, llm, reply, triggers  # noqa: E402
 from localdm.bridge import Bridge, parse_player_command          # noqa: E402
 from localdm.memory import Memory                               # noqa: E402
 from localdm.summarizer import Summarizer                       # noqa: E402
@@ -75,6 +79,7 @@ class Session:
         self.pending = None            # {"args": [...], "rolls": [...]} while the player rolls
         self.saved_notes = ""          # from /advise, used by the next DM call
         self.turn = 0
+        self._narrated = []            # this turn's narration, for the display
         # combat "engine": the player's line is parsed, enemies pick by the
         # engine's policy and results are templated (autopilot.py); the model
         # speaks only at big moments (flavor "big") or never (flavor "off").
@@ -151,6 +156,16 @@ class Session:
             self._shadow_thread.join(timeout)
         self.summarizer.join(timeout)
 
+    def _say(self, text: str) -> None:
+        """Narration the player sees: remembered, and kept for the display."""
+        self.memory.add("dm", text)
+        self._narrated.append(text)
+
+    def take_narration(self) -> str:
+        """This turn's narration as one text (paragraphs kept), then forgotten."""
+        text, self._narrated = "\n\n".join(self._narrated), []
+        return text
+
     def _notes_out(self, notes) -> list:
         return [f"[GM notes]\n{notes}"] if self.show_notes and notes else []
 
@@ -160,7 +175,7 @@ class Session:
         notes = _join(self._take_notes(), self._trigger_notes())
         r = self._dm(engine=engine_text, notes=notes, task=NARRATE)
         if r.narration:
-            self.memory.add("dm", r.narration)
+            self._say(r.narration)
         return self._notes_out(notes) + ([r.narration] if r.narration else [])
 
     def _template(self, engine_text: str) -> list:
@@ -174,7 +189,7 @@ class Session:
             except llm.LLMError:
                 pass
         if prose:
-            self.memory.add("dm", prose)
+            self._say(prose)
         return self._notes_out(notes) + ([prose] if prose else [])
 
     # ── engine ─────────────────────────────────────────────────────────────
@@ -343,7 +358,7 @@ class Session:
         self.memory.add("player", line)
         out = self._notes_out(notes)
         if r.narration:
-            self.memory.add("dm", r.narration)
+            self._say(r.narration)
             out.append(r.narration)
         args = parse_player_command(r.command) if r.command else None
         if args and self._players_turn():
@@ -371,6 +386,11 @@ def main(argv=None) -> int:
                     help="engine combat: one model line at a kill, a fall or the end (big), or none")
     ap.add_argument("--no-shadow", action="store_true",
                     help="no background advisor review after each turn (also GM_SHADOW=0)")
+    ap.add_argument("--display-url", default="", metavar="URL",
+                    help="display for narration and grid combat (default: GM_DISPLAY_URL, "
+                         "localhost:$GM_DISPLAY_PORT, display/.port, else localhost:5001)")
+    ap.add_argument("--no-display", action="store_true",
+                    help="send nothing to any display (narration or grid combat)")
     args = ap.parse_args(argv)
     camp_dir = find_campaign(args.campaign)
     if not camp_dir.exists():
@@ -387,6 +407,13 @@ def main(argv=None) -> int:
                 combat=args.combat, flavor=args.flavor)
     print(f"Local DM: {models.dm} via {local.base_url}; advisor {models.advisor} via "
           f"{client.base_url}. /quit to stop.")
+    display = display_bridge.from_args(args.campaign, url=args.display_url,
+                                       disabled=args.no_display)
+    if display:
+        os.environ["GM_DISPLAY_URL"] = display.url     # grid combat pushes (tactics/sync.py) follow
+        display.register()
+    else:
+        os.environ["TACTICS_NO_DISPLAY"] = "1"
     while True:
         try:
             line = input("> ")
@@ -397,10 +424,15 @@ def main(argv=None) -> int:
             break
         try:
             out = s.handle(line)
+            narration = s.take_narration()   # emptied every turn: sent at most once
         except llm.LLMError as e:
             out = [f"(model unavailable: {e})"]
+            s.take_narration()               # the terminal does not show it either
+            narration = ""
         for chunk in out:
             print(chunk + "\n")
+        if display and narration:
+            display.narrate(narration)
     s.join_background(timeout=60)
     return 0
 
