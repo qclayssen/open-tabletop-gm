@@ -1,0 +1,860 @@
+[
+ {
+  "index": "acid-splash",
+  "name": "Acid Splash",
+  "desc": [
+   "You hurl a bubble of acid. Choose one creature within range, or choose two creatures within range that are within 5 feet of each other. A target must succeed on a dexterity saving throw or take 1d6 acid damage.",
+   "This spell's damage increases by 1d6 when you reach 5th level (2d6), 11th level (3d6), and 17th level (4d6)."
+  ],
+  "range": "60 feet",
+  "components": [
+   "V",
+   "S"
+  ],
+  "ritual": false,
+  "duration": "Instantaneous",
+  "concentration": false,
+  "casting_time": "1 action",
+  "level": 0,
+  "damage": [
+   {
+    "damage_type": {
+     "index": "acid",
+     "name": "Acid",
+     "url": "/api/2014/damage-types/acid"
+    },
+    "damage_at_character_level": {
+     "1": "1d6",
+     "5": "2d6",
+     "11": "3d6",
+     "17": "4d6"
+    }
+   }
+  ],
+  "dc": {
+   "dc_type": {
+    "index": "dex",
+    "name": "DEX",
+    "url": "/api/2014/ability-scores/dex"
+   },
+   "dc_success": "none"
+  },
+  "school": {
+   "index": "conjuration",
+   "name": "Conjuration",
+   "url": "/api/2014/magic-schools/conjuration"
+  }
+ },
+ {
+  "index": "bless",
+  "name": "Bless",
+  "desc": [
+   "You bless up to three creatures of your choice within range. Whenever a target makes an attack roll or a saving throw before the spell ends, the target can roll a d4 and add the number rolled to the attack roll or saving throw."
+  ],
+  "higher_level": [
+   "When you cast this spell using a spell slot of 2nd level or higher, you can target one additional creature for each slot level above 1st."
+  ],
+  "range": "30 feet",
+  "components": [
+   "V",
+   "S",
+   "M"
+  ],
+  "material": "A sprinkling of holy water.",
+  "ritual": false,
+  "duration": "Up to 1 minute",
+  "concentration": true,
+  "casting_time": "1 action",
+  "level": 1,
+  "school": {
+   "index": "enchantment",
+   "name": "Enchantment",
+   "url": "/api/2014/magic-schools/enchantment"
+  }
+ },
+ {
+  "index": "burning-hands",
+  "name": "Burning Hands",
+  "desc": [
+   "As you hold your hands with thumbs touching and fingers spread, a thin sheet of flames shoots forth from your outstretched fingertips. Each creature in a 15-foot cone must make a dexterity saving throw. A creature takes 3d6 fire damage on a failed save, or half as much damage on a successful one.",
+   "The fire ignites any flammable objects in the area that aren't being worn or carried."
+  ],
+  "higher_level": [
+   "When you cast this spell using a spell slot of 2nd level or higher, the damage increases by 1d6 for each slot level above 1st."
+  ],
+  "range": "Self",
+  "components": [
+   "V",
+   "S"
+  ],
+  "ritual": false,
+  "duration": "Instantaneous",
+  "concentration": false,
+  "casting_time": "1 action",
+  "level": 1,
+  "damage": [
+   {
+    "damage_type": {
+     "index": "fire",
+     "name": "Fire",
+     "url": "/api/2014/damage-types/fire"
+    },
+    "damage_at_slot_level": {
+     "1": "3d6",
+     "2": "4d6",
+     "3": "5d6",
+     "4": "6d6",
+     "5": "7d6",
+     "6": "8d6",
+     "7": "9d6",
+     "8": "10d6",
+     "9": "11d6"
+    }
+   }
+  ],
+  "dc": {
+   "dc_type": {
+    "index": "dex",
+    "name": "DEX",
+    "url": "/api/2014/ability-scores/dex"
+   },
+   "dc_success": "half"
+  },
+  "area_of_effect": {
+   "type": "cone",
+   "size": 15
+  },
+  "school": {
+   "index": "evocation",
+   "name": "Evocation",
+   "url": "/api/2014/magic-schools/evocation"
+  }
+ },
+ {
+  "index": "cure-wounds",
+  "name": "Cure Wounds",
+  "desc": [
+   "A creature you touch regains a number of hit points equal to 1d8 + your spellcasting ability modifier. This spell has no effect on undead or constructs."
+  ],
+  "higher_level": [
+   "When you cast this spell using a spell slot of 2nd level or higher, the healing increases by 1d8 for each slot level above 1st."
+  ],
+  "range": "Touch",
+  "components": [
+   "V",
+   "S"
+  ],
+  "ritual": false,
+  "duration": "Instantaneous",
+  "concentration": false,
+  "casting_time": "1 action",
+  "level": 1,
+  "heal_at_slot_level": {
+   "1": "1d8 + MOD",
+   "2": "2d8 + MOD",
+   "3": "3d8 + MOD",
+   "4": "4d8 + MOD",
+   "5": "5d8 + MOD",
+   "6": "6d8 + MOD",
+   "7": "7d8 + MOD",
+   "8": "8d8 + MOD",
+   "9": "9d8 + MOD"
+  },
+  "school": {
+   "index": "evocation",
+   "name": "Evocation",
+   "url": "/api/2014/magic-schools/evocation"
+  }
+ },
+ {
+  "index": "entangle",
+  "name": "Entangle",
+  "desc": [
+   "Grasping weeds and vines sprout from the ground in a 20-foot square starting form a point within range. For the duration, these plants turn the ground in the area into difficult terrain.",
+   "A creature in the area when you cast the spell must succeed on a strength saving throw or be restrained by the entangling plants until the spell ends. A creature restrained by the plants can use its action to make a Strength check against your spell save DC. On a success, it frees itself.",
+   "When the spell ends, the conjured plants wilt away."
+  ],
+  "range": "90 feet",
+  "components": [
+   "V",
+   "S"
+  ],
+  "ritual": false,
+  "duration": "Up to 1 minute",
+  "concentration": true,
+  "casting_time": "1 action",
+  "level": 1,
+  "dc": {
+   "dc_type": {
+    "index": "str",
+    "name": "STR",
+    "url": "/api/2014/ability-scores/str"
+   },
+   "dc_success": "none"
+  },
+  "area_of_effect": {
+   "type": "cube",
+   "size": 20
+  },
+  "school": {
+   "index": "conjuration",
+   "name": "Conjuration",
+   "url": "/api/2014/magic-schools/conjuration"
+  }
+ },
+ {
+  "index": "fire-bolt",
+  "name": "Fire Bolt",
+  "desc": [
+   "You hurl a mote of fire at a creature or object within range. Make a ranged spell attack against the target. On a hit, the target takes 1d10 fire damage. A flammable object hit by this spell ignites if it isn't being worn or carried.",
+   "This spell's damage increases by 1d10 when you reach 5th level (2d10), 11th level (3d10), and 17th level (4d10)."
+  ],
+  "range": "120 feet",
+  "components": [
+   "V",
+   "S"
+  ],
+  "ritual": false,
+  "duration": "Instantaneous",
+  "concentration": false,
+  "casting_time": "1 action",
+  "level": 0,
+  "attack_type": "ranged",
+  "damage": [
+   {
+    "damage_type": {
+     "index": "fire",
+     "name": "Fire",
+     "url": "/api/2014/damage-types/fire"
+    },
+    "damage_at_character_level": {
+     "1": "1d10",
+     "5": "2d10",
+     "11": "3d10",
+     "17": "4d10"
+    }
+   }
+  ],
+  "school": {
+   "index": "evocation",
+   "name": "Evocation",
+   "url": "/api/2014/magic-schools/evocation"
+  }
+ },
+ {
+  "index": "fireball",
+  "name": "Fireball",
+  "desc": [
+   "A bright streak flashes from your pointing finger to a point you choose within range and then blossoms with a low roar into an explosion of flame. Each creature in a 20-foot-radius sphere centered on that point must make a dexterity saving throw. A target takes 8d6 fire damage on a failed save, or half as much damage on a successful one.",
+   "The fire spreads around corners. It ignites flammable objects in the area that aren't being worn or carried."
+  ],
+  "higher_level": [
+   "When you cast this spell using a spell slot of 4th level or higher, the damage increases by 1d6 for each slot level above 3rd."
+  ],
+  "range": "150 feet",
+  "components": [
+   "V",
+   "S",
+   "M"
+  ],
+  "material": "A tiny ball of bat guano and sulfur.",
+  "ritual": false,
+  "duration": "Instantaneous",
+  "concentration": false,
+  "casting_time": "1 action",
+  "level": 3,
+  "damage": [
+   {
+    "damage_type": {
+     "index": "fire",
+     "name": "Fire",
+     "url": "/api/2014/damage-types/fire"
+    },
+    "damage_at_slot_level": {
+     "3": "8d6",
+     "4": "9d6",
+     "5": "10d6",
+     "6": "11d6",
+     "7": "12d6",
+     "8": "13d6",
+     "9": "14d6"
+    }
+   }
+  ],
+  "dc": {
+   "dc_type": {
+    "index": "dex",
+    "name": "DEX",
+    "url": "/api/2014/ability-scores/dex"
+   },
+   "dc_success": "half"
+  },
+  "area_of_effect": {
+   "type": "sphere",
+   "size": 20
+  },
+  "school": {
+   "index": "evocation",
+   "name": "Evocation",
+   "url": "/api/2014/magic-schools/evocation"
+  }
+ },
+ {
+  "index": "healing-word",
+  "name": "Healing Word",
+  "desc": [
+   "A creature of your choice that you can see within range regains hit points equal to 1d4 + your spellcasting ability modifier. This spell has no effect on undead or constructs."
+  ],
+  "higher_level": [
+   "When you cast this spell using a spell slot of 2nd level or higher, the healing increases by 1d4 for each slot level above 1st."
+  ],
+  "range": "60 feet",
+  "components": [
+   "V"
+  ],
+  "ritual": false,
+  "duration": "Instantaneous",
+  "concentration": false,
+  "casting_time": "1 bonus action",
+  "level": 1,
+  "heal_at_slot_level": {
+   "1": "1d4 + MOD",
+   "2": "2d4 + MOD",
+   "3": "3d4 + MOD",
+   "4": "4d4 + MOD",
+   "5": "5d4 + MOD",
+   "6": "6d4 + MOD",
+   "7": "7d4 + MOD",
+   "8": "8d4 + MOD",
+   "9": "9d4 + MOD"
+  },
+  "school": {
+   "index": "evocation",
+   "name": "Evocation",
+   "url": "/api/2014/magic-schools/evocation"
+  }
+ },
+ {
+  "index": "hold-person",
+  "name": "Hold Person",
+  "desc": [
+   "Choose a humanoid that you can see within range. The target must succeed on a wisdom saving throw or be paralyzed for the duration. At the end of each of its turns, the target can make another wisdom saving throw. On a success, the spell ends on the target."
+  ],
+  "higher_level": [
+   "When you cast this spell using a spell slot of 3rd level or higher, you can target one additional humanoid for each slot level above 2nd. The humanoids must be within 30 feet of each other when you target them."
+  ],
+  "range": "60 feet",
+  "components": [
+   "V",
+   "S",
+   "M"
+  ],
+  "material": "A small, straight piece of iron.",
+  "ritual": false,
+  "duration": "Up to 1 minute",
+  "concentration": true,
+  "casting_time": "1 action",
+  "level": 2,
+  "dc": {
+   "dc_type": {
+    "index": "wis",
+    "name": "WIS",
+    "url": "/api/2014/ability-scores/wis"
+   },
+   "dc_success": "none"
+  },
+  "school": {
+   "index": "enchantment",
+   "name": "Enchantment",
+   "url": "/api/2014/magic-schools/enchantment"
+  }
+ },
+ {
+  "index": "lightning-bolt",
+  "name": "Lightning Bolt",
+  "desc": [
+   "A stroke of lightning forming a line 100 feet long and 5 feet wide blasts out from you in a direction you choose. Each creature in the line must make a dexterity saving throw. A creature takes 8d6 lightning damage on a failed save, or half as much damage on a successful one.",
+   "The lightning ignites flammable objects in the area that aren't being worn or carried."
+  ],
+  "higher_level": [
+   "When you cast this spell using a spell slot of 4th level or higher, the damage increases by 1d6 for each slot level above 3rd."
+  ],
+  "range": "Self",
+  "components": [
+   "V",
+   "S",
+   "M"
+  ],
+  "material": "A bit of fur and a rod of amber, crystal, or glass.",
+  "ritual": false,
+  "duration": "Instantaneous",
+  "concentration": false,
+  "casting_time": "1 action",
+  "level": 3,
+  "damage": [
+   {
+    "damage_type": {
+     "index": "lightning",
+     "name": "Lightning",
+     "url": "/api/2014/damage-types/lightning"
+    },
+    "damage_at_slot_level": {
+     "3": "8d6",
+     "4": "9d6",
+     "5": "10d6",
+     "6": "11d6",
+     "7": "12d6",
+     "8": "13d6",
+     "9": "14d6"
+    }
+   }
+  ],
+  "dc": {
+   "dc_type": {
+    "index": "dex",
+    "name": "DEX",
+    "url": "/api/2014/ability-scores/dex"
+   },
+   "dc_success": "half"
+  },
+  "area_of_effect": {
+   "type": "line",
+   "size": 100
+  },
+  "school": {
+   "index": "evocation",
+   "name": "Evocation",
+   "url": "/api/2014/magic-schools/evocation"
+  }
+ },
+ {
+  "index": "mage-armor",
+  "name": "Mage Armor",
+  "desc": [
+   "You touch a willing creature who isn't wearing armor, and a protective magical force surrounds it until the spell ends. The target's base AC becomes 13 + its Dexterity modifier. The spell ends if the target dons armor or if you dismiss the spell as an action."
+  ],
+  "range": "Touch",
+  "components": [
+   "V",
+   "S",
+   "M"
+  ],
+  "material": "A piece of cured leather.",
+  "ritual": false,
+  "duration": "8 hours",
+  "concentration": false,
+  "casting_time": "1 action",
+  "level": 1,
+  "school": {
+   "index": "abjuration",
+   "name": "Abjuration",
+   "url": "/api/2014/magic-schools/abjuration"
+  }
+ },
+ {
+  "index": "magic-missile",
+  "name": "Magic Missile",
+  "desc": [
+   "You create three glowing darts of magical force. Each dart hits a creature of your choice that you can see within range. A dart deals 1d4 + 1 force damage to its target. The darts all strike simultaneously, and you can direct them to hit one creature or several."
+  ],
+  "higher_level": [
+   "When you cast this spell using a spell slot of 2nd level or higher, the spell creates one more dart for each slot level above 1st."
+  ],
+  "range": "120 feet",
+  "components": [
+   "V",
+   "S"
+  ],
+  "ritual": false,
+  "duration": "Instantaneous",
+  "concentration": false,
+  "casting_time": "1 action",
+  "level": 1,
+  "damage": [
+   {
+    "damage_type": {
+     "index": "force",
+     "name": "Force",
+     "url": "/api/2014/damage-types/force"
+    },
+    "damage_at_slot_level": {
+     "1": "3d4 + 3",
+     "2": "4d4 + 4",
+     "3": "5d4 + 5",
+     "4": "6d4 + 6",
+     "5": "7d4 + 7",
+     "6": "8d4 + 8",
+     "7": "9d4 + 9",
+     "8": "10d4 + 10",
+     "9": "11d4 + 11"
+    }
+   }
+  ],
+  "school": {
+   "index": "evocation",
+   "name": "Evocation",
+   "url": "/api/2014/magic-schools/evocation"
+  }
+ },
+ {
+  "index": "ray-of-frost",
+  "name": "Ray of Frost",
+  "desc": [
+   "A frigid beam of blue-white light streaks toward a creature within range. Make a ranged spell attack against the target. On a hit, it takes 1d8 cold damage, and its speed is reduced by 10 feet until the start of your next turn.",
+   "The spell's damage increases by 1d8 when you reach 5th level (2d8), 11th level (3d8), and 17th level (4d8)."
+  ],
+  "range": "60 feet",
+  "components": [
+   "V",
+   "S"
+  ],
+  "ritual": false,
+  "duration": "Instantaneous",
+  "concentration": false,
+  "casting_time": "1 action",
+  "level": 0,
+  "attack_type": "ranged",
+  "damage": [
+   {
+    "damage_type": {
+     "index": "cold",
+     "name": "Cold",
+     "url": "/api/2014/damage-types/cold"
+    },
+    "damage_at_character_level": {
+     "1": "1d8",
+     "5": "2d8",
+     "11": "3d8",
+     "17": "4d8"
+    }
+   }
+  ],
+  "school": {
+   "index": "evocation",
+   "name": "Evocation",
+   "url": "/api/2014/magic-schools/evocation"
+  }
+ },
+ {
+  "index": "sacred-flame",
+  "name": "Sacred Flame",
+  "desc": [
+   "Flame-like radiance descends on a creature that you can see within range. The target must succeed on a dexterity saving throw or take 1d8 radiant damage. The target gains no benefit from cover for this saving throw.",
+   "The spell's damage increases by 1d8 when you reach 5th level (2d8), 11th level (3d8), and 17th level (4d8)."
+  ],
+  "range": "60 feet",
+  "components": [
+   "V",
+   "S"
+  ],
+  "ritual": false,
+  "duration": "Instantaneous",
+  "concentration": false,
+  "casting_time": "1 action",
+  "level": 0,
+  "damage": [
+   {
+    "damage_type": {
+     "index": "radiant",
+     "name": "Radiant",
+     "url": "/api/2014/damage-types/radiant"
+    },
+    "damage_at_character_level": {
+     "1": "1d8",
+     "5": "2d8",
+     "11": "3d8",
+     "17": "4d8"
+    }
+   }
+  ],
+  "dc": {
+   "dc_type": {
+    "index": "dex",
+    "name": "DEX",
+    "url": "/api/2014/ability-scores/dex"
+   },
+   "dc_success": "none"
+  },
+  "school": {
+   "index": "evocation",
+   "name": "Evocation",
+   "url": "/api/2014/magic-schools/evocation"
+  }
+ },
+ {
+  "index": "shatter",
+  "name": "Shatter",
+  "desc": [
+   "A sudden loud ringing noise, painfully intense, erupts from a point of your choice within range. Each creature in a 10-foot-radius sphere centered on that point must make a Constitution saving throw. A creature takes 3d8 thunder damage on a failed save, or half as much damage on a successful one. A creature made of inorganic material such as stone, crystal, or metal has disadvantage on this saving throw.",
+   "A non-magical item that is not worn or carried also suffers damage if it is in the area of the spell."
+  ],
+  "higher_level": [
+   "When you cast this spell using a 3 or higher level spell slot, the damage of the spell increases by 1d8 for each level of higher spell slot 2."
+  ],
+  "range": "60 feet",
+  "components": [
+   "V",
+   "S",
+   "M"
+  ],
+  "material": "A burst of mica.",
+  "ritual": false,
+  "duration": "Instantaneous",
+  "concentration": false,
+  "casting_time": "1 action",
+  "level": 2,
+  "damage": [
+   {
+    "damage_type": {
+     "index": "thunder",
+     "name": "Thunder",
+     "url": "/api/2014/damage-types/thunder"
+    },
+    "damage_at_slot_level": {
+     "2": "3d8",
+     "3": "4d8",
+     "4": "5d8",
+     "5": "6d8",
+     "6": "7d8",
+     "7": "8d8",
+     "8": "9d8",
+     "9": "10d8"
+    }
+   }
+  ],
+  "dc": {
+   "dc_type": {
+    "index": "con",
+    "name": "CON",
+    "url": "/api/2014/ability-scores/con"
+   },
+   "dc_success": "half"
+  },
+  "area_of_effect": {
+   "type": "sphere",
+   "size": 10
+  },
+  "school": {
+   "index": "evocation",
+   "name": "Evocation",
+   "url": "/api/2014/magic-schools/evocation"
+  }
+ },
+ {
+  "index": "shield",
+  "name": "Shield",
+  "desc": [
+   "An invisible barrier of magical force appears and protects you. Until the start of your next turn, you have a +5 bonus to AC, including against the triggering attack, and you take no damage from magic missile."
+  ],
+  "range": "Self",
+  "components": [
+   "V",
+   "S"
+  ],
+  "ritual": false,
+  "duration": "1 round",
+  "concentration": false,
+  "casting_time": "1 reaction",
+  "level": 1,
+  "school": {
+   "index": "abjuration",
+   "name": "Abjuration",
+   "url": "/api/2014/magic-schools/abjuration"
+  }
+ },
+ {
+  "index": "sunbeam",
+  "name": "Sunbeam",
+  "desc": [
+   "A beam of brilliant light flashes out from your hand in a 5-foot-wide, 60-foot-long line. Each creature in the line must make a constitution saving throw. On a failed save, a creature takes 6d8 radiant damage and is blinded until your next turn. On a successful save, it takes half as much damage and isn't blinded by this spell. Undead and oozes have disadvantage on this saving throw.",
+   "You can create a new line of radiance as your action on any turn until the spell ends.",
+   "For the duration, a mote of brilliant radiance shines in your hand. It sheds bright light in a 30-foot radius and dim light for an additional 30 feet. This light is sunlight."
+  ],
+  "range": "Self",
+  "components": [
+   "V",
+   "S",
+   "M"
+  ],
+  "material": "A magnifying glass.",
+  "ritual": false,
+  "duration": "Up to 1 minute",
+  "concentration": true,
+  "casting_time": "1 action",
+  "level": 6,
+  "damage": [
+   {
+    "damage_type": {
+     "index": "radiant",
+     "name": "Radiant",
+     "url": "/api/2014/damage-types/radiant"
+    },
+    "damage_at_slot_level": {
+     "6": "6d8"
+    }
+   }
+  ],
+  "dc": {
+   "dc_type": {
+    "index": "con",
+    "name": "CON",
+    "url": "/api/2014/ability-scores/con"
+   },
+   "dc_success": "half",
+   "desc": "On a failed save, the creature is blinded until your next turn. On a successful save, it isn't blinded by this spell."
+  },
+  "area_of_effect": {
+   "type": "line",
+   "size": 60
+  },
+  "school": {
+   "index": "evocation",
+   "name": "Evocation",
+   "url": "/api/2014/magic-schools/evocation"
+  }
+ },
+ {
+  "index": "thunderwave",
+  "name": "Thunderwave",
+  "desc": [
+   "A wave of thunderous force sweeps out from you. Each creature in a 15-foot cube originating from you must make a constitution saving throw. On a failed save, a creature takes 2d8 thunder damage and is pushed 10 feet away from you. On a successful save, the creature takes half as much damage and isn't pushed.",
+   "In addition, unsecured objects that are completely within the area of effect are automatically pushed 10 feet away from you by the spell's effect, and the spell emits a thunderous boom audible out to 300 feet."
+  ],
+  "higher_level": [
+   "When you cast this spell using a spell slot of 2nd level or higher, the damage increases by 1d8 for each slot level above 1st."
+  ],
+  "range": "Self",
+  "components": [
+   "V",
+   "S"
+  ],
+  "ritual": false,
+  "duration": "Instantaneous",
+  "concentration": false,
+  "casting_time": "1 action",
+  "level": 1,
+  "damage": [
+   {
+    "damage_type": {
+     "index": "thunder",
+     "name": "Thunder",
+     "url": "/api/2014/damage-types/thunder"
+    },
+    "damage_at_slot_level": {
+     "1": "2d8",
+     "2": "3d8",
+     "3": "4d8",
+     "4": "5d8",
+     "5": "6d8",
+     "6": "7d8",
+     "7": "8d8",
+     "8": "9d8",
+     "9": "10d8"
+    }
+   }
+  ],
+  "dc": {
+   "dc_type": {
+    "index": "con",
+    "name": "CON",
+    "url": "/api/2014/ability-scores/con"
+   },
+   "dc_success": "half"
+  },
+  "area_of_effect": {
+   "type": "cube",
+   "size": 15
+  },
+  "school": {
+   "index": "evocation",
+   "name": "Evocation",
+   "url": "/api/2014/magic-schools/evocation"
+  }
+ },
+ {
+  "index": "wall-of-fire",
+  "name": "Wall of Fire",
+  "desc": [
+   "You create a wall of fire on a solid surface within range. You can make the wall up to 60 feet long, 20 feet high, and 1 foot thick, or a ringed wall up to 20 feet in diameter, 20 feet high, and 1 foot thick. The wall is opaque and lasts for the duration.",
+   "When the wall appears, each creature within its area must make a Dexterity saving throw. On a failed save, a creature takes 5d8 fire damage, or half as much damage on a successful save.",
+   "One side of the wall, selected by you when you cast this spell, deals 5d8 fire damage to each creature that ends its turn within 10 feet o f that side or inside the wall. A creature takes the same damage when it enters the wall for the first time on a turn or ends its turn there. The other side of the wall deals no damage.",
+   "The other side of the wall deals no damage."
+  ],
+  "higher_level": [
+   "When you cast this spell using a spell slot of 5th level or higher, the damage increases by 1d8 for each slot level above 4th."
+  ],
+  "range": "120 feet",
+  "components": [
+   "V",
+   "S",
+   "M"
+  ],
+  "material": "A small piece of phosphorus.",
+  "ritual": false,
+  "duration": "Up to 1 minute",
+  "concentration": true,
+  "casting_time": "1 action",
+  "level": 4,
+  "damage": [
+   {
+    "damage_type": {
+     "index": "fire",
+     "name": "Fire",
+     "url": "/api/2014/damage-types/fire"
+    },
+    "damage_at_slot_level": {
+     "4": "5d8"
+    }
+   }
+  ],
+  "dc": {
+   "dc_type": {
+    "index": "dex",
+    "name": "DEX",
+    "url": "/api/2014/ability-scores/dex"
+   },
+   "dc_success": "half"
+  },
+  "area_of_effect": {
+   "type": "line",
+   "size": 60
+  },
+  "school": {
+   "index": "evocation",
+   "name": "Evocation",
+   "url": "/api/2014/magic-schools/evocation"
+  }
+ },
+ {
+  "index": "web",
+  "name": "Web",
+  "desc": [
+   "You conjure a mass of thick, sticky webbing at a point of your choice within range. The webs fill a 20-foot cube from that point for the duration. The webs are difficult terrain and lightly obscure their area.",
+   "If the webs aren't anchored between two solid masses (such as walls or trees) or layered across a floor, wall, or ceiling, the conjured web collapses on itself, and the spell ends at the start of your next turn. Webs layered over a flat surface have a depth of 5 feet.",
+   "Each creature that starts its turn in the webs or that enters them during its turn must make a dexterity saving throw. On a failed save, the creature is restrained as long as it remains in the webs or until it breaks free.",
+   "A creature restrained by the webs can use its action to make a Strength check against your spell save DC. If it succeeds, it is no longer restrained.",
+   "The webs are flammable. Any 5-foot cube of webs exposed to fire burns away in 1 round, dealing 2d4 fire damage to any creature that starts its turn in the fire."
+  ],
+  "range": "60 feet",
+  "components": [
+   "V",
+   "S",
+   "M"
+  ],
+  "material": "A bit of spiderweb.",
+  "ritual": false,
+  "duration": "Up to 1 hour",
+  "concentration": true,
+  "casting_time": "1 action",
+  "level": 2,
+  "area_of_effect": {
+   "type": "cube",
+   "size": 20
+  },
+  "school": {
+   "index": "conjuration",
+   "name": "Conjuration",
+   "url": "/api/2014/magic-schools/conjuration"
+  }
+ }
+]
