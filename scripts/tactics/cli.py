@@ -12,7 +12,8 @@ Setup and flow
 
 Actions (the current creature)
     move <token> <square>          e.g. move kairos D5   (preview <token> <square> checks first)
-    attack <token> <target> [attack name]
+    attack <token> <target> [attack name]      no name: the best legal attack
+    multiattack <token> <target> [--option N]  every attack of a Multiattack, as one action
     dash | disengage | dodge | stand <token>
     death-save <token>
     undo-move                      take back the last move this turn
@@ -294,6 +295,9 @@ def run(args) -> int:
         elif cmd == "attack":
             data = engine.attack(enc, roller, args.token, args.target, args.attack)
             text = data["text"]
+        elif cmd == "multiattack":
+            data = engine.multiattack(enc, roller, args.token, args.target, args.option)
+            text = data["text"]
         elif cmd in ("dash", "disengage", "dodge"):
             text = getattr(engine, cmd)(enc, args.token)["text"]
         elif cmd == "stand":
@@ -387,6 +391,10 @@ def parser() -> argparse.ArgumentParser:
     s.add_argument("token")
     s.add_argument("target")
     s.add_argument("attack", nargs="*")
+    s = sub.add_parser("multiattack", parents=c, help="every attack of a Multiattack, one action")
+    s.add_argument("token")
+    s.add_argument("target")
+    s.add_argument("--option", type=int, help="which Multiattack option (default: best)")
     for name in ("dash", "disengage", "dodge", "stand", "death-save", "reachable", "targets"):
         s = sub.add_parser(name, parents=c)
         s.add_argument("token")

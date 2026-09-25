@@ -47,6 +47,7 @@ Nothing has happened yet. Do what the message says and run the same command agai
 ## Riders and specials
 
 - `GM decides the rider: the target is grappled (escape DC 11)` means you decide. If it applies: `$T condition kairos add grappled`.
+- `GM runs: Frightful Presence` after a Multiattack: that part is not an attack; narrate it (and `condition` if it applies).
 - `(Or narrate a special ...)` lists things the engine does not run. Use them only by narrating and `condition` or `adjust`.
 - Fix a mistake: `$T adjust kairos hp=5`, `$T undo-move` (before an action).
 

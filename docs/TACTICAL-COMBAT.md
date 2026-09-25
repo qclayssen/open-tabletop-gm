@@ -20,6 +20,14 @@ Theatre-of-the-mind combat (`/gm combat start`) is unchanged and still available
 
 **Opportunity attacks.** Leaving an enemy's reach gives it a free attack, unless you Disengage first. Before you move, the GM can show you who would get one and their chance to hit. When an enemy leaves *your* reach, you're asked whether you want to take yours.
 
+**How enemies fight.** Enemy turns come from a short numbered menu, ranked the way the tactics games do it (Baldur's Gate 3, XCOM, Dofus), inside the 5e rules:
+
+- Monsters with Multiattack make every attack of it. If you drop mid-routine, the rest go to someone still standing, never to you while you are down.
+- Archers shoot from cover when they can, and use leftover movement to fall back after shooting (5e lets a creature split its movement around its action).
+- Melee monsters avoid squares next to several of you, and never walk through an opportunity attack when a safe square works.
+- Attacking a downed character is listed below Dodge and says what a hit does (a death save failure, two from within 5 ft). The GM can still choose it. When everyone on your side is down, the menu says so and the GM decides whether the enemies finish, capture or leave.
+- Monsters flee below 25% HP, or below 50% once half their side is down. Undead and constructs fight to the end.
+
 **Riders and specials.** Some monster abilities, like a giant frog grappling you on a bite, are reported to the GM, who decides how they apply. The engine never guesses at rules it can't read exactly.
 
 **After the fight.** Your HP, spent spell slots, death saves and any lasting conditions (exhaustion, or poison with time left) are written to your campaign sheet. The previous version is kept as `Kairos.md.bak`. Short-lived conditions (prone, grappled, frightened) end with the fight. A short summary goes into the session log.
@@ -36,7 +44,8 @@ All commands: `python3 scripts/tactics/combat.py -c <campaign> <command> ...`. E
 | `choose <id> <n>` | Runs option n |
 | `move <id> <square>` | Moves along the cheapest path; opportunity attacks resolve on the way |
 | `preview <id> <square>` | Cost of a move and who it would provoke, without moving |
-| `attack <id> <target> [attack]` | One attack (weapon or attack cantrip), with cover and advantage worked out |
+| `attack <id> <target> [attack]` | One attack (weapon or attack cantrip), with cover and advantage worked out; no name picks the best legal attack |
+| `multiattack <id> <target> [--option N]` | A monster's whole Multiattack as one action; parts that are not attacks (Frightful Presence) are left to the GM |
 | `dash` / `disengage` / `dodge` / `stand <id>` | Actions, and standing up from prone (half your speed) |
 | `death-save <id>` | The dying creature's death save |
 | `undo-move` | Takes back the last move, until an action, reaction or roll locks it in |
