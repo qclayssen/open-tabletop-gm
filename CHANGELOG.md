@@ -12,6 +12,23 @@ This project is the LLM-agnostic, system-flexible fork of [claude-dnd-skill](htt
 
 ## [Unreleased]
 
+### Added: continue a campaign in one step
+- `bash display/start-display.sh --campaign NAME`: starts the display for that campaign and runs `display/preflight.py`, which stops on an unknown campaign name (before touching a running display), warns when the 5e SRD data is missing or was built by an older `build_srd.py`, and says when a grid fight is waiting to resume.
+
+### Fixed
+- An action typed in the display's Party input (Stage, then Ready) never reached the GM in a normal session: it went to `.input_queue`, which only `wrapper.py` and autorun read. `check_input.py` now reads it too, once, and clears the "Queued" badge.
+- `send.py --dice-request ... --wait` said "all rolls received" but never printed the roll, so the GM could not resolve the check. It now prints each roll (`Kairos rolls 1d20+1: [8] +1 = 9 ...`).
+- `/gm new` left the previous campaign's story and party on the display. It now points the display at the new campaign and clears it. The display also no longer erases narration that arrives just after a clear.
+- A second display started for a test or demo (`GM_DISPLAY_PORT=... python3 display/gm-display-app.py`) took over `display/.port`, so the live session's scripts talked to the test display. Only `start-display.sh` writes it now.
+- `tests/test_milestone_counter.py` wrote its test player (Aldric) into the real `display/stats.json`.
+- `docs/FIRST-SESSION.md`: how to start the display and a new campaign, and how to check the display without a GM.
+- A spell cast from the grid (Cast menu, or `cast`) used a 5 ft range when the SRD data was built by an older `build_srd.py`: Fire Bolt could not reach anything. Stale spell records, including ones cached in an encounter, are now looked up again.
+
+### Added: a playable tutorial for grid combat
+- `scripts/tactics/play.py`: play a grid fight yourself in the terminal. You type your turns (`move D4`, `attack 1`, `cast magic missile 1 1 2`); the game runs the enemies as the GM would. An ASCII battle map with numbered enemies, a `reach` overlay, dice you roll yourself (or Enter to roll for you), and y/n prompts for Shield, Silvery Barbs and opportunity attacks.
+- `play.py tutorial`: ten lessons in the new Training Yard map (`display/maps/training-yard.json`) against two kobolds, then free play. Also `kobolds`, `frogs`, `mephit`, or any map and SRD monsters with `--map`; `--sheet` plays your own character; `--display` mirrors the map to the browser.
+- `docs/TUTORIAL.md`: the player's guide. `tests/test_tactics_play.py` plays whole fights with a scripted player.
+
 ### Added: grid combat milestone 4, spells and templates
 - Areas of effect on the grid (sphere, cylinder, cone, line, cube): a square is caught if its centre is inside the shape; walls block the area.
 - `cast`: spell attacks, saves (one damage roll per area, a save per creature, cover on DEX saves), Magic Missile darts, healing, Mage Armor; spells the engine cannot run still spend their slot and are narrated. The bonus-action spell rule and slot levels are enforced; nothing is spent on a refused cast.
