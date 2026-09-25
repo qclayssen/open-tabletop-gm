@@ -284,6 +284,21 @@ def test_escape_uses_the_better_of_athletics_and_acrobatics():
     assert res["escaped"] and not k.has("grappled") and "Acrobatics 11 vs DC 11" in res["text"]
 
 
+def test_breaking_free_mid_turn_gives_the_speed_back():
+    # Regression: the turn's movement was fixed when the turn started, while
+    # Kairos was grappled (speed 0), so escaping left him 0 ft for the turn.
+    k, f = caster(pos=(0, 0)), frog("frog-1", (1, 0))
+    k.reactions = "off"
+    enc = fight(f, k)
+    engine.attack(enc, roller(15, 4), "frog-1", "kairos")
+    engine.end_turn(enc, roller())
+    assert engine.remaining_movement(enc) == 0
+    actions.escape(enc, roller(supplied=[9]), "kairos")
+    assert engine.remaining_movement(enc) == 30
+    engine.move(enc, roller(), "kairos", "A2")               # still in the frog's reach
+    assert engine.remaining_movement(enc) == 25
+
+
 # ─── Help, Hide, Ready ────────────────────────────────────────────────────────
 
 def test_help_gives_the_ally_advantage_on_the_next_attack():

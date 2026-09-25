@@ -84,6 +84,8 @@ class Token:
 class TurnState:
     actor: str = ""
     movement_budget: int = 0     # feet available this turn (speed, doubled by Dash)
+    base_speed: int = None       # speed when the turn started; the budget follows later
+                                 # changes (None in older files: no adjustment)
     movement_used: int = 0
     diag_parity: int = 0         # diagonals taken so far, for the "5-10-5" variant
     action_used: bool = False
