@@ -2508,7 +2508,7 @@ _combat_run_lock = threading.Lock()      # one engine command at a time
 _current_combat: Optional[dict] = None
 
 # Commands a browser may run. Mutating ones act only for player-controlled tokens.
-_COMBAT_READ = {"reachable", "preview", "targets", "status", "spells", "preview-area"}
+_COMBAT_READ = {"reachable", "preview", "targets", "status", "spells", "preview-area", "sight"}
 _COMBAT_WRITE = {"move", "attack", "dash", "disengage", "dodge", "stand",
                  "undo-move", "end-turn", "death-save",
                  "cast", "help", "hide", "escape", "ready", "reactions"}
@@ -2592,6 +2592,14 @@ def combat_do():
         who = tokens.get(args[0]) if args else None
         if not who or who.get("controller") != "player":
             return jsonify({"error": "Only a player's own spells can be listed."}), 403
+    if cmd == "sight":
+        # Cover shading from a creature the players can see (the snapshot leaves
+        # out hidden and unseen ones), counting only the creatures they can see.
+        with _combat_lock:
+            snap = _current_combat or {}
+        if not args or args[0] not in {t.get("id") for t in snap.get("tokens", [])}:
+            return jsonify({"error": "No such creature on the map."}), 403
+        args = [args[0], "--players"]
     if cmd in _COMBAT_WRITE:
         if not _rate_ok(request.remote_addr):
             return "Too Many Requests", 429
