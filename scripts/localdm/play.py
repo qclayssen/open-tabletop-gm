@@ -39,15 +39,21 @@ from localdm.summarizer import Summarizer                       # noqa: E402
 
 ENEMY_PICK = ("You choose actions for monsters in a tabletop fight. Reply with only the "
               "number of the best option for this creature.\n/no_think")
-BIG_MOMENT = ("In one or two vivid sentences, add colour to the big moment in the Engine "
-              "section (a kill, a fall, the end of the fight). No numbers. Then the JSON "
-              "line with null for both fields.")
+FIGHT_SUMMARY = ("The fight is over. The Engine section is its full log. In 2 to 5 sentences, "
+                 "recount how it went, using only what the log says happened. No numbers, "
+                 "nothing the log does not show. Then the JSON line with null for every field.")
+COMBAT_PARSE = ("A grid fight is running on the engine. Do not narrate and do not ask for a "
+                "check: put the player's action in the JSON command field and leave the "
+                "narration empty.")
+NO_ACTION = ("(engine) I could not read that as a fight action. Name an attack, a move, a "
+             "spell or end turn.")
 NARRATE = ("Narrate what the Engine section says just happened, in 1 to 4 sentences. "
            "Then the JSON line with null for both fields.")
 CHECK_TASK = ("Narrate the outcome of that check in 1 to 4 sentences: what the character "
               "finds or fails to find. Do not mention the number or the DC. Then the JSON "
               "line with null for every field.")
 MAX_ENEMY_TURNS = 20
+LOG_CAP = 6000                # characters of fight log handed to the end-of-fight summary
 ESCALATE_EVERY = 3            # player turns between two DM-asked escalations
 SHADOW = ("Review the latest exchange against the campaign notes. In at most 3 short "
           "bullets: a contradiction to fix, a thread or NPC worth bringing back, or what to "
@@ -59,6 +65,11 @@ _OPTION = re.compile(r"^(\d+)\. ", re.M)
 def _hint(res) -> str:
     return ("Type yes or no." if res.needs_react
             else "Roll it and type the number on the die (no modifier).")
+
+
+def _waiting(pending) -> str:
+    return ("Still waiting on your answer: type yes or no." if pending.get("react")
+            else "Still waiting on your roll: type the number on the die (no modifier).")
 
 
 def _join(*parts) -> str:
@@ -90,9 +101,10 @@ class Session:
         self._narrated = []            # this turn's narration, for the display
         # combat "engine": the player's line is parsed, enemies pick by the
         # engine's policy and results are templated (autopilot.py); the model
-        # speaks only at big moments (flavor "big") or never (flavor "off").
+        # speaks once, at the end of the fight (flavor "big"), or never (flavor "off").
         self.combat, self.flavor = combat, flavor
         self.queue = []                # engine commands left in the player's plan
+        self.fight_log = []            # engine text of the running fight, summarized at its end
         self.last_target = ""
         self.last_escalation = -ESCALATE_EVERY
         # Shadow advisor: after each player turn, one advisor reviews it in the
@@ -208,17 +220,25 @@ class Session:
 
     def _template(self, engine_text: str) -> list:
         prose = autopilot.narrate(engine_text, seed=str(self.turn))
-        notes = ""
-        if self.flavor != "off" and autopilot.big_moment(engine_text):
-            notes = self._trigger_notes()
-            try:
-                r = self._dm(engine=engine_text, notes=notes, task=BIG_MOMENT)
-                prose = _join(prose, r.narration)
-            except llm.LLMError:
-                pass
         if prose:
             self._say(prose)
-        return self._notes_out(notes) + ([prose] if prose else [])
+        return [prose] if prose else []
+
+    def _close_fight(self, out: list) -> list:
+        """End the fight, then one model summary of what the engine logged (never live)."""
+        end = self.bridge.run(["end"])                 # write sheets, tracker, session log
+        self.memory.add("engine", end.text)
+        log, self.fight_log = "\n".join(self.fight_log)[-LOG_CAP:], []
+        summary = []
+        if self.flavor != "off" and log:
+            try:
+                r = self._dm(engine=log, task=FIGHT_SUMMARY)
+            except llm.LLMError:
+                r = None
+            if r and r.narration:
+                self._say(r.narration)
+                summary = [r.narration]
+        return out + summary + [end.text]
 
     # ── engine ─────────────────────────────────────────────────────────────
 
@@ -244,9 +264,12 @@ class Session:
         # maps the n-th --react onto the n-th question it asked.
         full = (list(args) + [x for n in rolls for x in ("--roll", str(n))]
                 + [x for a in reacts for x in ("--react", a)])
+        if args and args[0] == "end":                  # a fight closed by hand: forget its log
+            self.fight_log = []
         res = self.bridge.run(full)
         if res.needs_roll or res.needs_react:
-            self.pending = {"args": list(args), "rolls": list(rolls), "reacts": list(reacts)}
+            self.pending = {"args": list(args), "rolls": list(rolls), "reacts": list(reacts),
+                            "react": res.needs_react}
             return [f"{res.text}\n{_hint(res)}"]
         self.pending = None
         if args[0] == "choose" and res.code == 0:      # an enemy turn that waited on a reaction
@@ -256,19 +279,17 @@ class Session:
         if res.code != 0:
             self.queue = []
             return [f"(engine) {res.text}"]
+        if self.combat == "engine" and args[0] != "end":
+            self.fight_log.append(res.text)
         out = self._narrate(res.text) if narrate else [res.text]
         if self.combat == "engine" and "All enemies are down" in res.text:
             self.queue = []
-            end = self.bridge.run(["end"])             # write sheets, tracker, session log
-            self.memory.add("engine", end.text)
-            return out + [end.text]
+            return self._close_fight(out)
         if self.queue:                                 # the rest of the player's plan
             nxt = self.queue.pop(0)
             if nxt[0] == "end-turn" and self.combat == "engine" and self._foes_down():
                 self.queue = []                        # the kill was the last act: close the fight once
-                end = self.bridge.run(["end"])
-                self.memory.add("engine", end.text)
-                return out + [end.text]
+                return self._close_fight(out)
             return out + self._engine(nxt)
         return out + self._enemy_phase()
 
@@ -303,7 +324,7 @@ class Session:
                 args = ["choose", tid, n]
                 res = self.bridge.run(args)
                 if res.needs_roll or res.needs_react:
-                    self.pending = {"args": args, "rolls": []}
+                    self.pending = {"args": args, "rolls": [], "react": res.needs_react}
                     return self._flush(log) + [f"{res.text}\n{_hint(res)}"]
                 log.append(res.text)
             else:
@@ -319,6 +340,8 @@ class Session:
             return []
         text = "\n".join(log)
         self.memory.add("engine", text)
+        if self.combat == "engine":
+            self.fight_log.append(text)
         return self._narrate(text)
 
     # ── input ──────────────────────────────────────────────────────────────
@@ -331,7 +354,7 @@ class Session:
         if self.pending:
             low = line.lower()
             p = self.pending
-            if line.isdigit():
+            if line.isdigit() and not p.get("react"):
                 return self._engine(p["args"], p["rolls"] + [int(line)], p.get("reacts", []))
             if low in ("yes", "no", "y", "n"):
                 return self._engine(p["args"], p["rolls"], p.get("reacts", [])
@@ -348,6 +371,8 @@ class Session:
             return self._advise(line[len("/advise"):])
         if line == "/usage":
             return self._usage()
+        if self.pending:                # the engine is waiting: free text must not reach the DM
+            return [f"(engine) {_waiting(self.pending)}"]
         return self._player_turn(line)
 
     def _ability_check(self, spec: str, line: str) -> list:
@@ -432,8 +457,18 @@ class Session:
         auto = self._autopilot(line)
         if auto is not None:
             return auto
-        notes = _join(self._take_notes(), self._trigger_notes())
+        in_fight = self.combat == "engine" and self._players_turn()
+        notes = "" if in_fight else _join(self._take_notes(), self._trigger_notes())
         engine = self._engine_context()
+        if in_fight:                     # the model only reads the action; the engine narrates
+            r = self._dm(player=line, engine=engine, task=COMBAT_PARSE)
+            self.turn += 1
+            self.memory.add("player", line)
+            args = parse_player_command(r.command) if r.command else None
+            if not args:
+                return [NO_ACTION]
+            snap = self.bridge.snapshot()
+            return self._engine(resolve_names(args, snap["tokens"]) if snap else args)
         self.turn += 1
         r = self._dm(player=line, engine=engine, notes=notes)
         # Small models escalate far too often (every turn in the first live run).
@@ -469,10 +504,10 @@ def main(argv=None) -> int:
     ap.add_argument("--budget", type=int, default=12000, help="prompt size budget, in characters")
     ap.add_argument("--combat", choices=["engine", "model"],
                     default=os.environ.get("GM_COMBAT", "engine"),
-                    help="engine (default): grid combat runs with no model call except "
-                         "big moments; model: the DM model reads actions and picks for enemies")
+                    help="engine (default): grid combat runs with no model call until "
+                         "the end-of-fight summary; model: the DM model reads actions and picks for enemies")
     ap.add_argument("--flavor", choices=["big", "off"], default=os.environ.get("GM_FLAVOR", "big"),
-                    help="engine combat: one model line at a kill, a fall or the end (big), or none")
+                    help="engine combat: one model summary when the fight ends (big), or none")
     ap.add_argument("--no-shadow", action="store_true",
                     help="no background advisor review after each turn (also GM_SHADOW=0)")
     ap.add_argument("--display-url", default="", metavar="URL",

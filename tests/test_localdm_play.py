@@ -328,3 +328,104 @@ def test_the_last_kill_closes_the_fight_without_a_second_end_turn(tmp_path):
     s.queue = [["end-turn"]]
     out = s._engine(["attack", "kairos", "frog-1"])
     assert ["end-turn"] not in b.ran and ["end"] in b.ran and out[-1] == "Combat ended after round 1."
+
+
+def _no_model(m, msgs, role):
+    raise AssertionError("model called")
+
+
+def test_free_text_while_a_roll_waits_never_reaches_the_model(tmp_path):
+    c = FakeClient(_no_model)
+    b = FakeBridge([fight()], {"status": lambda a: Result(0, "Round 1.")})
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path), bridge=b, combat="engine")
+    s.pending = {"args": ["attack", "kairos", "frog-1"], "rolls": [], "react": True}
+    out = s.handle("the frog looks badly hurt, right?")
+    assert out == ["(engine) Still waiting on your answer: type yes or no."] and not c.calls
+    s.pending["react"] = False
+    assert "roll" in s.handle("what now")[0] and not c.calls
+    assert s.pending is not None
+
+
+def test_in_a_fight_the_model_only_parses_and_its_narration_is_dropped(tmp_path, monkeypatch):
+    monkeypatch.setattr(Session, "_autopilot", lambda self, line: None)   # the model path
+    replies = iter(['The frog is badly hurt!\n{"escalate": null, "check": "Dexterity DC 13", '
+                    '"command": "attack kairos frog-1 dagger"}'])
+    c = FakeClient(lambda m, msgs, role: next(replies))
+    b = FakeBridge([fight()], {
+        "status": lambda a: Result(0, "Round 1."),
+        "attack": lambda a: Result(0, "Kairos Dagger -> Giant Frog 1: 5 vs AC 11, miss."),
+        "options": lambda a: Result(0, "no options"),
+        "end-turn": lambda a: Result(0, "Turn passes.")})
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path), bridge=b, combat="engine")
+    out = "\n".join(s.handle("I stab the wounded frog"))
+    assert "badly hurt" not in out and "twists aside" in out and len(c.calls) == 1
+    assert ["attack", "kairos", "frog-1", "dagger"] in b.ran
+    assert not any(a[0] == "roll" for a in b.ran)          # no invented ability check
+
+
+def test_in_a_fight_an_unreadable_line_runs_nothing(tmp_path, monkeypatch):
+    monkeypatch.setattr(Session, "_autopilot", lambda self, line: None)   # the model path
+    c = FakeClient(lambda m, msgs, role: "You shout at it." + NULLS)
+    b = FakeBridge([fight()], {"status": lambda a: Result(0, "Round 1.")})
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path), bridge=b, combat="engine")
+    out = s.handle("I taunt the frog")
+    assert len(out) == 1 and out[0].startswith("(engine) I could not read") and "shout" not in out[0]
+    assert {a[0] for a in b.ran} <= {"status"}            # read-only context, no action
+
+
+def _last_kill_session(tmp_path, flavor, replies):
+    snap = fight()
+    for t in snap["tokens"]:
+        if t["side"] == "enemy":
+            t["dead"], t["hp"] = True, 0
+    c = FakeClient(lambda m, msgs, role: next(replies))
+    b = FakeBridge([snap], {"attack": lambda a: Result(0, "Kairos Fire Bolt: Giant Frog dies. "
+                                                          "All enemies are down."),
+                            "end": lambda a: Result(0, "Combat ended after round 1.")})
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path), bridge=b, combat="engine",
+                flavor=flavor)
+    return s, c
+
+
+def test_the_model_speaks_once_at_the_end_of_the_fight_from_the_engine_log(tmp_path):
+    s, c = _last_kill_session(tmp_path, "big", iter(["The last frog falls." + NULLS]))
+    s.fight_log = ["Kairos Dagger -> Giant Frog 1: 5 vs AC 11, miss."]
+    out = s._engine(["attack", "kairos", "frog-1"])
+    assert len(c.calls) == 1                                # the kill itself made no model call
+    assert "Kairos Dagger -> Giant Frog 1: 5 vs AC 11, miss." in user_text(c.calls[0])
+    assert "The last frog falls." in out and out[-1] == "Combat ended after round 1."
+    assert s.fight_log == []
+
+
+def test_flavor_off_means_no_model_call_at_all(tmp_path):
+    s, c = _last_kill_session(tmp_path, "off", iter([]))
+    out = s._engine(["attack", "kairos", "frog-1"])
+    assert not c.calls and out[-1] == "Combat ended after round 1."
+
+
+def test_a_number_typed_at_a_reaction_prompt_is_not_a_roll(tmp_path):
+    c = FakeClient(_no_model)
+    b = FakeBridge([fight()], {})
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path), bridge=b, combat="engine")
+    s.pending = {"args": ["choose", "frog-1", "1"], "rolls": [], "reacts": [], "react": True}
+    out = s.handle("14")
+    assert out == ["(engine) Still waiting on your answer: type yes or no."]
+    assert not b.ran and s.pending["rolls"] == []
+
+
+def test_a_fight_closed_by_hand_forgets_its_log(tmp_path):
+    c = FakeClient(_no_model)
+    b = FakeBridge([fight()], {"end": lambda a: Result(0, "Combat ended.")})
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path), bridge=b, combat="engine")
+    s.fight_log = ["old fight line"]
+    s.handle("/c end")
+    assert s.fight_log == [] and not c.calls
+
+
+def test_a_failed_summary_still_returns_the_end_text(tmp_path):
+    def boom(m, msgs, role):
+        raise llm.LLMError("down")
+    s, c = _last_kill_session(tmp_path, "big", iter([]))
+    s.local = s.client = FakeClient(boom)
+    out = s._engine(["attack", "kairos", "frog-1"])
+    assert out[-1] == "Combat ended after round 1." and s.fight_log == []
