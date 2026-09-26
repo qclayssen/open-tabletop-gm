@@ -50,3 +50,14 @@ def test_guard_flags_speech_and_feelings_for_the_player():
 def test_guard_allows_world_and_npc_narration():
     assert not reply.speaks_for_player('The student flinches. "Orientation," he whispers.')
     assert not reply.speaks_for_player("Your satchel holds a spellbook and a quill.")
+
+
+def test_cut_off_json_line_is_not_narration():
+    r = reply.parse('The door creaks open.\n{"escalate": ')
+    assert r == reply.DMReply("The door creaks open.")
+
+
+def test_check_field_and_prompt_tail():
+    r = reply.parse('You reach the lectern.\n\nWhat do you do?\n'
+                    '{"escalate": null, "command": null, "check": "Investigation 13"}')
+    assert r.check == "Investigation 13" and r.narration == "You reach the lectern."

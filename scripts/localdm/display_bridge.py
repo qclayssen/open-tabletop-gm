@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import re
 import ssl
 import sys
 import time
@@ -106,11 +107,11 @@ class Display:
             self._ctx.check_hostname = False
             self._ctx.verify_mode = ssl.CERT_NONE
 
-    def _post(self, payload: dict) -> bool:
+    def _post(self, payload: dict, path: str = "/chunk") -> bool:
         headers = {"Content-Type": "application/json"}
         if self.token:
             headers["X-DND-Token"] = self.token
-        req = urllib.request.Request(f"{self.url}/chunk", data=json.dumps(payload).encode("utf-8"),
+        req = urllib.request.Request(f"{self.url}{path}", data=json.dumps(payload).encode("utf-8"),
                                      headers=headers, method="POST")
         try:
             with urllib.request.urlopen(req, timeout=self.timeout, context=self._ctx) as resp:
@@ -133,6 +134,45 @@ class Display:
     def register(self) -> bool:
         self.registered = self._post({"campaign": self.campaign})
         return self.registered
+
+    def push_party(self, players: list) -> bool:
+        """Fill the sidebar and the Party input picker; a fresh display starts empty."""
+        if not players or time.monotonic() < self.retry_at:
+            return False
+        return self._post({"players": players, "replace_players": True}, "/stats")
+
+    def request_roll(self, character: str, modifier: int, label: str, dc: int,
+                     wait: float = 180.0):
+        """Ask the player to roll in the browser (Roll button or Phone Mode); the d20 total,
+        or None if the display is down or nobody rolled in time."""
+        if time.monotonic() < self.retry_at:
+            return None
+        body = {"character": character, "spec": "1d20", "modifier": modifier,
+                "label": label, "dc": dc}
+        headers = {"Content-Type": "application/json"}
+        if self.token:
+            headers["X-DND-Token"] = self.token
+
+        def call(url, data=None, method="GET"):
+            req = urllib.request.Request(url, data=data, headers=headers, method=method)
+            with urllib.request.urlopen(req, timeout=self.timeout, context=self._ctx) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        try:
+            rid = call(f"{self.url}/dice-request", json.dumps(body).encode("utf-8"), "POST")["request_id"]
+            deadline = time.monotonic() + wait
+            while time.monotonic() < deadline:
+                time.sleep(1.0)
+                st = call(f"{self.url}/dice-request/{rid}")
+                if st.get("complete"):
+                    for text in st.get("results", []):
+                        m = re.search(r"=\s*(-?\d+)\s*(?:\W|$)", str(text))
+                        if m:
+                            return int(m.group(1))
+                    return None
+            call(f"{self.url}/dice-request/{rid}", method="DELETE")
+        except Exception:
+            pass
+        return None
 
     def narrate(self, text: str) -> bool:
         """Send one turn's narration; registers first if startup could not."""

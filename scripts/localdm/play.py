@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import os
 import pathlib
+import random
 import re
 import shlex
 import sys
@@ -43,11 +44,15 @@ BIG_MOMENT = ("In one or two vivid sentences, add colour to the big moment in th
               "line with null for both fields.")
 NARRATE = ("Narrate what the Engine section says just happened, in 1 to 4 sentences. "
            "Then the JSON line with null for both fields.")
+CHECK_TASK = ("Narrate the outcome of that check in 1 to 4 sentences: what the character "
+              "finds or fails to find. Do not mention the number or the DC. Then the JSON "
+              "line with null for every field.")
 MAX_ENEMY_TURNS = 20
 ESCALATE_EVERY = 3            # player turns between two DM-asked escalations
 SHADOW = ("Review the latest exchange against the campaign notes. In at most 3 short "
           "bullets: a contradiction to fix, a thread or NPC worth bringing back, or what to "
           "set up next. If nothing needs attention, answer only: nothing.")
+_DIRECTIVES = re.compile(r"^(?:\s*\[\[.*?\]\])+")
 _OPTION = re.compile(r"^(\d+)\. ", re.M)
 
 
@@ -71,6 +76,7 @@ class Session:
         self.camp_dir = pathlib.Path(camp_dir)
         self.bridge = bridge or Bridge(campaign, self.camp_dir)
         self.memory = Memory(self.camp_dir)
+        self.memory.seed_from_tail()
         # reasoning_effort for local-tier calls; advisors (cloud) get none sent.
         self.reasoning = llm.reasoning_from_env() if reasoning == "env" else reasoning
         self.summarizer = Summarizer(self.local, models.fast, self.memory,
@@ -79,6 +85,8 @@ class Session:
         self.pending = None            # {"args": [...], "rolls": [...]} while the player rolls
         self.saved_notes = ""          # from /advise, used by the next DM call
         self.turn = 0
+        self.display = None            # set by main(): the browser display, if any
+        self.directives = []           # table settings from the display, for the next DM call
         self._narrated = []            # this turn's narration, for the display
         # combat "engine": the player's line is parsed, enemies pick by the
         # engine's policy and results are templated (autopilot.py); the model
@@ -103,7 +111,8 @@ class Session:
             return ""
 
     def _digest(self) -> str:
-        return _join(context.state_digest(self._state()), context.sheet_digest(self.camp_dir))
+        return _join(context.state_digest(self._state()), context.sheet_digest(self.camp_dir),
+                     context.notes_digest(self.camp_dir))
 
     AGENCY_FIX = ("Your last draft wrote speech, thoughts or feelings for the player's "
                   "character. Rewrite it: narrate only the world's and the NPCs' response, "
@@ -113,11 +122,13 @@ class Session:
         digest = self._digest()
 
         def call(extra_task):
+            if self.directives:
+                extra_task = _join(extra_task, "Table settings: " + " ".join(self.directives))
             msgs = context.build_messages(context.dm_prompt(), digest,
                                           self.memory.summary(), self.memory.unsummarized(),
                                           engine=engine, notes=notes, player=player,
                                           task=extra_task, budget=self.budget)
-            return reply.parse(self.local.chat(self.models.dm, msgs, max_tokens=500, role="dm",
+            return reply.parse(self.local.chat(self.models.dm, msgs, max_tokens=600, role="dm",
                                                reasoning=self.reasoning).text)
 
         r = call(task)
@@ -314,6 +325,7 @@ class Session:
 
     def handle(self, line: str) -> list:
         line = line.strip()
+        line = self._take_directives(line)
         if not line:
             return []
         if self.pending:
@@ -337,6 +349,50 @@ class Session:
         if line == "/usage":
             return self._usage()
         return self._player_turn(line)
+
+    def _ability_check(self, spec: str, line: str) -> list:
+        """The DM asked for a check: the player rolls in the browser (or it is rolled here
+        with no display), then the DM narrates the outcome."""
+        m = re.match(r"\s*([A-Za-z ]+?)\s*(?:DC\s*)?(\d+)?\s*$", spec)
+        skill, dc = (m.group(1), int(m.group(2) or 12)) if m else (spec, 12)
+        found = context.skill_bonus(self.camp_dir, skill)
+        who, skill, bonus = found or ("", skill.title(), 0)
+        total = None
+        if self.display is not None and self.display.registered:
+            self.display.narrate(self.take_narration())      # the scene first, then the roll prompt
+            total = self.display.request_roll(who or "any", bonus, f"{skill} check", dc)
+        if total is None:
+            total = random.randint(1, 20) + bonus
+        article = "an" if skill[:1] in "AEIOU" else "a"
+        result = (f"{who or 'The player'} rolled {article} {skill} check: {total} against DC "
+                  f"{dc}: {'success' if total >= dc else 'failure'}.")
+        self.memory.add("engine", result)
+        r = self._dm(engine=result, task=CHECK_TASK)
+        if r.narration:
+            self._say(r.narration)
+            return [f"({result})", r.narration]
+        return [f"({result})"]
+
+    @staticmethod
+    def _directive(text: str) -> str:
+        """A display setting as an instruction. The narration-length slider defaults to
+        500 words, which read as "write long" to a small model; only a smaller target counts,
+        and as a cap."""
+        m = re.search(r"narration length.*?~?\s*(\d+)\s*words", text, re.I)
+        if m:
+            n = int(m.group(1))
+            return f"Narration cap: {n} words at most." if n < 300 else ""
+        return text.strip()
+
+    def _take_directives(self, line: str) -> str:
+        """[[...]] lines from the display (narration length, roll mode) steer the next DM call."""
+        m = _DIRECTIVES.match(line)
+        self.directives = []
+        if m:
+            self.directives = [self._directive(d) for d in re.findall(r"\[\[(.*?)\]\]", m.group(0))]
+            self.directives = [d for d in self.directives if d]
+            line = line[m.end():].strip()
+        return line
 
     def _advise(self, rest: str) -> list:
         try:
@@ -390,6 +446,8 @@ class Session:
         if r.narration:
             self._say(r.narration)
             out.append(r.narration)
+        if r.check and not self._players_turn():
+            out += self._ability_check(r.check, line)
         args = parse_player_command(r.command) if r.command else None
         if args and self._players_turn():
             snap = self.bridge.snapshot()
@@ -440,9 +498,11 @@ def main(argv=None) -> int:
           f"{client.base_url}. /quit to stop.")
     display = display_bridge.from_args(args.campaign, url=args.display_url,
                                        disabled=args.no_display)
+    s.display = display
     if display:
         os.environ["GM_DISPLAY_URL"] = display.url     # grid combat pushes (tactics/sync.py) follow
-        display.register()
+        if display.register():
+            display.push_party(context.party_stats(camp_dir))
     else:
         os.environ["TACTICS_NO_DISPLAY"] = "1"
     while True:
