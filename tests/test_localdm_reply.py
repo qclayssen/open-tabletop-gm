@@ -39,3 +39,14 @@ def test_blank_or_wrong_typed_fields_become_none():
 def test_broken_json_stays_in_the_narration():
     text = 'Hm.\n{"escalate": }'
     assert reply.parse(text) == reply.DMReply(text)
+
+
+def test_guard_flags_speech_and_feelings_for_the_player():
+    assert reply.speaks_for_player('"So," you say, "what is this?"')
+    assert reply.speaks_for_player("You feel a chill as the door opens.")
+    assert reply.speaks_for_player('"Later," you murmur.')
+
+
+def test_guard_allows_world_and_npc_narration():
+    assert not reply.speaks_for_player('The student flinches. "Orientation," he whispers.')
+    assert not reply.speaks_for_player("Your satchel holds a spellbook and a quill.")

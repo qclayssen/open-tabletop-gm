@@ -46,3 +46,15 @@ def parse(text: str) -> DMReply:
         else:
             data = {}
     return DMReply(text, _text_field(data, "escalate"), _text_field(data, "command"))
+
+
+# Guardrail: the DM may not put words, thoughts or feelings in the player's mouth.
+_PLAYER_VOICE = re.compile(
+    r"\byou\s+(?:say|ask|reply|answer|whisper|mutter|murmur|shout|call out|announce|"
+    r"decide|realize|feel|think|wonder|smile|nod|sigh|laugh|remember)\b"
+    r"|[\"\u201d],?\s+you\s+\w+", re.I)
+
+
+def speaks_for_player(narration: str) -> bool:
+    """True when the narration writes speech, thoughts or feelings for the player."""
+    return bool(_PLAYER_VOICE.search(narration or ""))
