@@ -665,8 +665,11 @@ def _parse_scale_tables(class_doc: dict) -> dict:
     """
     tables = {}
     system = class_doc.get("system", {}) if "system" in class_doc else class_doc
-    for adv in system.get("advancement", []):
-        if adv.get("type") != "ScaleValue":
+    advancement = system.get("advancement") or []
+    if isinstance(advancement, dict):  # newer Foundry data keys advancements by id
+        advancement = advancement.values()
+    for adv in advancement:
+        if not isinstance(adv, dict) or adv.get("type") != "ScaleValue":
             continue
         title  = adv.get("title", "").strip()
         config = adv.get("configuration", {}) or {}
