@@ -53,6 +53,7 @@ CHECK_TASK = ("Narrate the outcome of that check in 1 to 4 sentences: what the c
               "finds or fails to find. Do not mention the number or the DC. Then the JSON "
               "line with null for every field.")
 MAX_ENEMY_TURNS = 20
+LOG_CAP = 6000                # characters of fight log handed to the end-of-fight summary
 ESCALATE_EVERY = 3            # player turns between two DM-asked escalations
 SHADOW = ("Review the latest exchange against the campaign notes. In at most 3 short "
           "bullets: a contradiction to fix, a thread or NPC worth bringing back, or what to "
@@ -227,7 +228,7 @@ class Session:
         """End the fight, then one model summary of what the engine logged (never live)."""
         end = self.bridge.run(["end"])                 # write sheets, tracker, session log
         self.memory.add("engine", end.text)
-        log, self.fight_log = "\n".join(self.fight_log), []
+        log, self.fight_log = "\n".join(self.fight_log)[-LOG_CAP:], []
         summary = []
         if self.flavor != "off" and log:
             try:
@@ -263,6 +264,8 @@ class Session:
         # maps the n-th --react onto the n-th question it asked.
         full = (list(args) + [x for n in rolls for x in ("--roll", str(n))]
                 + [x for a in reacts for x in ("--react", a)])
+        if args and args[0] == "end":                  # a fight closed by hand: forget its log
+            self.fight_log = []
         res = self.bridge.run(full)
         if res.needs_roll or res.needs_react:
             self.pending = {"args": list(args), "rolls": list(rolls), "reacts": list(reacts),
@@ -276,7 +279,7 @@ class Session:
         if res.code != 0:
             self.queue = []
             return [f"(engine) {res.text}"]
-        if self.combat == "engine":
+        if self.combat == "engine" and args[0] != "end":
             self.fight_log.append(res.text)
         out = self._narrate(res.text) if narrate else [res.text]
         if self.combat == "engine" and "All enemies are down" in res.text:
@@ -351,7 +354,7 @@ class Session:
         if self.pending:
             low = line.lower()
             p = self.pending
-            if line.isdigit():
+            if line.isdigit() and not p.get("react"):
                 return self._engine(p["args"], p["rolls"] + [int(line)], p.get("reacts", []))
             if low in ("yes", "no", "y", "n"):
                 return self._engine(p["args"], p["rolls"], p.get("reacts", [])
@@ -457,15 +460,16 @@ class Session:
         in_fight = self.combat == "engine" and self._players_turn()
         notes = "" if in_fight else _join(self._take_notes(), self._trigger_notes())
         engine = self._engine_context()
-        self.turn += 1
         if in_fight:                     # the model only reads the action; the engine narrates
             r = self._dm(player=line, engine=engine, task=COMBAT_PARSE)
+            self.turn += 1
             self.memory.add("player", line)
             args = parse_player_command(r.command) if r.command else None
             if not args:
                 return [NO_ACTION]
             snap = self.bridge.snapshot()
             return self._engine(resolve_names(args, snap["tokens"]) if snap else args)
+        self.turn += 1
         r = self._dm(player=line, engine=engine, notes=notes)
         # Small models escalate far too often (every turn in the first live run).
         if r.escalate and self.turn - self.last_escalation >= ESCALATE_EVERY:

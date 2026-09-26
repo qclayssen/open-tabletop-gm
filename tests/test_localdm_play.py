@@ -401,3 +401,31 @@ def test_flavor_off_means_no_model_call_at_all(tmp_path):
     s, c = _last_kill_session(tmp_path, "off", iter([]))
     out = s._engine(["attack", "kairos", "frog-1"])
     assert not c.calls and out[-1] == "Combat ended after round 1."
+
+
+def test_a_number_typed_at_a_reaction_prompt_is_not_a_roll(tmp_path):
+    c = FakeClient(_no_model)
+    b = FakeBridge([fight()], {})
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path), bridge=b, combat="engine")
+    s.pending = {"args": ["choose", "frog-1", "1"], "rolls": [], "reacts": [], "react": True}
+    out = s.handle("14")
+    assert out == ["(engine) Still waiting on your answer: type yes or no."]
+    assert not b.ran and s.pending["rolls"] == []
+
+
+def test_a_fight_closed_by_hand_forgets_its_log(tmp_path):
+    c = FakeClient(_no_model)
+    b = FakeBridge([fight()], {"end": lambda a: Result(0, "Combat ended.")})
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path), bridge=b, combat="engine")
+    s.fight_log = ["old fight line"]
+    s.handle("/c end")
+    assert s.fight_log == [] and not c.calls
+
+
+def test_a_failed_summary_still_returns_the_end_text(tmp_path):
+    def boom(m, msgs, role):
+        raise llm.LLMError("down")
+    s, c = _last_kill_session(tmp_path, "big", iter([]))
+    s.local = s.client = FakeClient(boom)
+    out = s._engine(["attack", "kairos", "frog-1"])
+    assert out[-1] == "Combat ended after round 1." and s.fight_log == []
