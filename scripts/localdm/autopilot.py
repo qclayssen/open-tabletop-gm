@@ -143,9 +143,13 @@ def plan(line: str, enc, pc_id: str, last_target: str = "") -> Plan | None:
         return Plan([["end-turn"]])
     if _has(text, END) and not _has(text, ATTACK + MOVE):
         return Plan([["end-turn"]])
-    cmds, act = [], None
+    cmds, act, after = [], None, []
     grid = enc.board()
     adjacent = any(grid.distance(pc.pos, f.pos) <= 5 for f in _living_foes(enc, pc))
+    weapon = _attack_name(text, pc)
+    spell = None if weapon else _spell(text, enc, pc)
+    attacking = _has(text, ATTACK) or bool(weapon or spell)
+    retreating = _has(text, RETREAT)          # "attack, then step back": the attack comes first
 
     if pc.has("prone") and _has(text, SIMPLE["stand"] + MOVE + RETREAT):
         cmds.append(["stand", pc_id])
@@ -155,21 +159,21 @@ def plan(line: str, enc, pc_id: str, last_target: str = "") -> Plan | None:
             parse_square(sq.group(1))
         except ValueError:
             return Plan(ask=f"{sq.group(1).upper()} is not a square.")
-        if _has(text, RETREAT + ("disengage",)) and adjacent:
+        if _has(text, RETREAT + ("disengage",)) and adjacent and not (attacking and retreating):
             cmds.append(["disengage", pc_id])
             act = "disengage"
         elif _has(text, SIMPLE["dash"]):
             cmds.append(["dash", pc_id])
             act = "dash"
-        cmds.append(["move", pc_id, sq.group(1).upper()])
-    elif _has(text, RETREAT):
+        (after if attacking and retreating else cmds).append(["move", pc_id, sq.group(1).upper()])
+    elif retreating:
         dest = _retreat_square(enc, pc)
         if dest is None:
             return Plan(ask="There is nowhere farther from the enemy to go. Dodge, or fight?")
-        if adjacent:
+        if adjacent and not attacking:
             cmds.append(["disengage", pc_id])
             act = "disengage"
-        cmds.append(["move", pc_id, dest])
+        (after if attacking else cmds).append(["move", pc_id, dest])
 
     for verb in ("dash", "dodge", "disengage", "stand"):
         if act is None and _has(text, SIMPLE[verb]) and not _has(text, ATTACK):
@@ -178,8 +182,6 @@ def plan(line: str, enc, pc_id: str, last_target: str = "") -> Plan | None:
             act = verb if verb != "stand" else act
 
     target = ""
-    weapon = _attack_name(text, pc)
-    spell = None if weapon else _spell(text, enc, pc)
     if act is None and (_has(text, ATTACK) or weapon or spell):
         foe, question = _target(text, enc, pc, last_target)
         if foe is None:
@@ -192,9 +194,10 @@ def plan(line: str, enc, pc_id: str, last_target: str = "") -> Plan | None:
             cmds.append(["attack", pc_id, foe.id] + ([weapon] if weapon else []))
         act = "attack"
 
+    cmds += after
     if not cmds:
         return None
-    if act is not None:
+    if act is not None or after:
         cmds.append(["end-turn"])
     return Plan(cmds, target=target)
 
@@ -233,7 +236,20 @@ def _fill(kind, rng, **kw):
     return rng.choice(T[kind]).format(**kw)
 
 
-def _line(raw: str, rng) -> str:
+_NBSP = "\u00a0"
+
+
+def _line(raw: str, rng, names=()) -> str:
+    # The attacker is the start of the line; a multi-word name ("Giant Frog 2") is held together
+    # so the regex does not split it into attacker "Giant" and weapon "Frog 2 Bite".
+    for n in sorted(names, key=len, reverse=True):
+        if " " in n and raw.startswith(n + " "):
+            raw = n.replace(" ", _NBSP) + raw[len(n):]
+            break
+    return _prose(raw, rng).replace(_NBSP, " ")
+
+
+def _prose(raw: str, rng) -> str:
     m = _ATK.match(raw)
     if m:
         a, w, t, rest = m["a"], m["w"], m["t"], m["rest"].strip()
@@ -267,7 +283,7 @@ _LABEL = re.compile(r"^[^\[]*?\[[^\]]+\](?:\s*\[[^\]]+\])*\.\s*")     # "Retreat
 _SKIP = re.compile(r"^(Then: end-turn|Next: options .*|Waiting for .*|.* cannot act: end-turn\.)$")
 
 
-def narrate(engine_text: str, seed: str = "") -> str:
+def narrate(engine_text: str, seed: str = "", names=()) -> str:
     """Prose for engine result lines. Numbers come only from the engine text.
     Seeded (crc32, stable across processes) so a replay reads the same."""
     rng = random.Random(zlib.crc32(f"{seed}|{engine_text}".encode("utf-8")))
@@ -278,7 +294,7 @@ def narrate(engine_text: str, seed: str = "") -> str:
             continue
         # One engine line can hold several sentences (a move, then an attack).
         parts = re.split(r"(?<=\.) (?=[A-Z][^.>]* -> )", raw)
-        out.append(" ".join(_line(p, rng) for p in parts))
+        out.append(" ".join(_line(p, rng, names) for p in parts))
     return "\n".join(out)
 
 

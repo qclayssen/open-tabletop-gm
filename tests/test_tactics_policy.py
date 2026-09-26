@@ -78,3 +78,11 @@ def test_choose_auto_runs_the_pick():
     enc = fight(frog(pos=(1, 0)), kairos((0, 0)))
     data = policy.choose_auto(enc, roller(15, 3, 3), "frog-1", "deadly")
     assert data["profile"] == "beast" and data["text"]
+
+
+def test_a_healthy_melee_beast_does_not_back_off():
+    f = frog(pos=(3, 0))
+    enc = fight(f, kairos((0, 0)))
+    t = enc.tokens["frog-1"]
+    kinds = [o["kind"] for o in ai.options(enc, t, limit=ai.ALL)]
+    assert "retreat" not in kinds

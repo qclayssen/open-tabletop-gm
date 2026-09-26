@@ -123,3 +123,23 @@ def test_the_enemy_menu_label_is_not_narrated():
     out = autopilot.narrate(text, seed="1")
     assert "[" not in out and "keep distance" not in out and "P2" in out
     assert autopilot.narrate("Move to A12 and Bite Kairos (60% to hit, ~2.7 dmg) [beast].") == ""
+
+
+def test_attack_and_step_back_runs_the_attack_first_then_the_move():
+    p = autopilot.plan("I attack the frog with my dagger and try to step back", two_frogs(),
+                       "kairos")
+    kinds = [c[0] for c in p.cmds]
+    assert kinds[0] == "attack" and "move" in kinds and "disengage" not in kinds
+    assert kinds.index("attack") < kinds.index("move") and kinds[-1] == "end-turn"
+
+
+def test_a_plain_retreat_still_disengages():
+    p = autopilot.plan("I back away", two_frogs(), "kairos")
+    assert [c[0] for c in p.cmds][:2] == ["disengage", "move"]
+
+
+def test_a_multi_word_attacker_is_not_split():
+    raw = "Giant Frog 2 Bite -> Kairos: 9 vs AC 12, miss."
+    text = autopilot.narrate(raw, names=["Kairos", "Giant Frog 2"])
+    assert "Giant Frog 2" in text and "Giant's" not in text and "Frog 2 Bite" not in text.replace(
+        "Giant Frog 2's Bite", "")

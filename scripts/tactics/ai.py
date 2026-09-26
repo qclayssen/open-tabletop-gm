@@ -52,6 +52,13 @@ def _hostiles(enc, t):
             if h.active and engine.hostile(t, h) and not h.has("hidden")]
 
 
+def _kites(t) -> bool:
+    """Has something to do from range, so backing off at full health makes sense."""
+    return (any(a.get("type") in ("ranged", "melee_or_ranged") or a.get("range")
+                for a in t.attacks if "unparsed" not in a.get("flags", []))
+            or bool(spells.area_actions(t)))
+
+
 def _held(enc, t):
     """The creature t is grappling, or None."""
     held = fx.grappling(enc, t)
@@ -281,7 +288,8 @@ def options(enc, token_ref, limit: int = 5) -> list:
     flee_below, flee_tag = _morale(enc, t)
     low_hp = t.hp <= t.max_hp * flee_below
     held = _held(enc, t)
-    if threats and left > 0 and (held is None or low_hp):
+    if threats and left > 0 and (held is None or low_hp) and (
+            low_hp or 2 * t.hp <= t.max_hp or _kites(t)):   # a healthy melee-only creature closes in
         def nearest(pos):
             return min(grid.distance(pos, h.pos) for h in threats)
         far = max(squares, key=lambda p: (nearest(p), -squares[p]))
