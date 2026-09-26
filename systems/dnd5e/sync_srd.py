@@ -23,7 +23,7 @@ OUT_FILE = os.path.join(DATA_DIR, "dnd5e_srd.json")
 BUILD_PY = os.path.join(os.path.dirname(os.path.abspath(__file__)), "build_srd.py")
 
 APIS = {
-    "5e-bits":    "https://api.github.com/repos/5e-bits/5e-database/commits/main?per_page=1",
+    "5e-bits":    "https://api.github.com/repos/5e-bits/5e-srd-api/commits?sha=main&path=packages/5e-database&per_page=1",
     "foundryvtt": "https://api.github.com/repos/foundryvtt/dnd5e/commits/master?per_page=1",
 }
 

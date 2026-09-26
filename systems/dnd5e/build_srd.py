@@ -3,7 +3,7 @@
 build_srd.py — build the bundled dnd5e_srd.json from two upstream sources
 
 Sources:
-  • 5e-bits/5e-database  (MIT + OGL)    — spells, equipment, magic items, conditions, monsters
+  • 5e-bits/5e-srd-api packages/5e-database (MIT + OGL) — spells, equipment, magic items, conditions, monsters
   • foundryvtt/dnd5e     (MIT + CC-BY-4.0) — class features, racial traits (2024 SRD)
 
 Output: systems/dnd5e/data/dnd5e_srd.json
@@ -34,14 +34,17 @@ except ImportError:
 DATA_DIR  = str(pathlib.Path(__file__).parent / "data")
 OUT_FILE  = os.path.join(DATA_DIR, "dnd5e_srd.json")
 
+# The standalone 5e-bits/5e-database repo is archived. The data now lives in the
+# 5e-srd-api monorepo under packages/5e-database, and only there gets updates.
+#
 # 5e-bits added a language directory (src/<ruleset>/<lang>/) — the files are
 # NOT at src/2014/ any more, and every one of them 404s there. A fetch
 # failure here used to be soft, so the old path produced an empty dataset
 # and a build that still reported success.
-RAW_5EBITS   = "https://raw.githubusercontent.com/5e-bits/5e-database/main/src/2014/en"
+RAW_5EBITS   = "https://raw.githubusercontent.com/5e-bits/5e-srd-api/main/packages/5e-database/src/2014/en"
 RAW_FVTT     = "https://raw.githubusercontent.com/foundryvtt/dnd5e/master"
 FVTT_TREE    = "https://api.github.com/repos/foundryvtt/dnd5e/git/trees/master?recursive=1"
-BITS_COMMITS = "https://api.github.com/repos/5e-bits/5e-database/commits/main?per_page=1"
+BITS_COMMITS = "https://api.github.com/repos/5e-bits/5e-srd-api/commits?sha=main&path=packages/5e-database&per_page=1"
 FVTT_COMMITS = "https://api.github.com/repos/foundryvtt/dnd5e/commits/master?per_page=1"
 
 BITS_FILES = {
@@ -909,7 +912,7 @@ def cmd_build(skip_fvtt: bool = False) -> None:
     os.makedirs(DATA_DIR, exist_ok=True)
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    print("── 5e-bits/5e-database ─────────────────────────────────────────")
+    print("── 5e-bits/5e-srd-api (packages/5e-database) ─────────────────────────────────────────")
     bits_sha = _latest_sha(BITS_COMMITS)
     categories = _build_5ebits()
 
@@ -933,7 +936,8 @@ def cmd_build(skip_fvtt: bool = False) -> None:
             "record_counts": counts,
             "sources": {
                 "5e-bits": {
-                    "repo":       "5e-bits/5e-database",
+                    "repo":       "5e-bits/5e-srd-api",
+                    "path":       "packages/5e-database",
                     "branch":     "main",
                     "sha":        bits_sha,
                     "fetched_at": now,
