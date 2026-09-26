@@ -24,7 +24,7 @@ POLL = 1.0
 
 def drain() -> list:
     out = subprocess.run([sys.executable, str(ROOT / "display" / "check_input.py")],
-                         cwd=ROOT, capture_output=True, text=True).stdout
+                         cwd=ROOT, capture_output=True, text=True, encoding="utf-8").stdout
     lines, directives = [], ""
     for line in out.splitlines():
         if re.fullmatch(r"\[\[.*\]\]", line.strip()):
@@ -41,7 +41,7 @@ def drain() -> list:
 def main(argv=None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     play = subprocess.Popen([sys.executable, str(ROOT / "scripts" / "localdm" / "play.py"), *argv],
-                            cwd=ROOT, stdin=subprocess.PIPE, text=True, bufsize=1)
+                            cwd=ROOT, stdin=subprocess.PIPE, text=True, encoding="utf-8", bufsize=1)
     try:
         while play.poll() is None:
             for line in drain():
