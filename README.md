@@ -53,6 +53,8 @@ systems/<your-system>/
 |--------|--------|-------|
 | D&D 5e | `systems/dnd5e/` | Full support — scripts, SRD dataset, character tools |
 
+**SRD attribution.** The D&D 5e rules data is built from the System Reference Document 5.1 and 5.2 by Wizards of the Coast LLC, licensed under [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/legalcode). Full notice: [systems/dnd5e/NOTICE](systems/dnd5e/NOTICE).
+
 **Adding your own:** Copy `systems/TEMPLATE.md` to `systems/<your-system>/system.md` and fill it in. See [SYSTEM-PORTING.md](SYSTEM-PORTING.md) for a compatibility breakdown of popular systems (Pathfinder 2e, Vampire: The Masquerade, Cyberpunk RED, Warhammer 40k).
 
 ---

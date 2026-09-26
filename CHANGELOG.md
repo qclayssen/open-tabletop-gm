@@ -12,6 +12,12 @@ This project is the LLM-agnostic, system-flexible fork of [claude-dnd-skill](htt
 
 ## [Unreleased]
 
+### Fixed: SRD build reads the live upstream
+- `5e-bits/5e-database` is archived. `build_srd.py` and `sync_srd.py` now read `5e-bits/5e-srd-api` (`packages/5e-database`), so `sync_srd.py` can see new upstream commits again. The staleness check filters commits to that package path.
+
+### Added: SRD attribution
+- `systems/dnd5e/NOTICE` carries the CC-BY-4.0 notices for SRD 5.1 and 5.2 (and names the OGL 1.0a route for the 5e-bits data); the README links to it.
+
 ### Added: continue a campaign in one step
 - `bash display/start-display.sh --campaign NAME`: starts the display for that campaign and runs `display/preflight.py`, which stops on an unknown campaign name (before touching a running display), warns when the 5e SRD data is missing or was built by an older `build_srd.py`, and says when a grid fight is waiting to resume.
 
