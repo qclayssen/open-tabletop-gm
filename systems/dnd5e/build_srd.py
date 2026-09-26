@@ -912,7 +912,7 @@ def cmd_build(skip_fvtt: bool = False) -> None:
     os.makedirs(DATA_DIR, exist_ok=True)
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    print("── 5e-bits/5e-srd-api (packages/5e-database) ─────────────────────────────────────────")
+    print("── 5e-bits/5e-srd-api (packages/5e-database) ──────────────────")
     bits_sha = _latest_sha(BITS_COMMITS)
     categories = _build_5ebits()
 
