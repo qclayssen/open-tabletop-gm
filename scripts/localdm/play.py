@@ -219,7 +219,9 @@ class Session:
         return self._notes_out(notes) + ([r.narration] if r.narration else [])
 
     def _template(self, engine_text: str) -> list:
-        prose = autopilot.narrate(engine_text, seed=str(self.turn))
+        snap = self.bridge.snapshot()
+        names = [t["name"] for t in snap["tokens"]] if snap else []
+        prose = autopilot.narrate(engine_text, seed=str(self.turn), names=names)
         if prose:
             self._say(prose)
         return [prose] if prose else []

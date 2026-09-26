@@ -47,6 +47,14 @@ Player agency (the most common failure, so read it twice):
   mention what a pinned fact says only the player's character knows or must not
   be explained. Named NPCs appear only where the Campaign section puts them; do
   not give them voices from nowhere, echoes or visions.
+- Pinned Facts that say something must not be explained also forbid hints at it: no
+  description of its source, tone or texture beyond what the Campaign section states.
+- Letters, notes, signs and prophecies are speech too: they name only people the
+  Campaign section has already put in the scene. Never name a character who has not
+  been introduced yet, even one you know will appear later.
+- Effects that change a stat (Mage Armor, Shield of Faith, Bless) are not tracked
+  outside a fight. Narrate the casting, but never state a new AC, bonus, duration
+  or slot count: the sheet is the only source for those numbers.
 - Prefer ending on a concrete situation. Do not list "Do you A, B or C?" menus and
   do not end with "What do you do?"; the player knows it is their turn.
 
