@@ -162,16 +162,27 @@ def test_advise_command_uses_the_council_model_and_hides_notes(tmp_path):
     assert s.handle("/advise bard hi")[0].startswith("No advisor 'bard'")
 
 
-def test_advise_command_leads_with_an_in_fiction_stall_line(tmp_path):
-    """Applied Standard 15: no meta "please wait", a diegetic line instead,
-    and it stays in the terminal (the display gets only real narration)."""
+def test_advise_command_fires_an_in_fiction_stall_line_before_the_blocking_call(tmp_path):
+    """Applied Standard 15: no meta "please wait". The stall line must fire via
+    on_stall() before the (blocking) advisor call, not glued to the answer
+    afterwards, and never reach the display (narrate() is for real narration
+    only)."""
     from localdm.stall import STALL_LINES
 
-    c = FakeClient(lambda m, msgs, role: "Advice.")
-    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path), bridge=FakeBridge())
+    seen = []
+
+    def responder(m, msgs, role):
+        # by the time the advisor call happens, the stall line must already be out
+        assert seen, "stall line should fire before the blocking consult call"
+        return "Advice."
+
+    c = FakeClient(responder)
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path), bridge=FakeBridge(),
+                on_stall=seen.append)
     out = s.handle("/advise historian who founded this city?")
-    assert out[0] in STALL_LINES["social"]
-    assert "wait" not in out[0].lower() and "process" not in out[0].lower()
+    assert len(seen) == 1 and seen[0] in STALL_LINES["social"]
+    assert "wait" not in seen[0].lower() and "process" not in seen[0].lower()
+    assert seen[0] not in out                    # not duplicated in the returned text
 
 
 def test_usage_lists_totals(tmp_path):
