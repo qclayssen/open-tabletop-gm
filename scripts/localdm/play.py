@@ -32,7 +32,7 @@ if __package__ in (None, ""):                        # run as a script
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
     import localdm                                    # noqa: F401  (puts scripts/ on sys.path)
 
-from localdm import advisor, autopilot, context, display_bridge, llm, reply, triggers  # noqa: E402
+from localdm import advisor, autopilot, context, display_bridge, llm, reply, stall, triggers  # noqa: E402
 from localdm.bridge import Bridge, parse_player_command, resolve_names          # noqa: E402
 from localdm.memory import Memory                               # noqa: E402
 from localdm.summarizer import Summarizer                       # noqa: E402
@@ -80,7 +80,7 @@ class Session:
     def __init__(self, campaign, client, models, *, camp_dir, bridge=None,
                  show_notes: bool = False, budget: int = 12000, reasoning="env",
                  local_client=None, shadow: bool = False, combat: str = "model",
-                 flavor: str = "big"):
+                 flavor: str = "big", on_stall=None):
         self.campaign = campaign
         self.client, self.models = client, models      # client: advisors
         self.local = local_client or client            # local: dm, picks, summaries
@@ -97,6 +97,9 @@ class Session:
         self.saved_notes = ""          # from /advise, used by the next DM call
         self.turn = 0
         self.display = None            # set by main(): the browser display, if any
+        # called with a stall line right before a blocking advisor call, so the
+        # terminal shows it during the wait, not glued to the answer afterwards.
+        self.on_stall = on_stall or (lambda text: None)
         self.directives = []           # table settings from the display, for the next DM call
         self._narrated = []            # this turn's narration, for the display
         # combat "engine": the player's line is parsed, enemies pick by the
@@ -426,6 +429,8 @@ class Session:
             names, question, council = advisor.parse_advise(rest)
         except ValueError as e:
             return [str(e)]
+        ctx = "combat" if self.bridge.is_combat_active() else "social"
+        self.on_stall(stall.get_stall_line(ctx))    # shown now: _consult blocks next
         notes = self._consult(names, question,
                               self.models.council if council else self.models.advisor)
         self._save_notes(notes)
@@ -530,7 +535,8 @@ def main(argv=None) -> int:
     shadow = not args.no_shadow and os.environ.get("GM_SHADOW", "1") != "0"
     s = Session(args.campaign, client, models, camp_dir=camp_dir, local_client=local,
                 show_notes=args.show_gm_notes, budget=args.budget, shadow=shadow,
-                combat=args.combat, flavor=args.flavor)
+                combat=args.combat, flavor=args.flavor,
+                on_stall=lambda text: print(text + "\n", flush=True))
     print(f"Local DM: {models.dm} via {local.base_url}; advisor {models.advisor} via "
           f"{client.base_url}. /quit to stop.")
     display = display_bridge.from_args(args.campaign, url=args.display_url,
