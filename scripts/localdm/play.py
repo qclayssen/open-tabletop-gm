@@ -426,12 +426,14 @@ class Session:
             names, question, council = advisor.parse_advise(rest)
         except ValueError as e:
             return [str(e)]
+        ctx = "combat" if self.bridge.is_combat_active() else "social"
+        stall_line = stall.get_stall_line(ctx)
         notes = self._consult(names, question,
                               self.models.council if council else self.models.advisor)
         self._save_notes(notes)
         if self.show_notes:
-            return [f"[GM notes]\n{notes}"]
-        return ["(The advisors have been consulted. Their notes will guide the next scene.)"]
+            return [stall_line, f"[GM notes]\n{notes}"]
+        return [stall_line, "(The advisors have been consulted. Their notes will guide the next scene.)"]
 
     def _usage(self) -> list:
         rows = llm.totals(self.memory.dir / "usage.jsonl")

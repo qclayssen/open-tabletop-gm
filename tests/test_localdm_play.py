@@ -162,6 +162,18 @@ def test_advise_command_uses_the_council_model_and_hides_notes(tmp_path):
     assert s.handle("/advise bard hi")[0].startswith("No advisor 'bard'")
 
 
+def test_advise_command_leads_with_an_in_fiction_stall_line(tmp_path):
+    """Applied Standard 15: no meta "please wait", a diegetic line instead,
+    and it stays in the terminal (the display gets only real narration)."""
+    from localdm.stall import STALL_LINES
+
+    c = FakeClient(lambda m, msgs, role: "Advice.")
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path), bridge=FakeBridge())
+    out = s.handle("/advise historian who founded this city?")
+    assert out[0] in STALL_LINES["social"]
+    assert "wait" not in out[0].lower() and "process" not in out[0].lower()
+
+
 def test_usage_lists_totals(tmp_path):
     d = camp_dir(tmp_path)
     client = llm.Client(base_url="http://x", api_key="", usage_log=d / "localdm" / "usage.jsonl",
