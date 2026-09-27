@@ -10,6 +10,7 @@ Modules:
     context     the messages for one call, under a size budget
     bridge      tactics commands in-process, combat snapshot
     triggers    deterministic "ask the advisor now" moments
+    stall       in-fiction wait phrasing during long operations
     advisor     advisor briefs, keyword routing, parallel consults
     summarizer  background folding of old turns into the summary
     play        the terminal REPL

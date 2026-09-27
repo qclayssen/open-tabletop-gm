@@ -46,6 +46,10 @@ class FakeBridge:
     def snapshot(self):
         return self.snapshots[0] if len(self.snapshots) == 1 else self.snapshots.pop(0)
 
+    def is_combat_active(self) -> bool:
+        snap = self.snapshot()
+        return bool(snap and snap.get("status") == "active")
+
     def run(self, args):
         self.ran.append(list(args))
         h = self.handlers.get(args[0])

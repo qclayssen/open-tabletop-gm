@@ -32,7 +32,7 @@ if __package__ in (None, ""):                        # run as a script
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
     import localdm                                    # noqa: F401  (puts scripts/ on sys.path)
 
-from localdm import advisor, autopilot, context, display_bridge, llm, reply, triggers  # noqa: E402
+from localdm import advisor, autopilot, context, display_bridge, llm, reply, stall, triggers  # noqa: E402
 from localdm.bridge import Bridge, parse_player_command, resolve_names          # noqa: E402
 from localdm.memory import Memory                               # noqa: E402
 from localdm.summarizer import Summarizer                       # noqa: E402

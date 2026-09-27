@@ -260,3 +260,13 @@ Apply edge proposals from a JSON file produced by `extract --write`. Default beh
 2. **During session:** when a relationship shifts in narration, run `/gm graph add-edge` (or `close-edge`) with `--since` set to the current session number. Don't batch this — record at the moment of the narrative change so you don't forget.
 3. **Before a heavy social/political scene:** run `/gm graph scene-context --place <current-place> --present <key-NPCs>` to refresh which relationships matter right now.
 4. **At `/gm save`:** review the session log and add any edges you missed during play (the save flow runs an automatic sweep and presents proposals for approval).
+
+---
+
+## In-Fiction Wait Phrasing During Operations
+
+When executing commands or background tasks that create a delay (such as `/gm advise` subagent consultations, session compaction at `/gm save`, graph extraction passes, or multi-turn script calls), follow **Applied Standard 15 in SKILL.md**:
+
+- **Stay in character:** output a brief (1 sentence) diegetic stall line matching the scene (social vs. combat vs. exploration).
+- **No meta chatter:** do not print raw system status ("Processing...", "Waiting for subagent...", "Compacting history...").
+- **Grounded stall lines:** pick a stall line anchored to the current scene: an NPC pausing to reflect during social scenes, steel glinting or adversaries re-evaluating during combat, or environmental sounds during exploration.

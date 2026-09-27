@@ -97,3 +97,7 @@ class Bridge:
                         "max_hp": t.max_hp, "dead": t.dead, "controller": t.controller}
                        for t in enc.tokens.values()],
         }
+
+    def is_combat_active(self) -> bool:
+        snap = self.snapshot()
+        return bool(snap and snap.get("status") == "active")
