@@ -63,8 +63,13 @@ _OPTION = re.compile(r"^(\d+)\. ", re.M)
 
 
 def _hint(res) -> str:
-    return ("Type yes or no." if res.needs_react
-            else "Roll it and type the number on the die (no modifier).")
+    if res.needs_react:
+        return "Type yes or no."
+    if "with advantage" in res.text:
+        return "Roll 2d20 and type the highest face (no modifier)."
+    if "with disadvantage" in res.text:
+        return "Roll 2d20 and type the lowest face (no modifier)."
+    return "Roll it and type the number on the die (no modifier)."
 
 
 def _waiting(pending) -> str:

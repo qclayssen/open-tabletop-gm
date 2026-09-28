@@ -14,6 +14,7 @@ import pytest
 from tests.tactics_fixtures import (RULES, ROOT, _build, _RAW, encounter, frog, goblin,
                                     kairos, roller, start)
 from tactics import ai, cli, maps
+from tactics.roller import Roller
 
 rules_mod = sys.modules[type(RULES).__module__]
 sheet_mod = rules_mod._sheet_module()
@@ -390,3 +391,11 @@ def test_removing_a_condition_ends_the_effect_behind_it(camp, capsys):
     assert code == 0 and "ends grapple" in out
     code, out = run(capsys, "status")
     assert "grappled" not in out and "restrained" not in out
+
+
+def test_advantage_keeps_the_single_supplied_face_and_flags_it():
+    # Contract (B7): the player rolls two physical dice and reports the kept
+    # face as one value; the advantage flag is recorded, not re-derived.
+    r = Roller(supplied=["16", "5"], supplied_source="verbal")
+    rec = r.roll("1d20+5", "Kairos", "Fire Bolt", player=True, advantage="advantage")
+    assert (rec.natural, rec.total, rec.dice, rec.advantage) == (16, 21, [16], "advantage")
