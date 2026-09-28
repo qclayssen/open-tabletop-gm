@@ -209,6 +209,38 @@ def test_a_player_roll_is_asked_for_and_nothing_changes_meanwhile(camp, capsys):
     assert [r["source"] for r in rolls] == ["verbal", "verbal"]
 
 
+def test_an_impossible_die_face_is_refused_not_a_traceback(camp, capsys):
+    """A player who types 15 for a 1d10 gets an explanation and a retry.
+
+    roller.roll raises ValueError for an out-of-range face, and cli.main only
+    caught Stop, CombatError, PendingRoll and DecisionNeeded. Through the
+    localdm bridge (which calls cli.main in-process) that traceback escaped
+    play.py's REPL, whose except clause covers llm.LLMError only: one mistyped
+    number killed the DM loop mid-fight and lost the whole session.
+    """
+    begin(capsys, "--roll-mode", "players")
+    path = camp / "combat" / "encounter.json"
+    enc = json.loads(path.read_text(encoding="utf-8"))
+    enc["order"] = ["kairos", "frog-1", "frog-2"]               # Kairos first, for the test
+    enc["turn_index"] = 0
+    enc["turn"]["actor"] = "kairos"
+    enc["turn"]["movement_budget"] = 30
+    path.write_text(json.dumps(enc), encoding="utf-8")
+    before = path.read_text(encoding="utf-8")
+
+    run(capsys, "attack", "kairos", "frog-1", "fire", "bolt", "--roll", "14")
+    code, out = run(capsys, "attack", "kairos", "frog-1", "fire", "bolt",
+                    "--roll", "14", "--roll", "15")
+    assert code == 1, "an impossible face is a refused command, not a crash"
+    assert "15 is not a possible 1d10 roll" in out
+    assert "--roll 14 --roll <1-10, no modifier>" in out, "the legal range is named"
+    assert path.read_text(encoding="utf-8") == before, "nothing changed"
+    # and the fight is still playable: a legal face resolves the same attack
+    code, out = run(capsys, "attack", "kairos", "frog-1", "fire", "bolt",
+                    "--roll", "14", "--roll", "7")
+    assert code == 0 and "hit" in out
+
+
 def test_a_paused_roll_is_mirrored_to_the_display(camp, capsys, monkeypatch):
     pushed = []
     monkeypatch.setattr(sync, "push_display",
