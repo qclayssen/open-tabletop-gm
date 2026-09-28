@@ -1,13 +1,14 @@
 """Milestone 6: the local DM session loop, with a fake model and fake engine."""
 from __future__ import annotations
 
+import re
 import sys
 
 import pytest
 
 from tests.localdm_fakes import FakeBridge, FakeClient
 from tests.tactics_fixtures import ROOT, _build, _RAW, RULES
-from localdm import llm
+from localdm import context, llm
 from localdm.bridge import Result
 from localdm.play import Session
 
@@ -82,6 +83,33 @@ def test_declared_attacks_are_all_caught(line):
 def test_ordinary_turns_are_not_mistaken_for_attacks(line):
     from localdm import autopilot
     assert not autopilot.declares_attack(line)
+
+
+@pytest.mark.parametrize("line", [
+    "I cast Mage Armor on myself.",
+    "I cast Shield of Faith on myself",
+    "I cast bless on us",
+    "I cast a ward around my own shield",
+])
+def test_a_self_targeted_cast_is_not_declared_an_attack(line):
+    """A cast with no target is a buff, not an attack (B4).
+
+    The no-fight guard used to answer these with NO_FIGHT, which refused the
+    cast before the model was ever asked and made an out-of-combat Mage Armor
+    impossible to play.
+    """
+    from localdm import autopilot
+    assert not autopilot.declares_attack(line)
+
+
+@pytest.mark.parametrize("line", [
+    "I cast a healing word on my ally",
+    "I cast burning hands at the bench.",
+    "I cast magic missile toward the door",
+])
+def test_a_cast_aimed_at_others_is_still_an_attack(line):
+    from localdm import autopilot
+    assert autopilot.declares_attack(line)
 
 
 def test_a_started_fight_still_reaches_the_engine(tmp_path):
