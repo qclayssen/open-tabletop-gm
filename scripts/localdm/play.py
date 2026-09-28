@@ -178,7 +178,8 @@ class Session:
     def _consult(self, names, question, model=None) -> str:
         recent = "\n".join(f"{context.LABEL[t['role']]}: {t['text']}"
                            for t in self.memory.unsummarized()[-6:] if t["role"] in context.LABEL)
-        ctx = _join(self._digest(), self.memory.summary(), recent)
+        ctx = _join(self._digest(), self.memory.summary(), recent,
+                    advisor.fight_brief(self.bridge.snapshot()))
         # reasoning=self.reasoning, like every other local-tier call. Without it
         # a thinking model spends the whole advisor budget thinking and returns
         # an empty note.

@@ -230,6 +230,31 @@ def test_advise_command_uses_the_council_model_and_hides_notes(tmp_path):
     assert s.handle("/advise bard hi")[0].startswith("No advisor 'bard'")
 
 
+def test_advise_includes_the_active_fight_in_advisor_context(tmp_path):
+    seen = []
+
+    def responder(m, msgs, role):
+        if role.startswith("advisor"):
+            seen.append(msgs[1]["content"])
+        return "Advice."
+
+    c = FakeClient(responder)
+    fight = {"status": "active", "round": 3, "key": "frog-1,kairos",
+             "current": {"id": "kairos", "name": "Kairos", "side": "pc",
+                         "controller": "player"},
+             "tokens": [{"id": "kairos", "name": "Kairos", "side": "pc", "hp": 2,
+                         "max_hp": 8, "dead": False, "controller": "player"},
+                        {"id": "frog-1", "name": "Giant Frog 1", "side": "enemy",
+                         "hp": 5, "max_hp": 18, "dead": False, "controller": "gm"}]}
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path),
+                bridge=FakeBridge(snapshots=[fight]))
+    s.handle("/advise tactician should the frog retreat?")
+    assert seen and "## Active fight" in seen[0]
+    assert "Round 3, Kairos's turn." in seen[0]
+    assert "- Kairos (pc): 2/8 HP" in seen[0]
+    assert "- Giant Frog 1 (enemy): 5/18 HP" in seen[0]
+
+
 def test_advise_command_fires_an_in_fiction_stall_line_before_the_blocking_call(tmp_path):
     """Applied Standard 15: no meta "please wait". The stall line must fire via
     on_stall() before the (blocking) advisor call, not glued to the answer

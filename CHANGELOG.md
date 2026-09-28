@@ -119,6 +119,9 @@ The last three must-haves of the Phase 4b combat UX pass. Must-haves 1, 3 and 5 
 ### Fixed: an explicit weapon choice is honored instead of silently substituted
 - `"I strike the frog with my quarterstaff"` (a weapon Kairos does not have) used to resolve silently to Fire Bolt. The autopilot now asks which attack to use instead (`"Kairos has no quarterstaff — Fire Bolt or Dagger?"`), and `"no spells"` picks the first mundane attack (Dagger), never a cantrip.
 
+### Added: advisors see the active fight
+- An advisor consulted mid-fight invented mechanics (a 15 ft frog-tongue reach vs the actual threat 5) because consult context carried no fight state. `/advise` context now ends with a compact `## Active fight` block (round, turn, HP per token) from the bridge snapshot, and the shared advisor rules require citing numbers from context instead of inventing them.
+
 ### Added: a playable tutorial for grid combat
 - `scripts/tactics/play.py`: play a grid fight yourself in the terminal. You type your turns (`move D4`, `attack 1`, `cast magic missile 1 1 2`); the game runs the enemies as the GM would. An ASCII battle map with numbered enemies, a `reach` overlay, dice you roll yourself (or Enter to roll for you), and y/n prompts for Shield, Silvery Barbs and opportunity attacks.
 - `play.py tutorial`: ten lessons in the new Training Yard map (`display/maps/training-yard.json`) against two kobolds, then free play. Also `kobolds`, `frogs`, `mephit`, or any map and SRD monsters with `--map`; `--sheet` plays your own character; `--display` mirrors the map to the browser.

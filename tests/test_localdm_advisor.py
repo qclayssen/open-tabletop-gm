@@ -17,6 +17,30 @@ def test_brief_joins_the_role_and_the_shared_rules():
         advisor.brief("bard")
 
 
+def test_fight_brief_states_round_turn_and_hp():
+    snap = {"status": "active", "round": 3,
+            "current": {"id": "kairos", "name": "Kairos"},
+            "tokens": [{"name": "Kairos", "side": "pc", "hp": 2, "max_hp": 8,
+                        "dead": False},
+                       {"name": "Giant Frog 1", "side": "enemy", "hp": 5,
+                        "max_hp": 18, "dead": False},
+                       {"name": "Giant Frog 2", "side": "enemy", "hp": 0,
+                        "max_hp": 18, "dead": True}]}
+    out = advisor.fight_brief(snap)
+    assert out.splitlines() == ["## Active fight",
+                                "Round 3, Kairos's turn.",
+                                "- Kairos (pc): 2/8 HP",
+                                "- Giant Frog 1 (enemy): 5/18 HP",
+                                "- Giant Frog 2 (enemy): DEAD"]
+
+
+def test_fight_brief_is_empty_with_no_fight():
+    assert advisor.fight_brief(None) == ""
+    assert advisor.fight_brief({"status": "ended", "round": 3}) == ""
+    assert advisor.fight_brief({"status": "active", "round": 1,
+                                "current": {}, "tokens": []}).startswith("## Active fight")
+
+
 def test_pick_routes_by_keyword_and_falls_back():
     assert advisor.pick("How should the lich fight the party?")[0] == "tactician"
     assert advisor.pick("What does the ancient cult legend say?")[0] == "historian"
