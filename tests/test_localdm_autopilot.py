@@ -143,3 +143,24 @@ def test_a_multi_word_attacker_is_not_split():
     text = autopilot.narrate(raw, names=["Kairos", "Giant Frog 2"])
     assert "Giant Frog 2" in text and "Giant's" not in text and "Frog 2 Bite" not in text.replace(
         "Giant Frog 2's Bite", "")
+
+
+def test_attack_prose_never_verbs_the_weapon():
+    names = ["Kairos", "Giant Frog 2"]
+    miss = autopilot.narrate("Giant Frog 2 Bite -> Kairos: 9 vs AC 12, miss.",
+                             seed="1", names=names)
+    assert "bites into" not in miss and "'s guard" not in miss
+    hit = autopilot.narrate("Giant Frog 2 Bite -> Kairos: 14 vs AC 12, hit. "
+                            "4 piercing damage; Kairos 4/8 HP.", seed="1", names=names)
+    assert "bites into" not in hit and "4 piercing damage" in hit
+
+
+def test_an_unknown_weapon_asks_instead_of_silently_substituting():
+    p = autopilot.plan("I strike Giant Frog 1 with my quarterstaff", two_frogs(), "kairos")
+    assert p.cmds == [] and p.ask == "Kairos has no quarterstaff — Fire Bolt or Dagger?"
+
+
+def test_no_spells_means_a_mundane_attack():
+    p = autopilot.plan("I swing my quarterstaff in a melee attack at Giant Frog 2, no spells",
+                       two_frogs(), "kairos")
+    assert p.cmds[0] == ["attack", "kairos", "frog-2", "Dagger"]

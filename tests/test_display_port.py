@@ -36,6 +36,15 @@ def test_start_display_records_its_port():
     assert 'echo "$PORT" > "$DISPLAY_DIR/.port"' in src
 
 
+def test_start_display_only_kills_the_display_on_its_own_port():
+    # B6: a blanket pkill once SIGKilled a live :5055 test display twice
+    # mid-fight. The PID file is per port and no pkill remains.
+    src = (DISPLAY / "start-display.sh").read_text(encoding="utf-8")
+    assert "pkill -" not in src and "killall" not in src
+    assert 'PID_FILE="$DISPLAY_DIR/app-$PORT.pid"' in src
+    assert "gm-display-app\\.py" in src  # the stale PID is verified before kill
+
+
 def test_the_environment_wins_over_the_port_file_everywhere():
     # autorun_wait.py starts its wait loop on import, so check its source order.
     src = (DISPLAY / "autorun_wait.py").read_text(encoding="utf-8")

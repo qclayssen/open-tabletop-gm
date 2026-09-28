@@ -37,6 +37,13 @@ WOUNDED = ("wounded", "bloodied", "weakest", "hurt one")
 ORDINAL = {"first": 1, "second": 2, "third": 3, "fourth": 4}
 PRONOUN = ("it", "him", "her", "them", "that one")
 _SQUARE = re.compile(r"\b(?:to|toward|towards|into|onto)\s+([a-z]{1,2}\d{1,2})\b")
+# "no spells" phrasings: a mundane swing, never a cantrip (B8).
+_NO_SPELLS = ("no spells", "no spell", "without spells", "without magic", "no magic",
+              "not a spell", "without a spell", "no cantrip", "no cantrips", "nonmagical",
+              "non-magical", "mundane")
+# "with my quarterstaff": the noun named as the weapon (B8). Only with an
+# article, so "with fire" or "with all my might" never asks.
+_WITH_WHAT = re.compile(r" with (?:my |the |a |an )([a-z]+)")
 
 
 def declares_attack(line: str) -> bool:
@@ -115,6 +122,15 @@ def _attack_name(text, pc):
     return None
 
 
+def _with_noun(text, pc):
+    """The 'with my X' noun when X matches no attack on the sheet (B8)."""
+    m = _WITH_WHAT.search(text)
+    if not m:
+        return ""
+    words = {w for a in pc.attacks for w in a["name"].lower().split()}
+    return "" if m.group(1) in words else m.group(1)
+
+
 def _spell(text, enc, pc):
     try:
         known = spells.castable(enc, pc)
@@ -159,6 +175,18 @@ def plan(line: str, enc, pc_id: str, last_target: str = "") -> Plan | None:
     adjacent = any(grid.distance(pc.pos, f.pos) <= 5 for f in _living_foes(enc, pc))
     weapon = _attack_name(text, pc)
     spell = None if weapon else _spell(text, enc, pc)
+    if weapon is None and spell is None and _has(text, ATTACK):
+        if _has(text, _NO_SPELLS):
+            # "no spells": the first mundane attack, never a cantrip (B8).
+            for a in pc.attacks:
+                if a.get("source", "") != "spell" and "unparsed" not in a.get("flags", []):
+                    weapon = a["name"]
+                    break
+        else:
+            noun = _with_noun(text, pc)
+            if noun:
+                names = " or ".join(a["name"] for a in pc.attacks) or "no attacks"
+                return Plan(ask=f"{pc.name} has no {noun} — {names}?")
     attacking = _has(text, ATTACK) or bool(weapon or spell)
     retreating = _has(text, RETREAT)          # "attack, then step back": the attack comes first
 
@@ -223,12 +251,12 @@ _SAVE = re.compile(r"^(?P<t>.+?) death save: .*?(?P<res>success|failure|failures
 
 T = {
     "hit": ["{a}'s {w} catches {t}: {n}{type} damage.",
-            "{a} finds a gap and the {w} bites into {t}, {n}{type} damage.",
+            "{a} finds a gap and lands the {w} on {t}, {n}{type} damage.",
             "{a}'s {w} connects; {t} staggers ({n}{type} damage).",
             "{t} takes {a}'s {w} square on: {n}{type} damage."],
     "crit": ["A perfect opening! {a}'s {w} tears into {t} for {n}{type} damage.",
              "{a} strikes true, and {t} reels from the {n}{type} damage."],
-    "miss": ["{t} twists aside from {a}'s {w}.", "{a}'s {w} glances off {t}'s guard.",
+    "miss": ["{t} twists aside from {a}'s {w}.", "The {w} glances off {t}.",
              "{a}'s {w} flashes past {t}, a miss.", "Close, but {a}'s {w} finds only air."],
     "fumble": ["{a} overextends with the {w} and stumbles; nowhere near {t}."],
     "hp": [" {t} is at {hp}.", " {t} is still up ({hp}).", " ({t}: {hp}.)"],

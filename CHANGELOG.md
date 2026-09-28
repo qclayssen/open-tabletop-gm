@@ -107,6 +107,18 @@ The last three must-haves of the Phase 4b combat UX pass. Must-haves 1, 3 and 5 
 - `docs/FIRST-SESSION.md`: how to start the display and a new campaign, and how to check the display without a GM.
 - A spell cast from the grid (Cast menu, or `cast`) used a 5 ft range when the SRD data was built by an older `build_srd.py`: Fire Bolt could not reach anything. Stale spell records, including ones cached in an encounter, are now looked up again.
 
+### Fixed: the display starter only kills the display on its own port
+- `display/start-display.sh` used `pkill -9 -f "gm-display-app.py"`, which SIGKilled a live `:5055` test display twice mid-fight. The PID file is now per port (`app-$PORT.pid`), only that PID is signalled, and only after its command line still matches the display server. No `pkill` remains.
+
+### Fixed: advantage prompts say to roll two dice and report the kept face
+- With `advantage_next` (Silvery Barbs) the manual `--roll` prompt asked for a single number with no mention of advantage. The design is honor-system (the player's kept face is one value, the flag recorded — verified end to end, and pinned by test), so the CLI now asks for the kept face explicitly (`--roll <kept d20 face: roll 2d20, keep highest>`) and `play.py` says which face to report.
+
+### Fixed: attack prose no longer verbs the weapon
+- `"the Bite bites into Kairos"` is now `"lands the Bite on Kairos"`; `"glances off Kairos's guard"` is now `"The Bite glances off Kairos"`.
+
+### Fixed: an explicit weapon choice is honored instead of silently substituted
+- `"I strike the frog with my quarterstaff"` (a weapon Kairos does not have) used to resolve silently to Fire Bolt. The autopilot now asks which attack to use instead (`"Kairos has no quarterstaff — Fire Bolt or Dagger?"`), and `"no spells"` picks the first mundane attack (Dagger), never a cantrip.
+
 ### Added: a playable tutorial for grid combat
 - `scripts/tactics/play.py`: play a grid fight yourself in the terminal. You type your turns (`move D4`, `attack 1`, `cast magic missile 1 1 2`); the game runs the enemies as the GM would. An ASCII battle map with numbered enemies, a `reach` overlay, dice you roll yourself (or Enter to roll for you), and y/n prompts for Shield, Silvery Barbs and opportunity attacks.
 - `play.py tutorial`: ten lessons in the new Training Yard map (`display/maps/training-yard.json`) against two kobolds, then free play. Also `kobolds`, `frogs`, `mephit`, or any map and SRD monsters with `--map`; `--sheet` plays your own character; `--display` mirrors the map to the browser.

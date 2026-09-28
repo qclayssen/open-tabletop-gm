@@ -16,7 +16,6 @@
 
 DISPLAY_DIR="$(cd "$(dirname "$0")" && pwd)"
 LOG="$DISPLAY_DIR/app.log"
-PID_FILE="$DISPLAY_DIR/app.pid"
 CERT_SERVER_PID="$DISPLAY_DIR/.cert-server.pid"
 
 # ── Parse flags ───────────────────────────────────────────────────────────────
@@ -25,6 +24,10 @@ TLS_MODE=false
 CAMPAIGN=""
 PORT="${GM_DISPLAY_PORT:-5001}"
 export GM_DISPLAY_PORT="$PORT"
+# Per port: a second display (tests, demos) must never kill or shadow the
+# main one, and vice versa. (A blanket pkill once SIGKilled a live :5055
+# test display twice mid-fight.)
+PID_FILE="$DISPLAY_DIR/app-$PORT.pid"
 
 # UTF-8 mode for the server and anything it spawns. Unlike per-call-site
 # encoding= this also fixes open()'s DEFAULT, which is what bites on a
@@ -96,12 +99,16 @@ fi
 
 SCHEME=$($TLS_MODE && echo "https" || echo "http")
 
-# ── Force-kill previous display instance ─────────────────────────────────────
+# ── Stop the previous display on THIS port only ────────────────────────────
+# The PID is only signalled when its command line is still our display
+# server (a stale PID file must never kill an unrelated process).
 if [[ -f "$PID_FILE" ]]; then
-  kill -9 "$(cat "$PID_FILE")" 2>/dev/null || true
+  OLD_PID="$(cat "$PID_FILE")"
+  if ps -o command= -p "$OLD_PID" 2>/dev/null | grep -q "gm-display-app\.py"; then
+    kill -9 "$OLD_PID" 2>/dev/null || true
+  fi
   rm -f "$PID_FILE"
 fi
-pkill -9 -f "gm-display-app\.py" 2>/dev/null || true
 sleep 0.3
 
 # ── Start Flask ───────────────────────────────────────────────────────────────

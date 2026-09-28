@@ -854,8 +854,15 @@ def main(argv=None) -> int:
         what = "the d20 face" if e.notation.startswith("1d20") else "the dice total"
         adv = f" with {e.advantage}" if e.advantage != "normal" else ""
         prior = _prior(args)
+        if e.advantage != "normal" and e.notation.startswith("1d20"):
+            # The player's kept face is supplied as one value (the design the
+            # tests pin): say to roll two physical dice, not one number.
+            keep = "highest" if e.advantage == "advantage" else "lowest"
+            ask = f"{prior}--roll <kept d20 face: roll 2d20, keep {keep}>"
+        else:
+            ask = f"{prior}--roll <{what}, no modifier>"
         print(f"{e.who} rolls {e.notation}{adv} for {e.label}. Nothing has happened yet.\n"
-              f"Re-run the same command with {prior}--roll <{what}, no modifier>, "
+              f"Re-run the same command with {ask}, "
               f"or --for-me to let the engine roll.")
         return 2
     except engine.DecisionNeeded as e:
