@@ -4,22 +4,25 @@ This file is loaded alongside `SKILL.md` at session start. It defines the mechan
 
 ---
 
-## System Versions
+## Ruleset Version
 
-Two ruleset versions are supported. The campaign's chosen version is recorded on the `state.md` header line as `**System Version:** <value>` and read by `paths.campaign_system_version()`.
+This module is **2014 rules**, and only 2014. The engine adjudicates 2014 (`tactics_rules.py` cites the 2014 PHB and SRD 5.1) and the dataset is built from the 2014 packs.
 
-| Value | Description | Default? |
-|-------|-------------|----------|
-| `2014` | Classic 5e (Player's Handbook 2014, original SRD). | yes |
-| `2024` | 2024 revision (weapon mastery, expanded class features). |  |
+The campaign records `**System Version:**` on the `state.md` header line, read by `paths.campaign_system_version()`. The value is stamped `2014` by `scripts/migrate_system_version.py` at `/gm load` and shown as a badge in the display.
 
-`2014` is the default for legacy campaigns predating the field. The migrator script (`scripts/migrate_system_version.py`) stamps `2014` into pre-field campaigns when invoked at `/gm load`.
+**What that field does and does not select.** It chooses the *encounter XP budget table* for `combat.py budget` / `rate` / the end-of-fight rating, which is tabulated for both editions because it is a table lookup, not a rules engine. It does **not** select combat rules: attacks, crits, saves, cover, conditions and death saves are 2014 for every campaign.
 
-Per-version data files (when built) live under `systems/dnd5e/data/`:
-- `dnd5e_srd.json` — 2014 dataset
-- `dnd5e_srd_2024.json` — 2024 dataset (build via `build_srd.py --version 2024`; see `lookup.py --version`)
+2024 combat is not supported, and adding it is not a configuration change. It would need a new attack and crit resolution path (2024 removes the automatic hit on a natural 20 and the automatic miss on a natural 1, and adds criticals on a maximum damage roll), Weapon Mastery on every weapon, the 2024 spell-slot model, and 2024 character sheets. Until all of that exists, setting `**System Version:** 2024` on a campaign rates its encounters on 2024 XP tables while still playing every fight on 2014 rules.
 
-System-version-aware scripts (`lookup.py`, `build_srd.py`, etc.) accept a `--campaign <name>` flag (resolves the version from state.md) or an explicit `--version <value>` override. When neither is given, they fall back to `2014`.
+The dataset lives at `systems/dnd5e/data/dnd5e_srd.json` (gitignored; generate it locally):
+
+```bash
+python3 systems/dnd5e/build_srd.py            # 2014 spells, monsters, items, class features
+python3 systems/dnd5e/build_srd.py --no-fvtt  # skip class features and races (faster)
+python3 systems/dnd5e/build_srd.py --status   # what the current dataset was built from
+```
+
+The build reads the 2014 packs only. `foundryvtt/dnd5e` ships both editions in one repository, and reading its 2024 packs (`classes24`, `spells24`, `origins24`) is what produced a dataset that was 2014 spells and monsters bolted to 2024 class features, so a lookup could answer a 2014 question with 2024 text. The pack names are pinned as constants at the top of `build_srd.py` and asserted by `tests/test_srd_sources.py`.
 
 ---
 
