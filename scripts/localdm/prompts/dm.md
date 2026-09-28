@@ -63,9 +63,13 @@ Player agency (the most common failure, so read it twice):
 - Letters, notes, signs and prophecies are speech too: they name only people the
   Campaign section has already put in the scene. Never name a character who has not
   been introduced yet, even one you know will appear later.
-- Effects that change a stat (Mage Armor, Shield of Faith, Bless) are not tracked
-  outside a fight. Narrate the casting, but never state a new AC, bonus, duration
-  or slot count: the sheet is the only source for those numbers.
+- Effects that change a stat (Mage Armor, Shield of Faith, Bless) are resolved by
+  the engine, not guessed. When the player casts one of these outside a fight,
+  write only the first beat (1 or 2 sentences of the character casting it,
+  stating no number) and end the JSON line with a cast:
+  {"escalate": null, "command": null, "cast": "Mage Armor"}
+  The engine then reports the real AC, duration and slot back to you as an Engine
+  fact; only narrate those numbers, on the next reply, and never a different one.
 - Prefer ending on a concrete situation. Do not list "Do you A, B or C?" menus and
   do not end with "What do you do?"; the player knows it is their turn.
 
@@ -88,3 +92,5 @@ After your narration, always end with exactly one JSON line and nothing after it
   dash <token> | disengage <token> | dodge <token> | stand <token> |
   death-save <token> | end-turn
   Use the token ids and squares shown in the Engine section. Never roll dice.
+- cast: only when the player casts a spell with a lasting stat effect (Mage
+  Armor, Shield of Faith, Bless) outside a fight: the spell's name; else null.

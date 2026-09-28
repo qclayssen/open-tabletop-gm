@@ -7,9 +7,11 @@ oldest recent turns trimmed first to stay under a character budget.
 """
 from __future__ import annotations
 
+import json
 import os
 import pathlib
 import re
+import time
 
 from . import canon as canon_mod
 
@@ -115,6 +117,30 @@ def notes_digest(camp_dir, files=NOTE_FILES, limit: int = 2500) -> str:
     return "\n\n".join(parts)[:limit]
 
 
+def _active_ac(camp_dir, name: str):
+    """B4: the still-active AC override tracker.json has for `name` (e.g. from an
+    out-of-combat Mage Armor cast), or None. This is a plain read of a number a
+    caller already computed (play.py's _cast_spell) and expires with the effect
+    like any other tracker.json entry; no 5e rule is decided here."""
+    try:
+        state = json.loads((pathlib.Path(camp_dir) / "tracker.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    ent = state.get(name.lower()) if isinstance(state, dict) else None
+    if not ent:
+        return None
+    now, best = time.time(), None
+    for eff in ent.get("effects", []):
+        if "ac" not in eff:
+            continue
+        dt = eff.get("duration_type", "indefinite")
+        if dt in ("minutes", "hours") and now - eff.get("started_at", now) >= eff.get(
+                "duration_seconds", 0):
+            continue                        # expired
+        if dt == "rounds" and eff.get("duration_remaining", 0) <= 0:
+            continue                        # expired
+        best = eff["ac"]
+    return best
 def party_stats(camp_dir) -> list:
     """Display sidebar entries (name, race, class, level, hp, ac, ...) from characters/*.md."""
     out = []
@@ -140,16 +166,28 @@ def party_stats(camp_dir) -> list:
                         "max": int(hp.group(2)) if hp else 1, "temp": num("Temp HP", 0)},
                  "ac": num("AC", 10), "initiative": field("Initiative") or "+0",
                  "speed": num("Speed", 30)}
+        override = _active_ac(camp_dir, entry["name"])
+        if override is not None:
+            entry["ac"] = override
         out.append(entry)
     return out
 
 
+def first_sheet_path(camp_dir):
+    """Path to the first character sheet (alphabetical), or None. The local-DM loop
+    has no per-character routing, so a single active PC is assumed here too."""
+    try:
+        return sorted((pathlib.Path(camp_dir) / "characters").glob("*.md"))[0]
+    except IndexError:
+        return None
 def skill_bonus(camp_dir, skill: str):
     """(name, bonus) for a skill in the first sheet's skills table, else None."""
+    sheet = first_sheet_path(camp_dir)
+    if sheet is None:
+        return None
     try:
-        sheet = sorted((pathlib.Path(camp_dir) / "characters").glob("*.md"))[0]
         text = sheet.read_text(encoding="utf-8")
-    except (OSError, IndexError):
+    except OSError:
         return None
     for m in re.finditer(r"^\|\s*([A-Za-z ]+?)\s*\|[^|]*\|\s*([+-]?\d+)\s*\|", text, re.M):
         if m.group(1).lower() == skill.strip().lower():
