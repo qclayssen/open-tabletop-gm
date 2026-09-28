@@ -84,6 +84,48 @@ $T rest short --for-me            # spend the party's Hit Dice for them
 - `(Or narrate a special ...)` lists things the engine does not run. Use them only by narrating and `condition` or `adjust`.
 - Fix a mistake: `$T adjust kairos hp=5`, `$T undo-move` (before an action), `$T condition kairos remove concentration`.
 
+## Conditions
+
+All fourteen 5e conditions are rules the engine applies, not notes to remember: poisoned, blinded, charmed, deafened, frightened, grappled, incapacitated, invisible, paralyzed, petrified, prone, restrained, stunned, unconscious. It also tracks exhaustion, level by level.
+
+```bash
+$T condition kairos add poisoned
+$T condition kairos add "exhaustion 3"      # or: add exhaustion --level 3
+$T condition kairos remove exhaustion        # a long rest usually took one level off
+```
+
+- The engine then rolls disadvantage on Kairos's attacks and ability checks, advantage for attacks against them, and says so in the line: `..., disadvantage, miss (disadvantage: Kairos is poisoned).`
+- The line after `added` says what the condition is doing, so you never have to remember which of fourteen it was.
+- Conditional conditions are measured, not assumed. Prone is disadvantage to a *ranged* attack and advantage only for a melee attack from within 5 ft. Frightened counts only while the source of the fear is in sight — which the engine can see, so hide behind a wall and the fear stops working without ending.
+- Exhaustion: 1 disadvantage on ability checks, 2 speed halved, 3 disadvantage on attacks and saves, 4 hit point maximum halved, 5 speed 0, 6 death. Levels 4 and 6 are applied when you set them, and the line tells you so. Level 2 and 5 come back on their own when the level comes off.
+- A stunned, paralyzed, petrified or unconscious creature has STR and DEX saves fail automatically, and a hit within 5 ft on one of them is a critical hit.
+
+**Your ruling beats the table.** `--adv` or `--dis` on an attack gives that one attack advantage or disadvantage whatever the conditions say, and the line says the ruling was yours:
+
+```bash
+$T attack kairos frog-1 dagger --adv
+$T attack frog-1 kairos --dis          # a stunned Kairos is normally untouchable
+```
+
+Use it when a condition does not fit the fiction — a frightened fighter who has made up their mind, an exhausted sailor who is not letting go. Never use it to paper over a roll you did not like.
+
+## Checks
+
+A skill or ability check is rolled by the engine too, out of turn, with the conditions on the creature applied:
+
+```bash
+$T check kairos perception --dc 15
+$T check kairos stealth --dc 12 --source frog-1     # "while the source of its fear is in sight"
+$T check frog-1 perception --dc 12 --sense hearing # deafened: fails anything that needs hearing
+$T check kairos deception --dc 14 --by juno        # the check is about that creature
+```
+
+- `--dc` is the number you set. Without it the roll is reported, not judged.
+- `--sense` says what the check depends on. It is the only way a blind or deaf creature is held to it: a deafened creature fails a check that needs hearing, and its own sight is none of deafened's business.
+- `--by` is for a check made *about* another creature, which is what a charm turns on.
+- `--adv` and `--dis` mean the same here as on an attack.
+- A check costs no action and is not somebody's turn, so use it whenever the fiction calls for one.
+
 ## End
 
 When the last line says `All enemies are down`, or the fight is over another way (surrender, flight):
@@ -110,7 +152,7 @@ $T rate --monsters "goblin x4, hobgoblin"
 
 ## Other
 
-- `$T status`: round, whose turn, everyone's square, HP, conditions, concentration and readied actions.
+- `$T status`: round, whose turn, everyone's square, HP, conditions (with the exhaustion level), concentration and readied actions.
 - `$T log 5`: the last five things that happened.
 - `$T sight kairos`: who Kairos sees and with what cover (the display's Cover shading, as text). Use it when a player asks "can I see it?" or "is it behind cover?"; never work cover out yourself.
 - `$T fog hide|dim|off`: fog of war on the display. `hide` (default) dims squares no PC sees and leaves out the creatures there; `dim` only dims; `off` shows everything. It never changes a rule or what you read here.

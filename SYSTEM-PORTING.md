@@ -142,21 +142,27 @@ For most systems, you can start without any system-specific scripts and rely ent
 
 Grid combat (`scripts/tactics/`) is a deterministic engine: it owns positions, turn order, movement, reach, line of sight and every die roll, and the GM only narrates. The engine is system-neutral. Everything that depends on a game's rules comes from one file, `systems/<system>/tactics_rules.py`, which defines a subclass of `tactics.rules.Rules` and exposes it as `RULES`. Without that file, grid combat is simply unavailable for the system; theatre-of-the-mind combat is unaffected.
 
-The engine measures geometry and hands it over as an `AttackContext` (`distance` in feet, `melee`, `cover` as an AC bonus, `long_range`, `hostile_adjacent`, `opportunity`). Your rules decide what those facts mean. Every method that rolls takes the engine's `Roller` and a `player` flag; roll through it (`roller.roll(notation, who, label, player=player, advantage=..., crit=...)`) so each roll's source is logged and a player's roll is requested instead of invented. Result dicts carry a short `text` the CLI prints as-is.
+The engine measures geometry and hands it over as an `AttackContext` (`distance` in feet, `melee`, `cover` as an AC bonus, `long_range`, `hostile_adjacent`, `opportunity`, `source_in_sight`). Your rules decide what those facts mean. Every method that rolls takes the engine's `Roller` and a `player` flag; roll through it (`roller.roll(notation, who, label, player=player, advantage=..., crit=...)`) so each roll's source is logged and a player's roll is requested instead of invented. Result dicts carry a short `text` the CLI prints as-is.
+
+`explicit` on `attack`, `hit_chance`, `saving_throw`, `save_chance` and `ability_check` is the GM's own ruling for that one roll (`"advantage"` / `"disadvantage"`), passed through from the command line's `--adv` / `--dis`. It outranks every condition, in both directions, and the reason list should say so — a ruling nobody can see in the output is a ruling the next person will think the engine ignored.
 
 | Area | Method | Returns |
 |------|--------|---------|
-| Attack | `attack(attacker, target, attack, ctx, roller, player)` | `{hit, crit, natural, total, ac, advantage, reasons, damage, text}`; applies damage on a hit |
-| | `hit_chance(attacker, target, attack, ctx)` | `{percent, chance, advantage, reasons}`, no roll (shown on previews) |
+| Attack | `attack(attacker, target, attack, ctx, roller, player, explicit="normal")` | `{hit, crit, natural, total, ac, advantage, reasons, damage, text}`; applies damage on a hit |
+| | `hit_chance(attacker, target, attack, ctx, explicit="normal")` | `{percent, chance, advantage, reasons}`, no roll (shown on previews) |
 | | `ac(token)` | AC including effects (Shield's +5) |
-| Save | `saving_throw(token, ability, dc, roller, player, cover=0)` | `{success, auto_fail, natural, total, dc, text}`; spends one-shot effects (a save penalty, advantage) |
-| | `save_chance(token, ability, dc, cover=0)` | `{fail, percent_fail, advantage}`, no roll (area previews, enemy options) |
+| Save | `saving_throw(token, ability, dc, roller, player, cover=0, explicit="normal")` | `{success, auto_fail, natural, total, dc, text}`; spends one-shot effects (a save penalty, advantage) |
+| | `save_chance(token, ability, dc, cover=0, explicit="normal")` | `{fail, percent_fail, advantage}`, no roll (area previews, enemy options) |
+| | `ability_check(token, name, dc, roller, player, explicit="normal", sense="", other=None, source_in_sight=True)` | `{total, success, auto_fail, dc, advantage, reasons, text}`; `name` is a skill or an ability, `sense` is what it depends on (blind, deaf), `other` the creature it is about (a charm) |
 | Spells | `spell(caster, name, level)` | a spec the engine runs: `mode` attack\|save\|darts\|heal\|effect\|narrate\|reaction, `casting`, `range`, `origin` self\|touch\|point, `area`, `save`, `damage`, `concentration`, `fail_conditions`, `on_fail`; raise `ValueError` with a message to refuse |
 | | `known_spells(caster)`, `damage_multiplier(token, type)` | the caster's spells; 0 / 0.5 / 1 / 2 for previews |
 | Skills | `skill_bonus(token, skill)`, `passive_perception(token)` | Hide (Stealth), Escape (Athletics or Acrobatics) |
 | Damage | `damage(target, parts, crit, ctx)` | applies `[{amount, type}]`; `{total, hp_after, dropped, dead, concentration_dc, text}` |
 | | `heal(token, amount)` | `{healed, text}` |
-| Conditions | `can_act(token)`, `can_react(token)` | bool |
+| Conditions | `condition_modifiers(token)` | one dict for everything the token's conditions change: `attack_roll`, `ability_check`, `save`, `attack_against`, `movement`, `action_economy` (always present, `None` when nothing applies), plus whatever your system adds. A value is `"adv"`/`"dis"`, a gate dict (`{"ranged": "dis"}` — applied only when the gate holds for this roll, and silent when it does not), a per-ability dict, or a speed |
+| | `condition_notes(token)` | one GM-readable line per active condition: what it is doing, in the words the GM reads it in |
+| | `set_condition(token, condition)`, `clear_condition(token, condition)` | add/remove a condition and apply or undo the consequences the rules make immediate rather than per-roll (a halved maximum, a death); returns GM-facing lines |
+| | `can_act(token)`, `can_react(token)` | bool |
 | | `death_save(token, roller, player)` | `{stable, dead, revived, text}`, or model your system's equivalent |
 | Movement | `speed(token)`, `crawling(token)`, `stand_up_cost(token)`, `reach(token)` | feet / bool |
 | Action economy | `turn_budget(token)` | `{movement, action, bonus, reaction}` |

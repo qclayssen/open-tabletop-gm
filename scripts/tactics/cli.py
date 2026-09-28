@@ -23,6 +23,9 @@ Actions (the current creature)
     multiattack <token> <target> [--option N]  every attack of a Multiattack, as one action
     dash | disengage | dodge | stand <token>
     death-save <token>
+    check <token> <skill|ability> [--dc N] [--adv|--dis] [--sense sight|hearing]
+                                     a check, out of turn, with the conditions on it
+                                     (--by <token>: the check is about that creature)
     undo-move                      take back the last move this turn
     cast <token> "<spell>" [target|square ...] [--level N]
                                    e.g. cast kairos "magic missile" frog-1 frog-2 frog-1
@@ -35,6 +38,7 @@ Actions (the current creature)
     fog hide|dim|off               display fog of war: squares no PC sees are dimmed; "hide"
                                    also leaves out the creatures there (the default)
     condition <token> add|remove <condition>     GM ruling (e.g. a rider the engine left to you)
+                                    "exhaustion 3" sets the level; the line says what it does
     adjust <token> hp=N temp_hp=N ac=N           GM correction
     log [n]                        last n combat log lines
     reachable <token>              squares reachable walking and with Dash (for the display)
@@ -68,6 +72,7 @@ from paths import find_campaign            # scripts/paths.py (on sys.path via t
 
 from . import (actions, ai, effects, encounter, engine, maps, policy, rest, sight, spells,
                  slots, state, sync)
+from .core import rules_for
 from .grid import label, parse_square
 from .roller import PendingRoll, Roller
 from .state import Encounter
@@ -347,6 +352,20 @@ def _pc_names(enc) -> list:
     return [t.name for t in enc.tokens.values() if t.side == "pc"]
 
 
+def _advantage(args) -> str:
+    """The GM's own ruling for this roll, if they made one."""
+    return getattr(args, "advantage", None) or "normal"
+
+
+def _exhaustion_label(token) -> str:
+    """The exhaustion level as a word, for the lines the GM reads."""
+    for c in token.conditions:
+        m = re.fullmatch(r"(?:exhausted|exhaustion)\s*(\d)", c.lower())
+        if m:
+            return m.group(1)
+    return str((token.extra or {}).get("exhaustion_level") or "")
+
+
 def cmd_status(enc) -> str:
     if enc.status == "active":
         act = "action used" if enc.turn.action_used else "action ready"
@@ -357,7 +376,9 @@ def cmd_status(enc) -> str:
     parts = []
     for tid in enc.order:
         x = enc.tokens[tid]
-        tags = list(x.conditions)
+        level = _exhaustion_label(x) if x.has("exhaustion") else ""
+        tags = [f"exhaustion {level}" if c == "exhaustion" and level else c
+                for c in x.conditions]
         if x.concentration:
             tags.append(f"concentrating: {x.concentration}")
         tags += [e["name"] for e in x.effects if not e.get("conditions") and e.get("name")]
@@ -562,7 +583,11 @@ def run(args) -> int:
             text = data["text"]
         elif cmd == "attack":
             data = engine.attack(enc, roller, args.token, args.target, args.attack,
-                                 _reactions(enc, args))
+                                 _reactions(enc, args), _advantage(args))
+            text = data["text"]
+        elif cmd == "check":
+            data = engine.check(enc, roller, args.token, args.name, args.dc or 0,
+                                _advantage(args), args.sense or "", args.by, args.source)
             text = data["text"]
         elif cmd == "multiattack":
             data = engine.multiattack(enc, roller, args.token, args.target, args.option,
@@ -602,11 +627,25 @@ def run(args) -> int:
             engine._log(enc, "condition", t.id, f"GM: {text}")
         elif cmd == "condition":
             t = engine._resolve(enc, args.token)
-            (t.add_condition if args.action == "add" else t.remove_condition)(args.condition)
-            text = f"{t.name}: {args.condition.lower()} {'added' if args.action == 'add' else 'removed'}."
-            more = effects.check_incapacitated(enc, t) if args.action == "add" else []
-            if more:
-                text += " " + " ".join(more)
+            R = rules_for(enc)
+            name = args.condition.lower()
+            if args.level is not None:
+                name = f"exhaustion {args.level}"
+            if args.action == "add":
+                more = R.set_condition(t, name)
+            else:
+                more = R.clear_condition(t, name)
+            said = name
+            if t.has("exhaustion") and _exhaustion_label(t):
+                said = f"exhaustion {_exhaustion_label(t)}"
+            text = f"{t.name}: {said} {'added' if args.action == 'add' else 'removed'}."
+            if args.action == "add":
+                # What the condition is doing to this creature, so nobody has to
+                # remember which of fourteen it is.
+                text += " " + " ".join(more + R.condition_notes(t))
+                text += " " + " ".join(effects.check_incapacitated(enc, t))
+            else:
+                text += (" " + " ".join(more)) if more else ""
             engine._log(enc, "condition", t.id, f"GM: {text}")
         elif cmd == "adjust":
             text = _adjust(enc, args)
@@ -686,6 +725,21 @@ def parser() -> argparse.ArgumentParser:
     s.add_argument("token")
     s.add_argument("target")
     s.add_argument("attack", nargs="*")
+    s.add_argument("--adv", dest="advantage", action="store_const", const="advantage",
+                   help="this attack has advantage, whatever the conditions say")
+    s.add_argument("--dis", dest="advantage", action="store_const", const="disadvantage",
+                   help="this attack has disadvantage, whatever the conditions say")
+    s = sub.add_parser("check", parents=c,
+                       help="a skill or ability check, out of turn, conditions applied")
+    s.add_argument("token")
+    s.add_argument("name", help="a skill (perception) or an ability (dex)")
+    s.add_argument("--dc", type=int, help="the DC; without it the roll is reported, not judged")
+    s.add_argument("--by", help="the creature the check is being made about (a charm turns on it)")
+    s.add_argument("--source", help="what is frightening them, for the 'in sight' gate")
+    s.add_argument("--sense", choices=["sight", "hearing", "hearing_or_sight"],
+                   help="what the check depends on: blind and deaf turn on it")
+    s.add_argument("--adv", dest="advantage", action="store_const", const="advantage")
+    s.add_argument("--dis", dest="advantage", action="store_const", const="disadvantage")
     s = sub.add_parser("multiattack", parents=c, help="every attack of a Multiattack, one action")
     s.add_argument("token")
     s.add_argument("target")
@@ -759,7 +813,9 @@ def parser() -> argparse.ArgumentParser:
     s = sub.add_parser("condition", parents=c, help="GM: add or remove a condition")
     s.add_argument("token")
     s.add_argument("action", choices=["add", "remove"])
-    s.add_argument("condition")
+    s.add_argument("condition", help='"exhaustion 3" sets an exhaustion level')
+    s.add_argument("--level", type=int, choices=range(1, 7), metavar="1-6",
+                   help="the level, for 'exhaustion'")
     s = sub.add_parser("adjust", parents=c, help="GM: correct hp, temp_hp, ac, speed")
     s.add_argument("token")
     s.add_argument("changes", nargs="+")

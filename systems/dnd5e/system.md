@@ -137,6 +137,10 @@ Track via `tracker.py saves <name> success/failure/stable/reset`
 
 Apply via `tracker.py condition add <name> <condition>` or `send.py --stat-condition-add`.
 
+**In a grid fight the engine applies them itself** (PHB p290-292, appendix A), from one table in `tactics_rules.py` — `CONDITION_EFFECTS`, with `EXHAUSTION_EFFECTS` for the six levels. It rolls the disadvantage, grants the advantage, fails the STR and DEX saves, stops the action economy, halves or zeroes the speed, and names the condition in the line it prints. A GM's own `--adv` / `--dis` for one roll outranks the table, both ways.
+
+Exhaustion, level by level: **1** disadvantage on ability checks · **2** speed halved · **3** disadvantage on attack rolls and saving throws · **4** hit point maximum halved · **5** speed 0 · **6** death.
+
 ---
 
 ## Inspiration
