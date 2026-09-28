@@ -21,6 +21,10 @@ The contract, grouped the way SYSTEM-PORTING.md documents it:
   characters    token_from_sheet(path, token_id, pos), token_from_monster(name, token_id,
                 display_name, pos), write_back(sheet_text, token) -> text,
                 lasting_conditions(token) -> list
+  design        encounter_budget(levels, ruleset) -> dict: what a party can be handed
+                rate_encounter(groups, levels, ruleset) -> dict: what a monster list
+                costs ; award_xp(sheet_path, amount) -> dict ; record_awards(campaign_dir,
+                entries, note) — so a finished fight feeds the campaign's own XP ledger
 
 Result dicts carry a short `text` the CLI prints as-is. Rolls go through the
 Roller, so their source (engine, player, verbal) is always recorded.
@@ -147,6 +151,50 @@ class Rules:
 
     def lasting_conditions(self, token) -> list:
         """Conditions that outlast the fight; the rest are dropped when combat ends."""
+        raise NotImplementedError
+
+    # encounter design: what a party can be handed, and what a fight just cost
+    def encounter_budget(self, levels: list, ruleset: str = "") -> dict:
+        """Thresholds for a party, from their sheets' levels.
+
+        Returns the tiers, the per-character and party figures, and whatever
+        modifiers the system applies for the size of the opposition. No monsters:
+        this is what to spend, not what has been spent.
+        """
+        raise NotImplementedError
+
+    def rate_encounter(self, groups: list, levels: list, ruleset: str = "",
+                       known: dict = None) -> dict:
+        """Cost a monster list to a party. `groups` is [(name, count), ...].
+
+        `known` maps a lowercased name to a record the caller already holds (the
+        CR and XP a token was built with), so costing a fight that has already
+        been fought does not go looking for its monsters a second time.
+
+        Returns the per-monster rows, the arithmetic (raw, any multiplier, the
+        adjusted total, the per-character share) and the difficulty tier, so the
+        GM can check the number instead of trusting it. An unknown monster name
+        raises ValueError with a message the GM can act on.
+        """
+        raise NotImplementedError
+
+    def award_xp(self, sheet_path, amount: int) -> dict:
+        """Add XP to one character sheet, in place.
+
+        Returns {"awarded", "total_after", "level", "leveled", "next"}.
+        `total_after` is None when the sheet does not track XP at all (a
+        campaign levelling by milestone) — which is a different situation from a
+        character at zero, and the caller has to be able to tell them apart.
+        """
+        raise NotImplementedError
+
+    def record_awards(self, campaign_dir, entries: list, note: str = "") -> None:
+        """Append awards to the campaign's XP ledger, if it keeps one.
+
+        Only for awards that landed. A ledger that claims an award no sheet
+        reflects is worse than no ledger, because `check` then reports drift the
+        GM did not cause.
+        """
         raise NotImplementedError
 
 

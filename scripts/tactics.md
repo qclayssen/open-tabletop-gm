@@ -76,7 +76,21 @@ When the last line says `All enemies are down`, or the fight is over another way
 $T end
 ```
 
-It writes HP, spell slots and death saves to the character sheet (backup `.bak`), updates the tracker and appends a short summary to `session-log.md`. Then narrate the aftermath and award XP as usual (`scripts/character.md`).
+It writes HP, spell slots and death saves to the character sheet (backup `.bak`), updates the tracker and appends a short summary to `session-log.md`. Then it rates the fight, awards the XP to the party still standing and records the award in the campaign's `xp-ledger.jsonl` — the same ledger `xp.py award` writes, so `xp.py check` reconciles both. A character who went down gets nothing, and a sheet that does not track XP is reported rather than written into. `$T end --no-xp` skips the award (a fight fled from). Narrate the aftermath.
+
+## Before the fight: what it will cost
+
+Design-time only — no combat running, no dice.
+
+```bash
+$T budget                       # what this party can be handed, per difficulty
+$T rate --monsters "goblin x4, hobgoblin"
+```
+
+- `--party auto` (the default) is every character sheet in the campaign; `--party "Kairos,Vesper"` picks. Levels are read off the sheets, and a mixed party is measured at its average level — the output says so when it does.
+- `--ruleset 2014` (Easy/Medium/Hard/Deadly, with the monster-count multiplier) or `2024` (Low/Moderate/High, no multiplier). Defaults to the campaign's own `**System Version:**` in `state.md`.
+- `rate` shows the whole calculation — each monster's CR and XP, the raw total, the multiplier, the per-character share and the thresholds it was measured against. Below the first threshold it says `TRIVIAL`: not a fight, and not "Easy".
+- Monster names come from the SRD. A name that is not there comes back with near matches.
 
 ## Other
 

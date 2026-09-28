@@ -447,6 +447,24 @@ class DnD5e(Rules):
     def lasting_conditions(self, token):
         return _sheet_module().lasting_conditions(token)
 
+    # ── encounter design ─────────────────────────────────────────────────────
+    def encounter_budget(self, levels, ruleset=""):
+        return _encounter_module().budget(levels, ruleset or "2014")
+
+    def rate_encounter(self, groups, levels, ruleset="", known=None):
+        # The SRD lookup is passed in rather than reached for again so that a
+        # test (or a system with its own bestiary) can answer for the monsters
+        # here exactly as it does for a token on the grid.
+        return _encounter_module().rate(groups, levels, ruleset or "2014",
+                                        lookup=_lookup_monster, suggest=_srd_suggest,
+                                        known=known)
+
+    def award_xp(self, sheet_path, amount):
+        return _encounter_module().award_xp(sheet_path, amount)
+
+    def record_awards(self, campaign_dir, entries, note=""):
+        _encounter_module().record_awards(campaign_dir, entries, note)
+
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -607,6 +625,34 @@ def _sheet_module():
         sys.modules[name] = mod
         spec.loader.exec_module(mod)
     return sys.modules[name]
+
+
+def _encounter_module():
+    import importlib.util
+    name = "encounter_design_dnd5e"
+    if name not in sys.modules:
+        spec = importlib.util.spec_from_file_location(
+            name, pathlib.Path(__file__).with_name("encounter.py"))
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[name] = mod
+        spec.loader.exec_module(mod)
+    return sys.modules[name]
+
+
+def _srd_suggest(name: str) -> list:
+    """Near-miss monster names, for a typo the GM typed from memory.
+
+    Best effort by design: a missing or half-built dataset is a reason to say
+    "no such monster", never a traceback in the middle of designing a fight.
+    """
+    here = str(pathlib.Path(__file__).parent)
+    if here not in sys.path:
+        sys.path.insert(0, here)
+    import lookup
+    try:
+        return [nm for nm, _cat in lookup.suggest(name, category="monster", n=3)]
+    except Exception:                                             # noqa: BLE001
+        return []
 
 
 def _lookup_monster(name: str) -> dict:
