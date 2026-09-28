@@ -60,7 +60,7 @@ import sys
 
 from paths import find_campaign            # scripts/paths.py (on sys.path via tactics/__init__)
 
-from . import actions, ai, effects, engine, maps, policy, sight, spells, state, sync, rest
+from . import actions, ai, effects, engine, maps, policy, sight, spells, state, sync, rest, xp_2014, xp_2024
 from .grid import parse_square
 from . import roller
 from .roller import PendingRoll, Roller
@@ -70,7 +70,7 @@ _SCRIPTS = pathlib.Path(__file__).resolve().parents[1]
 
 _DISPLAY_CAMPAIGN = _SCRIPTS.parent / "display" / ".campaign"
 READ_ONLY = ("status", "options", "preview", "reachable", "targets", "log", "spells",
-             "preview-area", "sight")
+             "preview-area", "sight", "budget", "rate")
 # Flags that do not change what a command means: a re-run with them added is
 # the same command, so it replays the same engine dice (see _pending).
 OLD_FORM = "*"     # decision key for a --react given up front (opportunity attacks)
@@ -396,6 +396,204 @@ def _adjust(enc, args) -> str:
     return text
 
 
+# ─── Encounter design (Phase 5) ─────────────────────────────────────────────────
+
+def cmd_budget(args, camp_dir) -> tuple[str, dict]:
+    """Show XP budget thresholds for the party."""
+    # camp_dir is passed but we don't need an active combat for budget
+    # Load party from character files
+    camp_dir_path = pathlib.Path(camp_dir) if isinstance(camp_dir, str) else camp_dir
+    char_dir = camp_dir_path / "characters"
+    if not char_dir.exists():
+        raise Stop("No characters/ folder found in campaign.")
+    
+    levels = []
+    if args.party == "auto":
+        for p in char_dir.glob("*.md"):
+            if p.name.lower() == "readme.md":
+                continue
+            try:
+                text = p.read_text(encoding="utf-8")
+                m = re.search(r"\*\*Level:\*\*\s*(\d+)", text)
+                if m:
+                    levels.append(int(m.group(1)))
+            except Exception:
+                pass
+    else:
+        # Parse comma-separated levels
+        levels = [int(x.strip()) for x in args.party.split(",") if x.strip().isdigit()]
+    
+    if not levels:
+        raise Stop("No party levels found. Add character files or use --party '3,3,4,4'.")
+    
+    avg_level = round(sum(levels) / len(levels))
+    players = len(levels)
+    
+    # Choose ruleset module
+    xp_mod = xp_2024 if args.ruleset == "2024" else xp_2014
+    
+    lines = [f"Party: {players} PCs (avg level {avg_level}) — {args.ruleset} ruleset"]
+    lines.append("")
+    
+    if args.ruleset == "2024":
+        lines.append(f"{'Difficulty':<10} {'Per PC':>10} {'Total':>10}")
+        lines.append("-" * 32)
+        for diff in ("low", "moderate", "high"):
+            per_pc = xp_mod._xp_budget_per_player(diff, avg_level)
+            total = per_pc * players
+            lines.append(f"{diff:<10} {per_pc:>10,} {total:>10,}")
+    else:
+        lines.append(f"{'Difficulty':<10} {'Per PC':>10} {'Total':>10}")
+        lines.append("-" * 32)
+        for diff in ("easy", "medium", "hard", "deadly"):
+            per_pc = xp_mod._xp_per_player(diff, avg_level)
+            total = per_pc * players
+            lines.append(f"{diff:<10} {per_pc:>10,} {total:>10,}")
+    
+    lines.append("")
+    lines.append("Use `combat.py rate --monsters 'goblin x4, hobgoblin'` to rate a specific encounter.")
+    
+    return "\n".join(lines), {"avg_level": avg_level, "players": players, "ruleset": args.ruleset}
+
+
+def cmd_rate(args, camp_dir) -> tuple[str, dict]:
+    """Rate encounter difficulty for a monster list."""
+    from . import xp_2014, xp_2024
+    
+    # Load party to get average level
+    camp_dir_path = pathlib.Path(camp_dir) if isinstance(camp_dir, str) else camp_dir
+    char_dir = camp_dir_path / "characters"
+    levels = []
+    if char_dir.exists():
+        for p in char_dir.glob("*.md"):
+            if p.name.lower() == "readme.md":
+                continue
+            try:
+                text = p.read_text(encoding="utf-8")
+                m = re.search(r"\*\*Level:\*\*\s*(\d+)", text)
+                if m:
+                    levels.append(int(m.group(1)))
+            except Exception:
+                pass
+    
+    if not levels:
+        raise Stop("No party levels found. Add character files to characters/ folder.")
+    
+    avg_level = round(sum(levels) / len(levels))
+    players = len(levels)
+    
+    # Parse monsters
+    # Support both "goblin x4, hobgoblin" and "goblin:1/4:4, hobgoblin:1/2:1"
+    monsters = []
+    for entry in args.monsters.split(","):
+        entry = entry.strip()
+        if " x" in entry or " X" in entry:
+            # "goblin x4" format
+            parts = entry.split()
+            name = parts[0]
+            count = int(parts[-1].replace("x", "").replace("X", ""))
+            cr = None
+        elif ":" in entry:
+            # "goblin:1/4:4" format
+            parts = entry.split(":")
+            name = parts[0]
+            cr_raw = parts[1]
+            count = int(parts[2]) if len(parts) > 2 else 1
+            # Look up CR from SRD
+            cr = _lookup_cr(name, cr_raw)
+        else:
+            # Just name, assume count 1
+            name = entry
+            count = 1
+            cr = None
+        
+        if cr is None:
+            cr = _lookup_cr(name, None)
+        if cr is None:
+            raise Stop(f"Could not determine CR for '{name}'. Use 'name:cr:count' format.")
+        
+        monsters.append((name, cr, count))
+    
+    # Choose ruleset module
+    xp_mod = xp_2024 if args.ruleset == "2024" else xp_2014
+    
+    # Calculate XP
+    raw_xp, mult, adj_xp = xp_mod._calc_monster_xp(monsters)
+    total_monsters = sum(cnt for _, _, cnt in monsters)
+    per_player = adj_xp // len(levels)
+    avg_level = round(sum(levels)/len(levels))
+    
+    if args.ruleset == "2024":
+        diff = xp_mod._classify_budget_per_player(per_player, avg_level)
+        diff_labels = {"low": "Low", "moderate": "Moderate", "high": "High", "trivial": "Trivial"}
+    else:
+        diff = xp_mod._classify(per_player, avg_level)
+        diff_labels = {"easy": "Easy", "medium": "Medium", "hard": "Hard", "deadly": "Deadly", "trivial": "Trivial"}
+    
+    lines = [f"Encounter: {total_monsters} monsters (×{mult:.1f}) — {args.ruleset} ruleset"]
+    lines.append(f"Party: {len(levels)} PCs (avg level {avg_level})")
+    lines.append("")
+    for name, cr, cnt in monsters:
+        xp = xp_mod.CR_XP.get(cr, 0) * cnt
+        lines.append(f"  {cnt}× {name} (CR {cr}): {xp:,} XP")
+    lines.append(f"")
+    lines.append(f"Raw {raw_xp:,} × {mult:.1f} = Adjusted {adj_xp:,} XP")
+    lines.append(f"Difficulty:  {diff_labels.get(diff, diff.upper())}  (Level {avg_level} party of {len(levels)})")
+    lines.append(f"Per player:  {per_player:,} XP")
+    
+    return "\n".join(lines), {
+        "difficulty": diff, "per_player": per_player, "total_xp": adj_xp,
+        "ruleset": args.ruleset, "monsters": monsters
+    }
+
+
+def _lookup_cr(name: str, cr_hint: str = None) -> str | None:
+    """Look up monster CR from SRD data."""
+    try:
+        from paths import find_campaign
+        import sys
+        sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "systems" / "dnd5e"))
+        from lookup import lookup_record
+    except Exception:
+        return None
+    
+    try:
+        rec = lookup_record(name, category="monster")
+        if rec and "cr" in rec:
+            # Normalize CR to match CR_XP keys (e.g., "0.25" -> "1/4")
+            cr_val = rec["cr"]
+            return _normalise_cr(str(cr_val))
+    except Exception:
+        pass
+    
+    # Fallback: try with cr_hint
+    if cr_hint:
+        try:
+            f = float(cr_hint)
+            if abs(f - 0.125) < 0.001: return "1/8"
+            if abs(f - 0.25) < 0.001: return "1/4"
+            if abs(f - 0.5) < 0.001: return "1/2"
+            return str(int(round(f)))
+        except ValueError:
+            pass
+    
+    return None
+
+
+def _normalise_cr(s: str) -> str:
+    """Normalize CR string to canonical key."""
+    s = s.strip()
+    try:
+        f = float(s)
+        if abs(f - 0.125) < 0.001: return "1/8"
+        if abs(f - 0.25)  < 0.001: return "1/4"
+        if abs(f - 0.5)   < 0.001: return "1/2"
+        return str(int(round(f)))
+    except ValueError:
+        pass
+    return s
+
+
 def _end(camp_dir, enc) -> str:
     if enc.status != "active":
         raise Stop("This combat has already ended.")
@@ -422,8 +620,15 @@ def run(args) -> int:
     camp_dir = _camp_dir(args)
     roller = _roller(args)
     data = {}
-    if args.cmd == "start":
-        enc, text = cmd_start(args, camp_dir)
+    if args.cmd in ("start", "budget", "rate"):
+        if args.cmd == "start":
+            enc, text = cmd_start(args, camp_dir)
+        elif args.cmd == "budget":
+            text, data = cmd_budget(args, camp_dir)
+            enc = None
+        elif args.cmd == "rate":
+            text, data = cmd_rate(args, camp_dir)
+            enc = None
     else:
         enc = _load(camp_dir)
         cmd = args.cmd
@@ -524,6 +729,10 @@ def run(args) -> int:
             text = engine.end_turn(enc, roller)["text"]
         elif cmd == "rest":
             text, data = rest.cmd_rest(args, camp_dir)
+        elif cmd == "budget":
+            text, data = cmd_budget(args, camp_dir)
+        elif cmd == "rate":
+            text, data = cmd_rate(args, camp_dir)
         elif cmd == "condition" and args.action == "remove" and args.condition.lower() == "concentration":
             t = engine._resolve(enc, args.token)
             if not t.concentration:
@@ -683,6 +892,15 @@ def parser() -> argparse.ArgumentParser:
     s.add_argument("changes", nargs="+")
     s = sub.add_parser("log", parents=c)
     s.add_argument("n", nargs="?", type=int, default=6)
+
+    # Encounter design (Phase 5)
+    s = sub.add_parser("budget", parents=c, help="XP budget thresholds for the party")
+    s.add_argument("--party", default="auto", help="auto: read from character files, or comma-separated levels")
+    s.add_argument("--ruleset", choices=["2014", "2024"], default="2014", help="XP ruleset")
+    s = sub.add_parser("rate", parents=c, help="Rate encounter difficulty for a monster list")
+    s.add_argument("monsters", help="e.g. 'goblin x4, hobgoblin' or 'goblin:1/4:4, hobgoblin:1/2:1'")
+    s.add_argument("--ruleset", choices=["2014", "2024"], default="2014", help="XP ruleset")
+
     return top
 
 
