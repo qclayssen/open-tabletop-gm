@@ -106,6 +106,7 @@ The last three must-haves of the Phase 4b combat UX pass. Must-haves 1, 3 and 5 
 - The display writes `.input_queue` to a temp file and renames it, so `check_input.py` can never take a half-written action.
 - `docs/FIRST-SESSION.md`: how to start the display and a new campaign, and how to check the display without a GM.
 - A spell cast from the grid (Cast menu, or `cast`) used a 5 ft range when the SRD data was built by an older `build_srd.py`: Fire Bolt could not reach anything. Stale spell records, including ones cached in an encounter, are now looked up again.
+- `/combat/state` sent the fog of war as one square label per visible square, about 1800 bytes of JSON on every poll. It is now run-length encoded: `fog.runs` is a list of `[row, first column, last column]`, plus `fog.count`. The display shades the same squares from 212 bytes.
 
 ### Fixed: the display starter only kills the display on its own port
 - `display/start-display.sh` used `pkill -9 -f "gm-display-app.py"`, which SIGKilled a live `:5055` test display twice mid-fight. The PID file is now per port (`app-$PORT.pid`), only that PID is signalled, and only after its command line still matches the display server. No `pkill` remains.
