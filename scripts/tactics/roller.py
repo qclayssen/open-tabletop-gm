@@ -36,6 +36,24 @@ class PendingRoll(Exception):
                 "advantage": self.advantage}
 
 
+class BadFace(ValueError):
+    """A supplied value is not a face the dice can show (15 for a 1d10).
+
+    Its own class, not a bare ValueError, so cli.main can refuse the command
+    without also swallowing the ValueErrors that mean a real bug somewhere
+    below (a bad monster record, an unparseable square).
+    """
+
+    def __init__(self, natural: int, count: int, sides: int):
+        self.natural, self.count, self.sides = natural, count, sides
+        super().__init__(f"{natural} is not a possible {count}d{sides} roll")
+
+    @property
+    def legal(self) -> str:
+        """The range the player should have answered in."""
+        return f"{self.count}-{self.count * self.sides}"
+
+
 def parse(notation: str) -> tuple:
     """(count, sides, modifier). Plain integers ("1") are flat damage."""
     text = str(notation).replace(" ", "").lower()
@@ -99,7 +117,7 @@ class Roller:
             natural = int(self.supplied.pop(0))
             lo, hi = count, count * sides
             if count and not lo <= natural <= hi:
-                raise ValueError(f"{natural} is not a possible {count}d{sides} roll")
+                raise BadFace(natural, count, sides)
             rec = Roll(who, label, shown, [natural], natural, natural + mod,
                        self.supplied_source, advantage)
         else:
