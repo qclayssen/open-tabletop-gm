@@ -12,6 +12,14 @@ This project is the LLM-agnostic, system-flexible fork of [claude-dnd-skill](htt
 
 ## [Unreleased]
 
+### Added: off-screen faction clocks (Phase 8)
+- `scripts/world.py` is a real tool now, not a stub: factions with a goal and a 4/6/8-segment clock in `<campaign>/factions.json`, one hidden d6 per faction per day (1–3 nothing, 4–5 one segment, 6 two). `calendar.py advance <n> days|weeks` calls the tick for you; hours and rests do not. Everything it prints is GM-only and never reaches the player display.
+- New subcommands: `lean` (a one-shot ±1/±2 nudge to the next tick, spent by it), `complete` (acknowledge a clock that fired — it now stays full and stops ticking until you do, instead of silently resetting to 0 mid-loop), `set-interval day|week`, and a `clear` that lists what it would drop and refuses without `--yes`. `status` shows `ACTIVE`/`HELD`/`FIRED` and pending leans; `clock` refuses a move beyond ±3 and un-fires a clock the party pre-empted.
+- `--seed N` replays a tick exactly. Faction history is stamped with the in-world date from `calendar.json`, and a clock added today cannot fill today — the party always gets a tick interval of warning.
+- Fixed: campaign paths came from a private `OPENTTG_CAMPAIGNS_DIR`, so clocks were written to a second, invisible copy of the campaign instead of the one `paths.py` resolves. Three days of travel rolled a single die instead of three, the party-interference modifier was re-read from history on every tick (so one `-2` depressed a faction forever), a completed clock reset itself to 0 and could fire repeatedly in one tick, roll values printed as a function's repr, an unknown faction exited 0, and a corrupt `factions.json` was never tested.
+- `world.py` writes neither `state.md` nor `graph.json` — `/gm factions` in SKILL-commands.md and the `/gm save` branch now spell out the one session-end pass that reconciles a fired clock with `## Faction Moves` and the graph.
+- New `tests/test_world_clocks.py` (26 tests) covering per-day rolls, seeded replay, the one-shot lean, hold/fire/complete, clamping, legacy `factions.json`, the calendar integration, and the error exits.
+
 ### Fixed: SRD build reads the live upstream
 - `5e-bits/5e-database` is archived. `build_srd.py` and `sync_srd.py` now read `5e-bits/5e-srd-api` (`packages/5e-database`), so `sync_srd.py` can see new upstream commits again. The staleness check filters commits to that package path.
 

@@ -30,7 +30,9 @@ turn-based mode. Branch: `tactical-combat`.
 ```
 SKILL.md, SKILL-*.md        GM instructions (always-loaded text: keep tiny)
 scripts/                     dice.py, combat.py (initiative), tracker.py (conditions,
-                             concentration, death saves -> <campaign>/tracker.json), paths.py
+                             concentration, death saves -> <campaign>/tracker.json), paths.py,
+                             calendar.py (in-world time; `advance N days` ticks world.py),
+                             world.py (off-screen faction clocks -> <campaign>/factions.json)
 scripts/tactics/             grid combat engine (stdlib only)
   grid.py                    5 ft squares, terrain legend, diagonals "5" | "5-10-5",
                              Dijkstra movement, DMG corner line of sight and cover,

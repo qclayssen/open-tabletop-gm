@@ -236,6 +236,7 @@ Default to `Step by step` if the question is dismissed. Either path lands in the
 No script reads needed.
 1. Write session events to `session-log.md`
 2. Update `state.md` (location, quests, HP/resources, recent events, faction moves)
+   - **Faction moves (when the campaign has clocks, `<campaign>/factions.json` exists):** run `world.py -c <campaign> status` and reconcile. Any clock that fired this session needs a `## Faction Moves` line in your own words — the clock says *that* the goal landed, never *how*. Then `world.py -c <campaign> complete "<name>" --outcome "..."`. A clock that moved because the party interfered needs the on-screen cause next to it.
 3. Update any `characters/*.md` that changed; mirror to `~/open-tabletop-gm/characters/`
 
    **Going-forward Continuity Archive compression rule (when `graph.json` exists for the campaign):** Continuity Archive bullets in state.md must NOT restate relational state the graph holds canonically.

@@ -41,6 +41,7 @@ Do NOT run `git init` or any git commands in campaign directories.
 | `/gm path [<new-path>\|reset]` | View or configure where campaign data is stored (`GM_CAMPAIGN_ROOT`). Follow `/gm path` branch. |
 | `/gm update [--check]` | Pull the latest skill changes from origin/main. Follow `/gm update` branch. |
 | `/gm graph <subcommand>` | Campaign relationship graph: `init`, `add-node`, `add-edge`, `set-disposition`, `close-edge`, `supersede-edge`, `list`, `show`, `subgraph`, `scene-context`, `extract`, `extract-apply`. See `/gm graph` procedure below. |
+| `/gm factions <subcommand>` | Off-screen faction clocks: `add`, `status`, `clock`, `lean`, `hold`, `release`, `complete`, `set-interval`, `clear`. Ticks themselves come from `calendar.py advance`. See `/gm factions` procedure below. |
 
 ---
 
@@ -260,6 +261,64 @@ Apply edge proposals from a JSON file produced by `extract --write`. Default beh
 2. **During session:** when a relationship shifts in narration, run `/gm graph add-edge` (or `close-edge`) with `--since` set to the current session number. Don't batch this — record at the moment of the narrative change so you don't forget.
 3. **Before a heavy social/political scene:** run `/gm graph scene-context --place <current-place> --present <key-NPCs>` to refresh which relationships matter right now.
 4. **At `/gm save`:** review the session log and add any edges you missed during play (the save flow runs an automatic sweep and presents proposals for approval).
+
+---
+
+## `/gm factions <subcommand>` — off-screen world pressure
+
+Faction clocks keep the world moving while the party is busy elsewhere. The
+script decides *whether and how far* a faction moves; **you** decide *what it
+looks like*. Never narrate a clock as a number — the number is yours, the
+consequence is the fiction.
+
+Maps to `python3 <skill-base>/scripts/world.py -c <campaign> <subcommand>`.
+Clocks live in `<campaign>/factions.json`; a human-readable history is appended
+to `<campaign>/faction_log.md`.
+
+| Subcommand | What it does |
+|---|---|
+| `add "<name>" --goal "<what they are after>" [--clock 4\|6\|8]` | Give a faction or major NPC a goal and a 4/6/8-segment clock. |
+| `status` | GM-only view of every clock: filled segments, `ACTIVE`/`HELD`/`FIRED`, pending leans. |
+| `clock "<name>" <±1..3> [--notes "..."]` | The party interferes — a direct segment change. |
+| `lean "<name>" <±1..2>` | A one-shot nudge to the **next** tick's roll (helped +1, hurt -1). Spent by that tick. |
+| `hold "<name>"` / `release "<name>"` | Veto a clock that must not move yet ("not yet", never "I don't like the outcome"). |
+| `complete "<name>" [--outcome "..."]` | Acknowledge a fired clock, log how it landed, reset it. |
+| `set-interval day\|week` | How often a tick happens (default `day`). |
+| `clear --yes` | End of arc: drop every clock. Lists them first and refuses without `--yes`. |
+
+### How ticks happen
+
+`calendar.py advance <n> days|weeks` calls `world.py tick` for you — one hidden
+d6 per faction per tick interval (1–3 nothing, 4–5 one segment, 6 two). Hours
+and rests do not tick: a tense one-hour crawl is not unattended time. Set the
+campaign to `--interval week` for slow-burn arcs.
+
+Every tick is **GM-only**. Nothing here is pushed to the player display, and
+neither roll values nor clock positions are ever shown to players — a clock they
+can read is bookkeeping, not pressure.
+
+### GM rules
+
+1. **A fired clock fires.** The event happens, or you `complete` it with a
+   different outcome on the record. Never re-roll, never quietly retime it.
+2. **Every negative move has a cause on screen.** `clock "Red Hand" -2` means
+   the party burned their safehouse *in the fiction*. A clock that drops with no
+   on-screen cause is exactly the "forgotten villain" failure this replaces.
+3. **Unattended time only.** No ticks during a cutscene, a boss fight, or any
+   scene where the faction is on screen. `hold` it for the duration.
+4. **A full clock needs a visible consequence.** Narrate it as a change the
+   party can perceive — a rumour, a locked door, a face gone from the market —
+   and record it under `state.md → ## Faction Moves` in the same pass. If the
+   faction gained a place, an asset or a body, run the matching
+   `/gm graph add-edge` / `set-disposition` then. `world.py` writes neither
+   `state.md` nor `graph.json`; the two must be reconciled in one session-end
+   pass or they silently diverge.
+5. **A clock created today cannot fill today** — the party always gets at least
+   one interval of warning that the world moved.
+6. **Keep it to three active clocks.** More than three d6s per in-game day is
+   noise, and a GM who cannot hold three is better served by two.
+7. **One in-game day is one tick, not a reroll.** Resize a clock that is
+   filling too fast with `clock`, and say why in `--notes`.
 
 ---
 
