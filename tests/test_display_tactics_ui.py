@@ -54,16 +54,26 @@ def _media_block(css: str, query: str) -> str:
 
 
 def _run(js: str) -> dict:
-    """Run a snippet with the pure helpers in scope; return its JSON result."""
+    """Run a snippet with the pure helpers in scope; return its JSON result.
+
+    The program goes in over stdin, not in argv. The pure-helper block holds
+    non-ASCII source (the side glyphs, e.g. U+2694), and a command-line
+    argument is encoded with the filesystem encoding: under a non-UTF-8
+    locale that is a UnicodeEncodeError before node is ever started. stdin is
+    bytes, so the same snippet runs under any codepage. Pass the script as
+    `node -` and node reads the program from stdin.
+    """
     if not NODE:
         raise unittest.SkipTest("node is not installed")
     body = _pure_helpers() + "\n" + js
-    r = subprocess.run([NODE, "-e", "const out = (() => {" + body + "})();"
-                        "process.stdout.write(JSON.stringify(out));"],
-                       capture_output=True, encoding="utf-8", timeout=30)
+    program = ("const out = (() => {" + body + "})();"
+               "process.stdout.write(JSON.stringify(out));")
+    r = subprocess.run([NODE, "-"], input=program.encode("utf-8"),
+                       capture_output=True, timeout=30)
     if r.returncode != 0:
-        raise AssertionError(f"the pure helpers did not run: {r.stderr.strip()}")
-    return json.loads(r.stdout)
+        raise AssertionError("the pure helpers did not run: "
+                             + r.stderr.decode("utf-8", "replace").strip())
+    return json.loads(r.stdout.decode("utf-8"))
 
 
 @unittest.skipUnless(NODE, "node is not installed")
