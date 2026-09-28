@@ -46,6 +46,7 @@ from localdm import advisor, autopilot, context, display_bridge, llm, reply, sta
 from localdm.bridge import Bridge, parse_player_command, resolve_names          # noqa: E402
 from localdm.memory import Memory                               # noqa: E402
 from localdm.summarizer import Summarizer                       # noqa: E402
+from localdm import canon as canon_mod                         # noqa: E402
 
 ENEMY_PICK = ("You choose actions for monsters in a tabletop fight. Reply with only the "
               "number of the best option for this creature.\n/no_think")
@@ -149,7 +150,13 @@ class Session:
         self.reasoning = llm.reasoning_from_env() if reasoning == "env" else reasoning
         self.summarizer = Summarizer(self.local, models.fast, self.memory,
                                      reasoning=self.reasoning)
+        # Canon: the verbatim lines, kept in their own append-only file so the
+        # summarizer's lossy fold never erases how a character actually talks.
+        self.canon = canon_mod.Canon(self.memory)
+        self.extractor = canon_mod.Extractor(self.local, models.fast, self.memory, self.canon,
+                                             reasoning=self.reasoning)
         self.show_notes, self.budget = show_notes, budget
+        self.canon_limit = 8               # canon records replayed per DM call
         self.pending = None            # {"args": [...], "rolls": [...]} while the player rolls
         self.saved_notes = ""          # from /advise, used by the next DM call
         self.turn = 0
@@ -209,8 +216,20 @@ class Session:
                         "the new situation they now have to deal with. Do not write 'you "
                         "fail' or 'nothing happens'.")
 
+    def _canon(self, player: str) -> list:
+        """Canon worth replaying for this beat: the player's own line, falling
+        back to their last turn when the DM speaks without a fresh action."""
+        query = player.strip()
+        if not query:
+            for turn in reversed(self.memory.unsummarized()):
+                if turn["role"] == "player":
+                    query = turn["text"]
+                    break
+        return self.canon.relevant(query, limit=self.canon_limit)
+
     def _dm(self, *, player="", engine="", notes="", task="") -> reply.DMReply:
         digest = self._digest()
+        block = self._canon(player)
 
         def call(extra_task):
             if self.directives:
@@ -218,7 +237,7 @@ class Session:
             msgs = context.build_messages(context.dm_prompt(), digest,
                                           self.memory.summary(), self.memory.unsummarized(),
                                           engine=engine, notes=notes, player=player,
-                                          task=extra_task, budget=self.budget)
+                                          task=extra_task, canon=block, budget=self.budget)
             return reply.parse(self.local.chat(self.models.dm, msgs, max_tokens=600, role="dm",
                                                reasoning=self.reasoning).text)
 
@@ -361,6 +380,7 @@ class Session:
         if self._shadow_thread:
             self._shadow_thread.join(timeout)
         self.summarizer.join(timeout)
+        self.extractor.join(timeout)
 
     def _say(self, text: str) -> None:
         """Narration the player sees: remembered, and kept for the display."""
@@ -692,6 +712,7 @@ class Session:
         if not notes:                        # nobody advised this turn: review it
             self._start_shadow(line, r.narration)
         self.summarizer.maybe_start()
+        self.extractor.maybe_start()         # same window, same off-thread bargain
         return out
 
 

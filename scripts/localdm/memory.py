@@ -2,7 +2,11 @@
 
     transcript.jsonl   one {"role", "text"} per line; roles: player, dm, engine
     summary.md         the rolling summary of every turn before meta["summarized"]
-    meta.json          {"summarized": <turn index>, "seen": [<trigger keys>]}
+    meta.json          {"summarized": <turn index>, "seen": [<trigger keys>],
+                        "canon": {"upto": <turn index>}}   (canon.jsonl is canon.py)
+
+summary.md is lossy on purpose, which is why canon.jsonl exists beside it: the
+verbatim lines the player already heard must outlive the fold.
 
 The summarizer writes from a background thread while the REPL appends turns,
 so every read and write takes the same lock.
