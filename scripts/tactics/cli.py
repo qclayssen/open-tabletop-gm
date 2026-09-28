@@ -60,8 +60,9 @@ import sys
 
 from paths import find_campaign            # scripts/paths.py (on sys.path via tactics/__init__)
 
-from . import actions, ai, effects, engine, maps, policy, sight, spells, state, sync
+from . import actions, ai, effects, engine, maps, policy, sight, spells, state, sync, rest
 from .grid import parse_square
+from . import roller
 from .roller import PendingRoll, Roller
 from .state import Encounter
 
@@ -498,6 +499,8 @@ def run(args) -> int:
             text = engine.undo_move(enc)["text"]
         elif cmd == "end-turn":
             text = engine.end_turn(enc, roller)["text"]
+        elif cmd == "rest":
+            text, data = rest.cmd_rest(args, camp_dir)
         elif cmd == "condition" and args.action == "remove" and args.condition.lower() == "concentration":
             t = engine._resolve(enc, args.token)
             if not t.concentration:
@@ -642,6 +645,9 @@ def parser() -> argparse.ArgumentParser:
                    help="only what the players can see (the display passes this)")
     s = sub.add_parser("fog", parents=c, help="display fog of war: hide, dim or off")
     s.add_argument("mode", choices=list(sight.FOG_MODES))
+    s = sub.add_parser("rest", parents=c, help="short or long rest for the party (or one character)")
+    s.add_argument("type", choices=["short", "long"])
+    s.add_argument("--token", metavar="NAME", help="specific character (default: all PCs)")
     sub.add_parser("undo-move", parents=c)
     sub.add_parser("end-turn", parents=c)
     sub.add_parser("end", parents=c, help="end combat, write sheets and the session log")
@@ -681,6 +687,17 @@ def main(argv=None) -> int:
     except engine.CombatError as e:
         print(str(e))
         return 1
+    except roller.BadFace as e:
+        # The player mistyped a die face, not the engine: refuse the command,
+        # keep the pending roll saved so the same attack can be re-run, and
+        # name the legal range. Uncaught, this reached the localdm bridge and
+        # killed play.py's REPL, losing the session mid-fight.
+        if camp_dir is not None:
+            _save_pending(camp_dir, canon, args._seed, args._decisions)
+        print(f"{e}. Nothing has happened yet.\n"
+              f"Re-run the same command with {_prior(args, drop_last_roll=True)}"
+              f"--roll <{e.legal}, no modifier>.")
+        return 1
     except PendingRoll as e:
         if camp_dir is not None:
             _save_pending(camp_dir, canon, args._seed, args._decisions)
@@ -703,8 +720,15 @@ def main(argv=None) -> int:
         return 2
 
 
-def _prior(args) -> str:
-    """The answers already given, to repeat on the re-run."""
-    out = "".join(f"--roll {v} " for v in (args.roll or []))
+def _prior(args, drop_last_roll: bool = False) -> str:
+    """The answers already given, to repeat on the re-run.
+
+    drop_last_roll skips the final --roll: that is the one the dice rejected,
+    and echoing it back would ask the player to send it again.
+    """
+    rolls = list(args.roll or [])
+    if drop_last_roll and rolls:
+        rolls = rolls[:-1]
+    out = "".join(f"--roll {v} " for v in rolls)
     out += "".join(f"--react {v} " for v in (args.react or []))
     return out
