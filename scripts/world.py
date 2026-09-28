@@ -3,58 +3,80 @@
 world.py — off-screen NPC and faction actions (Blades in the Dark style)
 
 Faction clocks track progress toward goals without constant GM attention.
-Ticks follow in-game time (days/weeks), not sessions. The system decides
-*whether and how far*, the GM decides *what it looks like*.
+Ticks follow in-game time (days or weeks), not sessions. The script decides
+*whether and how far* a faction moves; the GM decides *what it looks like*.
+
+Everything printed here is GM-only. No output is ever pushed to the player
+display: a clock face the players never see is what makes off-screen pressure
+pressure rather than bookkeeping.
 
 Usage:
-    CAMPAIGN=my-campaign
-
-    # Add a faction with a goal and clock size
+    # Add a faction with a goal and clock size (4, 6 or 8 segments)
     python3 world.py -c $CAMPAIGN add "Red Hand" --goal "seize the granary" --clock 6
 
-    # Advance time and tick factions
-    python3 world.py -c $CAMPAIGN tick --days 3
+    # Advance time and tick every active faction once per tick interval
+    python3 world.py -c $CAMPAIGN tick --days 3 [--seed 7]
 
-    # Manually adjust a faction's clock (player interference)
-    python3 world.py -c $CAMPAIGN clock "Red Hand" -2   # sabotaged
-    python3 world.py -c $CAMPAIGN clock "Red Hand" +1   # helped
+    # Usually called by calendar.py advance, not by hand
+    python3 calendar.py -c $CAMPAIGN advance 3 days
 
-    # Prevent a faction from advancing (story veto)
+    # The party interferes — direct segment change
+    python3 world.py -c $CAMPAIGN clock "Red Hand" -2 --notes "burned their safehouse"
+    python3 world.py -c $CAMPAIGN clock "Red Hand" +1 --notes "let a caravan through"
+
+    # A one-shot nudge to the next tick's roll (helped +1 / hurt -1)
+    python3 world.py -c $CAMPAIGN lean "Red Hand" -1
+
+    # GM veto, for things that must not happen yet
     python3 world.py -c $CAMPAIGN hold "Red Hand"
     python3 world.py -c $CAMPAIGN release "Red Hand"
 
-    # View all factions
-    python3 world.py -c $CAMPAIGN status
+    # A full clock has fired: narrate the change, then acknowledge it
+    python3 world.py -c $CAMPAIGN complete "Red Hand"
 
-    # Clear (end of arc/session)
-    python3 world.py -c $CAMPAIGN clear
+    # View all factions, or change how often a tick happens
+    python3 world.py -c $CAMPAIGN status
+    python3 world.py -c $CAMPAIGN set-interval week
 """
 
 import argparse
 import json
 import os
 import pathlib
+import random
 import sys
-import time
+from dataclasses import dataclass, field
 from datetime import datetime
-from dataclasses import dataclass, field, asdict
 from typing import Optional
 
-# Use scripts/dice.py functions directly
-import random
+from paths import find_campaign
 
+SCHEMA_VERSION = 2
 
-def roll(n: int, sides: int) -> list[int]:
-    """Roll n d<sides> dice and return the results."""
-    return [random.randint(1, sides) for _ in range(n)]
+# One hidden d6 per faction per tick (Stars Without a Number "faction turn").
+# 1-3: nothing happens. 4-5: one segment. 6: two segments.
+TICK_FACES = {1: 0, 2: 0, 3: 0, 4: 1, 5: 1, 6: 2}
+
+# A clock may only be pushed this far in one direct move (party interference).
+# Anything larger is the GM quietly rewriting the campaign, not interference.
+MAX_CLOCK_DELTA = 3
+
+INTERVALS = ("day", "week")
+
+GM_ONLY = "GM-only"
 
 
 # ─── Paths ────────────────────────────────────────────────────────────────────
 
 def get_campaign_dir(campaign: str) -> pathlib.Path:
-    return pathlib.Path(
-        os.environ.get("OPENTTG_CAMPAIGNS_DIR", str(pathlib.Path.home() / ".local" / "share" / "open-tabletop-gm" / "campaigns"))
-    ) / campaign
+    """The campaign directory, resolved the same way as every other script.
+
+    paths.find_campaign honours $GM_CAMPAIGN_ROOT and the legacy default root,
+    so world.py reads and writes the same factions.json the rest of the suite
+    reads from. (This used to consult an OPENTTG_CAMPAIGNS_DIR of its own and
+    quietly wrote to a second, invisible copy of the campaign.)
+    """
+    return find_campaign(campaign)
 
 
 def factions_file(campaign: str) -> pathlib.Path:
@@ -65,6 +87,27 @@ def faction_log_file(campaign: str) -> pathlib.Path:
     return get_campaign_dir(campaign) / "faction_log.md"
 
 
+def in_game_date(campaign: str) -> str:
+    """Today's in-world date from calendar.json, or '' if there is no calendar.
+
+    Clocks are stamped in world time, not wall time: a faction that moved on
+    "3 Harvestmoon 1247" must be findable by that date when the GM goes
+    looking three sessions later.
+    """
+    cal = get_campaign_dir(campaign) / "calendar.json"
+    try:
+        data = json.loads(cal.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return ""
+    day, month, year = data.get("day"), data.get("month"), data.get("year")
+    if day is None or month is None:
+        return ""
+    months = data.get("months") or []
+    label = months[month - 1] if isinstance(months, list) and 1 <= month <= len(months) else f"Month {month}"
+    stamp = f"{day} {label}" + (f" {year}" if year else "")
+    return stamp.strip()
+
+
 # ─── Data structures ──────────────────────────────────────────────────────────
 
 @dataclass
@@ -73,10 +116,54 @@ class Faction:
     goal: str
     clock_size: int = 4          # segments: 4, 6, or 8
     current: int = 0             # current segments filled
-    held: bool = False           # vetoed by GM
-    progress_history: list = field(default_factory=list)  # [(tick, change, notes)]
+    held: bool = False           # vetoed by the GM
+    fired: bool = False          # clock is full; awaiting narration, not ticking
+    fired_at: Optional[str] = None
+    fired_tick: Optional[int] = None
+    lean: int = 0                # one-shot nudge to the next tick: -2..+2
+    progress_history: list = field(default_factory=list)  # [[tick, change, note]]
     created: str = ""
     last_ticked: Optional[str] = None
+
+    def state(self) -> str:
+        if self.fired:
+            return "FIRED"
+        if self.held:
+            return "HELD"
+        return "ACTIVE"
+
+    def to_dict(self) -> dict:
+        return {
+            "name": self.name,
+            "goal": self.goal,
+            "clock_size": self.clock_size,
+            "current": self.current,
+            "held": self.held,
+            "fired": self.fired,
+            "fired_at": self.fired_at,
+            "fired_tick": self.fired_tick,
+            "lean": self.lean,
+            "progress_history": self.progress_history,
+            "created": self.created,
+            "last_ticked": self.last_ticked,
+        }
+
+    @classmethod
+    def from_dict(cls, name: str, data: dict) -> "Faction":
+        return cls(
+            name=data.get("name", name),
+            goal=data.get("goal", ""),
+            clock_size=int(data.get("clock_size", 4)),
+            current=int(data.get("current", 0)),
+            held=bool(data.get("held", False)),
+            fired=bool(data.get("fired", False)),
+            fired_at=data.get("fired_at"),
+            fired_tick=data.get("fired_tick"),
+            lean=int(data.get("lean", 0) or 0),
+            progress_history=list(data.get("progress_history", []) or []),
+            created=data.get("created", ""),
+            last_ticked=data.get("last_ticked"),
+        )
 
 
 @dataclass
@@ -92,279 +179,444 @@ def load_state(campaign: str) -> WorldState:
     fpath = factions_file(campaign)
     if not fpath.exists():
         return WorldState()
-    
+
     with open(fpath, encoding="utf-8") as f:
         data = json.load(f)
-    
+
     state = WorldState()
-    state.current_tick = data.get("current_tick", 0)
-    state.tick_interval = data.get("tick_interval", "day")
-    
-    for name, fd in data.get("factions", {}).items():
-        state.factions[name] = Faction(
-            name=fd["name"],
-            goal=fd["goal"],
-            clock_size=fd.get("clock_size", 4),
-            current=fd.get("current", 0),
-            held=fd.get("held", False),
-            progress_history=fd.get("progress_history", []),
-            created=fd.get("created", ""),
-            last_ticked=fd.get("last_ticked")
-        )
-    
+    state.current_tick = int(data.get("current_tick", 0))
+    interval = data.get("tick_interval", "day")
+    state.tick_interval = interval if interval in INTERVALS else "day"
+
+    for name, fd in (data.get("factions") or {}).items():
+        state.factions[name] = Faction.from_dict(name, fd)
+
     return state
 
 
 def save_state(state: WorldState, campaign: str) -> None:
     fpath = factions_file(campaign)
     fpath.parent.mkdir(parents=True, exist_ok=True)
-    
+
     data = {
+        "version": SCHEMA_VERSION,
         "current_tick": state.current_tick,
         "tick_interval": state.tick_interval,
-        "factions": {
-            name: {
-                "name": f.name,
-                "goal": f.goal,
-                "clock_size": f.clock_size,
-                "current": f.current,
-                "held": f.held,
-                "progress_history": f.progress_history,
-                "created": f.created,
-                "last_ticked": f.last_ticked
-            }
-            for name, f in state.factions.items()
-        }
+        "factions": {name: f.to_dict() for name, f in state.factions.items()},
     }
-    
+
     # Atomic write
     tmp = fpath.with_suffix(".tmp")
     with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
+        json.dump(data, f, indent=2, ensure_ascii=False)
     os.replace(tmp, fpath)
 
 
 def log_faction_event(campaign: str, event: str) -> None:
-    """Append event to human-readable log."""
+    """Append an event to the human-readable GM log."""
     lpath = faction_log_file(campaign)
     lpath.parent.mkdir(parents=True, exist_ok=True)
-    
+
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with open(lpath, "a", encoding="utf-8") as f:
-        f.write(f"\n## {timestamp}\n{event}\n")
+        f.write(f"\n## {timestamp} ({GM_ONLY})\n{event}\n")
+
+
+# ─── Reporting ───────────────────────────────────────────────────────────────
+
+def _clock_bar(faction: Faction) -> str:
+    filled = min(faction.current, faction.clock_size)
+    return "█" * filled + "░" * (faction.clock_size - filled)
+
+
+def _count(steps: int, unit: str) -> str:
+    return f"{steps} {unit}{'' if steps == 1 else 's'}"
+
+
+def _fired_lines(faction: Faction, lines: list) -> None:
+    lines.append(
+        f"  ⚡ {faction.name}: *{faction.goal}* — COMPLETE"
+        + (f" ({faction.fired_at})" if faction.fired_at else "")
+    )
+    lines.append(f"    Narrate the visible change, record it under `## Faction Moves`, "
+                 f"then: world.py -c <campaign> complete \"{faction.name}\".")
 
 
 # ─── Core functions ───────────────────────────────────────────────────────────
 
-def add_faction(campaign: str, name: str, goal: str, clock_size: int) -> None:
+def add_faction(campaign: str, name: str, goal: str, clock_size: int) -> int:
     state = load_state(campaign)
-    
+
     if name in state.factions:
-        print(f"Faction '{name}' already exists.")
-        return
-    
-    now = datetime.now().isoformat()
+        print(f"Faction '{name}' already exists (clock {state.factions[name].current}/"
+              f"{state.factions[name].clock_size}). Use `clock` to move it.")
+        return 1
+
     state.factions[name] = Faction(
         name=name,
         goal=goal,
         clock_size=clock_size,
-        created=now
+        created=in_game_date(campaign) or datetime.now().isoformat(timespec="seconds"),
     )
-    
+
     save_state(state, campaign)
-    print(f"Added faction '{name}': '{goal}' ({clock_size} segments)")
-    log_faction_event(campaign, f"- Added faction **{name}**: {goal}")
+    print(f"Added faction '{name}': {goal} ({clock_size} segments)")
+    log_faction_event(campaign, f"- Added faction **{name}**: {goal} ({clock_size} segments)")
+    return 0
 
 
-def tick_factions(campaign: str, days: int) -> None:
+def _steps_for(state: WorldState, days: int) -> int:
+    """How many ticks are owed for this many days of in-game time."""
+    return days if state.tick_interval == "day" else days // 7
+
+
+def tick_factions(campaign: str, days: int, rng: Optional[random.Random] = None) -> list:
+    """Advance every active faction one hidden roll per tick interval.
+
+    Returns the report lines (empty when nothing moved). One roll *per tick*,
+    not one per call: three days is three chances for a faction to act, and
+    collapsing them into a single roll made long travel the safest thing a
+    party could do.
+    """
     state = load_state(campaign)
-    interval = state.tick_interval
-    interval_name = "day" if interval == "day" else "week"
-    
-    if interval == "day":
-        steps = days
-    else:  # week
-        steps = days // 7
-    
+    unit = state.tick_interval
+    steps = _steps_for(state, days)
+
     if steps < 1:
-        print(f"No full {interval_name}s to advance.")
-        return
-    
-    log_lines = [f"\n### {steps} {interval_name}{'' if steps == 1 else 's'} passed\n"]
-    
-    for faction in state.factions.values():
-        if faction.held:
-            continue
-        
-        # Base roll: 1-3 no progress, 4-5 one segment, 6 two segments
-        roll_val = roll(1, 6)[0]
-        progress = 0
-        if roll_val >= 4:
-            progress = 1 if roll_val <= 5 else 2
-        
-        # Modify by progress_history (last entry, if any)
-        if faction.progress_history:
-            last_change = faction.progress_history[-1][1]
-            progress += last_change  # -1 for damage, +1 for help
-        
-        # Clamp to [0, clock_size]
-        old = faction.current
-        faction.current = max(0, min(faction.clock_size, faction.current + progress))
-        faction.last_ticked = datetime.now().isoformat()
-        
-        # Record in history
-        faction.progress_history.append([state.current_tick, progress, f"roll={roll}"])
-        
-        # Log if anything changed
-        if progress != 0 or old != faction.current:
-            log_lines.append(f"- **{faction.name}**: {old}/{faction.clock_size} → {faction.current}/{faction.clock_size} (roll {roll})")
-        
-        # Check for completion
-        if faction.current >= faction.clock_size:
-            log_lines.append(f"  ⚡ **COMPLETE**: {faction.goal}")
-            # Reset clock but keep faction active
-            faction.current = 0
-    
+        return [f"[{GM_ONLY}] No full {unit}{'' if unit == 'day' else 's'} to advance "
+                f"({days} day(s) at a {unit} interval)."]
+
+    if not state.factions:
+        return []
+
+    dice = rng or random.Random()
+    today = in_game_date(campaign)
+    stamp = f" ({today})" if today else ""
+    lines = [f"[{GM_ONLY}] {_count(steps, unit)} passed{stamp} — one hidden d6 per faction per {unit}."]
+    fired_this_tick: list = []
+    skipped: dict = {}
+
+    for step in range(steps):
+        for faction in state.factions.values():
+            if faction.fired:
+                skipped[faction.name] = "already fired"   # waiting on `complete`
+                continue
+            if faction.held:
+                skipped[faction.name] = "held"            # waiting on `release`
+                continue
+            if today and faction.created == today:
+                # A clock added today must not fill today: the party has to get
+                # at least one interval of warning that the world is moving.
+                skipped[faction.name] = "added today"
+                continue
+
+            face = dice.randint(1, 6)
+            progress = TICK_FACES[face]
+            lean = faction.lean
+            if lean:
+                progress += lean
+                faction.lean = 0  # one-shot: it is spent by the tick it applies to
+
+            old = faction.current
+            faction.current = max(0, min(faction.clock_size, old + progress))
+            faction.last_ticked = today or datetime.now().isoformat(timespec="seconds")
+
+            note = f"d6 {face}" + (f" {lean:+d}" if lean else "")
+            faction.progress_history.append([state.current_tick, faction.current - old, note])
+
+            # Every tick gets a line, including the ones where nothing happened:
+            # a hidden roll the GM cannot see is how clocks quietly stop mattering.
+            lines.append(
+                f"- {faction.name}: {old}/{faction.clock_size} → {faction.current}/{faction.clock_size}"
+                f"  (d6 {face} → {progress:+d} segment{'' if abs(progress) == 1 else 's'})"
+                f"  · {unit} {step + 1}/{steps}")
+
+            if faction.current >= faction.clock_size and not faction.fired:
+                faction.fired = True
+                faction.fired_at = today or datetime.now().isoformat(timespec="seconds")
+                faction.fired_tick = state.current_tick + step
+                fired_this_tick.append(faction)
+
     state.current_tick += steps
     save_state(state, campaign)
-    
-    if log_lines:
-        print("\n".join(log_lines))
-        log_faction_event(campaign, "\n".join(log_lines))
-    else:
-        print(f"No progress made this tick.")
+
+    for faction in fired_this_tick:
+        _fired_lines(faction, lines)
+
+    if skipped:
+        lines.append("- Unchanged: " + ", ".join(f"{n} ({why})" for n, why in sorted(skipped.items())) + ".")
+
+    if len(lines) == 1 and not fired_this_tick:
+        # Every faction was held or already fired: say so rather than printing
+        # a header and nothing under it.
+        lines.append("- No faction moved.")
+
+    log_faction_event(campaign, "\n".join(lines[1:]))
+    return lines
 
 
-def modify_clock(campaign: str, faction_name: str, delta: int, notes: str = "") -> None:
+def tick_for_calendar(campaign: str, days: int, seed: Optional[int] = None) -> str:
+    """Tick hook for calendar.py advance. Silent when the campaign has no clocks."""
+    if days < 1 or not factions_file(campaign).exists():
+        return ""
+    rng = random.Random(seed) if seed is not None else None
+    lines = tick_factions(campaign, days, rng=rng)
+    return "\n".join(lines)
+
+
+def modify_clock(campaign: str, faction_name: str, delta: int, notes: str = "") -> int:
+    """Direct segment change — the party acting against (or for) a faction."""
+    if abs(delta) > MAX_CLOCK_DELTA:
+        print(f"{delta:+d} is beyond one interference (±{MAX_CLOCK_DELTA} segments). "
+              f"Use `lean` for a smaller nudge to the next tick.")
+        return 1
+
     state = load_state(campaign)
-    
-    if faction_name not in state.factions:
-        print(f"Faction '{faction_name}' not found.")
-        return
-    
-    faction = state.factions[faction_name]
+    faction = state.factions.get(faction_name)
+    if faction is None:
+        print(f"Faction '{faction_name}' not found. `status` lists the known ones.")
+        return 1
+
     old = faction.current
-    faction.current = max(0, min(faction.clock_size, faction.current + delta))
-    faction.progress_history.append([state.current_tick, delta, notes])
-    
+    faction.current = max(0, min(faction.clock_size, old + delta))
+    moved = faction.current - old
+    reason = notes or ("helped" if delta > 0 else "sabotaged" if delta < 0 else "no change")
+    faction.progress_history.append([state.current_tick, moved, f"clock {delta:+d} — {reason}"])
+
+    # Pushing a fired clock back means the outcome was pre-empted, not that it
+    # happened and was undone: un-fire it so it can tick again.
+    unfired = ""
+    if delta < 0 and faction.fired and faction.current < faction.clock_size:
+        faction.fired = False
+        faction.fired_at = None
+        faction.fired_tick = None
+        unfired = "  (was fired — outcome pre-empted, clock ticking again)"
+
+    if faction.current >= faction.clock_size and not faction.fired:
+        faction.fired = True
+        faction.fired_at = in_game_date(campaign) or datetime.now().isoformat(timespec="seconds")
+        faction.fired_tick = state.current_tick
+
     save_state(state, campaign)
-    
-    msg = f"{faction_name}: {old}/{faction.clock_size} → {faction.current}/{faction.clock_size}"
-    if delta > 0:
-        msg = f"+{delta} → {msg} ({notes or 'helped'})"
-    elif delta < 0:
-        msg = f"{delta} → {msg} ({notes or 'sabotaged'})"
-    else:
-        msg = f"→ {msg}"
-    
-    print(msg)
-    log_faction_event(campaign, f"- {msg}")
+
+    msg = f"[{GM_ONLY}] {faction_name}: {old}/{faction.clock_size} → {faction.current}/{faction.clock_size} ({reason}){unfired}"
+    lines = [msg]
+    if faction.fired:
+        _fired_lines(faction, lines)
+    for line in lines:
+        print(line)
+    log_faction_event(campaign, "\n".join(lines))
+    return 0
 
 
-def hold_faction(campaign: str, faction_name: str) -> None:
+def set_lean(campaign: str, faction_name: str, lean: int) -> int:
+    """A one-shot modifier on the next tick roll: the party helped (+1) or hurt (-1)."""
+    if abs(lean) > 2:
+        print(f"A lean of {lean:+d} is too strong — the roll moves 0-2 segments on its own. Use ±1, or ±2 for a decisive effect.")
+        return 1
+
     state = load_state(campaign)
-    
+    faction = state.factions.get(faction_name)
+    if faction is None:
+        print(f"Faction '{faction_name}' not found. `status` lists the known ones.")
+        return 1
+
+    faction.lean = lean
+    save_state(state, campaign)
+    if lean:
+        print(f"[{GM_ONLY}] {faction_name}: next {state.tick_interval} roll {lean:+d} "
+              f"(one-shot — spent on the next tick)")
+    else:
+        print(f"[{GM_ONLY}] {faction_name}: tick modifier cleared")
+    return 0
+
+
+def hold_faction(campaign: str, faction_name: str) -> int:
+    state = load_state(campaign)
     if faction_name not in state.factions:
-        print(f"Faction '{faction_name}' not found.")
-        return
-    
+        print(f"Faction '{faction_name}' not found. `status` lists the known ones.")
+        return 1
     state.factions[faction_name].held = True
     save_state(state, campaign)
-    print(f"Held '{faction_name}' (will not advance)")
+    print(f"[{GM_ONLY}] Held '{faction_name}' (will not advance)")
     log_faction_event(campaign, f"- Held **{faction_name}** (GM veto)")
+    return 0
 
 
-def release_faction(campaign: str, faction_name: str) -> None:
+def release_faction(campaign: str, faction_name: str) -> int:
     state = load_state(campaign)
-    
     if faction_name not in state.factions:
-        print(f"Faction '{faction_name}' not found.")
-        return
-    
+        print(f"Faction '{faction_name}' not found. `status` lists the known ones.")
+        return 1
     state.factions[faction_name].held = False
     save_state(state, campaign)
-    print(f"Released '{faction_name}' (will advance again)")
+    print(f"[{GM_ONLY}] Released '{faction_name}' (will advance again)")
     log_faction_event(campaign, f"- Released **{faction_name}**")
+    return 0
 
 
-def show_status(campaign: str) -> None:
+def complete_faction(campaign: str, faction_name: str, outcome: str = "") -> int:
+    """Acknowledge a fired clock: the goal happened (or was averted), reset to empty."""
     state = load_state(campaign)
-    
-    if not state.factions:
-        print("No factions defined.")
-        return
-    
-    print(f"Current tick: {state.current_tick} ({state.tick_interval})\n")
-    
-    for faction in state.factions.values():
-        bar = "█" * faction.current + "░" * (faction.clock_size - faction.current)
-        status = "[HELD]" if faction.held else "[ACTIVE]"
-        print(f"{faction.name} {status}")
-        print(f"  Goal: {faction.goal}")
-        print(f"  Progress: [{bar}] {faction.current}/{faction.clock_size}")
-        print()
+    faction = state.factions.get(faction_name)
+    if faction is None:
+        print(f"Faction '{faction_name}' not found. `status` lists the known ones.")
+        return 1
+    if not faction.fired:
+        print(f"[{GM_ONLY}] {faction_name} has not fired (clock {faction.current}/{faction.clock_size}). "
+              f"Nothing to acknowledge.")
+        return 1
 
-
-def clear_all(campaign: str) -> None:
-    state = WorldState()
+    fired_at = faction.fired_at or "unknown date"
+    faction.current = 0
+    faction.fired = False
+    faction.fired_at = None
+    faction.fired_tick = None
+    faction.lean = 0
     save_state(state, campaign)
-    print("Cleared all factions.")
-    log_faction_event(campaign, "\n--- All factions cleared ---\n")
+
+    note = outcome or "narrated"
+    print(f"[{GM_ONLY}] {faction_name}: clock fired {fired_at} — acknowledged ({note}). "
+          f"Clock reset to 0/{faction.clock_size}; give the faction its next goal with "
+          f"`clock` segments or a new `add`.")
+    log_faction_event(campaign,
+                      f"- **{faction_name}** fired {fired_at}: {faction.goal} — {note}. Clock reset.")
+    return 0
+
+
+def show_status(campaign: str) -> int:
+    state = load_state(campaign)
+
+    if not state.factions:
+        print(f"[{GM_ONLY}] No factions defined. `add` one to start the world moving.")
+        return 0
+
+    print(f"[{GM_ONLY}] Tick {state.current_tick} · one hidden d6 per faction per {state.tick_interval}")
+    for faction in state.factions.values():
+        print(f"\n{faction.name} [{faction.state()}]")
+        print(f"  Goal: {faction.goal}")
+        print(f"  Progress: [{_clock_bar(faction)}] {faction.current}/{faction.clock_size}")
+        if faction.lean:
+            print(f"  Next {state.tick_interval} roll: {faction.lean:+d}")
+        if faction.fired:
+            print(f"  Fired: {faction.fired_at} (tick {faction.fired_tick}) — narrate it, then `complete`")
+    return 0
+
+
+def set_interval(campaign: str, interval: str) -> int:
+    state = load_state(campaign)
+    state.tick_interval = interval
+    save_state(state, campaign)
+    print(f"[{GM_ONLY}] Ticks now happen once per {interval}.")
+    return 0
+
+
+def clear_all(campaign: str, confirmed: bool = False) -> int:
+    """Drop every clock (end of arc). The log keeps the record of what fired."""
+    state = load_state(campaign)
+    if not state.factions:
+        print(f"[{GM_ONLY}] Nothing to clear.")
+        return 0
+
+    if not confirmed:
+        print(f"[{GM_ONLY}] This drops {len(state.factions)} clock(s) — a real, irreversible "
+              f"loss of the off-screen record in factions.json:")
+        for f in state.factions.values():
+            bar = _clock_bar(f)
+            print(f"  {f.name} [{f.state()}] [{bar}] {f.current}/{f.clock_size} — {f.goal}")
+        print("Re-run with --yes to clear. faction_log.md is kept either way.")
+        return 1
+
+    summary = "\n".join(
+        f"- **{f.name}** was at {f.current}/{f.clock_size}"
+        + (f", fired {f.fired_at}" if f.fired else "")
+        + f" — {f.goal}" for f in state.factions.values()
+    )
+    save_state(WorldState(), campaign)
+    print(f"[{GM_ONLY}] Cleared {len(state.factions)} clock(s) (faction_log.md kept).")
+    log_faction_event(campaign, "\n--- All factions cleared ---\n" + summary + "\n")
+    return 0
 
 
 # ─── CLI ──────────────────────────────────────────────────────────────────────
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(description="Off-screen NPC and faction actions")
     parser.add_argument("-c", "--campaign", required=True, help="Campaign name")
+    parser.add_argument("--seed", type=int, default=None,
+                        help="Seed the hidden rolls (reproducible ticks)")
+    # --seed is also accepted after the subcommand, which is where a GM writing
+    # `tick --days 1 --seed 3` naturally puts it.
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("--seed", type=int, default=argparse.SUPPRESS,
+                        help="Seed the hidden rolls (reproducible ticks)")
     subparsers = parser.add_subparsers(dest="command", required=True)
-    
-    # Add faction
-    add_p = subparsers.add_parser("add", help="Add a new faction")
+
+    add_p = subparsers.add_parser("add", help="Add a new faction", parents=[common])
     add_p.add_argument("name", help="Faction name")
     add_p.add_argument("--goal", required=True, help="Faction's goal")
     add_p.add_argument("--clock", type=int, default=4, choices=[4, 6, 8], help="Clock size")
-    
-    # Tick
-    tick_p = subparsers.add_parser("tick", help="Advance time and tick factions")
+
+    tick_p = subparsers.add_parser("tick", help="Advance time and tick factions", parents=[common])
     tick_p.add_argument("--days", type=int, default=1, help="Days to advance")
-    
-    # Clock
-    clock_p = subparsers.add_parser("clock", help="Manually adjust a faction's clock")
+
+    clock_p = subparsers.add_parser("clock", help="Direct segment change (party interference)",
+                                    parents=[common])
     clock_p.add_argument("faction", help="Faction name")
-    clock_p.add_argument("delta", type=int, help="Change (-2 to +2 recommended)")
+    clock_p.add_argument("delta", type=int, help="Change (-3 to +3)")
     clock_p.add_argument("--notes", default="", help="Why the change happened")
-    
-    # Hold/Release
-    hold_p = subparsers.add_parser("hold", help="Prevent a faction from advancing")
+
+    lean_p = subparsers.add_parser("lean", help="One-shot modifier on the next tick roll",
+                                   parents=[common])
+    lean_p.add_argument("faction", help="Faction name")
+    lean_p.add_argument("lean", type=int, help="Modifier (-2 to +2, 0 clears)")
+
+    hold_p = subparsers.add_parser("hold", help="Prevent a faction from advancing", parents=[common])
     hold_p.add_argument("faction", help="Faction name")
-    
-    release_p = subparsers.add_parser("release", help="Allow a faction to advance again")
+
+    release_p = subparsers.add_parser("release", help="Allow a faction to advance again",
+                                      parents=[common])
     release_p.add_argument("faction", help="Faction name")
-    
-    # Status
-    subparsers.add_parser("status", help="Show all factions")
-    
-    # Clear
-    subparsers.add_parser("clear", help="Clear all factions")
-    
+
+    complete_p = subparsers.add_parser("complete", help="Acknowledge a fired clock and reset it",
+                                       parents=[common])
+    complete_p.add_argument("faction", help="Faction name")
+    complete_p.add_argument("--outcome", default="",
+                            help="How it landed: 'narrated', 'averted', or a one-line note")
+
+    interval_p = subparsers.add_parser("set-interval", help="How often a tick happens",
+                                       parents=[common])
+    interval_p.add_argument("interval", choices=list(INTERVALS))
+
+    subparsers.add_parser("status", help="Show all factions (GM-only view)", parents=[common])
+
+    clear_p = subparsers.add_parser("clear", help="Drop all faction clocks (end of arc)",
+                                    parents=[common])
+    clear_p.add_argument("--yes", action="store_true", help="Confirm the drop")
+
     args = parser.parse_args()
-    
-    if args.command == "add":
-        add_faction(args.campaign, args.name, args.goal, args.clock)
+    if not hasattr(args, "seed"):
+        args.seed = None
+    campaign = args.campaign
+
+    if   args.command == "add":           return add_faction(campaign, args.name, args.goal, args.clock)
     elif args.command == "tick":
-        tick_factions(args.campaign, args.days)
-    elif args.command == "clock":
-        modify_clock(args.campaign, args.faction, args.delta, args.notes)
-    elif args.command == "hold":
-        hold_faction(args.campaign, args.faction)
-    elif args.command == "release":
-        release_faction(args.campaign, args.faction)
-    elif args.command == "status":
-        show_status(args.campaign)
-    elif args.command == "clear":
-        clear_all(args.campaign)
+        lines = tick_factions(campaign, args.days,
+                              rng=random.Random(args.seed) if args.seed is not None else None)
+        for line in lines:
+            print(line)
+        return 0
+    elif args.command == "clock":         return modify_clock(campaign, args.faction, args.delta, args.notes)
+    elif args.command == "lean":          return set_lean(campaign, args.faction, args.lean)
+    elif args.command == "hold":          return hold_faction(campaign, args.faction)
+    elif args.command == "release":       return release_faction(campaign, args.faction)
+    elif args.command == "complete":      return complete_faction(campaign, args.faction, args.outcome)
+    elif args.command == "set-interval":  return set_interval(campaign, args.interval)
+    elif args.command == "status":        return show_status(campaign)
+    elif args.command == "clear":         return clear_all(campaign, args.yes)
+    parser.print_help()
+    return 2
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

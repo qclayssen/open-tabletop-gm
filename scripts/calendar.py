@@ -172,6 +172,31 @@ def _send_date(cal: dict) -> None:
         pass
 
 
+def _tick_world(campaign: str, days: int) -> None:
+    """Let the off-screen world move when days pass (Phase 8 faction clocks).
+
+    Rest hours and single hours change nothing a faction can act on, so only
+    whole days (and therefore weeks) tick. The report is GM-only: it is printed
+    here, never sent to the display, because a clock the players can read is
+    bookkeeping rather than pressure.
+    """
+    if days < 1:
+        return
+    try:
+        import world
+    except ImportError:                       # calendar.py usable without world.py
+        return
+    try:
+        report = world.tick_for_calendar(campaign, days)
+    except Exception as e:                   # a world tick must never break the date
+        print(f"  (faction clocks skipped: {e})")
+        return
+    if report:
+        print("  ── faction clocks ──")
+        for line in report.splitlines():
+            print(f"  {line}")
+
+
 # ─── Commands ────────────────────────────────────────────────────────────────
 
 def cmd_init(campaign: str, args) -> None:
@@ -228,6 +253,8 @@ def cmd_advance(campaign: str, amount: int, unit: str) -> None:
     label = f"+{amount} {unit}"
     print(f"  {label} → {_format_date(cal)}")
     _send_date(cal)
+    _tick_world(campaign, amount * (7 if unit.startswith("week") else
+                                    (1 if unit.startswith("day") else 0)))
 
 
 def cmd_rest(campaign: str, rest_type: str) -> None:

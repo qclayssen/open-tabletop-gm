@@ -114,6 +114,47 @@ python3 <skill-base>/scripts/calendar.py -c $CAMP events
 
 **When to run:** after every rest; after significant travel or time skip; when updating `state.md` date — use `calendar.py set` to keep them in sync.
 
+**Side effect — faction clocks:** `advance <n> days|weeks` also ticks the
+campaign's faction clocks (one hidden d6 per faction per day) and prints a
+GM-only report. Hours and rests do not tick. Campaigns without
+`<campaign>/factions.json` are unaffected.
+
+---
+
+## Faction Clocks — `scripts/world.py`
+
+Off-screen world pressure: a goal and a 4/6/8-segment clock per active faction.
+Everything it prints is GM-only and nothing is ever pushed to the player display.
+
+```bash
+SKILL=<skill-base>
+CAMP=<campaign-name>
+
+# Give a faction a goal and a clock
+python3 $SKILL/scripts/world.py -c $CAMP add "Red Hand" --goal "seize the granary" --clock 6
+
+# Read the clocks (the GM-only view)
+python3 $SKILL/scripts/world.py -c $CAMP status
+
+# The party interferes (direct segments) or nudges the next roll (one-shot)
+python3 $SKILL/scripts/world.py -c $CAMP clock "Red Hand" -2 --notes "burned their safehouse"
+python3 $SKILL/scripts/world.py -c $CAMP lean  "Red Hand" +1
+
+# Veto, acknowledge, resize
+python3 $SKILL/scripts/world.py -c $CAMP hold "Red Hand"
+python3 $SKILL/scripts/world.py -c $CAMP complete "Red Hand" --outcome "averted at the gate"
+python3 $SKILL/scripts/world.py -c $CAMP set-interval week
+
+# Ticking by hand (calendar.py advance does this for you); --seed replays a tick
+python3 $SKILL/scripts/world.py -c $CAMP --seed 7 tick --days 3
+```
+
+**When to run:** `add` when a faction becomes active; `clock`/`lean` the moment
+the party acts against or for one; `status` and `complete` at `/gm save`; never
+`tick` by hand during play — `calendar.py advance` owns that. A fired clock
+(`status` shows `FIRED`) needs a `## Faction Moves` line in `state.md` and a
+`complete` call; see the `/gm factions` procedure in SKILL-commands.md.
+
 ---
 
 ## Campaign Search — `scripts/campaign_search.py`
