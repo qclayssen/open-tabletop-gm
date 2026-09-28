@@ -42,6 +42,11 @@ from pathlib import Path
 
 PROBE_DIR = Path(__file__).parent
 
+# The runtime's fail-forward detector is the one this harness scores against, so a
+# probe pass and a live retry can never disagree about what a dead stop is.
+sys.path.insert(0, str(PROBE_DIR.parent / "scripts"))
+from localdm.reply import is_dead_stop as _is_dead_stop  # noqa: E402
+
 DEFAULT_JUDGES = [
     "openai/gpt-oss-120b",
     "google/gemma-3-27b-it",
@@ -224,22 +229,22 @@ def has_mechanical_language(text: str) -> bool:
 
 
 def fail_forward(text: str) -> bool:
-    """Failure moves the world — world reacts, story continues, not a dead stop."""
-    dead_stops = [
-        r"\byou fail\b(?! to notice| to see| forward)",
-        r"\bnothing happens\b",
-        r"\byou don'?t succeed\b",
-        r"\bthe attempt fails\b",
-        r"\byou are unable\b",
-        r"\bunsuccessful\b",
-    ]
-    forward_markers = ["but", "however", "instead", "as you stumble", "the guard",
-                       "catches", "notices", "hears you", "sees you", "turns",
-                       "snaps", "commotion", "sound of", "your cover"]
+    """Failure moves the world — world reacts, story continues, not a dead stop.
+
+    The stall-phrase list is the runtime's, imported above, so this harness scores
+    exactly what `play.Session._check_narration` retries on. They used to be two
+    hand-maintained copies of one list, which is how a probe ends up passing on
+    output the live DM would have thrown away.
+    """
+    if _is_dead_stop(text):
+        return False
     tl = text.lower()
-    has_dead_stop = any(re.search(p, tl) for p in dead_stops)
-    has_forward = sum(1 for m in forward_markers if m in tl) >= 1
-    return has_forward and not has_dead_stop
+    return sum(1 for m in forward_markers if m in tl) >= 1
+
+
+forward_markers = ["but", "however", "instead", "as you stumble", "the guard",
+                   "catches", "notices", "hears you", "sees you", "turns",
+                   "snaps", "commotion", "sound of", "your cover"]
 
 
 def has_subtle_deception_tell(text: str) -> bool:

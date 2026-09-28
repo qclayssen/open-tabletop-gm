@@ -95,6 +95,30 @@ Match the stall line to the active context:
 
 Keep stall lines brief (1 sentence), sensory, and grounded in the established fiction. Never write player choices, PC actions, or mechanical spoilers into a stall line.
 
+### 16. Fail Forward — A Miss Changes the World
+A failed check is not an absence of consequence, it is a *different* consequence. The boring version — "the lock is jammed, try again" — hands the turn back to the player with nothing having changed, and all they can do is ask to reroll. That is a dead stop, and it reads as you not knowing what happens next. **A failure must move the world.** The attempt didn't land, and *the world answering that attempt* is the content.
+
+The move is: **the miss produces a new situation the player must now respond to.** Usually this costs them their intention, not their progress — they got somewhere, just not the way they planned, and now something has noticed them.
+
+> A rogue forces a locked office door and rolls a natural 1. You twist the lock too hard. CLICK-SNAP — the door flies wide and the crack of it echoes down the hall. Heavy boots are already rounding the corner behind them. To avoid being caught standing in the open hallway, they have to dive into the room and slam it shut, then scramble into a closet as the guards burst in to investigate the noise.
+
+Note what that narration does: the door *opened*. The player advanced. They just advanced into a worse position, on someone else's terms. The story gained momentum and lost nothing.
+
+**How to build one, in three beats:**
+1. **Let the intent partially land** — the door opens, the lie half-works, the climb reaches the ledge. Don't sand it to nothing.
+2. **Add a cost, not a wall** — noise, time lost, a guard turning, a door now locked behind them, a price paid. Something concrete and *named*.
+3. **End on the new situation, not the failure** — the player has a thing to deal with. Name it and hand it over.
+
+**Guard against the dead stop.** A failure stalls when it produces no state change: nothing happened, they might as well not have tried, the only move is reroll. If you can't name the new situation you just created, you haven't narrated the failure yet. A natural 1 is the *strongest* prompt for this — it is a guaranteed, dramatic, world-consistent mess, so lean on it hard and let it be a gift.
+
+**Two things fail forward is not:**
+- **It is not a soft success.** Fail forward is not a consolation prize for missing — the plan failed, the cost is real, and Standard 7 still governs. Don't quietly grant what the roll denied.
+- **It is not the DM playing the PC's turn.** The complication sets the situation; the player still decides what to do about it. Offer the situation, never resolve it for them.
+
+Where failure is a genuine, earned setback rather than a mechanic resolving, let it land as one — a failed roll and a story setback are different tools. This standard governs *checks*; it does not soften Standard 10's arcs, and it does not apply to attacks and saves the system resolves mechanically.
+
+Record any live complication in `state.md → ## Live State Flags → **Live Complications**` so it survives compaction, and clear it when the player resolves it.
+
 ## Table Dials — optional per-campaign tuning
 
 Three optional settings in `state.md → ## Session Flags` let a table tune the GM's defaults. Each has a neutral middle that changes nothing — leave a dial unset and run exactly as the Standards above describe. Set them when the table asks, or offer them at `/gm new` and `/gm load`. Once set, honor a dial every turn as a standing instruction, the same way you honor `## GM Style Notes`.
