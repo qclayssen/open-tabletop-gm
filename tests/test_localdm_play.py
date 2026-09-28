@@ -48,6 +48,74 @@ def test_a_plain_turn_is_one_call_and_hides_the_json(tmp_path):
     assert [t["role"] for t in s.memory.turns()] == ["player", "dm"]
 
 
+# ─── B2: an attack with no fight is not the model's to adjudicate ────────────
+
+def test_an_attack_with_no_fight_running_never_reaches_the_model(tmp_path):
+    """The director run lost its fight to a refused `/c start`, then the model
+    freelanced a whole ruleset: "**Attack Roll:** d20 + 6 vs AC (assuming roughly
+    13-15)", four bolded headings, a made-up combat log. One model call decides it."""
+    c = FakeClient(lambda m, msgs, role: "**Action: Attack**\nd20 + 6 vs AC 13, hit." + NULLS)
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path), bridge=FakeBridge())
+    out = s.handle("I hurl a Fire Bolt at Giant Frog 1.")
+    assert len(c.calls) == 0, "the model was never asked to invent a fight"
+    assert "no fight running" in out[0]
+    assert "/c start" in out[0], "told how to start one"
+
+
+@pytest.mark.parametrize("line", [
+    "I attack the guard with my quarterstaff.",
+    "I hurl a Fire Bolt at Giant Frog 1.",
+    "I strike the Sentinel.",
+    "I cast burning hands at the bench.",
+])
+def test_declared_attacks_are_all_caught(line):
+    from localdm import autopilot
+    assert autopilot.declares_attack(line)
+
+
+@pytest.mark.parametrize("line", [
+    "I look around the room.",
+    "I ask the innkeeper about the thirteenth bell.",
+    "I read the ledger again.",
+    "I walk to the window.",
+])
+def test_ordinary_turns_are_not_mistaken_for_attacks(line):
+    from localdm import autopilot
+    assert not autopilot.declares_attack(line)
+
+
+def test_a_started_fight_still_reaches_the_engine(tmp_path):
+    """A live encounter takes the engine path, not the new no-fight guard."""
+    from localdm import autopilot
+    p = autopilot.plan("I hurl a Fire Bolt at Giant Frog 1.", _enc(), "kairos")
+    assert p and p.cmds and p.cmds[0][0] == "attack"
+
+
+def _enc():
+    from tactics import state
+    enc = state.Encounter(campaign="demo", grid={"width": 12, "height": 10,
+                                                 "rows": ["." * 12] * 10, "legend": {".": "floor"},
+                                                 "terrain_types": {"floor": {"cost": 5,
+                                                                           "blocks_sight": False}}},
+                          meta={"name": "Frog Pond"})
+    enc.tokens = {"kairos": _tok("kairos", "Kairos", "pc", 0, 0, controller="player"),
+                  "giant-frog-1": _tok("giant-frog-1", "Giant Frog 1", "enemy", 9, 4)}
+    enc.order = ["kairos", "giant-frog-1"]
+    enc.turn_index, enc.round = 0, 1
+    enc.turn = {"actor": "kairos", "movement_budget": 30}
+    return enc
+
+
+def _tok(tid, name, side, x, y, controller="gm"):
+    from tactics.state import Token
+    t = Token(id=tid, name=name, side=side, x=x, y=y, hp=8 if side == "pc" else 18,
+              max_hp=8 if side == "pc" else 18, ac=12)
+    t.controller = controller
+    t.attacks = [{"name": "Bite", "type": "melee", "damage": "1d6+2", "bonus": 5,
+                  "reach": 5, "range": 5, "flags": []}] if side == "enemy" else []
+    return t
+
+
 def test_escalation_asks_the_advisor_then_the_dm_again(tmp_path):
     replies = iter(['A carved sigil.\n{"escalate": "Is this sigil part of the lich cult lore?"}',
                     "The sigil is old, older than the town." + NULLS])

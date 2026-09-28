@@ -61,7 +61,7 @@ import sys
 from paths import find_campaign            # scripts/paths.py (on sys.path via tactics/__init__)
 
 from . import actions, ai, effects, engine, maps, policy, sight, spells, state, sync
-from .grid import parse_square
+from .grid import label, parse_square
 from .roller import PendingRoll, Roller
 from .state import Encounter
 
@@ -236,6 +236,36 @@ def _placement(spec: str):
         raise Stop(str(e)) from None
 
 
+def _auto_placements(camp_dir, enc) -> list:
+    """[(sheet path, square)] for every PC sheet, on free ground near the party's edge.
+
+    A fight the DM just narrated has no token positions yet. Rather than refusing
+    (B1: "Add at least one --pc NAME@SQUARE" dead-ended the standard test scenario
+    and left the model to improvise a whole ruleset), place each sheet on the
+    lowest free passable square of the leftmost column, walking right as sheets
+    pile up. The GM can move anyone afterwards with `move`.
+    """
+    folder = pathlib.Path(camp_dir) / "characters"
+    sheets = sorted(p for p in folder.glob("*.md") if p.is_file()) if folder.is_dir() else []
+    if not sheets:
+        return []
+    try:
+        grid = enc.board()
+    except (KeyError, ValueError):
+        return []
+    taken = set()
+    out = []
+    for sheet in sheets:
+        spot = next((pos for x in range(grid.width)
+                     for pos in ((x, y) for y in range(grid.height))
+                     if grid.passable(pos) and pos not in taken), None)
+        if spot is None:                      # a map this small has no room left
+            break
+        taken.add(spot)
+        out.append((sheet, label(spot)))
+    return out
+
+
 # ─── commands ─────────────────────────────────────────────────────────────────
 
 def cmd_start(args, camp_dir):
@@ -249,7 +279,17 @@ def cmd_start(args, camp_dir):
     enc = Encounter(campaign=_campaign(args), grid=m["grid"], meta=m["meta"],
                     roll_mode=args.roll_mode or _roll_mode(camp_dir))
     R = engine.rules_for(enc)
-    for spec in args.pc or []:
+    pc_specs = list(args.pc or [])
+    placed_by_hand = bool(pc_specs)
+    if not pc_specs:
+        # B1: a fight narrated into being ("I head out to the spar") has no square
+        # yet, and refusing to start leaves the player with no way forward. Every
+        # sheet in the campaign joins, placed on free ground by the board itself.
+        pc_specs = [f"{p.stem}@{sq}" for p, sq in _auto_placements(camp_dir, enc)]
+        if not pc_specs:
+            raise Stop("Add at least one --pc NAME@SQUARE, or add a sheet to "
+                       f"{camp_dir / 'characters'} for it to place.")
+    for spec in pc_specs:
         name, pos = _placement(spec)
         sheet = sync.find_sheet(camp_dir, name)
         if sheet is None:
@@ -278,7 +318,8 @@ def cmd_start(args, camp_dir):
         t.side = side
         enc.tokens[t.id] = t
     if not any(t.side == "pc" for t in enc.tokens.values()):
-        raise Stop("Add at least one --pc NAME@SQUARE.")
+        raise Stop("Add at least one --pc NAME@SQUARE, or add a sheet to "
+                   f"{camp_dir / 'characters'} for it to place.")
     problems = state.validate(enc)
     if problems:
         raise Stop("Cannot start: " + "; ".join(problems))
@@ -286,7 +327,12 @@ def cmd_start(args, camp_dir):
     sync.set_active_combat(camp_dir, f"Grid combat in progress on {m['meta']['name']}: read "
                                      "`scripts/tactics.md`, then run `combat.py status`. "
                                      "`combat/encounter.json` holds HP, positions and turn order.")
-    return enc, f"Grid combat on {m['meta']['name']}. {res['text']}"
+    opened = "" if placed_by_hand else f" Placed {', '.join(_slug(n) for n in _pc_names(enc))}."
+    return enc, f"Grid combat on {m['meta']['name']}.{opened} {res['text']}"
+
+
+def _pc_names(enc) -> list:
+    return [t.name for t in enc.tokens.values() if t.side == "pc"]
 
 
 def cmd_status(enc) -> str:
