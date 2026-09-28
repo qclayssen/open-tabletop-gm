@@ -8,7 +8,7 @@ Type what your character does. While a roll is pending, type the number on the
 die (no modifier), or yes / no for a reaction. Other commands:
     /c <tactics command>      run a grid combat command directly
     /advise <who> <question>  historian, continuity, director, tactician,
-                              designer, or council
+                              designer, arbiter, interface, or council
     /usage                    tokens used, by role and model
     /quit                     stop
 
@@ -51,9 +51,14 @@ NO_FIGHT = ("(engine) There is no fight running, so there is nothing to attack. 
             "with /c start <map>, or say it in the fiction and let the scene play out.")
 NARRATE = ("Narrate what the Engine section says just happened, in 1 to 4 sentences. "
            "Then the JSON line with null for both fields.")
-CHECK_TASK = ("Narrate the outcome of that check in 1 to 4 sentences: what the character "
-              "finds or fails to find. Do not mention the number or the DC. Then the JSON "
-              "line with null for every field.")
+CHECK_OK = ("Narrate what the check found in 1 to 4 sentences. Do not mention the number "
+            "or the DC. Then the JSON line with null for every field.")
+CHECK_FAIL = ("Narrate this failure in 1 to 4 sentences, and make the world move. Let the "
+              "intent partially land, add one concrete cost (noise, lost time, someone "
+              "noticing, a door now shut behind them), and end on the new situation the "
+              "player must deal with. Never say the attempt simply failed or that nothing "
+              "happens. Do not decide what the character does about it. Do not mention the "
+              "number or the DC. Then the JSON line with null for every field.")
 MAX_ENEMY_TURNS = 20
 LOG_CAP = 6000                # characters of fight log handed to the end-of-fight summary
 ESCALATE_EVERY = 3            # player turns between two DM-asked escalations
@@ -146,6 +151,11 @@ class Session:
                      "(no gold, heal, crit, XP, item or stat change), emit no system log, "
                      "heading, bold or code, and change no number the sheet or Engine "
                      "section does not show.")
+    FAIL_FORWARD_FIX = ("Your last draft stalled: the check failed and nothing changed. "
+                        "Rewrite it so the miss has consequences. Let the attempt partly "
+                        "land, cost the character something concrete and named, and end on "
+                        "the new situation they now have to deal with. Do not write 'you "
+                        "fail' or 'nothing happens'.")
 
     def _dm(self, *, player="", engine="", notes="", task="") -> reply.DMReply:
         digest = self._digest()
@@ -421,14 +431,32 @@ class Session:
         if total is None:
             total = random.randint(1, 20) + bonus
         article = "an" if skill[:1] in "AEIOU" else "a"
+        ok = total >= dc
         result = (f"{who or 'The player'} rolled {article} {skill} check: {total} against DC "
-                  f"{dc}: {'success' if total >= dc else 'failure'}.")
+                  f"{dc}: {'success' if ok else 'failure'}.")
         self.memory.add("engine", result)
-        r = self._dm(engine=result, task=CHECK_TASK)
+        r = self._check_narration(result, ok)
         if r.narration:
             self._say(r.narration)
             return [f"({result})", r.narration]
         return [f"({result})"]
+
+    def _check_narration(self, result: str, ok: bool) -> reply.DMReply:
+        """Narrate a check outcome, then make sure it is one.
+
+        Applied Standard 16 is a rule about the fiction, so it is enforced here
+        rather than trusted to the prompt: a failed check that was narrated as a
+        stall is detected in script and rewritten once. That costs a second call
+        only when the model actually stalled, and leaves the success path with a
+        shorter task, since it never carries the failure instructions.
+        """
+        r = self._dm(engine=result, task=CHECK_OK if ok else CHECK_FAIL)
+        if not ok and reply.is_dead_stop(r.narration):
+            retry = self._dm(engine=result,
+                             task=f"{CHECK_FAIL}\n{self.FAIL_FORWARD_FIX}".strip())
+            if not reply.is_dead_stop(retry.narration):
+                return retry
+        return r
 
     @staticmethod
     def _directive(text: str) -> str:

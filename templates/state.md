@@ -46,6 +46,11 @@
 **NPC dispositions** *(only list NPCs with changed or notable standing)*:
 *(none established)*
 
+**Live Complications** *(consequences of failed checks that are still unresolved — from
+Applied Standard 16. Record what the world changed, not the roll. Clear each one when the
+player resolves it)*:
+*(none established)*
+
 ## Campaign Arc
 *(sandbox campaigns: set `type: sandbox` — no arc tracking)*
 *(structured campaigns: populated by /gm import — use structured format)*

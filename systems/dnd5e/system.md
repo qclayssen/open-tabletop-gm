@@ -33,6 +33,10 @@ The build reads the 2014 packs only. `foundryvtt/dnd5e` ships both editions in o
 - Advantage: roll `d20` twice, take higher — `dice.py d20 adv`
 - Disadvantage: roll `d20` twice, take lower — `dice.py d20 dis`
 - Critical hit on natural 20: double all damage dice
+- A natural 1 on a skill check is a failure, mechanically, and narratively it is the best
+  fail-forward material you will ever get — see `SKILL.md` → Applied Standard 16 for what
+  a failed check owes the player. Do not grant the check's outcome, and do not narrate it
+  as a dead stop.
 
 Example inline combat narration:
 `Goblin attacks Aldric: d20+4 = 17 vs AC 16 — hit! 1d6+2 = 5 piercing damage`
