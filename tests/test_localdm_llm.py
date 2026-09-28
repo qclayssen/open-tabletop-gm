@@ -97,3 +97,35 @@ def test_reasoning_effort_is_sent_only_when_asked(monkeypatch):
     assert llm.reasoning_from_env() is None
     monkeypatch.setenv("GM_REASONING", "Medium")
     assert llm.reasoning_from_env() == "medium"
+
+
+def test_a_blank_answer_spent_on_reasoning_says_so():
+    """qwen3.5:4b with no reasoning_effort burns the whole max_tokens budget in
+    the message's "reasoning" field and returns content "". The caller used to
+    get "" back and could not tell that apart from a model with nothing to say."""
+    spent = {"choices": [{"message": {"content": "", "reasoning": "hmm, the rules say..."}}],
+             "usage": {"prompt_tokens": 1034, "completion_tokens": 400}}
+
+    def transport(url, body, headers, timeout):
+        return spent
+
+    c = llm.Client(base_url="http://x", api_key="", transport=transport)
+    with pytest.raises(llm.LLMError) as err:
+        c.chat("qwen3.5:4b", [{"role": "user", "content": "hi"}], max_tokens=400,
+               role="advisor:arbiter")
+    msg = str(err.value)
+    assert "400/400" in msg and "reasoning" in msg and "max_tokens" in msg
+
+
+def test_a_genuinely_empty_answer_without_reasoning_is_returned_as_empty():
+    """Not every blank answer is a budget problem. With no reasoning behind it and
+    tokens to spare, "   " is a real (if useless) answer and the caller decides."""
+    blank = {"choices": [{"message": {"content": "   "}}],
+             "usage": {"prompt_tokens": 10, "completion_tokens": 3}}
+
+    def transport(url, body, headers, timeout):
+        return blank
+
+    c = llm.Client(base_url="http://x", api_key="", transport=transport)
+    assert c.chat("m", [{"role": "user", "content": "hi"}], max_tokens=400,
+                  role="advisor:arbiter").text == "   "

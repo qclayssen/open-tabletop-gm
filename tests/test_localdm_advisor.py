@@ -60,3 +60,35 @@ def test_one_failing_advisor_does_not_sink_the_others():
 
     out = advisor.consult(FakeClient(responder), "m", ["historian", "director"], "q", "")
     assert "Historian: Fine." in out and "Director: (unavailable: HTTP 429)" in out
+
+
+def test_consult_sends_reasoning_effort_so_a_thinking_model_answers():
+    """A local thinking model left to think spends the whole budget and returns
+    an empty note, which used to render as a bare "Arbiter: " -- indistinguishable
+    from an advisor that had nothing to add. Measured on qwen3.5:4b: 400/400
+    completion tokens on reasoning and content "" without this, 47 tokens and a
+    real answer with reasoning_effort="none"."""
+    c = FakeClient(lambda m, msg, role: "Fail forward; the desk was cleaned.")
+    advisor.consult(c, "qwen3.5:4b", ["arbiter"], "q", "", reasoning="none")
+    assert c.reasoning == [("advisor:arbiter", "none")]
+
+
+def test_an_empty_advisor_answer_is_marked_unavailable_not_silent():
+    """advisor.consult only used to mark LLMError. A model that returned an empty
+    string produced "Arbiter: ", which reads in the transcript as a considered
+    silence -- the GM is then told the advisors have been consulted."""
+    c = FakeClient(lambda m, msg, role: "")
+    out = advisor.consult(c, "m", ["arbiter", "historian"], "q", "")
+    assert "Arbiter: (unavailable: arbiter returned an empty note" in out
+    assert "Historian: (unavailable: historian returned an empty note" in out
+    # And never a bare "Arbiter: " with nothing after it.
+    assert "Arbiter: \n" not in out and "Arbiter: \n\n" not in out
+
+
+def test_one_silent_advisor_does_not_hide_the_others():
+    def responder(model, messages, role):
+        return "" if role == "advisor:arbiter" else "Check DC 13, not 10."
+
+    out = advisor.consult(FakeClient(responder), "m", ["arbiter", "director"], "q", "")
+    assert "Arbiter: (unavailable:" in out
+    assert "Director: Check DC 13, not 10." in out

@@ -13,7 +13,8 @@ from .llm import LLMError
 from .reply import strip_think
 
 BRIEFS = pathlib.Path(__file__).resolve().parent / "prompts" / "advisors"
-ADVISORS = ("historian", "continuity", "director", "tactician", "designer")
+ADVISORS = ("historian", "continuity", "director", "tactician", "designer", "arbiter",
+            "interface")
 MAX_WORDS = 150
 FALLBACK = ["continuity", "director"]
 KEYWORDS = {
@@ -26,6 +27,11 @@ KEYWORDS = {
     "tactician": ("fight", "combat", "encounter", "enemy", "enemies", "boss", "tactic",
                   "ambush", "monster", "terrain"),
     "designer": ("rule", "homebrew", "balance", "reward", "loot", "xp", "mechanic", "magic item"),
+    "arbiter": ("roll", "rolled", "die", "dice", "dc", "nat 1", "nat 20", "natural 1",
+                "natural 20", "critical", "crit", "fudge", "reroll", "re-roll", "save",
+                "arbitrate", "ruling", "d20", "advantage", "disadvantage", "hit or miss"),
+    "interface": ("display", "readab", "layout", "turn order", "sidebar", "visual",
+                  "readability", "on screen", "dice pad", "what the player sees"),
 }
 
 
@@ -54,15 +60,26 @@ def parse_advise(text: str):
     if who and who != "council":
         brief(who)                                 # raises for an unknown name
     if not who or not question:
-        raise ValueError("Usage: /advise <historian|continuity|director|tactician|designer"
-                         "|council> <question>")
+        raise ValueError(f"Usage: /advise <{'|'.join(ADVISORS)}|council> <question>")
     if who == "council":
         return pick(question), question, True
     return [who], question, False
 
 
 def consult(client, model: str, names, question: str, context: str, *,
-            max_tokens: int = 400) -> str:
+            max_tokens: int = 400, reasoning: str | None = None) -> str:
+    """Ask each advisor in parallel and return their notes as one block.
+
+    `reasoning` is passed through to the client for the same reason the DM tier
+    passes it: a local thinking model given no reasoning_effort will spend the
+    entire max_tokens budget thinking and return an empty answer. Measured on
+    qwen3.5:4b with this brief and max_tokens=400 -- no reasoning_effort: 400
+    completion tokens, content "", 13.3s; reasoning_effort="none": 47 completion
+    tokens, a real answer, 1.9s. brief() already appends /no_think, and this
+    model ignores it. So the note came back as the bare string "Arbiter: ",
+    which is indistinguishable in the transcript from an advisor that considered
+    the question and had nothing to add.
+    """
     names = list(dict.fromkeys(names))
 
     def ask(name):
@@ -70,8 +87,14 @@ def consult(client, model: str, names, question: str, context: str, *,
                     {"role": "user", "content": f"## Campaign context\n{context}\n\n"
                                                 f"## GM question\n{question}"}]
         r = client.chat(model, messages, max_tokens=max_tokens, temperature=0.4,
-                        role=f"advisor:{name}")
-        return strip_think(r.text)
+                        role=f"advisor:{name}", reasoning=reasoning)
+        answer = strip_think(r.text)
+        if not answer:
+            # Never render silence as a considered note. An advisor that said
+            # nothing must be visibly different from one that was consulted.
+            raise LLMError(f"{name} returned an empty note "
+                           f"({r.completion_tokens} completion tokens)")
+        return answer
 
     parts = []
     with ThreadPoolExecutor(max_workers=max(1, len(names))) as pool:
