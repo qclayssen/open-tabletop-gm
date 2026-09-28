@@ -9,16 +9,47 @@ crash mid-command leaves either the old state or the new one, never half.
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 import pathlib
 import shutil
 from dataclasses import asdict, dataclass, field
+from dataclasses import fields as dataclass_fields
 
+from . import schemas
 from .grid import Grid, label
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 SIDES = ("pc", "ally", "enemy", "neutral")
+
+
+def _score(value):
+    """An ability score or level as an int, or None if it is not one.
+
+    Sheets and hand-made tokens carry these as text often enough that a
+    derived stat should refuse to guess rather than raise.
+    """
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        return int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _hit_die(extra: dict) -> str:
+    """The hit die notation for a token, whatever shape it was stored in.
+
+    build_srd.py and the character layer have always written hit dice as a bare
+    string ("d10"); the engine writes {"die": "d10", "remaining": n}.
+    """
+    hd = (extra or {}).get("hit_dice")
+    if isinstance(hd, str) and hd.strip():
+        return hd.strip()
+    if isinstance(hd, dict):
+        return str(hd.get("die") or "").strip()
+    return ""
 
 
 @dataclass
@@ -78,6 +109,84 @@ class Token:
     def active(self) -> bool:
         """On the board and able to be targeted (dead creatures are not)."""
         return not self.dead
+
+    # ── the document ──
+    def to_dict(self) -> dict:
+        """Serialise, checking the shape on the way out.
+
+        Validating here as well as on load is deliberate: the engine mutates
+        tokens in place, so a bad value usually arrives through a rules call
+        rather than a file, and refusing to save is the last place to catch it.
+        """
+        d = asdict(self)
+        schemas.TOKEN_SCHEMA.validate(d, self.id or "token")
+        return d
+
+    @classmethod
+    def from_dict(cls, d: dict) -> Token:
+        """Coerce and validate a saved token, then build it.
+
+        Coercion first: a file that says ``"hp": "18"`` (a sheet reader writing
+        text) or a condition in capitals loads instead of failing twenty
+        commands into a session.
+        """
+        return cls(**schemas.TOKEN_SCHEMA.clean(dict(d), "token"))
+
+    # ── derived stats ──
+    def prepare_derived(self) -> dict:
+        """Compute the stats a rules query needs, and report them.
+
+        Fill-only, and idempotent: a number that came off a character sheet or
+        an SRD stat block is authoritative and is never recomputed or
+        overwritten here. The returned dict is a snapshot for callers and tests
+        to read, not a field to store, because a derived value that survives in
+        encounter.json is a stale value the day a rules table changes
+        (``rules.initiative`` and ``rules.skill_bonus`` are the resolvers of
+        record; this reports what they would see).
+
+        Stateless with respect to conditions on purpose. Exhaustion and a
+        cursed blade are condition modifiers applied at roll time by the
+        system rules, never baked into a token: a stat that depends on a
+        condition would flip value mid-fight and stop being reproducible.
+        """
+        scores = self.extra.get("abilities") or {}
+        if not self.dex_mod and _score(scores.get("dex")) is not None:
+            self.dex_mod = schemas.ability_mod(scores["dex"])
+        skills = dict(self.extra.get("skills") or {})
+        if "perception" not in skills and _score(scores.get("wis")) is not None:
+            skills["perception"] = schemas.ability_mod(scores["wis"])
+        self._estimate_max_hp(scores)
+        return {
+            "init_mod": self.dex_mod + (_score(self.extra.get("initiative_bonus")) or 0),
+            "save_mods": dict(self.saves),
+            "skill_mods": skills,
+            "max_hp": self.max_hp,
+            "max_hp_estimated": bool(self.extra.get("max_hp_estimated")),
+        }
+
+    def _estimate_max_hp(self, scores: dict) -> None:
+        """Supply a max_hp only for a token that never had one, and label it.
+
+        A max_hp the player can see must come from their sheet. This is the
+        fallback for a hand-made token, so the engine has a number to work with
+        and the display never shows a blank HP bar. It averages the first hit
+        die and adds the fixed CON modifier for each later level, and it sets
+        ``extra["max_hp_estimated"]`` so nothing presents it as authoritative.
+        """
+        if self.max_hp or self.hp or self.dead:
+            return
+        if (self.source or {}).get("kind") == "srd":
+            return                                  # a stat block is never estimated
+        die = _hit_die(self.extra)
+        con, level = _score(scores.get("con")), _score(self.extra.get("level"))
+        if not die or con is None or not level or level < 1:
+            return
+        self.max_hp = schemas.MAX_HP_FORMULA.evaluate({
+            "die_average": schemas.die_average(die),
+            "con_mod": schemas.ability_mod(con),
+            "level": level,
+        })
+        self.extra["max_hp_estimated"] = True
 
 
 @dataclass
@@ -145,17 +254,91 @@ class Encounter:
     # ── serialisation ──
     def to_dict(self) -> dict:
         d = asdict(self)
-        d["tokens"] = {k: asdict(v) for k, v in self.tokens.items()}
+        d["tokens"] = {k: v.to_dict() for k, v in self.tokens.items()}
+        d["version"] = SCHEMA_VERSION
         return d
 
     @classmethod
-    def from_dict(cls, d: dict) -> "Encounter":
+    def from_dict(cls, d: dict) -> Encounter:
+        d = migrate(d)
         d = dict(d)
-        if d.get("version") != SCHEMA_VERSION:
-            raise ValueError(f"encounter schema version {d.get('version')} is not {SCHEMA_VERSION}")
-        d["tokens"] = {k: Token(**v) for k, v in d.get("tokens", {}).items()}
+        d["tokens"] = {k: Token.from_dict(v) for k, v in d.get("tokens", {}).items()}
         d["turn"] = TurnState(**d.get("turn", {}))
         return cls(**d)
+
+
+# ─── migration ────────────────────────────────────────────────────────────────
+#
+# A saved fight must keep working across an upgrade. Each step turns version N
+# into N+1 in memory; the next save() (atomic, with a .bak) writes the current
+# version, so an old file upgrades itself the first time the GM touches it.
+#
+# Two rules: a document from the future raises rather than being down-converted
+# (this engine does not know what a newer writer meant by a field it invented),
+# and a step never writes to disk. A fight that is only read must not be
+# modified behind the GM's back.
+
+def migrate_v1_to_v2(d: dict) -> dict:
+    """v1 -> v2: the shapes the character and display layers wrote.
+
+    ``extra`` could be absent or null, and hit dice were written as a bare die
+    string (build_srd.py's ``hp_dice``) or as {"remaining", "max"} rather than
+    the engine's {"die", "remaining"}. Both forms turn up in a campaign that has
+    been edited by hand or merged from the character app, and the engine
+    expects one shape.
+    """
+    out = copy.deepcopy(d)
+    for token in (out.get("tokens") or {}).values():
+        if not isinstance(token, dict):
+            continue
+        extra = token.get("extra")
+        token["extra"] = extra if isinstance(extra, dict) else {}
+        hd = token["extra"].get("hit_dice")
+        if isinstance(hd, str) and hd.strip():
+            token["extra"]["hit_dice"] = {"die": hd.strip()}
+        elif isinstance(hd, dict) and "die" not in hd:
+            # {"remaining": n, "max": n}: the die size is not in this shape, so
+            # it is left to prepare_derived rather than invented here.
+            token["extra"].pop("hit_dice")
+        saves = token.get("death_saves")
+        if isinstance(saves, dict):
+            token["death_saves"] = {"successes": int(saves.get("successes") or 0),
+                                    "failures": int(saves.get("failures") or 0)}
+    return out
+
+
+MIGRATIONS = {(1, 2): migrate_v1_to_v2}
+
+
+def migrate(d: dict) -> dict:
+    """Run every step from the file's version up to SCHEMA_VERSION."""
+    version = d.get("version", 1)        # files written before versioning existed
+    if not isinstance(version, int):
+        raise ValueError(f"encounter schema version {version!r} is not a number")
+    if version > SCHEMA_VERSION:
+        raise ValueError(f"encounter schema version {version} is newer than this engine "
+                         f"({SCHEMA_VERSION}); update open-tabletop-gm before opening it")
+    while version < SCHEMA_VERSION:
+        step = MIGRATIONS.get((version, version + 1))
+        if step is None:
+            raise ValueError(f"no migration from encounter schema v{version} to v{version + 1}")
+        d = step(d)
+        d["version"] = version + 1
+        version += 1
+    return d
+
+
+def prepare_all(enc: Encounter) -> dict:
+    """Derived stats for every token in the encounter, keyed by token id."""
+    return {tid: t.prepare_derived() for tid, t in enc.tokens.items()}
+
+
+# The schema and the dataclass must not drift: a Token field with no field
+# description is a value that reaches the file unchecked, and a description for
+# a field that does not exist hides a rename. Both fail at import.
+_UNKNOWN = set(schemas.TOKEN_SCHEMA.fields) ^ {f.name for f in dataclass_fields(Token)}
+if _UNKNOWN:
+    raise RuntimeError(f"TOKEN_SCHEMA and Token disagree about: {', '.join(sorted(_UNKNOWN))}")
 
 
 # ─── Validation ───────────────────────────────────────────────────────────────

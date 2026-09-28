@@ -38,7 +38,8 @@ scripts/tactics/             grid combat engine (stdlib only)
                              Dijkstra movement, DMG corner line of sight and cover,
                              areas of effect (centre-of-square rule, walls block)
   state.py                   Encounter/Token/TurnState -> <campaign>/combat/encounter.json
-                             (validated, atomic write, .bak kept)
+                              (validated, atomic write, .bak, SCHEMA_VERSION + migrations)
+  schemas.py                 encounter.json field types, TOKEN_SCHEMA, safe formulas
   roller.py                  dice via scripts/dice.py parser; rolls tagged
                              engine | player | verbal; PendingRoll for player rolls
   rules.py                   thin system interface + loader (see SYSTEM-PORTING.md)
@@ -132,6 +133,11 @@ Open), tick it here, and keep this file under 150 lines.
   run are still cast and narrated.
 - A paused command (exit 2) keeps its seed in `combat/pending.json`; the re-run
   with `--roll` / `--react` replays the same engine dice.
+- Derived data is never stored in `encounter.json`. `Token.prepare_derived()`
+  fills only what the sheet or SRD did not supply and ignores conditions;
+  `rules.initiative`/`save_bonus`/`skill_bonus` stay the resolvers of record.
+- `Token.saves` and `extra["skills"]` are heterogeneous by design: a PC's are the
+  sheet's totals (proficiency in), a monster's fall back to the ability modifier.
 - The dnd-gm advisor council (Game Designer, Tactical Combat Designer, Grid
   Strategist, ...) can be consulted as subagents for rulings; their advice is
   recorded under Decisions in the milestone file.

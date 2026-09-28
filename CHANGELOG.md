@@ -20,6 +20,12 @@ This project is the LLM-agnostic, system-flexible fork of [claude-dnd-skill](htt
 - `world.py` writes neither `state.md` nor `graph.json` — `/gm factions` in SKILL-commands.md and the `/gm save` branch now spell out the one session-end pass that reconciles a fired clock with `## Faction Moves` and the graph.
 - New `tests/test_world_clocks.py` (26 tests) covering per-day rolls, seeded replay, the one-shot lean, hold/fire/complete, clamping, legacy `factions.json`, the calendar integration, and the error exits.
 
+### Added: the encounter file has a schema
+- `scripts/tactics/schemas.py` describes every value in `combat/encounter.json` with a field type (`NumberField`, `StringField`, `BooleanField`, `SetField`, `ListField`, `DictField`, `SchemaField`, `FormulaField`, `OptionalField`, `AnyField`). `Token.from_dict` coerces and validates on load and `Token.to_dict` validates on save, so a value that does not fit is refused at the file boundary with the field named, instead of surfacing as a `TypeError` twenty commands into a session.
+- `SCHEMA_VERSION` is 2, with a migration chain (`migrate_v1_to_v2`) that runs on load. A v1 fight upgrades itself in memory and is written back as v2 by the next save; a file from a newer engine is refused rather than down-converted, and reading a fight never rewrites it.
+- `Token.prepare_derived()` reports initiative modifier, saves, skills and max HP. It only ever fills a value the sheet or SRD did not supply: a number from a character sheet or stat block is authoritative, `max_hp` is only ever estimated (and labelled) for a token that never had one, and derived stats ignore conditions so they cannot flip value mid-fight.
+- `FormulaField` evaluates an expression over a closed set of names by walking its AST. No `eval`: a formula read out of a sheet is untrusted text.
+
 ### Fixed: SRD build reads the live upstream
 - `5e-bits/5e-database` is archived. `build_srd.py` and `sync_srd.py` now read `5e-bits/5e-srd-api` (`packages/5e-database`), so `sync_srd.py` can see new upstream commits again. The staleness check filters commits to that package path.
 
