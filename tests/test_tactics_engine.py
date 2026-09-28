@@ -292,15 +292,17 @@ def test_variant_diagonal_parity_carries_across_moves():
 
 
 def test_opportunity_attack_preview_uses_the_real_distance():
-    # A reach-10 creature at 10 ft attacks a prone crawler: disadvantage, not
-    # the advantage a 5 ft attacker would get. Bite +3 vs AC 12: 60% -> 36%.
+    # A reach-10 creature at 10 ft attacks a prone crawler: neither advantage nor
+    # disadvantage. PHB p292 gives attackers *within 5 ft* advantage and only
+    # ranged attacks disadvantage, so a melee attack at 10 ft is an ordinary roll.
+    # Bite +3 vs AC 12: 60%.
     k = kairos(pos=(2, 0))
     k.add_condition("prone")
     long = frog("frog-1", (4, 0))
     long.attacks[0]["reach"] = 10
     enc = start(encounter([k, long]), ["kairos", "frog-1"])
     p = engine.preview_move(enc, "kairos", "B1")
-    assert p["opportunity_attacks"][0]["hit_percent"] == 36
+    assert p["opportunity_attacks"][0]["hit_percent"] == 60
 
 
 def test_roll_for_me_keeps_the_rolls_already_made():

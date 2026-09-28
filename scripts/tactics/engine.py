@@ -162,6 +162,34 @@ def death_save(enc: Encounter, roller: Roller) -> dict:
     return res
 
 
+def check(enc: Encounter, roller: Roller, token_ref, name: str, dc: int = 0,
+          advantage: str = "normal", sense: str = "", by_ref=None,
+          source_ref=None) -> dict:
+    """A skill or ability check, out of turn, with the conditions that touch it.
+
+    A check costs no action and is not somebody's turn, so this does not touch
+    the action economy: being frightened is worth nothing if the engine only
+    answers when it is already too late. `dc` of 0 rolls the check without
+    judging it, which is what a GM wants when the fiction has not set a number
+    yet. `sense` says what the check depends on, which is the only way to hold
+    a deafened or blinded creature to it.
+    """
+    t = _resolve(enc, token_ref)
+    if not t.active:
+        raise CombatError(f"{t.name} is dead.")
+    by = _resolve(enc, by_ref) if by_ref else None
+    source_in_sight = True
+    if source_ref:
+        src = _resolve(enc, source_ref)
+        source_in_sight = enc.board().cover(t.pos, src.pos)["los"]
+    mark = len(roller.log)
+    R = rules_for(enc)
+    res = R.ability_check(t, name, int(dc or 0), roller, player_rolls(enc, t, roller),
+                          advantage, sense, other=by, source_in_sight=source_in_sight)
+    _log(enc, "check", t.id, res["text"], roller, mark)
+    return res
+
+
 def end_turn(enc: Encounter, roller: Roller) -> dict:
     if enc.status != "active":
         raise CombatError("Combat has ended.")
@@ -435,7 +463,37 @@ def _attack_context(enc: Encounter, attacker, target, attack: dict):
     adjacent = any(hostile(attacker, h) and h.active and R.can_act(h)
                    and grid.distance(attacker.pos, h.pos) <= 5 for h in enc.tokens.values())
     return AttackContext(distance=dist, melee=melee, cover=cov["cover"],
-                         long_range=long_range, hostile_adjacent=adjacent), None
+                         long_range=long_range, hostile_adjacent=adjacent,
+                         source_in_sight=_source_in_sight(enc, attacker, target)), None
+
+
+def _source_in_sight(enc: Encounter, attacker, target) -> bool:
+    """Whether whatever is frightening or charming one of them can be seen.
+
+    A charm or a fear applied by a spell records its source, and the condition
+    lasts exactly as long as the creature causing it does (PHB p290-291), so the
+    engine can measure the gate rather than guess it. A condition the GM typed in
+    by hand has no recorded source, and then it is assumed to be in sight: the GM
+    who applied it was describing a fear that is happening.
+    """
+    for victim in (attacker, target):
+        for condition in ("frightened", "charmed"):
+            source_id = _condition_source(victim, condition)
+            if not source_id:
+                continue
+            source = enc.tokens.get(source_id)
+            if source is None or not source.active:
+                return False
+            if not enc.board().cover(victim.pos, source.pos)["los"]:
+                return False
+    return True
+
+
+def _condition_source(token, condition: str):
+    for effect in token.effects or []:
+        if condition in (effect.get("conditions") or []) and effect.get("source"):
+            return effect["source"]
+    return None
 
 
 def _find_attack(attacker, name):
@@ -480,7 +538,14 @@ def attack_options(enc: Encounter, attacker_ref) -> list:
 
 
 def attack(enc: Encounter, roller: Roller, attacker_ref, target_ref, attack_name: str = None,
-           reactions: dict = None) -> dict:
+           reactions: dict = None, advantage: str = "normal") -> dict:
+    """One attack, resolved as the rules say it happens.
+
+    `advantage` is the GM's own ruling for this attack ("advantage" or
+    "disadvantage"), and it outranks every condition on both creatures: a
+    --adv on a poisoned archer is advantage, a --dis on a stunned target is
+    disadvantage. A ruling the GM did not make is never inferred.
+    """
     a = _resolve(enc, attacker_ref)
     t = _resolve(enc, target_ref)
     _require_action(enc, a)
@@ -495,28 +560,30 @@ def attack(enc: Encounter, roller: Roller, attacker_ref, target_ref, attack_name
     for atk in candidates:
         ctx, why = _attack_context(enc, a, t, atk)
         if ctx:
-            legal.append((R.hit_chance(a, t, atk, ctx)["chance"] * average_damage(atk), atk, ctx))
+            legal.append((R.hit_chance(a, t, atk, ctx, advantage)["chance"] * average_damage(atk),
+                          atk, ctx))
         else:
             reasons.append(why)
     if not legal:
         raise CombatError(reasons[0] if reasons else f"{a.name} cannot attack {t.name}.")
     _exp, atk, ctx = max(legal, key=lambda x: x[0])     # no name given: the best legal attack
     mark = len(roller.log)
-    res = _resolve_attack(enc, roller, a, t, atk, ctx, reactions)
+    res = _resolve_attack(enc, roller, a, t, atk, ctx, reactions, advantage)
     enc.turn.action_used = True
     enc.turn.undo_locked = True
     _log(enc, "attack", a.id, res["text"], roller, mark)
     return res
 
 
-def _resolve_attack(enc: Encounter, roller: Roller, a, t, atk: dict, ctx, reactions: dict = None) -> dict:
+def _resolve_attack(enc: Encounter, roller: Roller, a, t, atk: dict, ctx, reactions: dict = None,
+                    advantage: str = "normal") -> dict:
     """One attack roll with everything around it: reactions to the hit (Silvery
     Barbs, Shield), damage, concentration saves, riders, and the attacker
     giving away a hidden position."""
     R = rules_for(enc)
     reactions = reactions or {}
     ctx.react = lambda natural, total, ac: fx.on_hit(enc, roller, a, t, natural, total, ac, reactions)
-    res = R.attack(a, t, atk, ctx, roller, player_rolls(enc, a, roller))
+    res = R.attack(a, t, atk, ctx, roller, player_rolls(enc, a, roller), advantage)
     extra = fx.after_damage(enc, roller, t, res.get("damage"))
     if res.get("hit") and atk.get("rider_effects") and t.active:
         extra += _apply_riders(enc, roller, a, t, atk, reactions)

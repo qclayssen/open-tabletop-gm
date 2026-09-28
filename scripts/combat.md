@@ -80,6 +80,29 @@ python3 $SKILL/scripts/tracker.py -c $CAMP clear --all  # also clears death save
 
 ---
 
+## Conditions and exhaustion — `scripts/tactics/combat.py condition` / `check`
+
+In a grid fight the engine applies the conditions itself: poisoned, blinded, charmed, deafened, frightened, grappled, incapacitated, invisible, paralyzed, petrified, prone, restrained, stunned, unconscious, and exhaustion level by level. `tracker.py` above is the out-of-combat tracker; these two are the ones that change how a die is rolled.
+
+```bash
+T="python3 $SKILL/scripts/tactics/combat.py -c $CAMP"
+
+$T condition kairos add poisoned           # the line says what it is doing to Kairos
+$T condition kairos add "exhaustion 3"     # or: add exhaustion --level 3
+$T condition kairos remove exhaustion
+
+$T check kairos perception --dc 15         # a check, out of turn, conditions applied
+$T check frog-1 perception --dc 12 --sense hearing
+$T attack kairos frog-1 dagger --adv       # the GM's ruling beats the table, both ways
+```
+
+- The rolled line names the condition that did it: `Kairos Fire Bolt -> Giant Frog 1: 8 vs AC 11, disadvantage, miss (disadvantage: Kairos is poisoned).`
+- `--adv` / `--dis` are for when a condition does not fit the fiction. They apply to that one roll, and the line says the ruling was yours.
+- Conditional conditions are measured by the engine: prone only affects ranged attacks (and melee attacks from beyond 5 ft get neither advantage nor disadvantage), and frightened only counts while its source is in sight.
+- Full details, including every condition and what it does: `scripts/tactics.md` → Conditions.
+
+---
+
 ## Encounter design — `scripts/tactics/combat.py budget` / `rate`
 
 Two design tools. Neither needs a combat running, and neither rolls a die.

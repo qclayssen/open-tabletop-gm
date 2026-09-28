@@ -50,6 +50,8 @@ class AttackContext:
     long_range: bool = False      # beyond normal range, within long range
     hostile_adjacent: bool = False  # a hostile that can act is within 5 ft of the attacker
     opportunity: bool = False     # made as a reaction to leaving reach
+    source_in_sight: bool = True  # whatever is frightening or charming one of them
+                                  # can currently be seen by the other
     react: object = None          # engine hook for reactions to a hit (Shield, Silvery Barbs):
                                   # react(natural, total, ac) -> {"natural", "total", "ac", "lines"}
 
@@ -84,6 +86,36 @@ class Rules:
         raise NotImplementedError
 
     # conditions
+    def condition_modifiers(self, token) -> dict:
+        """Everything this token's conditions change, merged into one dict.
+
+        The keys are always present, so a caller never has to tell "this condition
+        grants nothing" from "nobody asked": `attack_roll`, `ability_check`, `save`,
+        `attack_against`, `movement`, `action_economy`. A value is "adv"/"dis", a
+        gate dict ({"ranged": "dis"} — only applied when the gate holds for this
+        roll), a per-ability dict, a speed, or None.
+
+        Systems are expected to keep one table for this, as
+        systems/dnd5e/tactics_rules.py does, and derive their condition sets from
+        it: three hand-kept lists of conditions is how a condition ends up
+        helping the creature it was meant to be hurting.
+        """
+        raise NotImplementedError
+
+    def condition_notes(self, token) -> list:
+        """What the token's conditions are currently doing, one line each, for
+        the GM to read after applying one."""
+        raise NotImplementedError
+
+    def set_condition(self, token, condition: str) -> list:
+        """Add a condition and apply what the rules make immediate rather than
+        per-roll (a halved hit point maximum, a death). Returns GM-facing lines."""
+        raise NotImplementedError
+
+    def clear_condition(self, token, condition: str) -> list:
+        """Remove a condition and undo what setting it applied."""
+        raise NotImplementedError
+
     def can_act(self, token) -> bool:
         raise NotImplementedError
 
@@ -95,20 +127,33 @@ class Rules:
 
     # attack, save, damage
     def attack(self, attacker, target, attack: dict, ctx: AttackContext, roller,
-               player: bool) -> dict:
+               player: bool, explicit: str = "normal") -> dict:
+        """`explicit` is "advantage" or "disadvantage" when the GM ruled one for
+        this attack. It outranks every condition, in both directions."""
         raise NotImplementedError
 
-    def hit_chance(self, attacker, target, attack: dict, ctx: AttackContext) -> dict:
+    def hit_chance(self, attacker, target, attack: dict, ctx: AttackContext,
+                   explicit: str = "normal") -> dict:
         """{"percent": int, "advantage": str, "reasons": [...]} without rolling.
         Shown on every option and target before the player commits."""
         raise NotImplementedError
 
     def saving_throw(self, token, ability: str, dc: int, roller, player: bool,
-                     cover: int = 0) -> dict:
+                     cover: int = 0, explicit: str = "normal") -> dict:
         raise NotImplementedError
 
-    def save_chance(self, token, ability: str, dc: int, cover: int = 0) -> dict:
+    def save_chance(self, token, ability: str, dc: int, cover: int = 0,
+                    explicit: str = "normal") -> dict:
         """{"fail": 0..1, "percent_fail": int, "advantage": str} without rolling."""
+        raise NotImplementedError
+
+    def ability_check(self, token, name: str, dc: int, roller, player: bool,
+                      explicit: str = "normal", sense: str = "", other=None,
+                      source_in_sight: bool = True) -> dict:
+        """A skill or ability check with the conditions that touch it. `name` is a
+        skill or an ability; `sense` says what the check depends on, which is what
+        blind and deaf turn on; `other` is the creature it is being made about,
+        which is what a charm turns on."""
         raise NotImplementedError
 
     def spell(self, caster, name: str, level: int = None) -> dict:
