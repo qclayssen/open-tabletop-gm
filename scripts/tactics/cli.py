@@ -290,6 +290,28 @@ def cmd_start(args, camp_dir):
     return enc, f"Grid combat on {m['meta']['name']}. {res['text']}"
 
 
+def _ordinal(n: int) -> str:
+    if 10 <= n % 100 <= 20:
+        return f"{n}th"
+    suffix = {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')
+    return f"{n}{suffix}"
+
+
+def _format_spell_slots(token) -> str:
+    """Format spell slots for display: '1st: 2/4, 2nd: 1/3'."""
+    slots = token.extra.get("slots") or {}
+    if not slots:
+        return ""
+    parts = []
+    for lv in sorted(slots.keys(), key=int):
+        s = slots[lv]
+        used = s.get("used", 0)
+        total = s.get("total", 0)
+        if total > 0:
+            parts.append(f"{_ordinal(int(lv))}: {used}/{total}")
+    return "Spell slots: " + ", ".join(parts) if parts else ""
+
+
 def cmd_status(enc) -> str:
     if enc.status == "active":
         act = "action used" if enc.turn.action_used else "action ready"
@@ -305,7 +327,8 @@ def cmd_status(enc) -> str:
             tags.append(f"concentrating: {x.concentration}")
         tags += [e["name"] for e in x.effects if not e.get("conditions") and e.get("name")]
         cond = f" [{', '.join(tags)}]" if tags else ""
-        parts.append(f"{x.name} dead" if x.dead else f"{x.name} {x.square} {x.hp}/{x.max_hp}{cond}")
+        slot_info = f" {_format_spell_slots(x)}" if x.side == "pc" else ""
+        parts.append(f"{x.name} dead" if x.dead else f"{x.name} {x.square} {x.hp}/{x.max_hp}{cond}{slot_info}")
     ready = actions.readied_lines(enc)
     return f"{head}\n" + " | ".join(parts) + ("\n" + "\n".join(ready) if ready else "")
 
@@ -686,17 +709,6 @@ def main(argv=None) -> int:
         return e.code
     except engine.CombatError as e:
         print(str(e))
-        return 1
-    except roller.BadFace as e:
-        # The player mistyped a die face, not the engine: refuse the command,
-        # keep the pending roll saved so the same attack can be re-run, and
-        # name the legal range. Uncaught, this reached the localdm bridge and
-        # killed play.py's REPL, losing the session mid-fight.
-        if camp_dir is not None:
-            _save_pending(camp_dir, canon, args._seed, args._decisions)
-        print(f"{e}. Nothing has happened yet.\n"
-              f"Re-run the same command with {_prior(args, drop_last_roll=True)}"
-              f"--roll <{e.legal}, no modifier>.")
         return 1
     except PendingRoll as e:
         if camp_dir is not None:
