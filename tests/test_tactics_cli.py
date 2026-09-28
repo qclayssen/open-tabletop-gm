@@ -238,6 +238,47 @@ def test_helpful_errors(camp, capsys):
     assert code == 1 and "off the map" in out
 
 
+# ─── B1: a narrated fight with no --pc still starts ──────────────────────────
+
+def test_start_without_a_pc_places_every_sheet(camp, capsys):
+    """The standard test-player script types `/c start frog-pond` and nothing else.
+
+    Refused with "Add at least one --pc NAME@SQUARE", the fight never began, the
+    attacks were parsed as free prose, and the model improvised its own ruleset
+    (director report 2026-09-28, B1/B2). The campaign's own sheets are the
+    placement the player never had to type.
+    """
+    code, out = run(capsys, "start", "frog-pond", "--monster", "giant frog@J5", "--seed", "3")
+    assert code == 0, out
+    assert "Grid combat on Frog Pond" in out and "Placed kairos" in out
+    code, out = run(capsys, "status")
+    assert "Kairos A1 8/8" in out and "Giant Frog J5 18/18" in out
+
+
+def test_autoplaced_sheets_never_share_a_square(camp, capsys, tmp_path):
+    (camp / "characters" / "Mabli.md").write_text(KAIROS_MD, encoding="utf-8")
+    code, out = run(capsys, "start", "frog-pond", "--monster", "giant frog@J5", "--seed", "3")
+    assert code == 0, out
+    import json
+    enc = json.loads((camp / "combat" / "encounter.json").read_text(encoding="utf-8"))
+    pcs = [t for t in enc["tokens"].values() if t["side"] == "pc"]
+    assert len(pcs) == 2
+    assert len({(t["x"], t["y"]) for t in pcs}) == 2, "two sheets, two squares"
+
+
+def test_an_explicit_pc_is_still_honoured(camp, capsys):
+    code, out = run(capsys, "start", "frog-pond", "--pc", "Kairos@B7", "--seed", "3")
+    assert code == 0 and "Placed" not in out
+    code, out = run(capsys, "status")
+    assert "Kairos B7 8/8" in out
+
+
+def test_start_without_a_pc_or_a_sheet_says_where_to_put_one(camp, capsys):
+    (camp / "characters" / "Kairos.md").unlink()
+    code, out = run(capsys, "start", "frog-pond", "--monster", "giant frog@J5")
+    assert code == 1 and "--pc NAME@SQUARE" in out and "characters" in out
+
+
 def test_the_terminal_demo_plays_a_whole_fight(camp, capsys):
     import importlib.util
     spec = importlib.util.spec_from_file_location("tactics_demo", ROOT / "scripts" / "tactics" / "demo.py")

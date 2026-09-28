@@ -39,6 +39,17 @@ PRONOUN = ("it", "him", "her", "them", "that one")
 _SQUARE = re.compile(r"\b(?:to|toward|towards|into|onto)\s+([a-z]{1,2}\d{1,2})\b")
 
 
+def declares_attack(line: str) -> bool:
+    """True when a line reads as an attack with no encounter to resolve it against.
+
+    A grid fight must be started with the engine, so an attack outside one is not a
+    turn the model may adjudicate: it is either narration ("I shove the guard") or a
+    fight that was never started. play.py answers the second case itself.
+    """
+    text = " " + re.sub(r"[^a-z0-9' -]+", " ", (line or "").lower()) + " "
+    return _has(text, ATTACK)
+
+
 def _has(text, words) -> bool:
     return any(re.search(r"\b" + re.escape(w) + r"\b", text) for w in words)
 

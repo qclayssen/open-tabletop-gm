@@ -47,6 +47,8 @@ COMBAT_PARSE = ("A grid fight is running on the engine. Do not narrate and do no
                 "narration empty.")
 NO_ACTION = ("(engine) I could not read that as a fight action. Name an attack, a move, a "
              "spell or end turn.")
+NO_FIGHT = ("(engine) There is no fight running, so there is nothing to attack. Start one "
+            "with /c start <map>, or say it in the fiction and let the scene play out.")
 NARRATE = ("Narrate what the Engine section says just happened, in 1 to 4 sentences. "
            "Then the JSON line with null for both fields.")
 CHECK_TASK = ("Narrate the outcome of that check in 1 to 4 sentences: what the character "
@@ -460,6 +462,16 @@ class Session:
 
     def _autopilot(self, line: str):
         """Output for a combat action parsed without a model, or None."""
+        if not self.bridge.is_combat_active():
+            # B2: the player declared an attack but no fight is running. Left alone,
+            # this reaches the model as ordinary narration, and a small model
+            # improvises a whole ruleset — bolded "**Attack Roll:** d20 + 6 vs AC
+            # (assuming roughly 13-15)" and a made-up combat log (director report
+            # 2026-09-28). Say what is missing instead; the model never gets to
+            # invent a battle the engine is not running.
+            if autopilot.declares_attack(line):
+                return [NO_FIGHT]
+            return None
         if self.combat != "engine" or not self._players_turn():
             return None
         from tactics import state
