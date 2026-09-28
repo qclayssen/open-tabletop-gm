@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<!-- A layout harness for the combat panel, for checking it at real viewport
+     sizes without a running encounter. It feeds tactics.js the same shape
+     sync.snapshot produces, on Frog Pond, with one of each side on the map.
+     Open it at 1440x900 (a shared display) and at 390x844 (a phone):
+     http://localhost:PORT/evidence-panel.html -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Combat panel — layout harness</title>
+<link rel="stylesheet" href="/static/tactics.css">
+<style>
+  /* The same reset index.html sets, so the panel is measured in the box model
+     the display actually gives it. */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  /* Stand-ins for the parts of index.html the panel sits over, so the harness
+     shows the panel in the same surroundings the display gives it. */
+  html, body { height: 100%; background: #140F09; color: #E6D8B8;
+    font: 14px/1.4 Figtree, system-ui, sans-serif; }
+  #sidebar { position: fixed; left: 0; top: 0; bottom: 0; width: 230px; z-index: 6;
+    background: #1D160E; border-right: 1px solid #3A2E1E; padding: 16px; }
+  #topbar { position: fixed; left: 230px; right: 0; top: 0; height: 64px; z-index: 6;
+    background: #1D160E; border-bottom: 1px solid #3A2E1E; padding: 20px; }
+  #text-scroll { padding: 90px 380px 40px 250px; }
+  #text-scroll p { margin: 0 0 12px; color: #A8977A; max-width: 34em; }
+  #stage-btn { position: fixed; left: 250px; right: 380px; bottom: 12px; z-index: 7;
+    background: #8C5F14; color: #140F09; border: 0; border-radius: 4px;
+    padding: 12px 18px; font: 600 13px Figtree, sans-serif; }
+  @media (max-width: 860px) {
+    #sidebar, #topbar { display: none; }
+    #text-scroll { padding: 8px; }
+    #stage-btn { left: 8px; right: 8px; }
+  }
+</style>
+</head>
+<body>
+<div id="sidebar">sidebar</div>
+<div id="topbar">Frog Pond — the display</div>
+<div id="text-scroll">
+  <p>Kairos splashes through the shallows, one claw-length of pond between him and the larger frog.</p>
+  <p>"The water is over your knees," the GM says, "and it is your move."</p>
+</div>
+<button id="stage-btn">Stage</button>
+<script>
+// The same shape scripts/tactics/sync.py snapshot() returns, on Frog Pond.
+const rows = (() => {
+  const g = [];
+  for (let y = 0; y < 14; y++) {
+    let row = '';
+    for (let x = 0; x < 20; x++) {
+      if (x < 3) row += '.';
+      else if ((x === 5 || x === 6) && y === 3) row += ',';
+      else if ((x === 8 || x === 9) && y === 7) row += ',';
+      else if ((x === 11 || x === 12) && y === 2) row += ',';
+      else row += '~';
+    }
+    g.push(row);
+  }
+  return g;
+})();
+const tok = (id, name, side, x, y, hp, extra) => Object.assign(
+  { id, name, side, x, y, hp, max_hp: hp, ac: 12, dead: false, hidden: false,
+    controller: side === 'enemy' ? 'gm' : 'player', conditions: [], effects: [],
+    concentration: null, readied: null, threat: 0 }, extra || {});
+const SNAP = {
+  status: 'active', round: 2, current: 'kairos', unseen_turn: false,
+  meta: { name: 'Frog Pond' },
+  grid: { name: 'Frog Pond', rows: rows },
+  order: ['kairos', 'juno', 'frog-1', 'theodric', 'frog-2'],
+  turn: { movement_left: 30, action_used: false, bonus_used: false, reaction: true },
+  tokens: [
+    tok('kairos', 'Kairos', 'pc', 1, 6, 8, { concentration: 'Detect Magic', threat: 0 }),
+    tok('juno', 'Juno', 'pc', 1, 8, 11),
+    tok('theodric', 'Theodric', 'other', 1, 4, 14),
+    tok('frog-1', 'Giant Frog 1', 'enemy', 9, 4, 18, { threat: 10 }),
+    tok('frog-2', 'Giant Frog 2', 'enemy', 12, 10, 12, { threat: 10, conditions: ['prone'] }),
+  ],
+  log: [
+    { text: 'Giant Frog 1 bites Kairos for 5 (12/18 left).', round: 2 },
+    { text: 'Kairos hits Giant Frog 2 with a longsword for 7 (11/18 left).', round: 2 },
+    { text: 'Juno: Cure Wounds on Theodric, 6 HP restored.', round: 2 },
+  ],
+};
+window.__SNAP = SNAP;
+</script>
+<script src="/static/tactics.js"></script>
+<script>
+  // The harness posts nothing: only the panel's own rendering is under test.
+  window.fetch = () => Promise.reject(new Error('offline harness'));
+  Tactics.update(JSON.parse(JSON.stringify(SNAP)));
+  window.__ready = true;
+</script>
+</body>
+</html>

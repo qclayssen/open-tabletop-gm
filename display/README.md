@@ -152,6 +152,56 @@ The right sidebar tracks each party member in real time:
 
 Click any character's name to open the **full character sheet modal**: attacks, spells, features, inventory, with SRD lookup links on every spell and feature name.
 
+### Combat battle map
+
+While a fight is running, `combat.py start` pushes a `combat` snapshot to the
+display and `static/tactics.js` draws it as a panel over the narration. The
+engine owns the rules; the panel only draws snapshots and sends the player's
+clicks to `POST /combat/do`. It appears when initiative is rolled and folds away
+at `end`.
+
+The panel is built for two very different screens, and says so in one place —
+`boardCell()` in `tactics.js`:
+
+- **A shared table display** (860px and wider) draws squares of at least 40px.
+  A map too big for the box scrolls rather than shrinking into something only
+  the person nearest the screen can read. At 40px the token initials land at
+  about 14px and the condition badges at 10px.
+- **A phone** (860px and narrower) fits the whole map to the width of the
+  panel, so nothing runs off the side, and the height follows from the map's
+  own shape. The actions become a bar along the bottom of the panel: it scrolls
+  inside itself, with Move, Attack and Cast pinned to its top edge and End turn
+  to its bottom, so a long spell list can never push either off the screen.
+  Buttons are 40px tall on a phone and 36px on a desktop.
+
+**Side is a shape, not a colour.** An enemy token is drawn as a notched
+octagon, an ally or neutral one as a circle, over the same 2r box. The
+initiative strip repeats it with a stripe on the leading edge of each chip and a
+small glyph (⚔ enemy, ♥ ally, ✦ neutral), and the words a screen reader says
+name the side too. Colour is the third signal, never the only one.
+
+`Hide map` folds the panel down to its header and the initiative strip rather
+than hiding it: a folded panel still answers "whose turn is it" and "who is
+left", which is what a table watches between moves.
+
+#### Looking at it without a fight
+
+`display/evidence-panel.html` feeds `tactics.js` a snapshot of the shape
+`sync.snapshot` returns, drawn on Frog Pond with one of each side on the map,
+and sends nothing. Serve `display/` and open it:
+
+```bash
+python3 -m http.server 8731 --directory display
+# then open http://localhost:8731/evidence-panel.html
+```
+
+`scripts/phase4b_viewport_evidence.py` drives that page in headless Chromium at
+1440x900 and 390x844 and writes what the browser actually laid out — the size of
+a square, whether the board fits its box, where the bar is — to
+`/tmp/phase4b-evidence/`. The same numbers are asserted in
+`tests/test_display_tactics_layout.py`, which skips itself if Playwright or its
+Chromium is not installed.
+
 ### Timed effects
 
 Effects are started and ended via `send.py` flags, bundled with narration:
