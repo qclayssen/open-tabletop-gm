@@ -32,6 +32,18 @@ class FakeClient:
     def roles(self):
         return [c[1] for c in self.calls]
 
+    def dm_calls(self):
+        """Only the DM tier's calls.
+
+        A guardrail trip also consults the advisor council, so len(self.calls)
+        no longer means "how many times did we ask the DM". Tests about retry
+        counts want this one.
+        """
+        return [c for c in self.calls if c[1] == "dm"]
+
+    def advisor_roles(self):
+        return [c[1] for c in self.calls if c[1].startswith("advisor")]
+
 
 class FakeBridge:
     """Scripted snapshots and command results. The last snapshot repeats.
