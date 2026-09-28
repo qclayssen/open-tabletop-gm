@@ -320,6 +320,7 @@ def cmd_start(args, camp_dir):
     if not any(t.side == "pc" for t in enc.tokens.values()):
         raise Stop("Add at least one --pc NAME@SQUARE, or add a sheet to "
                    f"{camp_dir / 'characters'} for it to place.")
+    state.prepare_all(enc)          # derived stats, before validate() and initiative
     problems = state.validate(enc)
     if problems:
         raise Stop("Cannot start: " + "; ".join(problems))

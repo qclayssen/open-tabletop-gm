@@ -12,7 +12,7 @@ import sys
 import pytest
 
 from tests.tactics_fixtures import (RULES, ROOT, _build, _RAW, encounter, frog, goblin,
-                                    kairos, roller, start)
+                                    kairos, roller, start, state)
 from tactics import ai, cli, maps
 
 rules_mod = sys.modules[type(RULES).__module__]
@@ -172,6 +172,18 @@ def test_start_status_and_state_md(camp, capsys):
     assert "Giant Frog 1 J5 18/18" in out and "Kairos B7 8/8" in out
     code, out = begin(capsys)
     assert code == 1 and "already running" in out
+
+
+def test_start_writes_a_current_schema_with_derived_stats_and_no_cached_derived_block(camp, capsys):
+    """A4: cmd_start derives before validate() and initiative; the file gets the
+    filled-in base field, and no cached derived block to go stale."""
+    assert begin(capsys)[0] == 0
+    saved = json.loads((camp / "combat" / "encounter.json").read_text(encoding="utf-8"))
+    assert saved["version"] == state.SCHEMA_VERSION
+    kairos_saved = saved["tokens"]["kairos"]
+    assert kairos_saved["dex_mod"] == 2, "DEX 15 from the sheet"
+    assert kairos_saved["max_hp"] == 8, "the sheet's own max HP, never an estimate"
+    assert not any("derived" in key for key in kairos_saved)
 
 
 def test_a_player_roll_is_asked_for_and_nothing_changes_meanwhile(camp, capsys):
