@@ -22,9 +22,11 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import pathlib
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 _spec = importlib.util.spec_from_file_location("xp", ROOT / "systems" / "dnd5e" / "xp.py")
@@ -84,6 +86,40 @@ class LedgerTests(unittest.TestCase):
         """An absent ledger and a reconciled one are different answers."""
         rows = xp._read_ledger("never-awarded")
         self.assertEqual(rows, [])
+
+    def test_the_campaign_root_is_honoured_rather_than_the_home_default(self):
+        """A GM whose campaigns live somewhere else must get them there.
+
+        This module resolved ~/open-tabletop-gm/campaigns unconditionally, so
+        with GM_CAMPAIGN_ROOT pointing at a second tree the award landed in a
+        copy of the campaign nobody was playing, while `combat.py end` — which
+        resolves through paths.find_campaign — wrote to the real one. Two
+        answers to "where did the XP go" is how a ledger stops being trusted.
+        """
+        root = self.base / "elsewhere"
+        (root / "campaigns" / "c" / "characters").mkdir(parents=True)
+        (root / "campaigns" / "c" / "characters" / "aldric.md").write_text(
+            "# Aldric\nlevel 3\n", encoding="utf-8")
+        xp.CAMPAIGNS_DIR = None                      # fall through to the env var
+        # paths.py resolves the root, so /var -> /private/var on macOS; compare
+        # resolved, and separately assert it is not the home default it used to be.
+        expected = (root / "campaigns").resolve()
+        with mock.patch.dict(os.environ, {"GM_CAMPAIGN_ROOT": str(root)}):
+            self.assertEqual(xp._campaigns_dir(), expected)
+            self.assertNotEqual(xp._campaigns_dir(),
+                                pathlib.Path("~/open-tabletop-gm/campaigns").expanduser())
+            xp._record_award("c", [{"name": "Aldric", "awarded": 150,
+                                    "total_after": 1050}], note="medium combat")
+            # read back through the same root the award was written to
+            rows = xp._read_ledger("c")
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["awarded"], 150)
+            self.assertEqual(xp._find_char_path("c", "Aldric").parent,
+                             expected / "c" / "characters")
+        # Nothing is written to the home default: asserted above by comparing
+        # the resolved directory. This repo's own ~/open-tabletop-gm tree is not
+        # touched — a test that asserted on the real home would fail for anyone
+        # who actually plays.
 
 
 if __name__ == "__main__":

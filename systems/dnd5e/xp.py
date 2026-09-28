@@ -27,6 +27,7 @@ Usage:
 """
 
 import sys
+import os
 import re
 import json
 import datetime
@@ -97,8 +98,41 @@ DIFF_IDX: dict[str, int] = {"easy": 0, "medium": 1, "hard": 2, "deadly": 3}
 # ── Path resolution ───────────────────────────────────────────────────────────
 # Script lives at <skill-base>/systems/dnd5e/xp.py
 _SKILL_BASE   = pathlib.Path(__file__).parent.parent.parent
-CAMPAIGNS_DIR = pathlib.Path("~/open-tabletop-gm/campaigns").expanduser()
 DISPLAY_SCRIPT = _SKILL_BASE / "display" / "push_stats.py"
+
+
+def _campaigns_dir() -> pathlib.Path:
+    """Where campaigns live, resolved the same way every other script resolves them.
+
+    This used to be a module-level `pathlib.Path("~/open-tabletop-gm/campaigns")`
+    with no reference to GM_CAMPAIGN_ROOT, so a GM who had moved their campaign
+    tree — or a test, or a second campaign used for playtesting — got an award
+    appended to a copy of the campaign nobody was playing. `combat.py end` found
+    the real campaign through paths.find_campaign and wrote elsewhere, which is
+    exactly the split-brain this now closes.
+
+    scripts/paths.py owns the rule; it lives two directories up and is not on
+    sys.path when this file is run as a script, so it is loaded by path (the
+    same trick the other system modules use) with a literal fallback that
+    reproduces its default. Reading the env var per call, rather than at import,
+    is what lets a test or a second process point this at a temp tree.
+    """
+    if CAMPAIGNS_DIR is not None:                 # explicit override, e.g. tests
+        return pathlib.Path(CAMPAIGNS_DIR)
+    scripts = _SKILL_BASE / "scripts"
+    if str(scripts) not in sys.path:
+        sys.path.insert(0, str(scripts))
+    try:
+        from paths import campaigns_dir
+    except ImportError:                          # pragma: no cover - partial install
+        raw = os.environ.get("GM_CAMPAIGN_ROOT", "").strip()
+        root = pathlib.Path(raw).expanduser() if raw else pathlib.Path("~/open-tabletop-gm").expanduser()
+        return root / "campaigns"
+    return campaigns_dir()
+
+
+# Overrides _campaigns_dir() when set. None means "resolve from the environment".
+CAMPAIGNS_DIR = None
 
 
 # ── Table helpers ─────────────────────────────────────────────────────────────
@@ -171,7 +205,7 @@ def _next_level_xp(level: int) -> int:
 # ── Character file I/O ────────────────────────────────────────────────────────
 
 def _find_char_path(campaign: str, name: str) -> pathlib.Path:
-    char_dir = CAMPAIGNS_DIR / campaign / "characters"
+    char_dir = _campaigns_dir() / campaign / "characters"
     exact = char_dir / f"{name.lower()}.md"
     if exact.exists():
         return exact
@@ -326,13 +360,13 @@ LEDGER_NAME = "xp-ledger.jsonl"
 
 
 def _ledger_path(campaign: str) -> pathlib.Path:
-    return CAMPAIGNS_DIR / campaign / LEDGER_NAME
+    return _campaigns_dir() / campaign / LEDGER_NAME
 
 
 def _record_award(campaign: str, entries: list, note: str) -> None:
     """Append one line per character. Never raises — a ledger write must not
     cost a player their XP, which is already written by the time we get here."""
-    _record_award_to(CAMPAIGNS_DIR / campaign, entries, note)
+    _record_award_to(_campaigns_dir() / campaign, entries, note)
 
 
 def record_awards(campaign_dir, entries: list, note: str = "") -> None:
