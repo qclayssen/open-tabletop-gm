@@ -53,6 +53,24 @@ def pick(question: str, limit: int = 3) -> list:
     return ranked[:limit] or list(FALLBACK)
 
 
+def fight_brief(snap) -> str:
+    """Compact fight state for advisor context, or "" when no fight is active.
+
+    Advisors were inventing mechanics (a 15 ft frog-tongue reach vs the actual
+    threat 5) because consult context carried no fight state. Kept small on
+    purpose: HP, turn and round only, from the bridge snapshot (no engine
+    load, no CLI call).
+    """
+    if not snap or snap.get("status") != "active":
+        return ""
+    cur = snap.get("current") or {}
+    lines = [f"Round {snap.get('round')}, {cur.get('name', '?')}'s turn."]
+    for t in snap.get("tokens") or []:
+        state = "DEAD" if t.get("dead") else f"{t.get('hp')}/{t.get('max_hp')} HP"
+        lines.append(f"- {t.get('name')} ({t.get('side')}): {state}")
+    return "## Active fight\n" + "\n".join(lines)
+
+
 def parse_advise(text: str):
     """'/advise <name|council> <question>' arguments -> (names, question, is_council)."""
     who, _, question = (text or "").strip().partition(" ")

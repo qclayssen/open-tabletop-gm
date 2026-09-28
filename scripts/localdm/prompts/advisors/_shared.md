@@ -12,6 +12,9 @@ These rules apply to every advisor in the council:
 - They never decide for a player's character.
 - They never suggest fudging dice.
 
+## Mechanics
+- Numbers you cite (reach, ranges, HP, AC, DCs, damage) must come from the Campaign context or the Active fight block; never invent them. If the context lacks a number, say so instead of guessing.
+
 ## Usage Guidelines
 - During play: Use `/gm advise <advisor>` for specific advice, or `/gm advise council` to ask 2-3 advisors that fit the question.
 - End of session: `/gm end` offers a council review where advisors report contradictions, open threads, scenes that worked/fell flat, and upcoming fights.
