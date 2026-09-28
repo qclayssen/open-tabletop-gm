@@ -108,6 +108,32 @@ $T rate --monsters "bandit captain x2, wolf x3"
 
 ---
 
+## Rest and spell slots — `scripts/tactics/combat.py rest`
+
+A rest inside a running grid fight is a real rules turn: it restores spell slots, and for a party that has been casting all session that is the whole point.
+
+```bash
+SKILL=<skill-base>
+CAMP=<campaign-name>
+T="python3 $SKILL/scripts/tactics/combat.py -c $CAMP"
+
+$T rest long                        # 8 hours: HP, temp HP cleared, half the Hit Dice, all spell slots
+$T rest short                       # 1 hour: Hit Dice, short-rest features, Warlock Pact Magic
+$T rest short --token Kairos        # one character rather than the whole party
+$T rest short --for-me             # spend the party's Hit Dice and roll for them
+```
+
+- **`rest` needs a fight running** (`start`, and not yet `end`). It is a command inside a grid combat, the same as `end-turn` — a rest between two fights is part of the narration, not of the grid, and is the GM's to award. A campaign that wants it mechanical between fights should say so and it can be lifted out of the encounter.
+- **Every spell slot comes back on a long rest.** PHB p201, no ruling needed.
+- **A short rest restores only what the class's own features restore.** A Warlock's Pact Magic slots refill by themselves (PHB p107). A Wizard's Arcane Recovery buys back slots totalling up to half the caster's level, rounded up, cheapest slots first, once per long rest (PHB p112) — the engine spends the budget and prints exactly which slots it recovered. Every other class gets nothing, and the engine says so rather than guessing.
+- **Sorcery Points are not spell slots.** They are spent to *create* slots, so a short rest reports how many the Sorcerer has and leaves the conversion to you. A long rest is what refills them, and the engine tracks the count if your sheet carries one.
+- **A sheet that lists a feature wins over the SRD.** If a character sheet says Arcane Recovery at wizard 1, the engine gives it to them at wizard 1.
+- **The engine never invents a caster's slots.** A sheet with an empty Spell Slots table gets one filled in from class and level (the SRD tables, in `systems/dnd5e/spell_slots.py`); a table the sheet already has is left alone; a class the 5.1 SRD has no table for (a homebrew caster) is the sheet's own business.
+- **Hit Dice belong to the player.** `rest short` reports what is available and waits for `--for-me`, the same rule as every other player die in this engine.
+- `rest` also advances the in-world clock through `calendar.py rest short|long` when the campaign has a calendar, and quietly does nothing when it does not.
+
+---
+
 ## Display updates during combat (from startup.md)
 
 ```bash

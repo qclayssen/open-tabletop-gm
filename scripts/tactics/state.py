@@ -20,7 +20,7 @@ from dataclasses import fields as dataclass_fields
 from . import schemas
 from .grid import Grid, label
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 SIDES = ("pc", "ally", "enemy", "neutral")
 
 
@@ -86,6 +86,27 @@ class Token:
     reactions: str = "ask"       # spell reactions (Shield, Silvery Barbs): ask | auto | off
     source: dict = field(default_factory=dict)      # {"kind": "srd", "ref": "giant-frog"} | {"kind": "sheet", ...}
     extra: dict = field(default_factory=dict)       # system-specific data (spell slots, ...)
+
+    @property
+    def spell_slots(self) -> dict:
+        """The caster's spell slots: ``{"1": {"total": 2, "used": 0}, ...}``.
+
+        A view onto ``extra["slots"]``, not a second copy of the number. The
+        data lives in `extra` because the character sheet, the display sidebar
+        and the encounter file all already speak that shape (see slots.py for
+        the argument), and a second name for the same value is how a sheet and
+        a sidebar start disagreeing. What this buys is the typed, self-describing
+        way to reach it: the dataclass field the schema documents, backed by the
+        one copy of the data.
+
+        Read and write it through slots.read()/write()/spend() for anything that
+        changes a count — this is the stored shape, not a normalised one.
+        """
+        return (self.extra or {}).get("slots") or {}
+
+    @spell_slots.setter
+    def spell_slots(self, value: dict) -> None:
+        self.extra["slots"] = schemas.SPELL_SLOTS.coerce(value or {})
 
     @property
     def pos(self) -> tuple:
@@ -307,7 +328,35 @@ def migrate_v1_to_v2(d: dict) -> dict:
     return out
 
 
-MIGRATIONS = {(1, 2): migrate_v1_to_v2}
+def migrate_v2_to_v3(d: dict) -> dict:
+    """v2 -> v3: spell slots in one shape.
+
+    Slots have been tracked since v1 but never written down anywhere, so three
+    different shapes are in the wild: the engine's ``{"used", "total"}``, the
+    display's ``{"remaining", "max"}`` (0.7.0 normalised both ends of that
+    pipeline by hand), and a bare number where the count should be. Each of them
+    arrives in ``extra["slots"]`` from a different writer — the sheet reader,
+    the display, a GM editing a campaign file — and until this step they were
+    only normalised at the point of use, which meant a level spent against one
+    spelling of the data and a status line reading another.
+
+    The key names a slot level, and JSON has no integer keys, so the file is
+    written the way the sheet and the display both name it: a string. Nothing is
+    dropped and no count is invented; a level the coercer cannot read is left
+    exactly as it was for schemas.SPELL_SLOTS to name on load.
+    """
+    out = copy.deepcopy(d)
+    for token in (out.get("tokens") or {}).values():
+        if not isinstance(token, dict):
+            continue
+        extra = token.get("extra")
+        if not isinstance(extra, dict) or "slots" not in extra:
+            continue
+        extra["slots"] = schemas.SPELL_SLOTS.coerce(extra["slots"])
+    return out
+
+
+MIGRATIONS = {(1, 2): migrate_v1_to_v2, (2, 3): migrate_v2_to_v3}
 
 
 def migrate(d: dict) -> dict:
@@ -370,6 +419,11 @@ def validate(enc: Encounter) -> list:
             problems.append(f"{t.id}: negative temp hp")
         if t.reactions not in ("ask", "auto", "off"):
             problems.append(f"{t.id}: reactions {t.reactions!r} not ask|auto|off")
+        if t.extra.get("slots"):
+            try:
+                schemas.SPELL_SLOTS.validate(t.extra["slots"], f"{t.id}: spell slots")
+            except schemas.SchemaError as e:
+                problems.append(str(e))
     for tid in enc.order:
         if tid not in enc.tokens:
             problems.append(f"turn order names unknown token {tid!r}")

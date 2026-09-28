@@ -15,7 +15,7 @@ is lost if concentration breaks (PHB p193).
 from __future__ import annotations
 
 from . import effects as fx
-from . import spells
+from . import slots, spells
 from .core import CombatError, hostile, log, player_rolls, resolve, rules_for
 from .engine import (_attack_context, _find_attack, _require_action, _resolve_attack, move)
 from .grid import label, parse_square
@@ -128,7 +128,7 @@ def ready(enc, roller: Roller, token_ref, kind: str, what: str = None, target: s
         lv = spells._check_slot(t, spec)
         enc.turn.spells.append({"level": spec["level"], "casting": "action"})
         if lv:
-            t.extra["slots"][lv]["used"] += 1
+            slots.spend(t, lv)
         name = f"{spec['name']} (readied)"
         lines += fx.start_concentration(enc, t, name)
         entry.update(spell=spec["name"], level=spec["slot"] or None, concentration=True,

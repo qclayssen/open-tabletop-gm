@@ -24,6 +24,7 @@ import re
 import shutil
 import urllib.parse
 
+from . import slots as slots_mod
 from .grid import label
 
 _SKILL = pathlib.Path(__file__).resolve().parents[2]
@@ -101,8 +102,12 @@ def snapshot(enc, meta: dict = None) -> dict:
         return list(dict.fromkeys(names))
 
     def slots(t) -> dict:
-        return {str(lv): {"used": s.get("used", 0), "total": s.get("total", 0)}
-                for lv, s in sorted((t.extra.get("slots") or {}).items())}
+        # The display's contract: string levels, {used, total}. It draws these
+        # as pips, and it has always read `total` — see the _normalize_slot()
+        # fallback it kept for older payloads. Routed through slots.read() so a
+        # file that arrived in the display's own {"remaining","max"} spelling is
+        # translated once, here, rather than by every reader in the display.
+        return {str(lv): dict(s) for lv, s in slots_mod.read(t).items()}
 
     from .core import rules_for
     R = rules_for(enc)
@@ -232,9 +237,7 @@ def summary_lines(enc, meta: dict) -> list:
         lines.append(f"- All enemies defeated: {', '.join(down)}.")
     for t in pcs:
         state = "dead" if t.dead else f"{t.hp}/{t.max_hp} HP"
-        slots = t.extra.get("slots") or {}
-        used = ", ".join(f"level {lv} {s['used']}/{s['total']}" for lv, s in sorted(slots.items())
-                         if s.get("used"))
+        used = slots_mod.spent_summary(t)
         lines.append(f"- {t.name}: {state}" + (f", spell slots used: {used}" if used else "") + ".")
     return lines[:5]
 

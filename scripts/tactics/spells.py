@@ -18,6 +18,7 @@ is spent, so a refused cast costs nothing.
 from __future__ import annotations
 
 from . import effects as fx
+from . import slots
 from .core import CombatError, hostile, log, player_rolls, resolve, rules_for
 from .engine import _attack_context, _require_action, _require_turn, _resolve_attack, average_damage
 from .grid import area as grid_area
@@ -113,15 +114,11 @@ def _check_economy(enc, c, spec) -> None:
 
 
 def _check_slot(c, spec) -> str:
+    """The slot level this cast will spend, '' if it spends none. Raises if empty."""
     if not spec["slot"]:
         return ""
     lv = str(spec["slot"])
-    s = (c.extra.get("slots") or {}).get(lv)
-    if not s or s.get("used", 0) >= s.get("total", 0):
-        left = [k for k, v in sorted((c.extra.get("slots") or {}).items())
-                if v.get("used", 0) < v.get("total", 0)]
-        raise CombatError(f"{c.name} has no level {lv} slot left"
-                          + (f" (left: level {', '.join(left)})." if left else "."))
+    slots.check(c, lv)
     return lv
 
 
@@ -208,7 +205,7 @@ def cast(enc, roller: Roller, caster_ref, spell: str, targets: list = None, leve
     mark = len(roller.log)
     lines = []
     if lv:
-        c.extra["slots"][lv]["used"] += 1
+        slots.spend(c, lv)
     if readied is None:
         if spec["casting"] == "bonus":
             enc.turn.bonus_used = True
@@ -253,10 +250,16 @@ def cast(enc, roller: Roller, caster_ref, spell: str, targets: list = None, leve
     else:
         lines.append("GM decides the effect.")
     text = " ".join([head if head.endswith(".") else head + "."] + lines)
+    out = {"spell": spec["name"], "mode": mode, "slot": lv or None,
+           "squares": [label(q) for q in tg["squares"]],
+           "affected": [t.id for t in tg["affected"]], "text": text}
+    if lv:
+        # What is left, on the same line the GM reads: a spent slot that is not
+        # reported is a slot the player only finds out about next round.
+        out["slots"] = slots.summary(c)
+        text = out["text"] = text + "\n" + out["slots"]
     log(enc, "cast", c.id, text, roller, mark)
-    return {"spell": spec["name"], "mode": mode, "slot": lv or None,
-            "squares": [label(q) for q in tg["squares"]],
-            "affected": [t.id for t in tg["affected"]], "text": text}
+    return out
 
 
 def _resolve_saves(enc, roller, c, name, affected, save, damage, origin_sq, reactions,

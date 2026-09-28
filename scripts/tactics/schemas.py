@@ -40,6 +40,7 @@ import ast
 import re
 
 __all__ = [
+    "SPELL_SLOTS",
     "TOKEN_SCHEMA",
     "AnyField",
     "BooleanField",
@@ -52,6 +53,8 @@ __all__ = [
     "SchemaError",
     "SchemaField",
     "SetField",
+    "SlotField",
+    "SpellSlotsField",
     "StringField",
     "ability_mod",
     "die_average",
@@ -312,6 +315,100 @@ class DictField(Field):
             self.value_field.validate(v, f"{path}.{k}")
 
 
+class SlotField(Field):
+    """One spell slot level: ``{"total": 4, "used": 1}``.
+
+    ``coerce`` is the whole point. Spell slots reach the engine from a markdown
+    sheet's table, from a display payload and from a file the GM edited by hand,
+    and the display's historical shape is ``{"remaining": 3, "max": 4}``. Both
+    describe the same slot, so both are read as the same slot rather than one
+    of them being a value the engine refuses to load a running fight over.
+
+    ``used`` above ``total`` is clamped, not refused: it can only be written by
+    hand, and the fight it belongs to is more valuable than the typo.
+    """
+
+    def __init__(self, default=None):
+        super().__init__(default if default is not None else {"total": 0, "used": 0})
+
+    def coerce(self, value):
+        if isinstance(value, dict):
+            if "total" in value or "used" in value:
+                total, used = value.get("total"), value.get("used")
+            else:                                   # the display's {"remaining", "max"}
+                total, remaining = value.get("max"), value.get("remaining")
+                used = None
+                if isinstance(total, (int, float)) and isinstance(remaining, (int, float)):
+                    used = total - remaining
+        elif isinstance(value, (int, float)) and not isinstance(value, bool):
+            total, used = value, 0                   # a level written as a bare count
+        else:
+            return value
+        total = max(0, int(total) if isinstance(total, (int, float)) else 0)
+        used = max(0, int(used) if isinstance(used, (int, float)) else 0)
+        return {"total": total, "used": min(used, total)}
+
+    def validate(self, value, path: str = "") -> None:
+        if not isinstance(value, dict):
+            raise self.fail(f"expected a slot object ({self.default!r}), got {value!r}", path)
+        for name, v in value.items():
+            if name not in self.default:
+                raise self.fail(f"unknown key {name!r} (known: {', '.join(self.default)})", path)
+            NumberField(min=0, integer=True).validate(v, f"{path}.{name}")
+
+    def __repr__(self):
+        return "SlotField()"
+
+
+class SpellSlotsField(Field):
+    """A caster's spell slots: ``{"1": {"total": 2, "used": 0}, ...}``.
+
+    Keys are slot levels as strings, because that is how JSON and the character
+    sheet's table both name them. A level that is not a number, and a count
+    that is not a whole number, is a schema error: those are the two mistakes
+    that would otherwise become ``KeyError`` or a silently uncountable caster
+    several commands into a fight.
+
+    Lives under ``extra`` rather than as a ``Token`` field, and that is a
+    decision rather than an omission — see the top of ``slots.py``. ``extra`` is
+    ``AnyField`` because it is open by design, so this is the type that gives
+    the one part of it a contract, and ``state.validate()`` is what applies it.
+    """
+
+    def __init__(self, default=None):
+        super().__init__(default if default is not None else {})
+        self.slot = SlotField()
+
+    def coerce(self, value):
+        if not isinstance(value, dict):
+            return value
+        out = {}
+        for level, v in value.items():
+            try:
+                key = str(int(str(level).strip()))
+            except (TypeError, ValueError):
+                out[level] = v                  # left as it is: validate() names it
+                continue
+            if int(key) > 0:
+                out[key] = self.slot.coerce(v)
+        return {k: out[k] for k in sorted(out, key=lambda x: (not str(x).isdigit(), x))}
+
+    def validate(self, value, path: str = "") -> None:
+        if not isinstance(value, dict):
+            raise self.fail(f"expected an object of slot levels, got {value!r}", path)
+        for level, v in value.items():
+            try:
+                n = int(str(level).strip())
+            except (TypeError, ValueError):
+                raise self.fail(f"slot level {level!r} is not a number", path) from None
+            if n < 1:
+                raise self.fail(f"slot level {n} is below 1 (0 is a cantrip, not a slot)", path)
+            self.slot.validate(v, f"{path}.{level}")
+
+    def __repr__(self):
+        return "SpellSlotsField()"
+
+
 class SchemaField(Field):
     """A JSON object described by other fields.
 
@@ -484,3 +581,8 @@ TOKEN_SCHEMA = SchemaField({
 # fixed CON bonus each later level, all as the average.
 MAX_HP_FORMULA = FormulaField("die_average + con_mod * (level - 1)",
                               variables=("die_average", "con_mod", "level"))
+
+# Spell slots, the one closed shape inside `extra`. Applied by state.validate()
+# because `extra` itself is AnyField and a Field cannot reach a sub-key of a
+# free-form dict. See slots.py for why they are not a Token field.
+SPELL_SLOTS = SpellSlotsField()

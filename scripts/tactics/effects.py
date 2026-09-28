@@ -21,6 +21,7 @@ through the helpers below, so nothing is remembered by the GM.
 
 from __future__ import annotations
 
+from . import slots
 from .core import decide, hostile, player_rolls, rules_for
 from .roller import Roller
 
@@ -246,16 +247,11 @@ def knows(token, spell: str) -> bool:
 
 def slot_for(token, level: int = 1):
     """The lowest slot level >= level with a slot left, or None."""
-    slots = token.extra.get("slots") or {}
-    for lv in sorted(slots, key=int):
-        s = slots[lv]
-        if int(lv) >= level and s.get("used", 0) < s.get("total", 0):
-            return lv
-    return None
+    return slots.lowest_with(token, level)
 
 
 def spend_slot(token, lv: str) -> None:
-    token.extra["slots"][lv]["used"] += 1
+    slots.spend(token, lv)
 
 
 def _can_cast_reaction(enc, token, spell: str) -> bool:
