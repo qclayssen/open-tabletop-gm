@@ -30,6 +30,7 @@ engine (`scripts/tactics/`) still owns every rule.
 | `triggers.py` | Deterministic escalation triggers read from the snapshot: a fight starts, a boss-sized enemy appears, a PC drops to 0 HP, a PC dies. Each fires once. |
 | `advisor.py` | Loads the advisor briefs, picks 2 or 3 for a question by keyword, and asks them in parallel (threads). Each answer is at most about 150 words. |
 | `summarizer.py` | In a background thread, folds older transcript turns into `summary.md` using the local model. |
+| `canon.py` | The verbatim layer, `<campaign>/localdm/canon.jsonl`: append-only dialogue, interaction and reveal records, never folded. A record is kept only if its text occurs character for character in the narration it came from, so a paraphrase cannot become canon. |
 | `play.py` | The terminal REPL: `python3 scripts/localdm/play.py -c <campaign>`. |
 | `display_bridge.py` | Mirrors each turn's narration to the Flask display (`GM_DISPLAY_URL`, else `localhost:${GM_DISPLAY_PORT:-5001}`); best effort, `--no-display` to switch off. |
 | `prompts/` | `dm.md` (persona and output contract), `advisors/*.md` (copied from the dnd-gm advisor council). |
@@ -187,6 +188,48 @@ Open: on firejolt-rooftops the cafe walls block every shot and neither side
 closes in (the menu offers no approach when no attack reaches; the autopilot
 does not step to a square with line of sight). Pack Tactics is not applied by
 `rules.advantage()`. Local advisors need `reasoning_effort: none`.
+
+## Canon: the verbatim layer (`canon.py`)
+
+`transcript.jsonl` keeps every turn but the DM only ever sees the last few, and
+everything older than that is folded into a 250-word summary that is explicitly
+lossy. So across sessions an NPC's exact words, what was actually agreed, and how
+a truth was worded all evaporate, and the next session re-invents them.
+
+`canon.jsonl` is a third layer, append-only and never summarized, with one line
+per kept moment:
+
+    {"kind": "dialogue",    "speaker": "Maribeth", "text": "Keep it under...", "turn": 41}
+    {"kind": "interaction", "speaker": "Maribeth", "text": "Kairos handed...", "turn": 42}
+    {"kind": "reveal",      "key": "moonstone-true-nature", "text": "The stone...", "turn": 63}
+
+Four decisions worth recording:
+
+- **Verbatim is enforced, not requested.** The extractor asks the model for
+  spans; `verify()` then keeps a record only if its text is literally in the
+  narration, with whitespace collapsed so a span that merely crossed a line break
+  still counts. A paraphrase, an invented fact, or a tidied-up full stop is
+  dropped. Prompting alone would have failed here routinely.
+- **It rides the summarizer's window.** `Extractor` reads the same
+  `[cursor, len(turns) - keep)` range the `Summarizer` is about to compress, in
+  its own background thread on the same cheap local tier, so extraction never
+  waits for the fold and never blocks the player's turn. The transcript is
+  append-only, so the two never race over the same bytes.
+- **The cursor advances even when nothing is kept.** Otherwise a window that
+  yields no canon is rescanned for the rest of the campaign. It lives in
+  `meta.json` under `canon.upto`, reusing Memory's lock rather than adding a
+  second file to keep consistent.
+- **Canon outranks old turns in the budget.** `build_messages` trims canon
+  record by record from the least relevant end before it touches the recent
+  turns, because a verbatim line the player already heard is worth more than a
+  stale turn about to be summarized away. `Canon.relevant` ranks by term overlap
+  with the player's own line, then recency, so a long campaign keeps its prompt
+  small without losing the live thread.
+
+Reveals dedupe on `key`, so the same truth disclosed in two sessions with
+different wording cannot be recorded twice — the failure this file exists to
+prevent. Dialogue and interaction dedupe on exact text so a repeated line costs
+no replay budget.
 
 ## Open
 

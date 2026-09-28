@@ -11,6 +11,8 @@ import os
 import pathlib
 import re
 
+from . import canon as canon_mod
+
 PROMPTS = pathlib.Path(__file__).resolve().parent / "prompts"
 DIGEST_SECTIONS = ("Current Situation", "Pinned Facts", "Active Quests", "Open Threads & Rumours",
                    "Live State Flags", "GM Style Notes")
@@ -162,9 +164,13 @@ def council_setting(state_md: str) -> str:
 
 def build_messages(system: str, digest: str, summary: str, recent: list, *, engine: str = "",
                    notes: str = "", player: str = "", task: str = "",
-                   budget: int = 12000) -> list:
+                   canon: list = (), budget: int = 12000) -> list:
     sys_msg = system + (f"\n\n## Campaign\n{digest}" if digest else "")
     head = [f"## Story so far\n{summary.strip()}"] if summary else []
+    # Canon outranks old turns when the budget bites: a verbatim line the player
+    # already heard is worth more than a stale turn that is about to be
+    # summarized away. Trimmed from the least relevant end, then the turns go.
+    can = [canon_mod.render_one(r) for r in canon] if canon else []
     tail = []
     if engine:
         tail.append(f"## Engine (facts, do not change them)\n{engine.strip()}")
@@ -176,8 +182,17 @@ def build_messages(system: str, digest: str, summary: str, recent: list, *, engi
         tail.append(f"## Your task\n{task.strip()}")
     lines = [f"{LABEL[t['role']]}: {t['text'].strip()}" for t in recent if t["role"] in LABEL]
     fixed = len(sys_msg) + sum(len(p) + 2 for p in head + tail) + len("## Recent turns\n")
-    while lines and fixed + sum(len(line) + 1 for line in lines) > budget:
+    header = len(canon_mod.HEADER) + 1 if can else 0   # charged only when there is canon
+
+    def spent():
+        return (fixed + header + sum(len(p) + 1 for p in can)
+                + sum(len(p) + 1 for p in lines))
+
+    while can and spent() > budget:
+        can.pop()                           # canon.relevant sorts best-first
+    while lines and spent() > budget:
         lines.pop(0)
-    body = head + (["## Recent turns\n" + "\n".join(lines)] if lines else []) + tail
+    body = head + ([canon_mod.HEADER + "\n" + "\n".join(can)] if can else []) \
+        + (["## Recent turns\n" + "\n".join(lines)] if lines else []) + tail
     return [{"role": "system", "content": sys_msg},
             {"role": "user", "content": "\n\n".join(body)}]
