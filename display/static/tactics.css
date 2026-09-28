@@ -49,16 +49,12 @@
 #tx-panel .tx-head, #tx-panel .tx-strip { flex: none; }
 body.tx-sidebar-hidden #tx-panel { left: 60px; }
 body.tx-on #text-scroll { padding-top: calc(min(62vh, 640px) + 90px); }
-body.tx-on.tx-min #text-scroll { padding-top: 130px; }
-body.tx-min #tx-panel .tx-body, body.tx-min #tx-panel .tx-strip { display: none; }
-@media (max-width: 860px) {
-  /* No room beside the sidebar and settings here: sit above them (they are
-     z-index 6 to 8) and below dialogs and device approvals (10 and up).
-     "Hide map" folds the panel down to its header. */
-  #tx-panel { z-index: 9; left: 6px; right: 6px; top: 6px; max-height: calc(100vh - 84px); }
-  #tx-panel .tx-body { flex: none; }
-  body.tx-on #text-scroll { padding-top: calc(70vh + 70px); }
-}
+body.tx-on.tx-min #text-scroll { padding-top: 168px; }
+/* "Hide map" folds the panel down to its header and the initiative strip, not
+   to nothing: a folded panel still answers "whose turn is it" and "who is
+   left", which is what a table watches between moves. */
+body.tx-min #tx-panel .tx-body { display: none; }
+body.tx-min #tx-panel { max-height: 132px; overflow: hidden; }
 
 .tx-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .tx-title { font-weight: 600; }
@@ -86,6 +82,19 @@ body.tx-min #tx-panel .tx-body, body.tx-min #tx-panel .tx-strip { display: none;
 }
 .tx-chip.tx-now { border-color: var(--tx-brass); box-shadow: 0 0 0 1px var(--tx-brass); }
 .tx-chip > span:last-child { max-width: 230px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Side on the initiative strip, which is the one place the whole table is on
+   screen at once. The stripe is a bar on the leading edge of the chip and the
+   glyph names the side in a second visual channel: neither is the colour, so
+   the strip still reads in greyscale and for a colour-blind player. */
+.tx-chip-top { display: flex; align-items: center; gap: 4px; }
+.tx-chip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tx-side-glyph { font: 700 11px/1 Figtree, system-ui, sans-serif; flex: none; }
+.tx-chip.tx-side-enemy { border-left: 4px solid var(--tx-danger); }
+.tx-chip.tx-side-pc { border-left: 4px solid var(--tx-quan); }
+.tx-chip.tx-side-other { border-left: 4px solid var(--tx-lore); }
+.tx-chip.tx-side-enemy .tx-side-glyph { color: var(--tx-danger); }
+.tx-chip.tx-side-pc .tx-side-glyph { color: var(--tx-quan); }
+.tx-chip.tx-side-other .tx-side-glyph { color: var(--tx-lore); }
 .tx-chip.tx-dead { opacity: .45; text-decoration: line-through; }
 .tx-hpbar { height: 4px; background: var(--tx-line); border-radius: 2px; overflow: hidden; }
 .tx-hpbar i { display: block; height: 100%; background: var(--tx-heal); }
@@ -96,17 +105,22 @@ body.tx-min #tx-panel .tx-body, body.tx-min #tx-panel .tx-strip { display: none;
 /* Side by side: the side column scrolls on its own so the map stays in view. */
 @media (min-width: 1101px) { .tx-side { max-height: calc(100vh - 290px); overflow-y: auto; padding-right: 2px; } }
 .tx-side > * { flex: none; }
+/* On a phone the board is as tall as the map in it: see the phone block at the
+   end of this sheet, which lifts this ceiling. */
 .tx-board {
   align-self: start; overflow: auto; max-height: min(62vh, 640px); background: var(--tx-paper);
   border: 1px solid var(--tx-line); border-radius: 6px; touch-action: manipulation;
 }
-@media (max-width: 860px) { .tx-board { max-height: 48vh; } }
 .tx-board svg { display: block; }
 .tx-side { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .tx-info { font-size: 13px; color: var(--tx-muted); min-height: 2.8em; }
 .tx-info strong { color: var(--tx-ink); }
 .tx-warn { color: var(--tx-danger); font-weight: 600; }
 .tx-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+/* The lead row (Move, Attack, Cast) is a box of its own so a phone can pin it
+   to the top of the bar. On a wide screen it has no box at all: the three
+   actions flow in with the others exactly as they did before. */
+.tx-leads { display: contents; }
 .tx-attacks { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; }
 .tx-status { color: var(--tx-ink); }
 .tx-ff { display: inline-block; margin-top: 2px; }
@@ -178,7 +192,7 @@ body.tx-min #tx-panel .tx-body, body.tx-min #tx-panel .tx-strip { display: none;
 .tx-eye { fill: none; stroke: var(--tx-accent); stroke-width: 2; stroke-dasharray: 3 3; pointer-events: none; }
 .tx-cond { fill: var(--tx-ink); stroke: var(--tx-panel); stroke-width: 1; }
 .tx-cond.tx-cond-more { fill: var(--tx-muted); }
-.tx-cond-t { font: 800 7px Figtree, system-ui, sans-serif; fill: var(--tx-panel); }
+.tx-cond-t { font: 800 8px Figtree, system-ui, sans-serif; fill: var(--tx-panel); }
 .tx-cursor { fill: none; stroke: var(--tx-brass); stroke-width: 3; pointer-events: none; }
 .tx-board:focus { outline: none; }
 .tx-board:focus-visible { outline: 2px solid var(--tx-brass); outline-offset: 1px; }
@@ -208,6 +222,57 @@ body.tx-min #tx-panel .tx-body, body.tx-min #tx-panel .tx-strip { display: none;
 }
 .tx-toast[hidden] { display: none; }
 .tx-toast.tx-error { background: var(--tx-danger); }
+
+/* ── the phone ──
+   Last in the file on purpose: these rules have the same weight as the ones
+   above and are meant to replace them, so they have to come after them. A
+   panel rule that sat at the top of the sheet was quietly losing to the base
+   rule for .tx-body further down. */
+@media (max-width: 860px) {
+  /* No room beside the sidebar and settings here: sit above them (they are
+     z-index 6 to 8) and below dialogs and device approvals (10 and up). */
+  #tx-panel { z-index: 9; left: 6px; right: 6px; top: 6px; max-height: calc(100dvh - 84px); }
+  /* The narration starts below a panel that can fill the screen. The folded
+     panel is 132px tall and keeps its own padding (see body.tx-min above). */
+  body.tx-on #text-scroll { padding-top: calc(100dvh - 72px); }
+  body.tx-on.tx-min #text-scroll { padding-top: 168px; }
+  /* One column, and both parts as tall as they need to be: the board is as
+     tall as the map the script drew into it (sizing it from the leftover height
+     would be circular), the side column is as tall as its text. The panel
+     scrolls if that is more than the screen. */
+  .tx-body { display: flex; flex-direction: column; min-height: 0; }
+  .tx-board { max-height: none; align-self: stretch; flex: 0 0 auto; }
+  .tx-side { flex: 0 0 auto; }
+  .tx-side .tx-log { max-height: 4.5em; }
+  /* The actions become a bar along the bottom of the panel. It scrolls inside
+     itself, so a long spell list cannot grow the bar until the map is gone,
+     and the padding keeps it clear of the iOS home indicator. */
+  #tx-actions {
+    order: 9; position: sticky; bottom: 0; z-index: 4;
+    max-height: 46dvh; overflow-y: auto; overscroll-behavior: contain;
+    margin: 0 -12px -10px; padding: 6px 12px calc(6px + env(safe-area-inset-bottom, 0px));
+    background: var(--tx-panel); border-top: 1px solid var(--tx-line);
+    box-shadow: 0 -6px 14px rgba(0,0,0,.22);
+  }
+  /* Bigger touch targets. The bar is a scroll box with a ceiling and a floor:
+     the lead row is pinned to the top of it and End turn to the bottom, so
+     scrolling a long spell list between them takes neither off the screen. */
+  .tx-actions .tx-btn { min-height: 40px; padding: 8px 12px; }
+  .tx-leads { display: flex; order: -2; flex: 0 0 100%; gap: 6px;
+    position: sticky; top: 0; z-index: 1; padding-bottom: 4px;
+    background: var(--tx-panel); box-shadow: 0 5px 6px -5px rgba(0,0,0,.35); }
+  /* End turn is the last thing in the bar and pinned to its bottom edge, so a
+     long spell list scrolls between the lead row and it. Sticky only holds an
+     element that would otherwise scroll out of the bottom, which is why it
+     sorts last here and not first. The backdrop is a spread shadow rather than
+     a background: this rule outweighs .tx-btn.tx-primary, and a background
+     here would repaint the accent button in the panel's own colour. */
+  #tx-actions [data-tx="end"] { order: 99; position: sticky; bottom: 0; z-index: 1;
+    box-shadow: 0 -7px 0 0 var(--tx-panel), 0 -6px 6px -5px rgba(0,0,0,.4); }
+  .tx-actions .tx-spell { flex: 1 1 120px; }
+  /* The roll toast sits over the map rather than over the bar. */
+  .tx-toast { top: 38%; bottom: auto; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   .tx-tok.tx-now .tx-ring, #tx-banner.tx-flash, .tx-float { animation: none; }

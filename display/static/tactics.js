@@ -57,6 +57,51 @@
   const living = () => ((snap && snap.tokens) || []).filter(t => !t.dead);
   const sqOf = t => label(t.x, t.y);
 
+  /* Pure helpers: the side table, the frame geometry and the cell rule. They
+     touch no DOM and no snapshot, so tests/test_display_tactics_ui.py runs
+     them straight out of this file and pins the numbers below. */
+  const SIDES = {
+    enemy: { cls: 'tx-side-enemy', word: 'enemy',   glyph: '⚔', colour: 'var(--tx-danger)' },
+    pc:    { cls: 'tx-side-pc',    word: 'ally',    glyph: '♥', colour: 'var(--tx-quan)' },
+    other: { cls: 'tx-side-other', word: 'neutral', glyph: '✦', colour: 'var(--tx-lore)' },
+  };
+  const sideOf = t => SIDES[t.side === 'enemy' ? 'enemy' : t.side === 'pc' ? 'pc' : 'other'];
+
+  // A regular octagon over the box of radius r: eight real corners, so a player
+  // who cannot tell one colour from another still knows a notched frame from a
+  // round one. It spans the same 2r box as the circle it replaces, so an enemy
+  // token is not the bigger target. The colour repeats the shape; it never
+  // carries the side alone.
+  function octagon(cx, cy, r) {
+    const k = r * 0.4142136;                       // tan(22.5°): half the length of a flat side
+    const pt = (dx, dy) => `${+(cx + dx).toFixed(2)},${+(cy + dy).toFixed(2)}`;
+    return `M${pt(-r, -k)}L${pt(-k, -r)}L${pt(k, -r)}L${pt(r, -k)}` +
+           `L${pt(r, k)}L${pt(k, r)}L${pt(-k, r)}L${pt(-r, k)}Z`;
+  }
+
+  // The width the panel's phone layout turns at, so the board and the CSS agree
+  // on which screen this is.
+  const PHONE_MAX_W = 860;
+  const TABLE_MIN = 40, TABLE_MAX = 72;            // a table display: read across the room
+  const PHONE_MIN = 10;                            // a phone: a square is still a fingertip
+
+  // How many pixels a square is drawn at, given the space it is drawn into.
+  // Two rules, because there are two kinds of screen. A phone fits the whole
+  // map to its width -- the old fixed 28..40px squares put the right-hand end
+  // of a 20-wide map off the screen -- and lets the height follow from the
+  // map's own shape. Sizing a phone from the height instead would be circular:
+  // the box is as tall as the map we have just drawn into it. A shared table
+  // display goes the other way: the 40px floor wins and a big map scrolls
+  // rather than shrinking into a squint for whoever is sitting furthest away.
+  function boardCell(W, H, availW, availH, phone) {
+    const across = Math.max(1, Math.floor(availW / Math.max(1, W)));
+    if (phone) return Math.max(PHONE_MIN, Math.min(TABLE_MAX, across));
+    // Both: a map that is too tall for the box scrolls as little as possible.
+    const both = Math.min(across, Math.max(1, Math.floor(availH / Math.max(1, H))));
+    return Math.max(TABLE_MIN, Math.min(TABLE_MAX, both));
+  }
+  /* end pure helpers */
+
   function headers() {
     const h = {};
     try { Object.assign(h, typeof _authHeaders === 'function' ? _authHeaders() : {}); } catch (e) { /* no auth helper */ }
@@ -93,12 +138,14 @@
       'Escape cancels. Home goes to the creature whose turn it is. C shades cover.</p>' +
       '<div id="tx-say" class="tx-sr" aria-live="polite"></div>' +
       '<div class="tx-side"><div id="tx-info" class="tx-info" aria-live="polite"></div>' +
-      '<div id="tx-actions" class="tx-actions" role="toolbar" aria-label="Actions"></div>' +
+      '<div id="tx-actions" class="tx-actions" role="toolbar" aria-label="Actions">' +
+      '<div id="tx-leads" class="tx-leads"></div></div>' +
       '<div id="tx-prompt" class="tx-prompt" hidden></div>' +
       '<ol id="tx-log" class="tx-log" aria-label="Combat log"></ol></div></div>' +
       '<div id="tx-toast" class="tx-toast" role="status" hidden></div>';
     document.body.appendChild(p);
-    for (const id of ['map', 'round', 'banner', 'cover', 'min', 'strip', 'board', 'info', 'actions', 'prompt', 'log', 'toast', 'say'])
+    for (const id of ['map', 'round', 'banner', 'cover', 'min', 'strip', 'board', 'info', 'actions',
+                      'leads', 'prompt', 'log', 'toast', 'say'])
       el[id] = document.getElementById('tx-' + id);
     el.panel = p;
     el.min.addEventListener('click', () => {
@@ -201,13 +248,17 @@
     for (const id of snap.order || []) {
       const t = tokenById(id); if (!t) continue;
       const pct = Math.max(0, Math.round(100 * t.hp / Math.max(1, t.max_hp)));
-      const tg = tags(t);
+      const tg = tags(t), side = sideOf(t);
       const c = document.createElement('div');
-      c.className = 'tx-chip' + (id === snap.current ? ' tx-now' : '') + (t.dead ? ' tx-dead' : '');
+      // The chip carries its side in a stripe and a glyph as well as in colour:
+      // the strip is the only place the whole table is on screen at once.
+      c.className = 'tx-chip ' + side.cls + (id === snap.current ? ' tx-now' : '') + (t.dead ? ' tx-dead' : '');
       c.setAttribute('role', 'listitem');
       if (id === snap.current) c.setAttribute('aria-current', 'true');
       if (tg.length) c.title = tg.join(', ');
-      c.innerHTML = `<span>${esc(t.name)}</span><span class="tx-hpbar" role="img" aria-label="${t.hp} of ${t.max_hp} HP"><i class="${pct <= 25 ? 'tx-low' : ''}" style="width:${pct}%"></i></span>` +
+      c.innerHTML = `<span class="tx-chip-top"><i class="tx-side-glyph" aria-hidden="true">${side.glyph}</i>` +
+        `<span class="tx-sr">${side.word}.</span><span class="tx-chip-name">${esc(t.name)}</span></span>` +
+        `<span class="tx-hpbar" role="img" aria-label="${t.hp} of ${t.max_hp} HP"><i class="${pct <= 25 ? 'tx-low' : ''}" style="width:${pct}%"></i></span>` +
         `<span>${t.dead ? 'dead' : t.hp + '/' + t.max_hp + ' HP'}${tg.length ? ' · ' + esc(tg.join(', ')) : ''}</span>`;
       el.strip.appendChild(c);
     }
@@ -226,8 +277,8 @@
     const rows = (snap.grid && snap.grid.rows) || [];
     const H = rows.length, W = H ? rows[0].length : 0;
     ui.W = W; ui.H = H;
-    const avail = Math.max(240, el.board.clientWidth - 4);
-    const cell = Math.max(28, Math.min(40, Math.floor(avail / Math.max(1, W))));
+    const box = boardBox();
+    const cell = boardCell(W, H, box.w, box.h, box.phone);
     const s = svg('svg', { viewBox: `0 0 ${W * C} ${H * C}`, width: W * cell, height: H * cell,
                            role: 'group', 'aria-label': `Battle map, ${W} by ${H} squares` });
     if (ui.mode === 'aim') s.classList.add('tx-aiming');
@@ -279,6 +330,21 @@
     el.board.scrollLeft = keepL; el.board.scrollTop = keepT;   // a re-render must not snap back to the corner
     keepActorInView(cell);
     floaters();
+  }
+
+  const isPhone = () => !!(window.matchMedia && matchMedia(`(max-width: ${PHONE_MAX_W}px)`).matches);
+
+  // The space the board is drawn into. On a table display the height comes
+  // from the board's CSS box, not from the map inside it, so a short map does
+  // not shrink its own squares on every re-render. On a phone the width is
+  // what matters and the height follows the map.
+  function boardBox() {
+    const st = getComputedStyle(el.board);
+    return {
+      w: Math.max(240, el.board.clientWidth - 4),
+      h: Math.max(160, parseFloat(st.maxHeight) || el.board.clientHeight) - 4,
+      phone: isPhone(),
+    };
   }
 
   // A map larger than the box scrolls; bring the acting token into view when it is off-screen.
@@ -342,11 +408,17 @@
     if (mark && mark.cls) cls.push(...mark.cls.split(' '));
     const tg = tags(t);
     const g = svg('g', { class: cls.join(' '), 'data-id': t.id, role: 'button',
-      'aria-label': `${t.name}, ${t.dead ? 'dead' : t.hp + ' of ' + t.max_hp + ' HP'}, ${label(t.x, t.y)}` +
+      'aria-label': `${t.name}, ${sideOf(t).word}, ${t.dead ? 'dead' : t.hp + ' of ' + t.max_hp + ' HP'}, ${label(t.x, t.y)}` +
         (tg.length ? ', ' + tg.join(', ') : '') + (mark && mark.say ? ', ' + mark.say : '') }, ui.tokenLayer);
-    const col = t.side === 'enemy' ? 'var(--tx-danger)' : t.side === 'pc' ? 'var(--tx-quan)' : 'var(--tx-lore)';
+    const side = sideOf(t);
     svg('circle', { cx, cy, r: C / 2 - 1, class: 'tx-ring' }, g);
-    svg('circle', { cx, cy, r: C / 2 - 4, style: `fill:${col};stroke:var(--tx-panel);stroke-width:2` }, g);
+    // The frame is what says whose turn-relevant creature this is: a notched
+    // octagon for an enemy, a round frame for everyone else. Side stays
+    // readable in greyscale, at a glance, and to a colour-blind player.
+    if (t.side === 'enemy')
+      svg('path', { d: octagon(cx, cy, C / 2 - 4), style: `fill:${side.colour};stroke:var(--tx-panel);stroke-width:2` }, g);
+    else
+      svg('circle', { cx, cy, r: C / 2 - 4, style: `fill:${side.colour};stroke:var(--tx-panel);stroke-width:2` }, g);
     const initials = t.name.split(/\s+/).map(w => /^\d+$/.test(w) ? w : w[0]).join('').slice(0, 3);
     const tx = svg('text', { x: cx, y: cy + 4, 'text-anchor': 'middle', style: 'fill:#fff;font:700 11px Figtree,sans-serif' }, g);
     tx.textContent = initials;
@@ -368,6 +440,8 @@
 
   // Up to two condition badges along the bottom edge, "+n" for the rest (the
   // full list is in the token's title, its label and the initiative strip).
+  // The badge is a tab on the token's lower edge rather than a dot beside it:
+  // it is 8 user units tall, which is 10px on a table display at 40px squares.
   function conditionBadges(g, t) {
     const list = (t.conditions || []).filter(c => c !== 'hidden');
     if (!list.length) return;
@@ -375,9 +449,9 @@
     const codes = shown.map(c => CONDITION_CODES[c] || c.slice(0, 2).replace(/^./, m => m.toUpperCase()));
     if (list.length > shown.length) codes.push('+' + (list.length - shown.length));
     codes.forEach((code, i) => {
-      const x = t.x * C + 1 + i * 15, y = t.y * C + C - 17;
-      svg('rect', { x, y, width: 14, height: 10, rx: 2.5, class: 'tx-cond' + (code[0] === '+' ? ' tx-cond-more' : '') }, g);
-      const tx = svg('text', { x: x + 7, y: y + 7.8, 'text-anchor': 'middle', class: 'tx-cond-t' }, g);
+      const x = t.x * C + 1 + i * 16, y = t.y * C + C - 20;
+      svg('rect', { x, y, width: 15, height: 12, rx: 3, class: 'tx-cond' + (code[0] === '+' ? ' tx-cond-more' : '') }, g);
+      const tx = svg('text', { x: x + 7.5, y: y + 9, 'text-anchor': 'middle', class: 'tx-cond-t' }, g);
       tx.textContent = code;
     });
   }
@@ -606,7 +680,7 @@
               (snap.tokens || []).find(x => x.x === p[0] && x.y === p[1]);
     if (t) {
       const tg = tags(t), mark = markFor(t);
-      bits.push(`${t.name}${t.side === 'enemy' ? ' (enemy)' : ''}, ${t.dead ? 'dead' : t.hp + ' of ' + t.max_hp + ' HP'}` +
+      bits.push(`${t.name} (${sideOf(t).word}), ${t.dead ? 'dead' : t.hp + ' of ' + t.max_hp + ' HP'}` +
                 (tg.length ? ', ' + tg.join(', ') : '') + (mark && mark.say ? ', ' + mark.say : ''));
     }
     const seen = fogSet();
@@ -648,15 +722,23 @@
     const t = current();
     // Rebuilding the buttons would drop keyboard focus: put it back on the same button.
     const had = el.actions.contains(document.activeElement) ? document.activeElement.textContent : null;
+    // The lead row is a real element that survives the rebuild, so the phone's
+    // pinned row stays first and the rest of the bar is emptied under it.
     el.actions.innerHTML = '';
+    el.actions.appendChild(el.leads);
+    el.leads.innerHTML = '';
     renderInfo();
     if (t && myTurn() && !(snap.turn && snap.turn.pending === 'death_save')) {
       const left = snap.turn ? snap.turn.movement_left : 0;
       const used = !!(snap.turn && snap.turn.action_used);
       const why = (u, text) => ({ disabled: u, title: u ? 'Your action is used this turn' : text });
-      button('Move', () => toggleMove(t), { pressed: ui.mode === 'move', disabled: left <= 0 && used });
-      button('Attack', () => toggleAttack(t, 'weapon'), { pressed: ui.mode === 'attack', disabled: used });
-      button('Cast', () => toggleCast(t), { pressed: SPELL_MODES.includes(ui.mode), title: 'Your spells, with slots left' });
+      // These three are what a player reaches for on every turn, so on a phone
+      // they are pinned to the top edge of the action bar and a long spell
+      // list scrolls under them.
+      button('Move', () => toggleMove(t), { pressed: ui.mode === 'move', disabled: left <= 0 && used, lead: true });
+      button('Attack', () => toggleAttack(t, 'weapon'), { pressed: ui.mode === 'attack', disabled: used, lead: true });
+      button('Cast', () => toggleCast(t), { pressed: SPELL_MODES.includes(ui.mode), lead: true,
+        title: 'Your spells, with slots left' });
       button('Dash', () => act('dash', [t.id]), { disabled: used });
       button('Disengage', () => act('disengage', [t.id]), { disabled: used });
       button('Dodge', () => act('dodge', [t.id]), { disabled: used });
@@ -666,7 +748,10 @@
       if ((t.conditions || []).includes('grappled')) button('Escape', () => act('escape', [t.id]), why(used, 'Athletics or Acrobatics against the grapple'));
       if ((t.conditions || []).includes('prone')) button('Stand up', () => act('stand', [t.id]));
       button('Undo move', () => act('undo-move', []), { title: 'Take back the last move (before an action)' });
-      button('End turn', () => act('end-turn', []), { primary: true });
+      // End turn stays where it has always been in the flow (last of the turn's
+      // own actions, ahead of any spell list) and the phone pins it to the
+      // bottom edge of the bar, so it cannot be scrolled away either.
+      button('End turn', () => act('end-turn', []), { primary: true, end: true });
       if (ui.mode === 'attack' && ui.targets) attackChoices();
       if (ui.mode === 'cast') spellChoices(t);
       if (ui.mode === 'darts') dartChoices();
@@ -758,11 +843,14 @@
     const b = document.createElement('button');
     b.type = 'button'; b.className = 'tx-btn' + (o.primary ? ' tx-primary' : '') + (o.cls ? ' ' + o.cls : ''); b.textContent = text;
     if (o.pressed !== undefined) b.setAttribute('aria-pressed', String(!!o.pressed));
+    if (o.lead) b.dataset.tx = 'lead';        // the phone's pinned row
+    if (o.end) b.dataset.tx = 'end';          // pinned to the bar's bottom edge
     if (o.title) b.title = o.title;
     if (o.meta) { const m = document.createElement('span'); m.className = 'tx-meta'; m.textContent = o.meta; b.appendChild(m); }
     b.disabled = !!o.disabled || (ui.busy && !o.always) || !fn;
     if (fn) b.addEventListener('click', fn);
-    (o.parent || el.actions).appendChild(b);
+    // A lead action goes in the pinned row; everything else lands under it.
+    (o.parent || (o.lead ? el.leads : el.actions)).appendChild(b);
     return b;
   }
 
@@ -856,7 +944,7 @@
   }
 
   function reveal(node) {                        // phone layout only: the panel scrolls there
-    if (node && node.scrollIntoView && window.matchMedia && matchMedia('(max-width: 860px)').matches) node.scrollIntoView({ block: 'nearest', behavior: reduced() ? 'auto' : 'smooth' });
+    if (node && node.scrollIntoView && isPhone()) node.scrollIntoView({ block: 'nearest', behavior: reduced() ? 'auto' : 'smooth' });
   }
 
   async function loadSpells(t) {
