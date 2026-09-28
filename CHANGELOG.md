@@ -107,6 +107,11 @@ The last three must-haves of the Phase 4b combat UX pass. Must-haves 1, 3 and 5 
 - `docs/FIRST-SESSION.md`: how to start the display and a new campaign, and how to check the display without a GM.
 - A spell cast from the grid (Cast menu, or `cast`) used a 5 ft range when the SRD data was built by an older `build_srd.py`: Fire Bolt could not reach anything. Stale spell records, including ones cached in an encounter, are now looked up again.
 - `/combat/state` sent the fog of war as one square label per visible square, about 1800 bytes of JSON on every poll. It is now run-length encoded: `fog.runs` is a list of `[row, first column, last column]`, plus `fog.count`. The display shades the same squares from 212 bytes.
+- The battle display never showed Armor Class anywhere, although `/combat/state` carries it. The turn strip now has an `AC n` chip and board tokens carry AC in their title and aria-label.
+- A roll or reaction the engine waits on (`--roll` / `--react`) never reached the display: spectators saw only "Kairos's turn" with no idea a roll was awaited. A paused command now pushes a snapshot with `turn.pending` (`roll:1d20+6`, `react:kairos:silvery barbs`), and the side panel shows a waiting line. The encounter file is not saved mid-pause.
+- Spell slots were visible only inside the Cast submenu. The turn strip now shows pips per level (`1st ●● ○`).
+- The dice toast hid the natural roll (`Bite 1d20+3 = 19`). d20 toasts now show it (`Bite 1d20+3 [16] = 19`), with CRIT / fumble flags on natural 20 / 1.
+- Shared-screen type scale: turn strip 12→13px, side info 13→14px, spell meta 11→12px, combat log 12→13px, legend 11→12px, dice toast 13→14px.
 
 ### Fixed: the display starter only kills the display on its own port
 - `display/start-display.sh` used `pkill -9 -f "gm-display-app.py"`, which SIGKilled a live `:5055` test display twice mid-fight. The PID file is now per port (`app-$PORT.pid`), only that PID is signalled, and only after its command line still matches the display server. No `pkill` remains.
