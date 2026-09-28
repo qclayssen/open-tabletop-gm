@@ -44,6 +44,27 @@ TARGET_GRANTS_ADV = {"blinded", "paralyzed", "petrified", "restrained", "stunned
 ATTACKER_HAS_DIS = {"blinded", "frightened", "poisoned", "prone", "restrained"}
 # Automatically fail Strength and Dexterity saves.
 AUTO_FAIL_STR_DEX = {"paralyzed", "petrified", "stunned", "unconscious"}
+# Conditions that impose disadvantage on ability checks.
+ABILITY_CHECK_DIS = {"frightened", "poisoned", "exhaustion"}
+# Conditions that impose disadvantage on attack rolls (subset of ATTACKER_HAS_DIS for checks).
+# Exhaustion handled specially by level.
+# Conditions granting advantage on saves.
+SAVE_ADV = {"dodging"}  # Dodge action gives adv on DEX saves
+# Exhaustion levels and their effects (PHB Appendix A).
+# Level 1: Disadvantage on ability checks
+# Level 2: Speed halved
+# Level 3: Disadvantage on attack rolls and saving throws
+# Level 4: Hit point maximum halved
+# Level 5: Speed reduced to 0
+# Level 6: Death
+EXHAUSTION_EFFECTS = {
+    1: {"ability_check_dis": True},
+    2: {"speed_halved": True},
+    3: {"attack_dis": True, "save_dis": True},
+    4: {"hp_max_halved": True},
+    5: {"speed_zero": True},
+    6: {"death": True},
+}
 # SRD defense text that makes a resistance conditional; never applied blindly.
 _CONDITIONAL = re.compile(r"nonmagical|\bfrom\b|that aren|while|except", re.I)
 
@@ -80,7 +101,14 @@ class DnD5e(Rules):
     def speed(self, token) -> int:
         if token.dead or any(token.has(c) for c in IMMOBILE):
             return 0
-        return token.speed
+        # Exhaustion level 5: speed 0; level 2: speed halved
+        exh_level = token.extra.get("exhaustion_level", 0)
+        if exh_level >= 5:
+            return 0
+        base = token.speed
+        if exh_level >= 2:
+            base //= 2
+        return base
 
     def crawling(self, token) -> bool:
         return token.has("prone")
@@ -97,6 +125,9 @@ class DnD5e(Rules):
     # ── conditions ───────────────────────────────────────────────────────────
     def can_act(self, token) -> bool:
         if token.dead or (token.hp <= 0 and _uses_death_saves(token)):
+            return False
+        # Exhaustion level 6: death
+        if token.extra.get("exhaustion_level", 0) >= 6:
             return False
         return not any(token.has(c) for c in INCAPACITATING)
 
@@ -142,9 +173,18 @@ class DnD5e(Rules):
     def advantage(self, attacker, target, ctx: AttackContext) -> tuple:
         """("advantage" | "disadvantage" | "normal", [reasons])."""
         adv, dis = [], []
+        
+        # Attacker conditions granting disadvantage
         for c in sorted(ATTACKER_HAS_DIS):
             if attacker.has(c):
                 dis.append(f"{attacker.name} is {c}")
+        
+        # Exhaustion level 3+: disadvantage on attack rolls
+        exh_level = attacker.extra.get("exhaustion_level", 0)
+        if exh_level >= 3:
+            dis.append(f"{attacker.name} has exhaustion level {exh_level}")
+        
+        # Attacker conditions granting advantage
         if attacker.has("invisible"):
             adv.append(f"{attacker.name} is invisible")
         if attacker.has("hidden"):
@@ -153,22 +193,33 @@ class DnD5e(Rules):
             adv.append(f"helped against {target.name}")
         if any(e.get("advantage_next") for e in attacker.effects):
             adv.append("Silvery Barbs")
+        
+        # Target conditions granting advantage to attacker
         for c in sorted(TARGET_GRANTS_ADV):
             if target.has(c):
                 adv.append(f"{target.name} is {c}")
+        
+        # Prone: advantage for melee within 5 ft, disadvantage for ranged
         if target.has("prone"):
             (adv if ctx.distance <= 5 else dis).append(f"{target.name} is prone")
+        
+        # Invisible target: disadvantage to hit
         if target.has("invisible"):
             dis.append(f"{target.name} is invisible")
         if target.has("hidden"):
             dis.append(f"{target.name} is hidden")
+        
+        # Dodge action
         if self._dodging(target):
             dis.append(f"{target.name} is dodging")
+        
+        # Ranged attack modifiers
         if not ctx.melee:
             if ctx.long_range:
                 dis.append("long range")
             if ctx.hostile_adjacent:
                 dis.append("an enemy is within 5 ft")
+        
         if adv and not dis:
             return "advantage", adv
         if dis and not adv:
@@ -248,6 +299,10 @@ class DnD5e(Rules):
                 dis.append("restrained")
             elif self._dodging(token):
                 adv.append("dodging")
+        # Exhaustion level 3+: disadvantage on saving throws
+        exh_level = token.extra.get("exhaustion_level", 0)
+        if exh_level >= 3:
+            dis.append(f"exhaustion level {exh_level}")
         if any(e.get("advantage_next") for e in token.effects):
             adv.append("Silvery Barbs")
         if adv and not dis:
@@ -267,6 +322,11 @@ class DnD5e(Rules):
         if ability in ("str", "dex") and any(token.has(c) for c in AUTO_FAIL_STR_DEX):
             return {"success": False, "auto_fail": True, "natural": None, "total": None, "dc": dc,
                     "text": f"{token.name} automatically fails the {ability.upper()} save."}
+        # Exhaustion level 3+: disadvantage on saving throws
+        exh_level = token.extra.get("exhaustion_level", 0)
+        if exh_level >= 3 and ability in ("str", "dex"):
+            # Already handled by _save_mode returning disadvantage
+            pass
         mode, _ = self._save_mode(token, ability)
         bonus = self.save_bonus(token, ability, cover)
         r = roller.roll(f"1d20{bonus:+d}", token.name, f"{ability.upper()} save DC {dc}",
@@ -294,6 +354,11 @@ class DnD5e(Rules):
         ability = ability.lower()[:3]
         if ability in ("str", "dex") and any(token.has(c) for c in AUTO_FAIL_STR_DEX):
             return {"fail": 1.0, "percent_fail": 100, "advantage": "auto fail"}
+        # Exhaustion level 3+: disadvantage on saving throws
+        exh_level = token.extra.get("exhaustion_level", 0)
+        if exh_level >= 3 and ability in ("str", "dex"):
+            # Will be handled by _save_mode returning disadvantage
+            pass
         mode, _ = self._save_mode(token, ability)
         bonus = self.save_bonus(token, ability, cover)
         pen = next((e for e in token.effects if e.get("save_penalty")), None)
