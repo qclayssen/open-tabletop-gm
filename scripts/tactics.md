@@ -46,6 +46,22 @@ Nothing has happened yet. Do what the message says and run the same command agai
 
 - `... Cast Shield ...?` or `... Cast Silvery Barbs ...?`: ask the player, then add `--react yes` or `--react no`. If a second question follows, keep the first answer and add the second: `--react no --react yes`.
 
+## Rest and spell slots
+
+```bash
+$T rest long                      # 8 hours: HP, half the Hit Dice, every spell slot
+$T rest short --token Kairos      # 1 hour: Hit Dice, short-rest features, Pact Magic
+$T rest short --for-me            # spend the party's Hit Dice for them
+```
+
+- Spell slots are spent by the engine on every cast, and the refused cast is a refusal: `cast` on a caster with no slot left changes nothing and says which levels *are* left.
+- A long rest gives back every slot (PHB p201). A short rest gives back only what the class's own features give back: a **Warlock's** Pact Magic refills by itself; a **Wizard's** Arcane Recovery buys back up to half the caster's level in slot levels, cheapest first, once per long rest; everything else is yours to rule. Sorcery Points are reported, never converted — they are spent to *make* slots.
+- A sheet that lists a feature beats the SRD. If a sheet says Arcane Recovery at wizard 1, the wizard has it at wizard 1.
+- `cast` and `status` both report what is left, and `status` shows every caster on the board: `Kairos A1 8/8 (Spell slots: 1st: 1/4, 2nd: 3/3, 3rd: 2/2)`.
+- A caster with an empty Spell Slots table gets one from their class and level, so a half-finished sheet can still cast. A table the sheet has is never overwritten.
+- Hit Dice are the player's to spend: `rest short` reports what is available and waits for `--for-me`, like every other player die here.
+- `rest` needs a running fight (`start`, and not yet `end`) — it is a command inside a grid combat, like `end-turn`. A rest between two fights is narration, not grid, and is the GM's to award. It advances the in-world clock if the campaign has a calendar.
+
 ## Spells
 
 - `$T cast <id> "<spell>" <target or square>`. Examples: `$T cast kairos "mind sliver" frog-1`, `$T cast kairos "magic missile" frog-1 frog-2 frog-1` (one target per dart), `$T cast kairos "burning hands" D7` (aim a cone at a square), `$T cast kairos "mage armor"`. Upcast with `--level 2`.

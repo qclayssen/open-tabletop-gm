@@ -4,7 +4,9 @@
 
 Setup and flow
     start <map> --pc NAME@SQ [--pc ...] --monster "SRD NAME@SQ" [...] [--ally "SRD NAME@SQ"]
-    status                         whose turn, positions, HP
+    status                         whose turn, positions, HP, spell slots left
+    rest short|long [--token NAME] an hour or eight: Hit Dice, features, spell slots
+                                    (`--for-me` to spend the party's Hit Dice for them)
     options <token>                numbered choices for a GM-controlled creature
     choose <token> <n>|auto        run option n, or let the engine pick (ai_difficulty
                                    easy|normal|deadly in state.md, or --difficulty)
@@ -64,7 +66,8 @@ import sys
 
 from paths import find_campaign            # scripts/paths.py (on sys.path via tactics/__init__)
 
-from . import actions, ai, effects, encounter, engine, maps, policy, sight, spells, state, sync
+from . import (actions, ai, effects, encounter, engine, maps, policy, rest, sight, spells,
+                 slots, state, sync)
 from .grid import label, parse_square
 from .roller import PendingRoll, Roller
 from .state import Encounter
@@ -359,6 +362,9 @@ def cmd_status(enc) -> str:
             tags.append(f"concentrating: {x.concentration}")
         tags += [e["name"] for e in x.effects if not e.get("conditions") and e.get("name")]
         cond = f" [{', '.join(tags)}]" if tags else ""
+        left = slots.summary(x)
+        if left:
+            cond += f" ({left})"
         parts.append(f"{x.name} dead" if x.dead else f"{x.name} {x.square} {x.hp}/{x.max_hp}{cond}")
     ready = actions.readied_lines(enc)
     return f"{head}\n" + " | ".join(parts) + ("\n" + "\n".join(ready) if ready else "")
@@ -575,6 +581,11 @@ def run(args) -> int:
             text = engine.undo_move(enc)["text"]
         elif cmd == "end-turn":
             text = engine.end_turn(enc, roller)["text"]
+        elif cmd == "rest":
+            text, data = rest.cmd_rest(args, enc, roller)
+            moved = rest.advance_calendar(_campaign(args), args.type)
+            if moved:
+                text += "\n" + moved
         elif cmd == "condition" and args.action == "remove" and args.condition.lower() == "concentration":
             t = engine._resolve(enc, args.token)
             if not t.concentration:
@@ -723,6 +734,9 @@ def parser() -> argparse.ArgumentParser:
     s.add_argument("mode", choices=list(sight.FOG_MODES))
     sub.add_parser("undo-move", parents=c)
     sub.add_parser("end-turn", parents=c)
+    s = sub.add_parser("rest", parents=c, help="short or long rest for the party, or one creature")
+    s.add_argument("type", choices=["short", "long"])
+    s.add_argument("--token", metavar="NAME", help="one creature (default: every PC)")
     s = sub.add_parser("end", parents=c,
                        help="end combat, write sheets, the session log and the XP award")
     s.add_argument("--no-xp", action="store_true",

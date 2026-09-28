@@ -30,6 +30,22 @@ _DEATH = re.compile(r"(\*\*Death Saves:\*\*\s*Successes:\s*)(\d+)(\s*\|\s*Failur
 _HIT_DICE = re.compile(r"(\*\*Hit Dice:\*\*\s*)(\d+d\d+)\s*\(remaining:\s*(\d+)\)")
 _CONDITIONS = re.compile(r"^- \*\*Conditions:\*\*.*$", re.M)
 _SLOT_ROW = re.compile(r"^(\|\s*(\d+)\w*\s*\|\s*\d+\s*\|\s*)(\d+)(\s*\|)", re.M)
+_FEATURES = re.compile(r"^###\s+(.+?)\s*$", re.M)
+
+
+def _slots_module():
+    """spell_slots.py, the SRD's caster tables, loaded the way tactics_rules
+    loads its siblings (an explicit name, so two copies cannot diverge)."""
+    import importlib.util
+    import sys
+    name = "spell_slots_dnd5e"
+    if name not in sys.modules:
+        spec = importlib.util.spec_from_file_location(
+            name, pathlib.Path(__file__).with_name("spell_slots.py"))
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[name] = mod
+        spec.loader.exec_module(mod)
+    return sys.modules[name]
 
 
 def _section(text: str, title: str) -> str:
@@ -110,6 +126,27 @@ def _spell_names(block: str) -> list:
     return names
 
 
+def _feature_names(text: str) -> list:
+    """The bullets under each "### <Feature group>" heading in Features & Traits.
+
+    Only the names, not the descriptions: the engine uses these to answer "does
+    this creature have Arcane Recovery", and a sheet that spells the feature out
+    in full should be believed over the SRD's level for it. A sheet with no
+    Features section has none, which is different from one whose features were
+    never written down, so the caller can tell the two apart.
+    """
+    block = _section(text, "Features & Traits")
+    if not block.strip():
+        return []
+    out = []
+    for line in block.splitlines():
+        m = re.match(r"\s*(?:[-*]|\d+\.)\s+\*\*([^*]+)\*\*\s*:?", line) or \
+            re.match(r"\s*(?:[-*]|\d+\.)\s+([^*\n][^\n:]{0,60}?)\s*:?\s*$", line)
+        if m:
+            out.append(m.group(1).strip(" .*:-"))
+    return out
+
+
 def read_sheet(text: str, token_id: str, pos: tuple, path: str = "") -> Token:
     title = re.search(r"^#\s+(.+)$", text, re.M)
     if not title:
@@ -137,10 +174,23 @@ def read_sheet(text: str, token_id: str, pos: tuple, path: str = "") -> Token:
         elif a:
             attacks.append(a)
 
+    level = _int(_field(text, "Level"), 1)
     slots = {}
     for row in _table_rows(_section(text, "Spell Slots"))[1:]:
-        if len(row) >= 3 and re.match(r"\d", row[0]):
+        if len(row) >= 3 and re.match(r"\d", row[0]) and _int(row[1]):
             slots[str(_int(row[0]))] = {"total": _int(row[1]), "used": _int(row[2])}
+    # A caster whose sheet has no filled-in Spell Slots table still casts. The
+    # class and level are on the sheet, so the table is filled from the SRD
+    # rather than the caster being treated as having no slots at all — the
+    # engine cannot tell those two apart, and guessing "none" would leave a
+    # level 5 wizard who never got round to the table unable to cast anything.
+    # A row of zeroes counts as no table, which is what the template's blank
+    # "## Spell Slots (if applicable)" section parses to. A table the sheet
+    # *does* have is never overwritten, and a class with no SRD table is left
+    # exactly as the sheet left it.
+    klass = _field(text, "Class")
+    if not slots and _slots_module().is_caster(klass):
+        slots = _slots_module().spent_table(klass, level)
 
     skills = {}
     for row in _table_rows(_section(text, "Skills"))[1:]:
@@ -149,7 +199,6 @@ def read_sheet(text: str, token_id: str, pos: tuple, path: str = "") -> Token:
     spell_dc = re.search(r"spell save DC\s*(\d+)", text, re.I)
     spell_atk = re.search(r"spell attack\s*([+-]\d+)", text, re.I)
     passive = re.search(r"Passive Perception\s*(\d+)", text, re.I)
-    level = _int(_field(text, "Level"), 1)
     spells = _spell_names(_section(text, "Known Spells"))
     for a in attacks + save_spells:                  # spells used as attacks are known too
         if a.get("source") == "spell" or "dc" in a:
@@ -177,6 +226,11 @@ def read_sheet(text: str, token_id: str, pos: tuple, path: str = "") -> Token:
         extra={"ac_note": ac_text, "slots": slots, "save_spells": save_spells,
                "hit_dice": {"die": hd.group(2), "remaining": int(hd.group(3))} if hd else None,
                "abilities": scores, "skills": skills, "level": level, "spells": spells,
+               "features": _feature_names(text),
+               # What a short rest can give back is a class question (Pact Magic,
+               # Arcane Recovery), and the class is a line on the sheet that
+               # nothing else read.
+               "spellcasting": {"class": klass, "level": level} if slots else None,
                "spell_dc": int(spell_dc.group(1)) if spell_dc else None,
                "spell_attack": int(spell_atk.group(1)) if spell_atk else None,
                "passive_perception": int(passive.group(1)) if passive else None},
