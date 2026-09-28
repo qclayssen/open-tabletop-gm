@@ -162,12 +162,16 @@ The engine measures geometry and hands it over as an `AttackContext` (`distance`
 | Action economy | `turn_budget(token)` | `{movement, action, bonus, reaction}` |
 | | `initiative(token, roller)` | the `Roll` |
 | | `opportunity_attack(token)` | the attack spec used as a reaction, or `None` |
+| Design | `encounter_budget(levels, ruleset)` | `{tiers, levels, average_level, mixed, per_character, party_total, multiplier}` — what a party of those levels can be handed. A design tool: no combat runs, no dice |
+| | `rate_encounter(groups, levels, ruleset, known)` | `{rows, count, raw, multiplier, adjusted, party_size, thresholds, tiers, per_character, difficulty}` — the arithmetic as well as the verdict, so the GM can check it. `groups` is `[(name, count)]`; raise `ValueError` with a GM-readable message for a name you do not know |
+| | `award_xp(sheet_path, amount)` | `{awarded, total_after, level, leveled, next}`. `total_after` is `None` when the sheet does not track XP — a different situation from a character at zero, and the caller has to be able to tell them apart |
+| | `record_awards(campaign_dir, entries, note)` | append the awards that landed to the campaign's own XP ledger, if it keeps one. Only for awards that landed: a ledger that claims one no sheet reflects is worse than no ledger |
 
 Tokens (`tactics.state.Token`) carry the common fields (HP, AC, speed, conditions, attacks, saves, resistances, concentration, `effects`). Put anything system-specific in `token.extra`.
 
 Effects (`tactics/effects.py`) are small dicts on the affected token: who made it (`source`), when it ends (`ends`: the start or end of the source's next turn; `concentration`: with the source's concentration), the conditions it grants, and numbers your rules read (`ac`, `save_penalty`, `advantage_next`, `advantage_vs`, `grapple`, a repeat `save`). The engine runs their lifecycle; your rules only read them. Areas of effect are geometry (`tactics.grid.area`): a square is inside if its centre is, walls block the area, and shapes are true geometry, whatever the system. Attack specs are plain dicts: `{name, type: melee|ranged|melee_or_ranged, bonus, reach, range: [normal, long], damage: [{dice, type}], flags}`.
 
-`systems/dnd5e/tactics_rules.py` is the reference implementation (2014 rules), and `tests/test_tactics_rules_dnd5e.py` shows how to test one with scripted dice.
+`systems/dnd5e/tactics_rules.py` is the reference implementation (2014 rules), and `tests/test_tactics_rules_dnd5e.py` shows how to test one with scripted dice. The design methods delegate to `systems/dnd5e/encounter.py`, which is where the encounter-budget tables live — the same split as `tactics_spells.py` next to `tactics_sheet.py`, and for the same reason: the table is the thing that changes between editions, so it should be a file you can replace without touching the rules adapter.
 
 ---
 

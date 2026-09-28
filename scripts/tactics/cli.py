@@ -9,7 +9,11 @@ Setup and flow
     choose <token> <n>|auto        run option n, or let the engine pick (ai_difficulty
                                    easy|normal|deadly in state.md, or --difficulty)
     end-turn                       next creature in initiative
-    end                            finish: write sheets, tracker, session log
+    end                            finish: write sheets, tracker, session log, XP
+
+Encounter design (no combat running — these are for before the fight)
+    budget --party auto            what this party can be handed, per difficulty
+    rate --monsters "goblin x4"    what a monster list costs that party
 
 Actions (the current creature)
     move <token> <square>          e.g. move kairos D5   (preview <token> <square> checks first)
@@ -60,7 +64,7 @@ import sys
 
 from paths import find_campaign            # scripts/paths.py (on sys.path via tactics/__init__)
 
-from . import actions, ai, effects, engine, maps, policy, sight, spells, state, sync
+from . import actions, ai, effects, encounter, engine, maps, policy, sight, spells, state, sync
 from .grid import label, parse_square
 from .roller import PendingRoll, Roller
 from .state import Encounter
@@ -68,8 +72,12 @@ from .state import Encounter
 _SCRIPTS = pathlib.Path(__file__).resolve().parents[1]
 
 _DISPLAY_CAMPAIGN = _SCRIPTS.parent / "display" / ".campaign"
+# Read-only means: nothing is written, nothing is rolled, no pending command is
+# cleared. `budget` and `rate` are design tools — a fight is built before there
+# is an encounter to save, so they must work with nothing running and must not
+# touch combat/pending.json.
 READ_ONLY = ("status", "options", "preview", "reachable", "targets", "log", "spells",
-             "preview-area", "sight")
+             "preview-area", "sight", "budget", "rate")
 # Flags that do not change what a command means: a re-run with them added is
 # the same command, so it replays the same engine dice (see _pending).
 OLD_FORM = "*"     # decision key for a --react given up front (opportunity attacks)
@@ -419,11 +427,12 @@ def _adjust(enc, args) -> str:
     return text
 
 
-def _end(camp_dir, enc) -> str:
+def _end(camp_dir, enc, campaign: str = "", award: bool = True) -> str:
     if enc.status != "active":
         raise Stop("This combat has already ended.")
     enc.status = "ended"
-    written = sync.write_sheets(camp_dir, enc, engine.rules_for(enc))
+    rules = engine.rules_for(enc)
+    written = sync.write_sheets(camp_dir, enc, rules)
     lines = sync.summary_lines(enc, enc.meta)
     logged = sync.append_session_log(camp_dir, lines)
     sync.set_active_combat(camp_dir, "*(none)*")
@@ -436,6 +445,21 @@ def _end(camp_dir, enc) -> str:
             out.append(f"{name}'s sheet updated (backup {path.name}.bak):\n{diff}")
         else:
             out.append(f"{name}'s sheet already up to date.")
+    if award:
+        # The fight that ran is rated by the tables the GM designed it against,
+        # so the award a player gets is the one the encounter was worth. Recorded
+        # in the same ledger `xp.py award` writes, so `xp.py check` reconciles
+        # both against the same sheets.
+        #
+        # Contained, because this is the last command of a session: an XP award
+        # the GM can re-run by hand is worth less than a fight that ends and
+        # prints everything else.
+        try:
+            out += encounter.award_xp(camp_dir, rules, enc, campaign)
+        except Exception as exc:                                  # noqa: BLE001
+            out.append(f"XP: not awarded ({exc}). Award it by hand with: "
+                       f"python3 systems/dnd5e/xp.py award --campaign {campaign} "
+                       f"--characters \"NAME,...\" --difficulty easy|medium|hard|deadly")
     if logged:
         out.append("Session log: combat summary appended.")
     return "\n".join(out)
@@ -445,8 +469,14 @@ def run(args) -> int:
     camp_dir = _camp_dir(args)
     roller = _roller(args)
     data = {}
+    enc = None
     if args.cmd == "start":
         enc, text = cmd_start(args, camp_dir)
+    elif args.cmd in ("budget", "rate"):
+        if args.cmd == "budget":
+            text, data = encounter.cmd_budget(args, camp_dir, _campaign(args))
+        else:
+            text, data = encounter.cmd_rate(args, camp_dir, _campaign(args))
     else:
         enc = _load(camp_dir)
         cmd = args.cmd
@@ -570,7 +600,7 @@ def run(args) -> int:
         elif cmd == "adjust":
             text = _adjust(enc, args)
         else:                                               # end
-            text = _end(camp_dir, enc)
+            text = _end(camp_dir, enc, _campaign(args), award=not args.no_xp)
 
     if args.cmd not in READ_ONLY:
         if roller.supplied:
@@ -585,8 +615,10 @@ def run(args) -> int:
             if hint:
                 text += "\n" + hint
     if args.json:
-        print(json.dumps({"text": text, "result": data, "combat": sync.snapshot(enc, enc.meta)},
-                         default=str, indent=1))
+        payload = {"text": text, "result": data}
+        if enc is not None:
+            payload["combat"] = sync.snapshot(enc, enc.meta)
+        print(json.dumps(payload, default=str, indent=1))
     else:
         print(text)
     return 0
@@ -691,7 +723,25 @@ def parser() -> argparse.ArgumentParser:
     s.add_argument("mode", choices=list(sight.FOG_MODES))
     sub.add_parser("undo-move", parents=c)
     sub.add_parser("end-turn", parents=c)
-    sub.add_parser("end", parents=c, help="end combat, write sheets and the session log")
+    s = sub.add_parser("end", parents=c,
+                       help="end combat, write sheets, the session log and the XP award")
+    s.add_argument("--no-xp", action="store_true",
+                   help="do not award XP (a fight fled from, or a campaign that "
+                        "levelling handles elsewhere)")
+    s = sub.add_parser("budget", parents=c,
+                       help="the difficulty thresholds this party can be handed")
+    s.add_argument("--party", default="auto", metavar="auto|NAMES",
+                   help="'auto' (default) is every character sheet in the campaign")
+    s.add_argument("--ruleset", choices=list(encounter.RULESETS),
+                   help="defaults to the campaign's own system version")
+    s = sub.add_parser("rate", parents=c,
+                       help="what a list of monsters costs this party")
+    s.add_argument("--monsters", required=True, metavar="LIST",
+                   help='"goblin x4, hobgoblin" — x4 or ×4, comma-separated')
+    s.add_argument("--party", default="auto", metavar="auto|NAMES",
+                   help="'auto' (default) is every character sheet in the campaign")
+    s.add_argument("--ruleset", choices=list(encounter.RULESETS),
+                   help="defaults to the campaign's own system version")
     s = sub.add_parser("condition", parents=c, help="GM: add or remove a condition")
     s.add_argument("token")
     s.add_argument("action", choices=["add", "remove"])

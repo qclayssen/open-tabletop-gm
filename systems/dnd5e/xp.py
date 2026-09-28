@@ -229,6 +229,47 @@ def _write_xp(path: pathlib.Path, new_xp: int, current_level: int) -> bool:
     return leveled
 
 
+# The XP field a sheet must have for an award to land. `**XP:** 300 / 1400`
+# yes; `**XP:** 0 (milestone levelling)` no — that campaign advances by
+# milestone, and a total written there would be a number the campaign has no
+# rule to read. Awarding to such a sheet is reported as "not tracked" rather
+# than silently dropped, because a silent drop is how XP goes missing.
+XP_FIELD = re.compile(r"\*\*XP:\*\*\s*(\d+)?\s*/\s*(\d+)")
+
+
+def xp_awardable(path: pathlib.Path) -> int | None:
+    """The sheet's current XP total, or None when the sheet does not track XP.
+
+    The "or None" is the whole point: a caller has to be able to tell "this
+    character is at 0 XP" from "this campaign does not use XP", and only the
+    second one means it should go and award progression another way.
+    """
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    m = XP_FIELD.search(text)
+    return int(m.group(1) or 0) if m else None
+
+
+def award_xp(path: pathlib.Path, amount: int) -> dict:
+    """Add `amount` XP to a sheet in place. Returns what happened.
+
+    {"awarded", "total_after", "level", "leveled", "next"} — `total_after` is
+    None and `awarded` is 0 when the sheet has no XP field, which is the
+    "milestone levelling" case above and NOT a failure of this function.
+    """
+    total = xp_awardable(path)
+    _xp, level = _read_char(path)
+    if total is None:
+        return {"awarded": 0, "total_after": None, "level": level,
+                "leveled": False, "next": None}
+    new_total = total + int(amount)
+    leveled = _write_xp(path, new_total, level)
+    return {"awarded": int(amount), "total_after": new_total, "level": level,
+            "leveled": leveled, "next": _next_level_xp(level)}
+
+
 def _push_display(name: str, new_xp: int, current_level: int) -> None:
     if not DISPLAY_SCRIPT.exists():
         return
@@ -291,8 +332,23 @@ def _ledger_path(campaign: str) -> pathlib.Path:
 def _record_award(campaign: str, entries: list, note: str) -> None:
     """Append one line per character. Never raises — a ledger write must not
     cost a player their XP, which is already written by the time we get here."""
+    _record_award_to(CAMPAIGNS_DIR / campaign, entries, note)
+
+
+def record_awards(campaign_dir, entries: list, note: str = "") -> None:
+    """The same append, against a campaign directory the caller already resolved.
+
+    `combat.py end` finds the campaign through paths.find_campaign, which honours
+    GM_CAMPAIGN_ROOT; the module-level CAMPAIGNS_DIR does not. Resolving the
+    directory twice, in two different ways, is how an award ends up in a copy of
+    the campaign nobody is playing.
+    """
+    _record_award_to(pathlib.Path(campaign_dir), entries, note)
+
+
+def _record_award_to(campaign_dir, entries: list, note: str) -> None:
     try:
-        path = _ledger_path(campaign)
+        path = pathlib.Path(campaign_dir) / LEDGER_NAME
         path.parent.mkdir(parents=True, exist_ok=True)
         stamp = datetime.datetime.now(datetime.timezone.utc).isoformat(
             timespec="seconds")

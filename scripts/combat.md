@@ -80,6 +80,34 @@ python3 $SKILL/scripts/tracker.py -c $CAMP clear --all  # also clears death save
 
 ---
 
+## Encounter design — `scripts/tactics/combat.py budget` / `rate`
+
+Two design tools. Neither needs a combat running, and neither rolls a die.
+
+```bash
+SKILL=<skill-base>
+CAMP=<campaign-name>
+T="python3 $SKILL/scripts/tactics/combat.py -c $CAMP"
+
+# What this party can be handed: per-character and party figures per difficulty
+$T budget --party auto
+$T budget --party "Kairos,Vesper" --ruleset 2024
+
+# What a list of monsters costs them, with the arithmetic shown
+$T rate --monsters "goblin x4, hobgoblin"
+$T rate --monsters "bandit captain x2, wolf x3"
+```
+
+- `--party auto` is every character sheet in the campaign (the same set `start` places when no `--pc` is given). Names work too: `--party "Kairos,Vesper"`.
+- Counts accept `x4`, `×4` or `*4`; a missing count means one. `"goblin x0"` is refused.
+- `--ruleset` is `2014` (Easy/Medium/Hard/Deadly, with the monster-count multiplier) or `2024` (Low/Moderate/High, no multiplier). It defaults to the campaign's own `**System Version:**` in `state.md`.
+- A monster name that is not in the SRD comes back with near matches, not a traceback.
+- Below the first threshold the answer is `TRIVIAL`, not "Easy" — there is no tier for "not a fight yet".
+
+`end` uses the same tables: a finished fight is rated, the XP goes on the sheets of the party still standing (a PC who went down gets nothing), and the award is recorded in the campaign's `xp-ledger.jsonl` — the one `xp.py award` writes, so `xp.py check` reconciles both. `end --no-xp` skips it, for a fight fled from or a campaign levelling by milestone. A sheet with no numeric XP field (`**XP:** 0 (milestone levelling)`) is reported as untracked rather than written into.
+
+---
+
 ## Display updates during combat (from startup.md)
 
 ```bash
