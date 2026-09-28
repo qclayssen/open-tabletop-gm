@@ -25,8 +25,6 @@ import shutil
 import urllib.parse
 
 from . import slots as slots_mod
-from .grid import label
-
 _SKILL = pathlib.Path(__file__).resolve().parents[2]
 _push = None
 
@@ -91,6 +89,31 @@ def _movement_left(enc) -> int:
     return engine.remaining_movement(enc) if enc.status == "active" and enc.order else 0
 
 
+def _runs(visible) -> list:
+    """Visible squares as [row, first col, last col] runs, top row first.
+
+    The display polls this every turn, and one label per square was ~200
+    strings of JSON each time (P8: 1809 bytes on Frog Pond, now 212). Runs
+    are a few dozen small numbers for the same information; the display
+    expands them back into squares.
+    """
+    by_row: dict = {}
+    for x, y in visible:
+        by_row.setdefault(y, []).append(x)
+    out = []
+    for y in sorted(by_row):
+        start = prev = None
+        for x in sorted(by_row[y]):
+            if prev is not None and x == prev + 1:
+                prev = x
+                continue
+            if prev is not None:
+                out.append([y, start, prev])
+            start = prev = x
+        out.append([y, start, prev])
+    return out
+
+
 def snapshot(enc, meta: dict = None) -> dict:
     """Everything the grid view needs, as one JSON-able dict."""
     def effect_names(t) -> list:
@@ -126,8 +149,10 @@ def snapshot(enc, meta: dict = None) -> dict:
             "current": None if hidden_turn or not cur else cur.id, "unseen_turn": hidden_turn,
             "order": [i for i in enc.order if i in seen], "grid": enc.grid, "meta": meta or {},
             # Squares no PC can see are dimmed; in "hide" mode the creatures there are left out.
+            # "runs" is [row, first col, last col] per run: one entry per stretch, not per square.
             "fog": None if visible is None else {"mode": sight.fog_mode(enc),
-                                                 "visible": sorted(label(p) for p in visible)},
+                                                 "runs": _runs(visible),
+                                                 "count": len(visible)},
             # An unseen creature's action economy would tell the players how it moves.
             "turn": {} if hidden_turn else {
                      "movement_left": _movement_left(enc),

@@ -33,6 +33,11 @@ def ids(snap):
     return [t["id"] for t in snap["tokens"]]
 
 
+def fog_labels(snap):
+    """The visible squares of a snapshot, back in label form from the runs."""
+    return {grid.label((x, r[0])) for r in snap["fog"]["runs"] for x in range(r[1], r[2] + 1)}
+
+
 # ─── visibility ───────────────────────────────────────────────────────────────
 
 def test_visible_from_agrees_with_line_of_sight_on_every_map():
@@ -57,7 +62,24 @@ def test_hide_fog_leaves_out_an_enemy_no_pc_sees():
     snap = sync.snapshot(fight())
     assert snap["fog"]["mode"] == "hide"
     assert ids(snap) == ["kairos"]
-    assert "E1" not in snap["fog"]["visible"] and "A1" in snap["fog"]["visible"]
+    seen = fog_labels(snap)
+    assert "E1" not in seen and "A1" in seen
+    assert snap["fog"]["count"] == len(seen)
+
+
+def test_the_fog_runs_are_far_smaller_than_one_entry_per_square():
+    """P8: the display polls this every turn, and a label per square was ~200
+    strings of JSON each time. The runs must still cover exactly the same
+    squares, and stay inside the grid."""
+    enc = fight()
+    snap = sync.snapshot(enc)
+    runs, count = snap["fog"]["runs"], snap["fog"]["count"]
+    assert runs, "a fight under fog reports runs"
+    assert len(runs) < count
+    board = enc.board()
+    assert all(0 <= y < board.height and 0 <= x0 <= x1 < board.width for y, x0, x1 in runs)
+    assert sum(x1 - x0 + 1 for _, x0, x1 in runs) == count
+    assert fog_labels(snap) == {grid.label(p) for p in sight.fog(enc)}
 
 
 def test_an_enemy_in_view_is_shown():

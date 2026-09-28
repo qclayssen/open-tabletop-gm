@@ -576,7 +576,17 @@
   }
 
   // ── fog of war, cover shading, keyboard cursor ───────────────────────────
-  const fogSet = () => (snap && snap.fog ? new Set(snap.fog.visible || []) : null);
+  // fog.runs is [row, firstCol, lastCol] per stretch of visible squares: the
+  // snapshot sends runs, not one entry per square, so expand them here.
+  function fogSet() {
+    if (!snap || !snap.fog) return null;
+    const out = new Set();
+    for (const r of snap.fog.runs || []) {
+      const y = r[0];
+      for (let x = r[1]; x <= r[2]; x++) out.add(label(x, y));
+    }
+    return out;
+  }
 
   function drawFog(layer, W, H) {
     const seen = fogSet(); if (!seen) return;
