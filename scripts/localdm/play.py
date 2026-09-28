@@ -154,15 +154,18 @@ class Session:
                                                reasoning=self.reasoning).text)
 
         r = call(task)
+        # Two independent guardrails, one corrective retry each. A retry is adopted only
+        # when it is actually clean; when it is not, the first draft is kept, because a
+        # flag means "worth rewriting once", not "keep asking" — a miss is the expensive
+        # direction, the same reasoning reply.is_dead_stop documents.
         if reply.speaks_for_player(r.narration):          # guardrail: one corrective retry
             retry = call(f"{task}\n{self.AGENCY_FIX}".strip())
             if not reply.speaks_for_player(retry.narration):
-                return retry
-            r = retry
+                r = retry
         if reply.grants_injection(r.narration):           # D1: one corrective retry
             retry = call(f"{task}\n{self.INJECTION_FIX}".strip())
             if not reply.grants_injection(retry.narration):
-                return retry
+                r = retry
         return r
 
     def _consult(self, names, question, model=None) -> str:
