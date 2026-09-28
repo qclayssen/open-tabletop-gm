@@ -4,7 +4,15 @@ build_srd.py — build the bundled dnd5e_srd.json from two upstream sources
 
 Sources:
   • 5e-bits/5e-srd-api packages/5e-database (MIT + OGL) — spells, equipment, magic items, conditions, monsters
-  • foundryvtt/dnd5e     (MIT + CC-BY-4.0) — class features, racial traits (2024 SRD)
+  • foundryvtt/dnd5e     (MIT + CC-BY-4.0) : class features, racial traits
+
+2014 rules only, deliberately. The engine adjudicates 2014 (tactics_rules.py
+cites the 2014 PHB and SRD 5.1), and the Foundry repo ships both editions side
+by side: packs/_source/classes + classfeatures are 2014, classes24 + spells24 +
+origins24 are 2024. Reading the 2024 packs here produced a dataset that was 2014
+spells and monsters bolted to 2024 class features, so a lookup could answer a
+2014 rules question with 2024 text. The packs below are named explicitly so the
+edition is a one-line decision rather than a guess inside path matching.
 
 Output: systems/dnd5e/data/dnd5e_srd.json
 
@@ -46,6 +54,19 @@ RAW_FVTT     = "https://raw.githubusercontent.com/foundryvtt/dnd5e/master"
 FVTT_TREE    = "https://api.github.com/repos/foundryvtt/dnd5e/git/trees/master?recursive=1"
 BITS_COMMITS = "https://api.github.com/repos/5e-bits/5e-srd-api/commits?sha=main&path=packages/5e-database&per_page=1"
 FVTT_COMMITS = "https://api.github.com/repos/foundryvtt/dnd5e/commits/master?per_page=1"
+
+# The 2014 packs in foundryvtt/dnd5e, named once. The 2024 equivalents are
+# classes24, spells24, origins24, feats24 and equipment24; the two live side by
+# side in the same repo, and the two editions nest their features differently:
+#
+#   2014  packs/_source/classfeatures/<class>/<class>-features/<feature>.yml
+#   2024  packs/_source/classes24/<class>/class-features/<feature>.yml
+#
+# so the edition changes both which packs are read and how the class is pulled
+# out of the path. Races are 2014-shaped in both cases (packs/_source/races).
+FVTT_CLASS_PACK     = "classes"          # one YAML per class, flat
+FVTT_CLASS_FEATURES = "classfeatures"    # <class>/<class>-features/<feature>.yml
+FVTT_RACES          = "races"            # <race>/<race>-features/<feature>.yml
 
 BITS_FILES = {
     "spells":      "5e-SRD-Spells.json",
@@ -715,14 +736,21 @@ def _norm_feature(doc: dict, path: str, scale_tables=None):
     prereq    = system.get("prerequisites", {}) or {}
     feat_type = system.get("type", {}).get("value", "class") if isinstance(system.get("type"), dict) else "class"
 
-    # Derive class from path: packs/_source/classes24/<class>/class-features/...
+    # Derive class from path: packs/_source/classfeatures/<class>/<class>-features/...
     # or races: packs/_source/races/<race>/<variant>-features/...
-    parts      = path.replace("\\", "/").split("/")
-    class_name = None
-    if "classes24" in parts:
-        idx        = parts.index("classes24")
-        class_name = parts[idx + 1] if idx + 1 < len(parts) else None
-    elif "races" in parts:
+    parts = path.replace("\\", "/").split("/")
+    # Empty string, not None, for "belongs to no one class": lookup's formatter
+    # does r.get("class", "") and prints the result, so a None here renders as
+    # the word "None" in the header instead of falling through to the type.
+    class_name = ""
+    if FVTT_CLASS_FEATURES in parts:
+        idx        = parts.index(FVTT_CLASS_FEATURES)
+        class_name = parts[idx + 1] if idx + 1 < len(parts) else ""
+        if class_name == "shared-features":
+            # Extra Attack, the fighting styles, ASI: they belong to no one
+            # class, and printing "[shared-features]" reads as a class name.
+            class_name = ""
+    elif FVTT_RACES in parts:
         feat_type = "race"
 
     # Resolve [[lookup @scale.class.identifier]] tokens before HTML stripping
@@ -794,6 +822,44 @@ def _build_5ebits() -> dict:
 
 # ─── Fetch FoundryVTT features ────────────────────────────────────────────────
 
+def _partition_fvtt_tree(tree: list) -> tuple:
+    """Split a Foundry repo tree into the class documents and feature documents
+    of the 2014 packs. (feature_paths, class_yml_paths)
+
+    Pure, so the edition this build reads is a thing a test can assert rather
+    than a path match buried in a network loop. The 2024 packs nest features
+    one way and class documents another, and both editions sit in the same
+    repository, so a well-meaning path edit would otherwise quietly swap the
+    edition with nothing to notice.
+    """
+    feature_paths   = []
+    class_yml_paths = []
+    class_prefix    = f"packs/_source/{FVTT_CLASS_PACK}/"
+    feature_prefix  = f"packs/_source/{FVTT_CLASS_FEATURES}/"
+    race_prefix     = f"packs/_source/{FVTT_RACES}/"
+    for t in tree:
+        p = t["path"] if isinstance(t, dict) else str(t)
+        if not p.endswith(".yml") or os.path.basename(p).startswith("_"):
+            continue
+        if p.startswith(class_prefix) and p.count("/") == 3:
+            # e.g. packs/_source/classes/wizard.yml, the class document itself.
+            # Flat in 2014; the 2024 packs nest it as classes24/<class>/<class>.yml.
+            class_yml_paths.append(p)
+        elif p.startswith(feature_prefix) and p.count("/") >= 4:
+            # e.g. packs/_source/classfeatures/wizard/wizard-features/sculpt-spell.yml (6)
+            # or one that belongs to no single class:
+            # classfeatures/shared-features/extra-attack.yml (4), and
+            # classfeatures/shared-features/fighting-styles/archery.yml (5).
+            # The depth floor keeps out class documents that sit loose in the
+            # pack root (classfeatures/grappler.yml, 3), which are not features.
+            # Extra Attack and Ability Score Improvement live at depth 4, so the
+            # floor cannot be higher or a core 2014 feature goes missing.
+            feature_paths.append(p)
+        elif p.startswith(race_prefix) and re.search(r"/-?\w+-features/", p):
+            feature_paths.append(p)
+    return feature_paths, class_yml_paths
+
+
 def _build_fvtt():
     if yaml is None:
         print("  foundryvtt  skipped (PyYAML not installed)")
@@ -807,23 +873,7 @@ def _build_fvtt():
     tree = data.get("tree", [])
     sha  = data.get("sha", "")
 
-    # Partition tree into feature YAMLs and class-level YAMLs (scale tables)
-    feature_paths  = []
-    class_yml_paths = []
-    for t in tree:
-        p = t["path"]
-        if not p.endswith(".yml") or os.path.basename(p).startswith("_"):
-            continue
-        if p.startswith("packs/_source/classes24/"):
-            depth = p.count("/")
-            if "/class-features/" in p:
-                # e.g. packs/_source/classes24/rogue/class-features/SneakAttack.yml (5 slashes)
-                feature_paths.append(p)
-            elif depth == 4:
-                # e.g. packs/_source/classes24/rogue/Rogue.yml — class document itself (4 slashes)
-                class_yml_paths.append(p)
-        elif p.startswith("packs/_source/races/") and re.search(r"/-?\w+-features/", p):
-            feature_paths.append(p)
+    feature_paths, class_yml_paths = _partition_fvtt_tree(tree)
 
     print(f" {len(feature_paths)} feature files, {len(class_yml_paths)} class files")
 
@@ -841,10 +891,14 @@ def _build_fvtt():
         if not isinstance(doc, dict):
             continue
         parts = path.replace("\\", "/").split("/")
-        if "classes24" not in parts:
+        if FVTT_CLASS_PACK not in parts:
             continue
-        idx        = parts.index("classes24")
-        class_name = parts[idx + 1] if idx + 1 < len(parts) else None
+        idx = parts.index(FVTT_CLASS_PACK)
+        # The 2014 pack is flat (classes/wizard.yml), so the segment after the
+        # pack is the file itself, extension and all. The scale tables are keyed
+        # by class slug, and _norm_feature looks them up by the directory in the
+        # feature path, so "wizard.yml" would silently never match.
+        class_name = parts[idx + 1][:-4] if idx + 1 < len(parts) else None
         if not class_name:
             continue
         tables = _parse_scale_tables(doc)

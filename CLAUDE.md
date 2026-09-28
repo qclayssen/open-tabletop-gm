@@ -10,20 +10,19 @@ turn-based mode. Branch: `tactical-combat`.
   `answer-key.md`.** The user is the player and must stay unspoiled. Demos and
   tests use only SRD monsters and the player-facing Kairos sheet
   (`tests/fixtures/Kairos_Level1.md`).
-- **The engine owns the rules. The LLM only narrates and chooses.** Positions,
-  HP, initiative, action economy, range, reach, movement cost and dice are
-  decided by `scripts/tactics/`. The GM never computes distance, cover or damage.
+- **The engine owns the rules. The LLM only narrates and chooses.** Positions, HP,
+  initiative, action economy, range, reach, movement cost and dice are decided by
+  `scripts/tactics/`. The GM never computes distance, cover or damage.
 - GM-facing commands: one call, plain arguments, 1 to 4 lines of plain text
-  (optional `--json` for the display). Local 24B models lose the thread after
-  4 or 5 chained tool calls; enemy turns are a numbered menu the GM picks from.
+  (optional `--json`). Local 24B models lose the thread after 4 or 5 chained tool
+  calls; enemy turns are a numbered menu the GM picks from.
 - Python stdlib plus Flask only (Flask is already a display dependency). Ask
   before adding any package. Code must run on Python 3.10 (CI floor) and on
   Windows with a non-UTF-8 locale (always pass `encoding="utf-8"`).
-- 5e-specific rules live in `systems/dnd5e/`, behind `scripts/tactics/rules.py`.
+- 5e-specific rules live in `systems/dnd5e/`, behind `scripts/tactics/rules.py`, and are 2014 only; the SRD build reads the 2014 packs (asserted in `tests/test_srd_sources.py`).
 - No em dashes in docs, comments or UI text written for this fork.
 - Small focused commits. Keep every existing test passing.
-- Never write to the user's source folder (`~/Claude/Projects/dnd/...`); only
-  the installed campaign copy is written to.
+- Never write to the user's source folder (`~/Claude/Projects/dnd/...`); only the installed campaign copy is written to.
 
 ## Architecture
 
@@ -66,7 +65,7 @@ systems/dnd5e/
                              death saves, saves and save chance, SRD monster -> Token
   tactics_spells.py          spell name -> spec for a caster (SRD mechanics + BUILTIN)
   tactics_sheet.py           character sheet -> Token, and write-back after combat
-  build_srd.py               SRD build; monsters carry structured `actions`
+  build_srd.py               SRD build, 2014 packs only; monsters carry `actions`
   lookup.py                  SRD lookup (data/ is generated and gitignored)
 display/                     Flask companion: gm-display-app.py (SSE /stream, JSON
                              messages keyed by type), send.py, push_stats.py,
@@ -93,7 +92,7 @@ Engine conventions:
 ```bash
 python3 -m pytest tests/ -q                       # full suite
 python3 -m pytest tests/test_tactics_*.py -q      # engine only
-python3 systems/dnd5e/build_srd.py --no-fvtt      # build SRD data (network)
+python3 systems/dnd5e/build_srd.py --no-fvtt      # build 2014 SRD data (network)
 python3 systems/dnd5e/lookup.py monster "giant frog" --json
 python3 scripts/tactics/demo.py --seed 4          # scripted fight, prints every command
 python3 scripts/tactics/play.py tutorial          # play a fight yourself (lessons)
@@ -107,30 +106,29 @@ GM_DISPLAY_PORT=5055 python3 display/gm-display-app.py   # a second display (tes
 
 ## Milestones
 
-Details, findings, decisions and open items: `docs/milestones/` (one file per
-milestone; read the one you are working on).
+Findings, decisions and open items: `docs/milestones/` (one file per milestone;
+read the one you are working on).
 
 - [x] 1. Engine core, [x] 2. CLI and GM loop, [x] 3. Grid display
 - [x] 4. Spells and templates, [x] 5. Polish
 - [x] 6. Local DM with a smarter advisor (`docs/milestones/06-local-dm.md`)
 
-At the end of a milestone: update its file (Shipped, Findings, Decisions,
-Open), tick it here, and keep this file under 150 lines.
+At the end of a milestone: update its file (Shipped, Findings, Decisions, Open),
+tick it here, and keep this file under 150 lines.
 
 ## Decisions on record (cross-cutting)
 
 - Workflow: one session per milestone ("Read CLAUDE.md and
-  docs/milestones/0N-*.md, then continue with milestone N"). Branch from
-  `main`, PR to the fork (`gh pr create --repo qclayssen/open-tabletop-gm`),
-  merge when CI (Actions) is green. `origin` = fork (HTTPS; SSH keys do not
-  work here), `upstream` = Bobby-Gray. Push with
+  docs/milestones/0N-*.md, then continue with milestone N"). Branch from `main`,
+  PR to the fork (`gh pr create --repo qclayssen/open-tabletop-gm`), merge when
+  CI (Actions) is green. `origin` = fork (HTTPS; SSH keys do not work here),
+  `upstream` = Bobby-Gray. Push with
   `git -c credential.helper='!gh auth git-credential' push`.
-- Roll mode follows the campaign's `roll_mode`; every roll logs its source;
-  "Roll for me" rolls only what the player has not supplied.
-- Nothing is guessed: unparseable SRD data keeps its raw text and a flag.
-  Riders that parse exactly (grapple, save or prone/condition, save for damage)
-  are applied; the rest prints as "GM decides: ...". Spells the engine cannot
-  run are still cast and narrated.
+- Roll mode follows the campaign's `roll_mode`; every roll logs its source; "Roll for me" rolls only what the player has not supplied.
+- Nothing is guessed: unparseable SRD data keeps its raw text and a flag. Riders
+  that parse exactly (grapple, save or prone/condition, save for damage) are
+  applied; the rest prints as "GM decides: ...". Spells the engine cannot run are
+  still cast and narrated.
 - A paused command (exit 2) keeps its seed in `combat/pending.json`; the re-run
   with `--roll` / `--react` replays the same engine dice.
 - Derived data is never stored in `encounter.json`. `Token.prepare_derived()`
@@ -143,9 +141,9 @@ Open), tick it here, and keep this file under 150 lines.
   recorded under Decisions in the milestone file.
 - Import the CLI as `tactics.cli`, never as a module named `combat`:
   `scripts/combat.py` (the initiative tracker) shadows it.
-- Another display (claude-dnd-skill) may hold port 5001 on this machine. Test
-  with GM_DISPLAY_PORT and TACTICS_NO_DISPLAY=1; never stop it; remove test
-  runtime files from `display/` afterwards.
-- `display/static/reference/strixhaven_map_table.html` is a player-facing copy
-  (DM-only maps and undiscovered places removed). Never add content from the
-  user's own copy or any DM folder.
+- Another display (claude-dnd-skill) may hold port 5001 on this machine. Test with
+  GM_DISPLAY_PORT and TACTICS_NO_DISPLAY=1; never stop it; remove test runtime
+  files from `display/` afterwards.
+- `display/static/reference/strixhaven_map_table.html` is a player-facing copy (DM-only
+  maps and undiscovered places removed). Never add content from the user's own copy or
+  any DM folder.
