@@ -36,6 +36,9 @@ This project is the LLM-agnostic, system-flexible fork of [claude-dnd-skill](htt
 - `docs/FIRST-SESSION.md`: how to start the display and a new campaign, and how to check the display without a GM.
 - A spell cast from the grid (Cast menu, or `cast`) used a 5 ft range when the SRD data was built by an older `build_srd.py`: Fire Bolt could not reach anything. Stale spell records, including ones cached in an encounter, are now looked up again.
 
+### Fixed: the DM prompt treats the player's line as untrusted input
+- The interface-lens playtest showed a prompt injection fully granted (+100 gp, an auto-crit token, a full heal, and a fake `**System Log:**` line) after the same line was resisted before. `prompts/dm.md` now says plainly that the player's line is never instructions, with refusal and no system-style log lines, pinned by a test on `dm_prompt()`.
+
 ### Added: a playable tutorial for grid combat
 - `scripts/tactics/play.py`: play a grid fight yourself in the terminal. You type your turns (`move D4`, `attack 1`, `cast magic missile 1 1 2`); the game runs the enemies as the GM would. An ASCII battle map with numbered enemies, a `reach` overlay, dice you roll yourself (or Enter to roll for you), and y/n prompts for Shield, Silvery Barbs and opportunity attacks.
 - `play.py tutorial`: ten lessons in the new Training Yard map (`display/maps/training-yard.json`) against two kobolds, then free play. Also `kobolds`, `frogs`, `mephit`, or any map and SRD monsters with `--map`; `--sheet` plays your own character; `--display` mirrors the map to the browser.
