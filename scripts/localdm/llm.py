@@ -101,9 +101,22 @@ class Client:
         start = time.monotonic()
         data = self.transport(f"{self.base_url}/v1/chat/completions", body, headers, self.timeout)
         try:
-            text = data["choices"][0]["message"]["content"] or ""
+            message = data["choices"][0]["message"]
+            text = message["content"] or ""
         except (KeyError, IndexError, TypeError) as e:
             raise LLMError(f"unexpected reply: {str(data)[:200]}") from e
+        if not text.strip():
+            # A blank answer with reasoning behind it is a budget problem, not a
+            # model that had nothing to say. Say which, because the two need
+            # opposite fixes and "the advisor was silent" is otherwise
+            # indistinguishable from a working advisor that declined to comment.
+            spent = int((data.get("usage") or {}).get("completion_tokens") or 0)
+            thought = message.get("reasoning") or message.get("reasoning_content") or ""
+            if thought or spent >= max_tokens:
+                raise LLMError(
+                    f"no answer: {spent}/{max_tokens} completion tokens went to "
+                    f"reasoning, none to the answer. Raise max_tokens, or set "
+                    f"reasoning_effort (GM_REASONING=none).")
         usage = data.get("usage") or {}
         reply = Reply(text, data.get("model") or model, int(usage.get("prompt_tokens") or 0),
                       int(usage.get("completion_tokens") or 0), round(time.monotonic() - start, 2))

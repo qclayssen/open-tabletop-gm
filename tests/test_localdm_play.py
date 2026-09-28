@@ -328,13 +328,24 @@ def test_the_fast_model_picks_for_enemies(tmp_path):
     assert llm.Models("a").fast == "a"
 
 
-def test_local_calls_send_reasoning_none_and_advisors_send_nothing(tmp_path, monkeypatch):
+def test_every_local_tier_call_sends_reasoning_none(tmp_path, monkeypatch):
+    """Including the advisors.
+
+    The advisors used to be the one local call that sent no reasoning_effort, on
+    the assumption that they are always cloud models. Point the advisor tier at a
+    local thinking model and it spends its whole max_tokens budget thinking,
+    returns content "", and the note renders as a bare "Arbiter: " -- silent, and
+    indistinguishable from an advisor with nothing to say. Measured on
+    qwen3.5:4b with the arbiter brief at max_tokens=400: no reasoning_effort, 400
+    completion tokens and content ""; reasoning_effort "none", 47 tokens and a
+    real answer.
+    """
     monkeypatch.delenv("GM_REASONING", raising=False)
     replies = iter(['X\n{"escalate": "lore of the cult?"}', "Y" + NULLS])
     c = FakeClient(lambda m, msgs, role: "Note." if role.startswith("advisor") else next(replies))
     Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path), bridge=FakeBridge()).handle("hm")
     assert {r for role, r in c.reasoning if role == "dm"} == {"none"}
-    assert {r for role, r in c.reasoning if role.startswith("advisor")} == {None}
+    assert {r for role, r in c.reasoning if role.startswith("advisor")} == {"none"}
 
 
 def test_a_local_client_takes_the_dm_and_picks_and_advisors_stay_on_the_router(tmp_path):

@@ -1,6 +1,6 @@
 # Shared Rules for All Advisors
 
-These rules apply to all five advisors in the council:
+These rules apply to every advisor in the council:
 
 ## Visibility
 - Only you (the GM) see them. Their advice is never sent to the players' display.

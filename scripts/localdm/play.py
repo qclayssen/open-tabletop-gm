@@ -174,7 +174,11 @@ class Session:
         recent = "\n".join(f"{context.LABEL[t['role']]}: {t['text']}"
                            for t in self.memory.unsummarized()[-6:] if t["role"] in context.LABEL)
         ctx = _join(self._digest(), self.memory.summary(), recent)
-        return advisor.consult(self.client, model or self.models.advisor, names, question, ctx)
+        # reasoning=self.reasoning, like every other local-tier call. Without it
+        # a thinking model spends the whole advisor budget thinking and returns
+        # an empty note.
+        return advisor.consult(self.client, model or self.models.advisor, names, question,
+                               ctx, reasoning=self.reasoning)
 
     def _trigger_notes(self) -> str:
         if context.council_setting(self._state()) == "off":
