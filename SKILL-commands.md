@@ -39,6 +39,7 @@ Do NOT run `git init` or any git commands in campaign directories.
 | `/gm import <filepath> [campaign-name]` | Import a pre-written campaign source (PDF, MD, DOCX, TXT). See `/gm import` procedure below. |
 | `/gm arc [status\|advance\|revise\|view]` | Manage the dynamic campaign arc. See `/gm arc` procedure below. |
 | `/gm path [<new-path>\|reset]` | View or configure where campaign data is stored (`GM_CAMPAIGN_ROOT`). Follow `/gm path` branch. |
+| `/gm lint [<campaign>\|--all] [--strict]` | Check the campaign markdown: required `state.md` sections, the machine-parsed header, unfilled `<placeholder>` lines, npcs.md index drift, sheet fields, and the arc YAML. Maps to `python3 <skill-base>/scripts/campaign_lint.py`. See `scripts/general.md`. |
 | `/gm update [--check]` | Pull the latest skill changes from origin/main. Follow `/gm update` branch. |
 | `/gm graph <subcommand>` | Campaign relationship graph: `init`, `add-node`, `add-edge`, `set-disposition`, `close-edge`, `supersede-edge`, `list`, `show`, `subgraph`, `scene-context`, `extract`, `extract-apply`. See `/gm graph` procedure below. |
 | `/gm factions <subcommand>` | Off-screen faction clocks: `add`, `status`, `clock`, `lean`, `hold`, `release`, `complete`, `set-interval`, `clear`. Ticks themselves come from `calendar.py advance`. See `/gm factions` procedure below. |

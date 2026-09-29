@@ -9,6 +9,8 @@ die (no modifier), or yes / no for a reaction. Other commands:
     /c <tactics command>      run a grid combat command directly
     /advise <who> <question>  historian, continuity, director, tactician,
                               designer, arbiter, interface, or council
+    /notes [n]                advisor notes already given, from
+                              <campaign>/localdm/notes.md (for the GM)
     /usage                    tokens used, by role and model
     /quit                     stop
 
@@ -20,6 +22,12 @@ draft. Each of those is announced on stderr as it happens --
 -- so a cloud round trip reads as work rather than as a hang. Silence them with
 --no-status (GM_STATUS=0); the advisors still run either way. --show-gm-notes
 stays separate: it is what actually prints the notes' text.
+
+Whatever the advisors say is also appended verbatim to
+<campaign>/localdm/notes.md, so a /advise council run between sessions is
+still there in the morning. That file is for the GM to read (/notes) and is
+never fed back to the DM: a DM briefed on its own advisor's advice stops
+consulting anyone.
 
 Environment: see llm.py (GM_LLM_URL, GM_DM_MODEL, GM_ADVISOR_MODEL, ...).
 Narration is mirrored to the display at --display-url, GM_DISPLAY_URL,
@@ -47,6 +55,7 @@ if __package__ in (None, ""):                        # run as a script
 from localdm import advisor, autopilot, context, display_bridge, llm, reply, stall, triggers  # noqa: E402
 from localdm.bridge import Bridge, parse_player_command, resolve_names          # noqa: E402
 from localdm.memory import Memory                               # noqa: E402
+from localdm import notes as notes_mod                          # noqa: E402
 from localdm.summarizer import Summarizer                       # noqa: E402
 from localdm import canon as canon_mod                         # noqa: E402
 
@@ -205,6 +214,7 @@ class Session:
         self.canon_limit = 8               # canon records replayed per DM call
         self.pending = None            # {"args": [...], "rolls": [...]} while the player rolls
         self.saved_notes = ""          # from /advise, used by the next DM call
+        self.notes = notes_mod.Notes(self.camp_dir)   # the same notes, kept on disk
         self.turn = 0
         self.display = None            # set by main(): the browser display, if any
         # called with a stall line right before a blocking advisor call, so the
@@ -414,7 +424,10 @@ class Session:
         if not new:
             return ""
         self.memory.mark_seen(t.key for t in new)
-        notes, _failed = self._ask(triggers.advisors_for(new), triggers.question(new), "its notes")
+        names = triggers.advisors_for(new)
+        notes, _failed = self._ask(names, triggers.question(new), "its notes")
+        if notes:
+            self._save_notes(notes, source="trigger", advisors=names)
         return notes
 
     def _take_notes(self) -> str:
@@ -422,9 +435,21 @@ class Session:
             notes, self.saved_notes = self.saved_notes, ""
         return notes
 
-    def _save_notes(self, notes: str) -> None:
+    def _save_notes(self, notes: str, *, source: str = "", advisors=()) -> None:
+        """File advisor notes for the next DM call, and keep them on disk.
+
+        The in-memory copy is consumed by the next turn and then gone; the
+        on-disk copy in <campaign>/localdm/notes.md is for the GM, who is the
+        only person who can act on "Continuity Keeper: you promised Mira her
+        brother in session 2" and who has no other way to read it back. Kept
+        verbatim and never folded, like canon.jsonl.
+        """
         with self._notes_lock:
             self.saved_notes = _join(self.saved_notes, notes)
+        try:
+            self.notes.add(notes, source=source, advisors=advisors)
+        except OSError as e:                   # a note we cannot write is not a reason
+            self._say_status(f"[dm] could not save notes: {e}")   # to lose the consult
 
     def _start_shadow(self, line: str, narration: str):
         if not self.shadow or not narration or (self._shadow_thread
@@ -444,7 +469,7 @@ class Session:
             if body.split(":", 1)[-1].strip().lower().startswith("nothing"):
                 body = ""
             if body and not failed:
-                self._save_notes(body)
+                self._save_notes(body, source="shadow", advisors=names)
                 self._say_status(f"[dm] background note from {names[0]} "
                                  f"({time.time() - started:.1f}s)")
 
@@ -633,6 +658,8 @@ class Session:
             return self._engine(args, narrate=False)
         if line.startswith("/advise"):
             return self._advise(line[len("/advise"):])
+        if line.split() and line.split()[0] in ("/notes", "/gm-notes"):
+            return self._notes_cmd(line[len(line.split()[0]):])
         if line == "/usage":
             return self._usage()
         if self.pending:                # the engine is waiting: free text must not reach the DM
@@ -761,7 +788,8 @@ class Session:
         # Only real notes are filed. An error string here used to be saved as
         # campaign continuity and handed to the next DM call as advice (B2).
         if notes:
-            self._save_notes(notes)
+            self._save_notes(notes, source="/advise council" if council else "/advise",
+                             advisors=names)
         if self.show_notes:
             out = [f"[GM notes]\n{notes}"] if notes else []
         else:
@@ -778,6 +806,26 @@ class Session:
             out.append("(The advisors have been consulted. Their notes will guide the next "
                        "scene.)")
         return out or ["(The advisors had nothing to add.)"]
+
+    def _notes_cmd(self, rest: str) -> list:
+        """/notes [n]: the advisor notes kept in <campaign>/localdm/notes.md.
+
+        Read back by the GM, never fed to the DM: these are council suggestions,
+        and a DM briefed on its own advisor's advice stops consulting anyone.
+        """
+        parts = (rest or "").split()
+        limit = 5
+        if parts:
+            if not parts[0].isdigit():
+                return [f"/notes takes a count, not {parts[0]!r}."]
+            limit = max(1, int(parts[0]))
+        recent = self.notes.recent(limit)
+        if not recent:
+            return [f"(No advisor notes for {self.campaign} yet. /advise council asks for some; "
+                    f"they are kept in {self.notes.path}.)"]
+        total = len(self.notes.entries())
+        return [f"[GM notes — last {min(limit, total)} of {total} in {self.notes.path}]\n\n"
+                f"{recent}"]
 
     def _usage(self) -> list:
         rows = llm.totals(self.memory.dir / "usage.jsonl")

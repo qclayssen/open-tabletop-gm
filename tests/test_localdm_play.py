@@ -1018,3 +1018,63 @@ def test_a_clean_cast_with_no_number_costs_no_extra_call(real_camp):
     assert c.roles().count("dm") == 1                   # no retry
     sheet = (real_camp / "characters" / "Kairos.md").read_text(encoding="utf-8")
     assert re.search(r"\|\s*1st\s*\|\s*2\s*\|\s*0\s*\|", sheet)   # no cast was resolved
+
+
+# ─── advisor notes survive the process ───────────────────────────────────────
+
+def test_advised_notes_are_kept_on_disk_not_only_in_ram(tmp_path):
+    """They used to live in Session.saved_notes until the next DM call ate them,
+    so a council run between sessions was gone by morning."""
+    c = FakeClient(lambda m, msgs, role: "Mira's brother was promised in session 2.")
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path), bridge=FakeBridge())
+    s.handle("/advise continuity what did I promise Mira?")
+    log = s.camp_dir / "localdm" / "notes.md"
+    assert log.exists(), "the GM has nowhere to read the notes back from"
+    text = log.read_text(encoding="utf-8")
+    assert "Mira's brother was promised in session 2." in text
+    assert "/advise" in text and "continuity" in text
+
+
+def test_a_dead_consult_writes_nothing_to_the_notes_log(tmp_path):
+    """The log is a record of advice. A transport error written into it would be
+    read back later as something an advisor said."""
+    c = FakeClient(_all_advisors_down())
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path), bridge=FakeBridge())
+    s.handle("/advise continuity What happened last session?")
+    log = s.camp_dir / "localdm" / "notes.md"
+    assert not log.exists(), log.read_text(encoding="utf-8") if log.exists() else ""
+
+
+def test_notes_reads_back_through_the_repl(tmp_path):
+    c = FakeClient(lambda m, msgs, role: "Maribeth still owes you the bridge debt.")
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path), bridge=FakeBridge())
+    s.handle("/advise continuity what does Maribeth owe me?")
+    out = " ".join(s.handle("/notes"))
+    assert "bridge debt" in out and "notes.md" in out
+    # /notes reads the log; it must not re-file the note for the next DM call.
+    assert "bridge debt" in s.saved_notes
+    s.handle("/notes")
+    assert "bridge debt" in s.saved_notes      # unchanged: reading is not consuming
+
+
+def test_notes_with_no_consults_says_so_and_points_at_the_file(tmp_path):
+    s = Session("demo", FakeClient(lambda m, m2, r: ""), MODELS,
+                camp_dir=camp_dir(tmp_path), bridge=FakeBridge())
+    out = " ".join(s.handle("/notes"))
+    assert "No advisor notes" in out and "notes.md" in out
+
+
+def test_notes_rejects_a_non_count(tmp_path):
+    s = Session("demo", FakeClient(lambda m, m2, r: ""), MODELS,
+                camp_dir=camp_dir(tmp_path), bridge=FakeBridge())
+    assert s.handle("/notes everything")[0].startswith("/notes takes a count")
+
+
+def test_a_notes_write_failure_does_not_lose_the_consult(tmp_path):
+    """The notes reach the DM through RAM; the disk copy is a convenience for
+    the GM. An unwritable campaign folder must not cost the turn its advice."""
+    c = FakeClient(lambda m, msgs, role: "Keep the frogs fed.")
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path), bridge=FakeBridge())
+    s.notes.add = lambda *a, **k: (_ for _ in ()).throw(OSError("disk full"))
+    s.handle("/advise continuity what about the frogs?")
+    assert "Keep the frogs fed." in s.saved_notes
