@@ -54,9 +54,18 @@ class WatcherDoesNotLoseActions(unittest.TestCase):
 
     def test_the_run_is_bounded_by_a_timeout(self):
         """A hung GM turn wedges the serial loop forever; every later player action
-        piles up unseen while the display still shows "Sent"."""
-        self.assertRegex(WATCH, r"timeout --signal=TERM --kill-after=\d+ \d+",
-                         "gm-watch.sh runs the GM turn with no timeout")
+        piles up unseen while the display still shows "Sent".
+
+        Asserts the *bound*, not one spelling of it: macOS ships no coreutils
+        `timeout`, so the script picks `timeout` or `gtimeout` and falls back to a
+        pure-bash kill watchdog. All three are acceptable; an unbounded run is not.
+        """
+        bounded = (re.search(r'TIMEOUT_BIN.*command -v timeout', WATCH)
+                   and re.search(r'"?\$?\{?TIMEOUT_BIN\}?"? --signal=TERM --kill-after=\d+ \d+', WATCH)
+                   and re.search(r'kill -TERM "\$_turn_pid"', WATCH))
+        self.assertTrue(bounded,
+                        "gm-watch.sh runs the GM turn unbounded, or bounds it without a "
+                        "TERM-then-KILL escalation")
 
     def test_success_is_logged_only_on_exit_zero(self):
         """The inverse error: reporting success when nothing was delivered."""

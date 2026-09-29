@@ -29,6 +29,10 @@ PIDFILE="$DISPLAY_DIR/.gm-watch.pid"
 QUEUE="$DISPLAY_DIR/.input_queue"
 DRAIN="python3 $DISPLAY_DIR/drain_queue.py"
 
+# macOS has no coreutils `timeout`. Detect it once; gm-watch falls back to a
+# pure-bash watchdog if it is missing rather than failing every turn with 127.
+TIMEOUT_BIN="$(command -v timeout 2>/dev/null || command -v gtimeout 2>/dev/null || true)"
+
 SESSION=""
 INTERVAL=3
 DRY_RUN=false
@@ -88,12 +92,31 @@ while true; do
           # --auto lets the GM use its tools (dice, display pushes, file reads)
           # without stopping for a permission prompt it will never get.
           #
-          # timeout is mandatory: without it a hung `opencode run` blocks this
-          # serial loop forever and every later player action piles up unseen
-          # while the display still shows "Sent".
-          ( cd "$DISPLAY_DIR/.." && timeout --signal=TERM --kill-after=30 900 \
-              opencode run --session "$SESSION" --auto "$PAYLOAD" ) >> "$LOG" 2>&1
-          RC=$?
+          # A hung `opencode run` blocks this serial loop forever and every
+          # later player action piles up unseen while the display still shows
+          # "Sent". A bound is mandatory.
+          #
+          # macOS ships NO coreutils `timeout` (and no `gtimeout` without brew).
+          # Calling it unconditionally makes every turn exit 127 -> "FAILED" ->
+          # restore -> retry, forever. So: detect it, and if it is absent fall
+          # back to a bounded background-kill watchdog, which needs no
+          # external binary.
+          if [[ -n "$TIMEOUT_BIN" ]]; then
+            ( cd "$DISPLAY_DIR/.." && "$TIMEOUT_BIN" --signal=TERM --kill-after=30 900 \
+                opencode run --session "$SESSION" --auto "$PAYLOAD" ) >> "$LOG" 2>&1
+            RC=$?
+          else
+            log "no coreutils timeout found — using the built-in watchdog"
+            ( cd "$DISPLAY_DIR/.." && opencode run --session "$SESSION" --auto "$PAYLOAD" ) \
+                >> "$LOG" 2>&1 &
+            _turn_pid=$!
+            ( sleep 900; kill -TERM "$_turn_pid" 2>/dev/null; sleep 30; \
+              kill -KILL "$_turn_pid" 2>/dev/null ) &
+            _watchdog_pid=$!
+            wait "$_turn_pid"; RC=$?
+            kill "$_watchdog_pid" 2>/dev/null
+            [[ $RC -eq 0 ]] || [[ $RC -gt 128 ]] && RC=124
+          fi
 
           if [[ $RC -eq 0 ]]; then
             log "GM turn complete"
