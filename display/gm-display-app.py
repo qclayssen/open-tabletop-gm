@@ -840,7 +840,8 @@ def _clean(text: str) -> str:
 
 # ─── Scene detection ──────────────────────────────────────────────────────────
 
-_current_scene_name: str = "tavern"   # default — we start in the inn
+_DEFAULT_SCENE = "tavern"             # we start in the inn
+_current_scene_name: str = _DEFAULT_SCENE
 _scene_buffer: list[str] = []
 _BUFFER_WINDOW = 20   # analyse last N cleaned chunks together
 
@@ -1350,9 +1351,20 @@ def chunk():
     # per-campaign replay. Sent by send.py --set-campaign at /gm load. May arrive with
     # or without text.
     if "campaign" in data:
+        new_camp = str(data["campaign"]).strip()
         try:
+            prev_camp = open(CAMP_FILE, encoding="utf-8").read().strip()
+        except Exception:
+            prev_camp = ""
+        try:
+            # A different campaign than the one on file: wipe stale stats, turn
+            # order, sent actions and queued input automatically, so switching
+            # campaigns never requires a manual /clear. Re-registering the same
+            # campaign (a play.py restart re-sends it) leaves state intact.
+            if new_camp and new_camp != prev_camp:
+                _do_clear()
             with open(CAMP_FILE, "w", encoding="utf-8") as f:
-                f.write(str(data["campaign"]).strip())
+                f.write(new_camp)
             _load_log()
             _load_tail()
         except Exception:
@@ -1976,6 +1988,47 @@ def audio_sfx(name):
                     headers={"Cache-Control": "public, max-age=3600"})
 
 
+def _do_clear() -> None:
+    """Wipe text log, stats, sent input and the queued-input files.
+
+    Shared by the manual /clear route and the automatic clear that fires when /chunk
+    registers a different campaign. Without the input half, a party's queued actions
+    and the sidebar's turn order survive a campaign switch and leak into the next
+    session — which is why /dnd new used to need a manual /clear to look right.
+
+    Locks are taken one at a time rather than held across the whole wipe, and never
+    nested, so a send racing this cannot deadlock: _send takes _sent_lock, then
+    _queue_lock, then _queue_status_lock, and this takes the same three in the
+    same order. The window it leaves — a send appending to .input_queue between
+    the unlink and the broadcast — is the one a plain /clear always had.
+    """
+    global _scene_buffer, _current_stats, _input_queue, _current_scene_name
+    with _text_log_lock:
+        _text_log.clear()
+    with _stats_lock:
+        _current_stats = {}
+    _scene_buffer = []
+    # N3: a stale scene name ("dungeon", from the previous campaign's last
+    # detection) must not carry over, or the scene title and background are wrong
+    # until enough new narration re-triggers detection.
+    _current_scene_name = _DEFAULT_SCENE
+    with _sent_lock:
+        _sent.clear()
+    with _input_lock:
+        _input_queue = []
+    with _queue_status_lock:
+        _queue_status.clear()
+    for path in (LOG_FILE, STATS_FILE, QUEUE_FILE, TRIGGER_FILE):
+        try:
+            os.remove(path)
+        except FileNotFoundError:
+            pass
+    # The scene rides along in the broadcast so browsers already connected pick the
+    # reset up now; a new connection reads _current_scene_name fresh on /stream.
+    _broadcast({"clear": True, "sent_log": {}, "queue_status": [], "pending_input": [],
+                "scene": SCENES[_DEFAULT_SCENE] | {"name": _DEFAULT_SCENE}})
+
+
 @app.route("/clear", methods=["POST"])
 def clear():
     """Wipe text log AND stats, broadcast clear to all connected browsers.
@@ -1984,18 +2037,7 @@ def clear():
     """
     if not _token_ok():
         return "Forbidden", 403
-    global _scene_buffer, _current_stats
-    with _text_log_lock:
-        _text_log.clear()
-    with _stats_lock:
-        _current_stats = {}
-    _scene_buffer = []
-    for path in (LOG_FILE, STATS_FILE):
-        try:
-            os.remove(path)
-        except FileNotFoundError:
-            pass
-    _broadcast({"clear": True})
+    _do_clear()
     return "", 204
 
 
