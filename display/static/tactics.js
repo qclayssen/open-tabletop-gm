@@ -100,7 +100,79 @@
     const both = Math.min(across, Math.max(1, Math.floor(availH / Math.max(1, H))));
     return Math.max(TABLE_MIN, Math.min(TABLE_MAX, both));
   }
+
+  // The chance a roll was made under, as the system worded it.
+  //
+  // The system owns these words. dnd5e fills Roll.odds in with hit_chance's
+  // and save_chance's own answer, and it is deliberately not re-derived here:
+  // one number, quoted twice, cannot drift. A system that wants to label its
+  // odds "to parry" says so in the label and this formats it, untouched.
+  //
+  // The percent is the system's own -- hit_chance's chance to hit, save_chance's
+  // chance to FAIL -- which is why the label carries the direction and must be
+  // read, not assumed. "75% to hit" and "65% to fail the save" are both the
+  // number going the player's way, and swapping them is the failure this
+  // avoids.
+  //
+  // Empty is the ordinary answer for a roll with no question attached to it (a
+  // damage roll, a plain check), so it returns '' and every caller treats that
+  // as "say nothing" rather than as a missing value.
+  function oddsText(odds) {
+    if (!odds || odds.percent === undefined || odds.percent === null) return '';
+    const p = Math.round(Number(odds.percent));
+    if (!isFinite(p)) return '';
+    const label = (odds.label || '').trim();
+    // A system that gave a number but no label still gets its number shown: a
+    // bare "65%" is honest, where a trailing space after "65% " is a typo in a
+    // sentence. Never "0% ", which would read as a lie about a 65% roll.
+    return label ? p + '% ' + label : p + '%';
+  }
+
+  // The odds of every roll in one log entry, as a single line.
+  //
+  // Every roll, never just the first. An entry can carry several (directional
+  // cover resolving four saves at once is the densest moment in 5e), and a line
+  // that showed one chance out of four would read as the other three being
+  // withheld, which is a worse suspicion than the one the number answers.
+  // Repeats are collapsed, because one AoE that rolls four saves at 65% is one
+  // thing to be told, not four.
+  function entryOdds(entry) {
+    const out = [];
+    for (const r of ((entry && entry.rolls) || [])) {
+      const t = oddsText(r && r.odds);
+      if (t && out.indexOf(t) === -1) out.push(t);
+    }
+    return out.join(' · ');
+  }
   /* end pure helpers */
+
+  // Nudge a text element back inside the board, horizontally and vertically.
+  //
+  // The board is an SVG with a viewBox, so anything past its edge is not drawn
+  // at all rather than clipped or wrapped. A float wider than a cell therefore
+  // loses its ends silently: "40% to fail the save" over a token in the first
+  // column renders as nothing, which is a number going missing for no visible
+  // reason. Measured after the text is set, because the width is only known
+  // then, and moved on the axis it is actually off on.
+  //
+  // The x/y attributes, NOT a transform: the rise animation is a CSS
+  // `transform`, and a CSS transform wins over the SVG presentation attribute
+  // of the same name, so setting one silently moves nothing. That is exactly
+  // how this first went in broken and looked correct in the diff.
+  //
+  // The damage float does not need any of this: it is one or two glyphs and
+  // always fits over a cell. This is here for the odds, which are a phrase.
+  function keepOnBoard(node, w, h) {
+    let b;
+    try { b = node.getBBox(); } catch (e) { return; }   // not laid out yet, or detached
+    if (!b || !b.width) return;
+    let dx = 0, dy = 0;
+    if (b.x < 0) dx = -b.x + 2; else if (b.x + b.width > w) dx = w - b.x - b.width - 2;
+    if (b.y < 0) dy = -b.y + 2; else if (b.y + b.height > h) dy = h - b.y - b.height - 2;
+    if (!dx && !dy) return;
+    node.setAttribute('x', +node.getAttribute('x') + dx);
+    node.setAttribute('y', +node.getAttribute('y') + dy);
+  }
 
   function headers() {
     const h = {};
@@ -227,6 +299,12 @@
       if (r.dice.length > 1 && r.advantage !== 'normal') shown += ' [' + r.dice.join(', ') + ']';
       else if (isD20 && r.natural !== undefined && r.natural !== null) shown += ` [${r.natural}]`;
       shown += ` = ${r.total}`;
+      // The chance this was, in the system's own words. A player doubts a roll
+      // AFTER seeing the 3; the pre-action preview badge quoted the same number
+      // and has scrolled out of the toast by then. Roll.odds is the preview's
+      // own answer carried onto the roll, so the two cannot disagree.
+      const odds = oddsText(r.odds);
+      if (odds) shown += ` (${odds})`;
       if (isD20 && r.natural === 20) shown += ' — CRIT';
       else if (isD20 && r.natural === 1) shown += ' — fumble';
       if (r.source !== 'engine') shown += ` (${r.source})`;
@@ -819,7 +897,22 @@
     }
     el.log.innerHTML = '';
     for (const e of (snap.log || []).slice(-8)) {
-      const li = document.createElement('li'); li.textContent = e.text; el.log.appendChild(li);
+      const li = document.createElement('li');
+      li.textContent = e.text;
+      // The odds for every roll in the entry, in the system's own words, so the
+      // number a player wants is not only in a toast that has already faded.
+      // All of them, not the first: directional cover is the highest roll
+      // density in 5e, and a log that shows one of four chances looks like the
+      // other three were withheld. A roll with no odds (a damage die) simply
+      // contributes nothing.
+      const odds = entryOdds(e);
+      if (odds) {
+        const s = document.createElement('span');
+        s.className = 'tx-odds';
+        s.textContent = odds;
+        li.appendChild(s);
+      }
+      el.log.appendChild(li);
     }
     el.log.scrollTop = el.log.scrollHeight;
   }
@@ -1410,6 +1503,61 @@
       const f = svg('text', { x: t.x * C + C / 2, y: t.y * C + 4, 'text-anchor': 'middle',
                               class: 'tx-float ' + (d < 0 ? 'tx-dmg' : 'tx-heal') }, ui.floatLayer);
       f.textContent = (d > 0 ? '+' : '') + d;
+      setTimeout(() => f.remove(), 1400);
+    }
+    oddsFloaters();
+  }
+
+  // The chance, drawn over the creature it was about, so the number lands where
+  // the player is already looking when the roll resolves.
+  //
+  // This is the ONE of the three odds surfaces allowed to go missing, and it is
+  // missing for a reason the other two do not share: a float has to name a
+  // token that is actually drawn, and `about` may be a creature the players
+  // cannot see. The lookup is against the tokens in this snapshot, which
+  // sight.shown has already filtered, so an absent id is an unseen creature and
+  // gets no float.
+  //
+  // Note what that is NOT. When an entry names an unseen creature,
+  // sight.redact_log empties the whole `rolls` list for it, so the toast and
+  // the log line are empty of it too -- and that is the correct answer, since
+  // the chance is a function of that creature's AC and resistances. The float
+  // is the only surface that goes missing while the number is still available
+  // to show, which is the case worth handling: a roll against a creature that
+  // is on the board but whose entry was not redacted. Nothing here re-derives
+  // anything from the encounter, so a number redaction removed cannot be
+  // recovered here even by accident.
+  function oddsFloaters() {
+    // The newest entry only, which is the scope announceRolls has always used
+    // and the one the damage float needs (it is a delta, so it has a "before").
+    // Re-floating every entry the snapshot still carries would put a number on
+    // the board for a roll from a minute ago, on every update, forever. The log
+    // line keeps all eight and is where the older ones live.
+    const entry = (snap.log || []).slice(-1)[0];
+    if (!entry) return;
+    // One float per token, the first chance said about it: an AoE that rolls
+    // four saves against the same creature should not stack four numbers on
+    // top of each other.
+    const seenIds = {};
+    for (const r of (entry.rolls || [])) {
+      const odds = r && r.odds, about = odds && odds.about;
+      const text = oddsText(odds);
+      if (!text || !about || seenIds[about]) continue;
+      // Found among the drawn tokens or not at all. The snapshot is all this
+      // file has, and sync.snapshot has already filtered the tokens the players
+      // may see, so an absent id is an unseen creature and gets no float.
+      const t = (snap.tokens || []).find(p => p.id === about);
+      if (!t) continue;
+      seenIds[about] = true;
+      const f = svg('text', { x: t.x * C + C / 2, y: t.y * C - 6, 'text-anchor': 'middle',
+                              class: 'tx-float tx-odds-float' }, ui.floatLayer);
+      f.textContent = text;
+      // Keep the whole phrase on the board. "40% to fail the save" is about
+      // three cells wide, so a token in the first or last column has half its
+      // text outside the viewBox and simply not drawn -- the chance silently
+      // missing for exactly the creatures at the edge of the map, which is the
+      // same class of bug as the float being absent and just as quiet.
+      keepOnBoard(f, ui.W * C, ui.H * C);
       setTimeout(() => f.remove(), 1400);
     }
   }

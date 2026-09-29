@@ -165,6 +165,149 @@ class FrameGeometry(unittest.TestCase):
         self.assertEqual(sorted(out["words"]), ["ally", "enemy", "neutral"])
 
 
+@unittest.skipUnless(NODE, "node is not installed")
+class OddsAtResolution(unittest.TestCase):
+    """oddsText / entryOdds: the chance, shown next to the roll it was made under.
+
+    A player doubts a roll *after* seeing the 3. The pre-action preview badge
+    quoted the number at the moment of choosing and has long since gone, so these
+    two helpers are what answer the doubt at the moment it is actually felt.
+
+    The number itself is never computed here. Roll.odds is whatever the system
+    wrote (dnd5e fills it from hit_chance and save_chance), and these tests are
+    about the display quoting it faithfully -- including the direction, which is
+    carried by the system's own label because the percent means opposite things
+    for an attack and a save.
+    """
+
+    def text(self, odds):
+        return _run(f"return {{v: oddsText({json.dumps(odds)})}};")["v"]
+
+    def entry(self, entry):
+        return _run(f"return {{v: entryOdds({json.dumps(entry)})}};")["v"]
+
+    def test_the_chance_is_shown_with_the_systems_own_label(self):
+        # "to hit" is hit_chance's chance to succeed.
+        self.assertEqual(self.text({"percent": 75, "label": "to hit"}), "75% to hit")
+        # "to fail the save" is save_chance's chance to FAIL. Same shape, and
+        # reading it as a chance to succeed inverts the only number on screen.
+        self.assertEqual(self.text({"percent": 65, "label": "to fail the save"}),
+                         "65% to fail the save")
+
+    def test_a_roll_with_no_odds_says_nothing_rather_than_zero(self):
+        """A damage die has no question attached to it. '0%' would be a lie."""
+        for odds in ({}, None, {"label": "to hit"}, {"percent": None}):
+            self.assertEqual(self.text(odds), "", f"{odds!r} produced a number")
+
+    def test_a_zero_percent_is_a_real_answer_and_is_not_dropped(self):
+        # 0% is what a hopeless shot looks like, and it is the number that most
+        # needs saying. Only a MISSING percent is silence.
+        self.assertEqual(self.text({"percent": 0, "label": "to hit"}), "0% to hit")
+
+    def test_a_number_with_no_label_is_still_shown_and_has_no_trailing_space(self):
+        # The bug this caught: a bare percent came out as "0% ", which reads as a
+        # truncated sentence in the middle of a log line.
+        self.assertEqual(self.text({"percent": 0, "label": ""}), "0%")
+        self.assertEqual(self.text({"percent": 65}), "65%")
+        self.assertEqual(self.text({"percent": 65, "label": "   "}), "65%")
+
+    def test_the_number_is_rounded_not_truncated(self):
+        # hit_chance already rounds; this only guards against a float slipping in.
+        self.assertEqual(self.text({"percent": 74.6, "label": "to hit"}), "75% to hit")
+
+    def test_a_junk_percent_is_silence_and_not_nan(self):
+        self.assertEqual(self.text({"percent": "seventy", "label": "to hit"}), "")
+
+    def test_one_line_carries_every_chance_in_the_entry(self):
+        """Directional cover is the highest roll density in 5e, and a line
+        showing one chance out of four reads as the other three being withheld
+        -- a worse suspicion than the one the number answers."""
+        e = {"rolls": [{"odds": {"percent": 65, "label": "to fail the save"}},
+                       {"odds": {"percent": 80, "label": "to fail the save"}},
+                       {"odds": {}}]}
+        self.assertEqual(self.entry(e), "65% to fail the save · 80% to fail the save")
+
+    def test_a_repeated_chance_is_said_once(self):
+        """Four saves at 65% against the same odds is one thing to be told."""
+        rolls = [{"odds": {"percent": 65, "label": "to fail the save"}} for _ in range(4)]
+        self.assertEqual(self.entry({"rolls": rolls}), "65% to fail the save")
+
+    def test_an_entry_with_no_chances_yields_no_line(self):
+        self.assertEqual(self.entry({"rolls": [{"odds": {}}]}), "")
+        self.assertEqual(self.entry({}), "")
+        self.assertEqual(self.entry({"rolls": []}), "")
+
+
+class OddsSurfaces(unittest.TestCase):
+    """The three places the chance is shown, and the one that may be missing.
+
+    The roadmap's invariant: the board float is the ONLY surface allowed to be
+    absent, because it needs `odds.about` to name a token that is actually
+    drawn. The toast and the log line must not depend on that lookup, or a
+    creature the players cannot see would take the number away from everywhere.
+    """
+
+    def js(self):
+        return JS.read_text(encoding="utf-8")
+
+    def css(self):
+        return CSS.read_text(encoding="utf-8")
+
+    def test_the_toast_carries_the_chance_and_does_not_look_at_the_board(self):
+        js = self.js()
+        self.assertRegex(js, r"const odds = oddsText\(r\.odds\);\s*\n\s*if \(odds\) shown")
+        # announceRolls works off the log entry alone: no token lookup, so a
+        # redacted creature cannot suppress it.
+        block = js[js.index("function announceRolls()"):js.index("function render()")]
+        self.assertNotIn("snap.tokens", block)
+
+    def test_the_log_line_carries_the_chance_and_does_not_look_at_the_board(self):
+        js = self.js()
+        self.assertIn("entryOdds(e)", js)
+        block = js[js.index("el.log.innerHTML = '';"):js.index("el.log.scrollTop")]
+        self.assertNotIn("snap.tokens", block,
+                         "the log must render the odds it was sent, not the ones it could find")
+
+    def test_the_float_is_the_only_one_that_looks_up_a_token(self):
+        """This asymmetry is the design, so it is pinned: the float resolves
+        `about` against the drawn tokens, the other two do not resolve anything."""
+        js = self.js()
+        block = js[js.index("function oddsFloaters()"):js.index("// ── boot")]
+        self.assertIn("snap.tokens", block)
+        self.assertIn("odds.about", block)
+        # And it skips rather than inventing: a roll about a token that is not
+        # drawn produces no float.
+        self.assertRegex(block, r"const t = \(snap\.tokens \|\| \[\]\)\.find.*\n.*if \(!t\) continue;")
+
+    def test_the_float_never_consults_the_encounter(self):
+        """The display has a snapshot, not an encounter. Reaching for anything
+        else would move state authority out of sync.snapshot, which is the thing
+        battle-system.md exists to prevent -- and would happily draw a token the
+        players are not supposed to see."""
+        js = self.js()
+        block = js[js.index("function oddsFloaters()"):js.index("// ── boot")]
+        # The block is stripped of its own prose first, so a comment explaining
+        # the rule cannot read as breaking it.
+        code = "\n".join(ln for ln in block.splitlines()
+                         if not ln.strip().startswith("//"))
+        for leak in ("enc.tokens", "enc.", "load_encounter", "state.load"):
+            self.assertNotIn(leak, code, f"the odds float reached for {leak}")
+
+    def test_every_class_the_odds_set_is_styled(self):
+        css = self.css()
+        self.assertIn(".tx-log .tx-odds", css)
+        self.assertIn(".tx-float.tx-odds-float", css)
+
+    def test_reduced_motion_can_hide_the_float_without_hiding_the_odds(self):
+        """Floats are display:none under reduced motion, so the number must
+        still be somewhere that is not an animation."""
+        css = self.css()
+        block = _media_block(css, "(prefers-reduced-motion: reduce)")
+        self.assertIn(".tx-float { display: none; }", block)
+        # The two survivors are not animations and so are not in that block.
+        self.assertIn("el.log.innerHTML = '';", self.js())
+
+
 class ScriptAndStylesheetAgree(unittest.TestCase):
     """A class the script sets must exist in the stylesheet, or the panel
     drops that signal without anything failing."""

@@ -76,10 +76,27 @@ const SNAP = {
     tok('frog-1', 'Giant Frog 1', 'enemy', 9, 4, 18, { threat: 10 }),
     tok('frog-2', 'Giant Frog 2', 'enemy', 12, 10, 12, { threat: 10, conditions: ['prone'] }),
   ],
+  // The rolls carry the chances the system computed (Roll.odds), which is the
+  // shape sync.snapshot sends: an attack's chance to hit, a save's chance to
+  // FAIL, and a damage die with no chance at all.
   log: [
-    { text: 'Giant Frog 1 bites Kairos for 5 (12/18 left).', round: 2 },
-    { text: 'Kairos hits Giant Frog 2 with a longsword for 7 (11/18 left).', round: 2 },
-    { text: 'Juno: Cure Wounds on Theodric, 6 HP restored.', round: 2 },
+    { text: 'Giant Frog 1 bites Kairos for 5 (12/18 left).', round: 2,
+      rolls: [{ who: 'Giant Frog 1', label: 'Bite vs Kairos', notation: '1d20+4',
+                dice: [14], natural: 14, total: 18, source: 'engine', advantage: 'normal',
+                odds: { percent: 55, label: 'to hit', about: 'kairos', advantage: 'normal' } }] },
+    { text: 'Kairos hits Giant Frog 2 with a longsword for 7 (11/18 left).', round: 2,
+      rolls: [{ who: 'Kairos', label: 'Longsword vs Giant Frog 2', notation: '1d20+3',
+                dice: [16], natural: 16, total: 19, source: 'engine', advantage: 'normal',
+                odds: { percent: 65, label: 'to hit', about: 'frog-2', advantage: 'normal' } },
+              { who: 'Kairos', label: 'Longsword damage', notation: '1d8+3',
+                dice: [4], natural: 4, total: 7, source: 'engine', advantage: 'normal' }] },
+    { text: 'Juno: Cone of Cold over the shallows. Theodric and Giant Frog 1 make a DC 15 save.', round: 2,
+      rolls: [{ who: 'Theodric', label: 'DEX save DC 15', notation: '1d20+2',
+                dice: [9], natural: 9, total: 11, source: 'engine', advantage: 'normal',
+                odds: { percent: 40, label: 'to fail the save', about: 'theodric', advantage: 'normal' } },
+              { who: 'Giant Frog 1', label: 'DEX save DC 15', notation: '1d20+3',
+                dice: [7], natural: 7, total: 10, source: 'engine', advantage: 'normal',
+                odds: { percent: 40, label: 'to fail the save', about: 'frog-1', advantage: 'normal' } }] },
   ],
 };
 window.__SNAP = SNAP;
