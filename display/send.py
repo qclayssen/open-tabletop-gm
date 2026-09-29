@@ -62,6 +62,7 @@ import os
 import pathlib
 import ssl
 import time
+import urllib.error
 import urllib.request
 
 _DIR        = pathlib.Path(__file__).parent
@@ -378,11 +379,20 @@ def _build_stats_payload(args) -> "dict | None":
 
 def utf8_stdout() -> None:
     """Print UTF-8 whatever the console codepage. On Windows the GM's shell reads
-    stdout through a cp1252 pipe, where "→" in a roll would raise."""
-    try:
-        sys.stdout.reconfigure(encoding="utf-8")
-    except (AttributeError, ValueError):
-        pass
+    stdout through a cp1252 pipe, where "→" in a roll would raise.
+
+    stderr is reconfigured too, and for the same reason: every diagnostic this
+    script emits — "all rolls received", the timeout line, the unknown-request
+    refusal — goes to stderr, so a message carrying an em dash raised
+    UnicodeEncodeError on a cp1252 console and took the whole call down. The
+    GM reads these lines to decide what happens next, so they must not be the
+    ones that crash.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8")
+        except (AttributeError, ValueError):
+            pass
 
 
 def main() -> None:
@@ -548,10 +558,31 @@ def main() -> None:
                         sreq = urllib.request.Request(status_url, headers=poll_headers, method="GET")
                         s = urllib.request.urlopen(sreq, timeout=TIMEOUT, context=_SSL_CTX)
                         st = json.loads(s.read().decode("utf-8") or "{}")
+                    except urllib.error.HTTPError as e:
+                        # 404 means the id was never issued (or aged out of the
+                        # server's keep-ring). Retrying cannot fix that, and
+                        # treating it as "complete" would report rolls that were
+                        # never made. Fail loudly instead.
+                        if e.code == 404:
+                            print(f"send.py: the display does not know request "
+                                  f"{request_id!r} — it was never issued, or the "
+                                  f"display restarted. No rolls were received.",
+                                  file=sys.stderr)
+                            sys.exit(2)
+                        print(f"send.py: poll error (HTTP {e.code}) — retrying", file=sys.stderr)
+                        time.sleep(1.0)
+                        continue
                     except Exception as e:
                         print(f"send.py: poll error ({e}) — retrying", file=sys.stderr)
                         time.sleep(1.0)
                         continue
+                    if st.get("known") is False:
+                        # Belt and braces: a server that still answers 200 for an
+                        # unknown id must not be read as success either.
+                        print(f"send.py: the display does not know request "
+                              f"{request_id!r} — no rolls were received.",
+                              file=sys.stderr)
+                        sys.exit(2)
                     if st.get("complete"):
                         if st.get("cancelled"):
                             print("send.py: request cancelled; rolls made before it:",
