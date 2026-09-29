@@ -15,8 +15,15 @@ shell-level guarantees. The runtime behaviour is exercised by `test_drain_queue.
 """
 from __future__ import annotations
 
+import json
+import os
 import pathlib
 import re
+import shutil
+import signal
+import subprocess
+import tempfile
+import time
 import unittest
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
@@ -73,6 +80,91 @@ class WatcherDoesNotLoseActions(unittest.TestCase):
                                 WATCH)
         self.assertIsNotNone(zero_branch,
                              "'GM turn complete' is not gated on RC=0")
+
+
+# Tools the watcher shells out to. Deliberately NOT `timeout` / `gtimeout`.
+_TOOLS = ("bash", "python3", "cat", "date", "sleep", "grep", "rm", "kill",
+          "dirname", "env")
+
+
+@unittest.skipIf(os.name == "nt", "the watcher is a bash script run in its own session (os.killpg)")
+class WatcherWithoutCoreutilsTimeout(unittest.TestCase):
+    """The macOS path, run for real: no `timeout`, no `gtimeout` on PATH.
+
+    The source-regex tests above cannot see a control-flow bug. This one shipped
+    in the fallback watchdog: `[[ A ]] || [[ B ]] && RC=124` parses as
+    `(A || B) && RC=124`, so a turn that exited 0 was logged "TIMED OUT" and its
+    action was put back on the queue, to be narrated again on every poll.
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        root = pathlib.Path(self._tmp.name)
+        self.display = root / "display"
+        self.display.mkdir()
+        for name in ("gm-watch.sh", "drain_queue.py"):
+            shutil.copy2(REPO / "display" / name, self.display / name)
+        # A PATH holding only the tools the watcher needs, so `command -v timeout`
+        # fails on Linux CI exactly as it does on stock macOS.
+        self.bin = root / "bin"
+        self.bin.mkdir()
+        for tool in _TOOLS:
+            found = shutil.which(tool)
+            self.assertIsNotNone(found, f"{tool} not on PATH")
+            (self.bin / tool).symlink_to(found)
+        self.calls = root / "opencode.calls"
+        fake = self.bin / "opencode"
+        fake.write_text("#!/bin/sh\necho called >> \"%s\"\nexit ${FAKE_RC:-0}\n" % self.calls,
+                        encoding="utf-8")
+        fake.chmod(0o755)
+        self.queue = self.display / ".input_queue"
+        self.log = self.display / ".gm-watch.log"
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _run_watcher(self, rc, wait_for):
+        """Start the watcher with one queued action; stop once `wait_for` is logged."""
+        self.queue.write_text(json.dumps([{"character": "Mira", "text": "I open the door"}]),
+                              encoding="utf-8")
+        env = {"PATH": str(self.bin), "FAKE_RC": str(rc), "HOME": self._tmp.name}
+        proc = subprocess.Popen(["bash", str(self.display / "gm-watch.sh"), "sess",
+                                 "--interval", "1"],
+                                env=env, cwd=self.display,
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                start_new_session=True)
+        try:
+            deadline = time.monotonic() + 30
+            while time.monotonic() < deadline:
+                text = self.log.read_text(encoding="utf-8") if self.log.exists() else ""
+                if wait_for in text:
+                    time.sleep(0.5)          # let a wrongly-restored queue show up
+                    break
+                time.sleep(0.2)
+        finally:
+            os.killpg(proc.pid, signal.SIGTERM)
+            proc.wait(timeout=10)
+        return self.log.read_text(encoding="utf-8") if self.log.exists() else ""
+
+    def test_the_fallback_path_is_really_taken(self):
+        text = self._run_watcher(0, "GM turn complete")
+        self.assertIn("no coreutils timeout found", text,
+                      "PATH still held a timeout binary; this test would prove nothing")
+
+    def test_a_successful_turn_is_not_reported_as_a_timeout_and_is_not_redelivered(self):
+        text = self._run_watcher(0, "GM turn complete")
+        self.assertIn("GM turn complete", text)
+        self.assertNotIn("TIMED OUT", text)
+        self.assertFalse(self.queue.exists() and self.queue.read_text(encoding="utf-8").strip(),
+                         "a delivered action was put back on the queue")
+        self.assertEqual(self.calls.read_text(encoding="utf-8").count("called"), 1,
+                         "the GM was handed the same action more than once")
+
+    def test_a_failed_turn_restores_the_action(self):
+        text = self._run_watcher(3, "FAILED")
+        self.assertIn("FAILED", text)
+        self.assertTrue(self.queue.exists() and "open the door" in self.queue.read_text(encoding="utf-8"),
+                        "a failed turn must put the action back")
 
 
 if __name__ == "__main__":

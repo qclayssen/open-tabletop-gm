@@ -7,6 +7,7 @@ importing each other in a circle. engine.py re-exports all of them, so
 
 from __future__ import annotations
 
+from . import receipts
 from . import rules as rules_mod
 from .roller import Roller
 from .state import Encounter
@@ -55,6 +56,11 @@ def player_rolls(enc: Encounter, token, roller: Roller = None) -> bool:
 
 def log(enc: Encounter, kind: str, actor: str, text: str, roller: Roller = None, mark: int = 0) -> None:
     rolls = [r.to_dict() for r in roller.log[mark:]] if roller else []
+    if rolls:
+        # One append-only receipt per roll, chained to the last (receipts.py).
+        # Before enc.log, so the fallback state hash is the state the action
+        # resolved in, and because the receipt write never raises.
+        receipts.record(enc, actor, kind, rolls, roller.states[mark:] if roller else [])
     enc.log.append({"round": enc.round, "actor": actor, "kind": kind, "text": text, "rolls": rolls})
 
 

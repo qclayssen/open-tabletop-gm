@@ -115,7 +115,10 @@ while true; do
             _watchdog_pid=$!
             wait "$_turn_pid"; RC=$?
             kill "$_watchdog_pid" 2>/dev/null
-            [[ $RC -eq 0 ]] || [[ $RC -gt 128 ]] && RC=124
+            # A signal death (>128) is the watchdog firing. Written as an `if`, not
+            # `[[ A ]] || [[ B ]] && C`: bash reads that left to right as
+            # `(A || B) && C`, which turned every successful turn (RC=0) into 124.
+            if [[ $RC -gt 128 ]]; then RC=124; fi
           fi
 
           if [[ $RC -eq 0 ]]; then

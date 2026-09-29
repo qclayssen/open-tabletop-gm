@@ -317,11 +317,27 @@
     const threatHatch = svg('pattern', { id: 'tx-threat-hatch', width: 7, height: 7, patternUnits: 'userSpaceOnUse',
                                          patternTransform: 'rotate(-45)' }, s.querySelector('defs'));
     svg('line', { x1: 0, y1: 0, x2: 0, y2: 7, class: 'tx-threat-line' }, threatHatch);
-    const terrain = svg('g', {}, s);
+    // Map artwork, when the map has it (scripts/atlas_to_map.py writes one). The
+    // map's width/height were derived from the image by dividing its pixels by the
+    // grid cell size, so the grid here already lines up with the art and the image
+    // is stretched to fill the board exactly. preserveAspectRatio=none is what
+    // makes that true for a non-square image.
+    const art = (snap.meta && snap.meta.image) || '';
+    if (art) {
+      svg('image', { x: 0, y: 0, width: W * C, height: H * C, preserveAspectRatio: 'none',
+                     href: '/maps/' + art, class: 'tx-art' }, s);
+    }
+    // With artwork underneath, terrain is a translucent wash rather than an opaque
+    // fill, so the terrain still has to read but the picture is the point. A map
+    // with no image is unchanged, which is what every existing map expects.
+    const terrain = svg('g', art ? { class: 'tx-terrain-over-art' } : {}, s);
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
       const name = terrainOf(rows[y][x]);
-      svg('rect', { x: x * C, y: y * C, width: C, height: C, style: 'fill:' + fillFor(name) }, terrain);
-      if (name === 'difficult') svg('path', { d: `M${x * C + 9},${y * C + 23} l6,-10 l6,10`, style: 'stroke:var(--tx-ink);stroke-opacity:.3;fill:none' }, terrain);
+      // data-t is what the stylesheet keys on to keep walls and voids solid over
+      // artwork; a selector on the inline style string would be brittle.
+      const cell = svg('rect', { x: x * C, y: y * C, width: C, height: C,
+                                 style: 'fill:' + fillFor(name), 'data-t': name }, terrain);
+      if (name === 'difficult') svg('path', { d: `M${x * C + 9},${y * C + 23} l6,-10 l6,10`, style: 'stroke:var(--tx-ink);stroke-opacity:.3;fill:none' }, cell.parentNode);
     }
     drawFog(svg('g', { 'aria-hidden': 'true' }, s), W, H);
     ui.sightLayer = svg('g', { 'aria-hidden': 'true' }, s);

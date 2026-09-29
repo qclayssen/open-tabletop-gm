@@ -55,7 +55,16 @@ def shown(enc, t, visible) -> bool:
 def redact_log(enc, entries: list, visible) -> list:
     """Log entries for the players: the names of creatures they cannot see
     become "an unseen creature" (and those entries lose their dice lines,
-    whose labels name them too). The GM's own log is never changed."""
+    whose labels name them too). The GM's own log is never changed.
+
+    Note what the dice lines now carry. A roll's `odds` (Roller/Roll.odds) is
+    the chance the system computed before it rolled, and it lives inside the
+    roll dict precisely so that this function is the only thing standing between
+    an unseen creature and a number about it: `rolls=[]` below drops the odds
+    with the faces, where a field alongside `rolls` on the entry would have
+    survived the redaction and handed over that creature's AC, save DC and
+    resistances. If you add anything to a roll, add it here.
+    """
     names = sorted({t.name for t in enc.tokens.values() if not shown(enc, t, visible)},
                    key=len, reverse=True)
     if not names:

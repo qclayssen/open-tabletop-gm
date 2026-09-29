@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="dnd-token" content="{{ lan_token }}">
+<title>Map editor: battle map</title>
+<link rel="stylesheet" href="/static/mapseditor.css">
+<script>window.MAP_EDITOR = {{ state|safe }};</script>
+</head>
+<body>
+<header class="me-bar">
+  <h1 class="me-title">Map editor</h1>
+  <p class="me-map" id="me-map-name"></p>
+  <p class="me-status" id="me-status" role="status" aria-live="polite"></p>
+  <div class="me-actions">
+    <button type="button" id="me-undo" disabled>Undo stroke</button>
+    <button type="button" id="me-clear" disabled>Clear strokes</button>
+    <button type="button" id="me-save" class="me-primary" disabled>Save to map</button>
+  </div>
+</header>
+
+<main class="me-main">
+  <!-- The board. Background artwork, then a translucent terrain wash, then the
+       grid, then the drag preview on top, the same layer order renderBoard()
+       uses in tactics.js, so a GM sees what players will see. -->
+  <div class="me-board" id="me-board"></div>
+
+  <aside class="me-side">
+    <h2 class="me-h2">Terrain</h2>
+    <p class="me-hint">Pick a type, then drag on the map. Dragging again over
+      terrain you already placed replaces it, strokes are merged into the
+      file's rectangles, not stacked on them.</p>
+    <div class="me-palette" id="me-palette" role="radiogroup" aria-label="Terrain type"></div>
+    <p class="me-hint">Esc cancels the stroke in progress.</p>
+  </aside>
+</main>
+
+<script src="/static/mapseditor.js"></script>
+</body>
+</html>

@@ -20,6 +20,7 @@ Actions (the current creature)
     condition <token> add|remove <condition>     GM ruling (e.g. a grapple rider)
     adjust <token> hp=N temp_hp=N ac=N           GM correction
     log [n]                        last n combat log lines
+    receipts [--rolls N]           check every roll receipt against its hash chain
     reachable <token>              squares reachable walking and with Dash (for the display)
     targets <token>                every attack and target with hit chance (for the display)
 
