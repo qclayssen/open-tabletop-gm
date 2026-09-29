@@ -102,7 +102,10 @@ class WatcherWithoutCoreutilsTimeout(unittest.TestCase):
         root = pathlib.Path(self._tmp.name)
         self.display = root / "display"
         self.display.mkdir()
-        for name in ("gm-watch.sh", "drain_queue.py"):
+        # queue_claim.py travels with drain_queue.py: the drainer imports it, and a
+        # temp display dir without it fails at import with a traceback that looks
+        # like a watcher bug rather than a missing file.
+        for name in ("gm-watch.sh", "drain_queue.py", "queue_claim.py"):
             shutil.copy2(REPO / "display" / name, self.display / name)
         # A PATH holding only the tools the watcher needs, so `command -v timeout`
         # fails on Linux CI exactly as it does on stock macOS.

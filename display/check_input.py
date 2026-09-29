@@ -31,6 +31,9 @@ import sys
 import urllib.error
 import urllib.request
 
+sys.path.insert(0, str(pathlib.Path(__file__).parent))
+import queue_claim  # (needs the sys.path line above it)
+
 _DIR         = pathlib.Path(__file__).parent
 _SCHEME_FILE = _DIR / ".scheme"
 _SCHEME      = _SCHEME_FILE.read_text(encoding="utf-8").strip() if _SCHEME_FILE.exists() else "http"
@@ -111,14 +114,13 @@ def _print_entries(entries: list) -> None:
 
 def _take_ready_queue(token: str) -> list:
     """Read and delete .input_queue, then clear the display's "Queued" badge."""
-    # Move the file aside before reading: the app truncates and rewrites it,
-    # and a read in between would see it empty and then delete the new action.
-    taken = READY_FILE.with_name(READY_FILE.name + ".taken")
-    try:
-        os.replace(READY_FILE, taken)
-        text = taken.read_text(encoding="utf-8")
-        taken.unlink()
-    except OSError:
+    # Claim the file before reading it. The app truncates and rewrites it
+    # atomically, so a read-then-unlink loses any action written in the gap.
+    # This used to catch only OSError, which meant a decode failure after the
+    # claim stranded the actions in the .taken file; the shared helper restores
+    # them instead, and a decode failure now reports as an empty drain.
+    text, delivered = queue_claim.claim_and_read(READY_FILE)
+    if not delivered:
         return []
     entries = []
     for line in text.splitlines():

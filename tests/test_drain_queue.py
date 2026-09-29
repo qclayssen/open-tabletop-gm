@@ -46,6 +46,13 @@ class DrainQueue(unittest.TestCase):
         self.q = self.dir / ".input_queue"
         self.mod = _load_drain()
         self.mod.QUEUE_FILE = str(self.q)
+        # The claim primitive moved into display/queue_claim.py when the four
+        # consumers were unified, so a fault in the read has to be injected there.
+        self.claim_mod = sys.modules["queue_claim"]
+        # That module is shared and long-lived in sys.modules, where setUp's fresh
+        # _load_drain() no longer shields the rest of the class. A fault injected
+        # into it leaks into every later test unless it is put back here.
+        self.addCleanup(setattr, self.claim_mod, "open", open)
 
     def tearDown(self):
         self._tmp.cleanup()
@@ -95,18 +102,32 @@ class DrainQueue(unittest.TestCase):
     # ── the data-loss hazard (B1) ───────────────────────────────────────────
 
     def test_the_queue_is_claimed_before_it_is_read(self):
-        """The claim must precede the read.
+        """The claim must precede the read, in the helper that now owns it.
 
         A read-then-unlink drainer loses an action written between the two, because
         the concurrent writer's `os.replace` lands in a file that is then unlinked.
-        So the sequence is: replace first, then read the claimed file.
+        The sequence in `queue_claim.claim_and_read` is therefore: replace first,
+        then read the claimed file. This used to be asserted against drain_queue.py,
+        which carried its own private copy of the primitive.
         """
-        src = (DISPLAY / "drain_queue.py").read_text(encoding="utf-8")
-        claim = src.index("os.replace(QUEUE_FILE, claimed)")
+        src = (DISPLAY / "queue_claim.py").read_text(encoding="utf-8")
+        claim = src.index("os.replace(path, claimed)")
         read = src.index("open(claimed", claim)
         self.assertLess(claim, read,
-                        "drain_queue.py reads before it claims: an action sent in "
+                        "queue_claim.py reads before it claims: an action sent in "
                         "between would be deleted unread")
+
+    def test_drain_queue_delegates_the_claim_rather_than_copying_it(self):
+        """One implementation, so there is one thing to get wrong.
+
+        The bug this fixes happened because `drain_queue.py` copied the read-then-
+        unlink pattern out of its neighbour instead of out of the two correct lines
+        beside it. A private second copy is how that recurs.
+        """
+        src = (DISPLAY / "drain_queue.py").read_text(encoding="utf-8")
+        self.assertIn("queue_claim.claim_and_read", src)
+        self.assertNotIn("os.replace(QUEUE_FILE", src,
+                         "drain_queue.py has its own claim again")
 
     def test_the_input_trigger_is_never_consumed(self):
         """B5: `.input_trigger` is not a drain artefact. It is the signal wrapper.py
@@ -134,7 +155,7 @@ class DrainQueue(unittest.TestCase):
                 raise OSError("simulated read failure after the claim")
             return real_open(f, *a, **k)
 
-        self.mod.open = boom
+        self.claim_mod.open = boom
         rc, _, err = self._run()
 
         self.assertTrue(self.q.exists(),
@@ -153,7 +174,7 @@ class DrainQueue(unittest.TestCase):
                 raise OSError("simulated read failure after the claim")
             return real_open(f, *a, **k)
 
-        self.mod.open = boom
+        self.claim_mod.open = boom
         _, out, _ = self._run()
         self.assertNotIn("I open the door", out,
                          "the action was delivered *and* left queued: it would be "
@@ -169,10 +190,10 @@ class DrainQueue(unittest.TestCase):
                 raise OSError("simulated read failure after the claim")
             return real_open(f, *a, **k)
 
-        self.mod.open = boom
+        self.claim_mod.open = boom
         self._run()                                   # fails, restores
 
-        self.mod.open = real_open                     # the environment recovers
+        self.claim_mod.open = real_open               # the environment recovers
         rc, out, _ = self._run()
         self.assertEqual(rc, 0)
         self.assertIn("I open the door", out)

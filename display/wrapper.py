@@ -52,6 +52,9 @@ import tty
 import ssl
 import urllib.request
 
+sys.path.insert(0, str(pathlib.Path(__file__).parent))
+import queue_claim  # (needs the sys.path line above it)
+
 _DIR           = pathlib.Path(__file__).parent
 TRIGGER_FILE   = str(_DIR / ".input_trigger")
 QUEUE_FILE     = str(_DIR / ".input_queue")
@@ -211,18 +214,17 @@ def _inject_queue(master_fd: int) -> None:
     This fires the queued player action just before the DM's own Enter is
     forwarded, so Claude sees the player action and DM message in the same turn.
     """
-    if not os.path.exists(QUEUE_FILE):
-        return
-    raw = ""
-    try:
-        with open(QUEUE_FILE, encoding="utf-8") as f:
-            raw = f.read()
-        os.unlink(QUEUE_FILE)
-    except Exception:
-        try:
-            os.unlink(QUEUE_FILE)
-        except Exception:
-            pass
+    # Claim-then-read, via the shared primitive. This used to read the queue and
+    # then unlink it, which lost a player's action whenever Send was tapped in
+    # the gap between the two: the app replaces the file atomically, so that
+    # action existed only in the version we were about to delete.
+    #
+    # The old error path was worse. It unlinked the queue on ANY exception,
+    # including a failed read, so a decode error destroyed queued actions
+    # outright. Now a failure after the claim restores the file and reports
+    # nothing, and the next poll picks the actions up.
+    raw, delivered = queue_claim.claim_and_read(QUEUE_FILE)
+    if not delivered or not raw:
         return
 
     sanitized = _sanitize(raw)

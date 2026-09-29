@@ -45,6 +45,9 @@ import sys
 from typing import Any
 
 DISPLAY_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, DISPLAY_DIR)
+import queue_claim  # (needs the sys.path line above it)
+
 QUEUE_FILE = os.path.join(DISPLAY_DIR, ".input_queue")
 TRIGGER_FILE = os.path.join(DISPLAY_DIR, ".input_trigger")
 
@@ -113,47 +116,30 @@ def main() -> int:
     if not args.peek:
         # Claim-then-read: atomically take ownership of the current file BEFORE
         # reading it, so a concurrent write from the Flask app lands in a new
-        # file rather than being deleted unread. Same primitive as check_input.py.
+        # file rather than being deleted unread. The primitive is shared with
+        # check_input.py, wrapper.py and autorun_wait.py so there is one
+        # implementation to keep correct.
         #
         # NOTE: .input_trigger is deliberately NOT touched. It is not a drain
         # artefact -- it is the signal wrapper.py polls to know it may inject.
         # Deleting it here would swallow a legitimate promote-to-now signal.
-        claimed = QUEUE_FILE + ".taken"
-        did_claim = False
-        try:
-            if os.path.exists(QUEUE_FILE):
-                os.replace(QUEUE_FILE, claimed)
-                did_claim = True
-                # The claim was ours; re-read from the claimed file so that an
-                # action written after the replace is never lost.
-                with open(claimed, encoding="utf-8") as f:
-                    raw_claimed = f.read()
+        text, delivered = queue_claim.claim_and_read(QUEUE_FILE)
+        if delivered:
+            if text.strip():
                 try:
-                    data = json.loads(raw_claimed) if raw_claimed.strip() else []
-                    entries = data if isinstance(data, list) else _parse_lines(raw_claimed)
+                    data = json.loads(text)
+                    entries = data if isinstance(data, list) else _parse_lines(text)
                 except json.JSONDecodeError:
-                    entries = _parse_lines(raw_claimed)
-                os.unlink(claimed)
-        except OSError as e:
-            # Once the replace has happened the actions exist ONLY in .taken. If
-            # anything below it throws, they are not in the queue any more and no
-            # later poll would find them -- which is the data loss this claim was
-            # added to prevent, just in a narrower window. Put them back.
-            if did_claim and os.path.exists(claimed):
-                try:
-                    os.replace(claimed, QUEUE_FILE)
-                    # The actions are back in the queue, so this run must not also
-                    # hand them to the GM: that would deliver the same action twice.
-                    # The next poll picks them up.
-                    entries = []
-                    print("[drain] claim failed after taking ownership; "
-                          "restored the queue, deferring to the next poll",
-                          file=sys.stderr)
-                except OSError as restore_err:
-                    print(f"[drain] CRITICAL: could not restore {claimed}: "
-                          f"{restore_err}. Actions are stranded in {claimed}.",
-                          file=sys.stderr)
-            print(f"[drain] could not claim queue: {e}", file=sys.stderr)
+                    entries = _parse_lines(text)
+        else:
+            # The claim failed after we took ownership, so the helper put the
+            # queue back. `_read_queue` above already read those same actions
+            # without claiming them, so they must be dropped here: delivering them
+            # and restoring them would hand the same action to the GM twice. The
+            # next poll picks them up.
+            entries = []
+            print("[drain] claim failed after taking ownership; restored the "
+                  "queue, deferring to the next poll", file=sys.stderr)
 
     if args.json:
         print(json.dumps({"entries": entries, "count": len(entries)}, ensure_ascii=False))
