@@ -40,6 +40,10 @@ class _Quiet(http.server.SimpleHTTPRequestHandler):
 
 def _serve():
     handler = lambda *a, **k: _Quiet(*a, directory=str(REPO / "display"), **k)
+    # allow_reuse_address before binding: a hardcoded PORT left bound by a previous
+    # run (or a crashed one) would otherwise fail this bind outright and take all
+    # 8 tests in the class with it at setUpClass.
+    socketserver.TCPServer.allow_reuse_address = True
     httpd = socketserver.TCPServer(("127.0.0.1", PORT), handler)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     return httpd
@@ -92,7 +96,13 @@ class MeasuredLayout(unittest.TestCase):
     def setUpClass(cls):
         if not HARNESS.exists():
             raise unittest.SkipTest("display/evidence-panel.html is missing")
-        cls.server = _serve()
+        # A port we cannot bind is an environment problem, not a layout failure.
+        # Raising here would take all 8 tests in the class with it and read as a
+        # broken panel; skipping says only that the measurement could not run.
+        try:
+            cls.server = _serve()
+        except OSError as exc:
+            raise unittest.SkipTest(f"cannot bind {PORT}: {exc}") from exc
         try:
             cls.playwright = sync_playwright().start()
             cls.browser = cls.playwright.chromium.launch()
@@ -108,6 +118,11 @@ class MeasuredLayout(unittest.TestCase):
             cls.playwright.stop()
         if cls.server:
             cls.server.shutdown()
+            # shutdown() stops the serve loop; it does NOT close the listening
+            # socket. Without server_close() the port stays bound after the
+            # process exits and the next run's bind fails with Errno 48.
+            cls.server.server_close()
+            cls.server = None
 
     def panel(self, name, spell_list=False):
         w, h = VIEWPORTS[name]
