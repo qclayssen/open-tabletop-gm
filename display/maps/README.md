@@ -41,6 +41,22 @@ A map is a grid of 5 ft squares. You paint it with rectangles, in order, over a 
 | `terrain` | no | Extra terrain types for this map (see below) |
 | `zones` | no | x positions of dashed vertical lines across the board (the Mage Tower halfway line) |
 | `spawns` | no | Suggested token positions; `color` is a college (`quan`, `lore`, `pris`, `silv`, `with`), `danger` or `brass` |
+| `token_art` | no | Per-spawn token portraits for `scripts/map_to_atlas.py`: `{"<spawn id>": "<path>"}`. See below |
+
+### Token portraits
+
+`token_art` gives a spawn a real picture instead of a coloured disc, keyed by the spawn's `id`:
+
+```json
+"token_art": {
+  "K": "atlas-vtt/assets/XW4tQg9_1790718416294_uz4mul.webp",
+  "Q1": "atlas-vtt/assets/XW4tQg9_1790718416294_uz4mul.webp"
+}
+```
+
+Reach for it when generated art does not arrive named after the monster: a vault's real portrait is often `XW4tQg9_1790718416294.webp`, and only the map knows it is the quandrix student. The value may be absolute, already inside the Atlas vault (referenced where it lies), or relative to `display/maps` (copied in). `scripts/map_to_atlas.py` also accepts a `--token-art` directory of files named after the spawn, and checks that whatever it returns exists -- a typo falls back to the disc and is reported, rather than writing a token Atlas cannot load.
+
+**The engine never reads `token_art`.** Only the Atlas exporter does, and a map with no `token_art` behaves exactly as before.
 
 ## Terrain types
 
