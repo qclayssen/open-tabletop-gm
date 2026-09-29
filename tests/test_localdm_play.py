@@ -49,6 +49,99 @@ def test_a_plain_turn_is_one_call_and_hides_the_json(tmp_path):
     assert [t["role"] for t in s.memory.turns()] == ["player", "dm"]
 
 
+# ─── the turn must ask about checks at all ──────────────────────────────────
+
+def test_the_player_turn_asks_the_model_about_rolls(tmp_path):
+    """The turn used to carry no task, so build_messages emitted no "## Your task"
+    block at all and the uncertain-outcome question was never posed. dm.md mandates
+    the check; nothing was invoking it. A full playtest transcript had zero "check"
+    fields because of this."""
+    c = FakeClient(lambda m, msgs, role: "Kairos edges toward the window." + NULLS)
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path), bridge=FakeBridge())
+    s.handle("I try to sneak past the guard.")
+    sent = user_text(c.calls[0])
+    assert "## Your task" in sent
+    assert "check" in sent.lower()
+
+
+def test_the_task_survives_the_escalate_retry(tmp_path):
+    """The re-draft after an escalate must not lose the question either."""
+    sent = []
+
+    def last_user(msgs):
+        return "\n".join(m["content"] for m in msgs if m["role"] == "user")
+
+    def fake(m, msgs, role):
+        sent.append(last_user(msgs))
+        if len(sent) == 1:
+            return ('The reeds whisper.\n'
+                    '{"escalate": "who guards the mill?", "command": null}')
+        return "The reeds whisper." + NULLS
+
+    c = FakeClient(fake)
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path), bridge=FakeBridge())
+    s.handle("I try to sneak past the guard.")
+    assert len(sent) > 1, "the escalate retry never happened"
+    assert "## Your task" in sent[-1]
+
+
+def test_a_skill_the_sheet_does_not_list_is_not_rolled(tmp_path):
+    """A fabricated skill used to be rolled anyway at +0, so the player was told
+    they had rolled a Swim check no character has a stake in. The fabrication is
+    named back instead."""
+    camp = camp_dir(tmp_path)
+    (camp / "characters").mkdir()
+    (camp / "characters" / "Kairos.md").write_text(
+        "## Skills\n| Skill | Ability | Bonus |\n|---|---|---|\n"
+        "| Stealth | Dex | +4 |\n| Perception | Wis | +3 |\n", encoding="utf-8")
+
+    def fake(m, msgs, role):
+        return ('Kairos slips toward the water.\n'
+                '{"escalate": null, "command": null, "check": "Swimming 10"}')
+
+    c = FakeClient(fake)
+    s = Session("demo", c, MODELS, camp_dir=camp, bridge=FakeBridge())
+    out = s.handle("I try to swim the moat.")
+    text = "\n".join(out)
+    assert "not a skill on this sheet" in text
+    assert "nothing was rolled" in text
+    assert "Stealth" in text, "the sheet's real skills are named back"
+    assert "success" not in text and "failure" not in text
+
+
+def test_a_listed_skill_is_still_rolled(tmp_path):
+    """The refusal must not swallow the checks that were already working."""
+    camp = camp_dir(tmp_path)
+    (camp / "characters").mkdir()
+    (camp / "characters" / "Kairos.md").write_text(
+        "## Skills\n| Skill | Ability | Bonus |\n|---|---|---|\n"
+        "| Stealth | Dex | +4 |\n", encoding="utf-8")
+
+    def fake(m, msgs, role):
+        return ('Kairos eases along the wall.\n'
+                '{"escalate": null, "command": null, "check": "Stealth 13"}')
+
+    c = FakeClient(fake)
+    s = Session("demo", c, MODELS, camp_dir=camp, bridge=FakeBridge())
+    out = "\n".join(s.handle("I try to sneak past the guard."))
+    assert "Stealth check" in out
+    assert "not a skill on this sheet" not in out
+
+
+def test_no_sheet_means_nothing_to_refuse_against(tmp_path):
+    """A campaign with no sheet cannot be checked, so the guard must not fire and
+    block the roll that was working before."""
+    def fake(m, msgs, role):
+        return ('Kairos edges forward.\n'
+                '{"escalate": null, "command": null, "check": "Stealth 13"}')
+
+    c = FakeClient(fake)
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path), bridge=FakeBridge())
+    out = "\n".join(s.handle("I try to sneak past the guard."))
+    assert "not a skill on this sheet" not in out
+    assert "Stealth check" in out
+
+
 # ─── B2: an attack with no fight is not the model's to adjudicate ────────────
 
 def test_an_attack_with_no_fight_running_never_reaches_the_model(tmp_path):
