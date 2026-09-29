@@ -53,8 +53,63 @@ _ABILITY_LONG = {
 _SPEED_PREFIX = re.compile(r"^walk\s+", re.IGNORECASE)
 
 # The em-dash (U+2014) section marker the SRD builder writes: "Action <em-dash> Bite: ...".
-_SECTION_SPLIT = re.compile(r"\n\n(?=(?:Action|Bonus Action|Reaction|Legendary Action|Mythic Action|Lair Action)\s*\u2014\s*)")
+# Every printed entry in the SRD's `description` is its own paragraph; the builder
+# joins them with "\n\n". A blank line IS the entry boundary, and splitting there is
+# what the source already means.
+#
+# Splitting only before "Action <em-dash>" instead -- which is what this did at
+# first -- leaves every trait paragraph welded to the one above it, and since the
+# trait regex matches "Name: text" with DOTALL, the first name wins and swallows
+# the rest. All six of Aurora Luna Wynterstarr's traits rendered as one. A spell
+# list, having no "Name:" at all, was swallowed the same way.
+_PARAGRAPH_SPLIT = re.compile(r"\n\s*\n")
+
+# The em-dash (U+2014) section marker the SRD builder writes: "Action <em-dash> Bite: ...".
+# The longer names come first on purpose: "Legendary Action" must win over the
+# bare "Legendary" alternative, or every legendary action is filed as a generic one.
+#
+# The bare "Legendary"/"Mythic" markers are the same em-dash form `split_packed`
+# already recognises, and they are how the SRD prints a legendary action INSIDE a
+# statblock: an Ancient Red Dragon's three legendary actions each head their own
+# paragraph as "Legendary <em-dash> Tail Attack: ...", not "Legendary Action <em-dash>".
+_SECTION_LINE = re.compile(
+    r"^(Action|Bonus Action|Reaction|Lair Action|Legendary Action|Mythic Action"
+    r"|Legendary|Mythic)"
+    r"\s*\u2014\s*([^:]+):\s*(.+)$",
+    re.DOTALL,
+)
 _TRAIT_LINE = re.compile(r"^([A-Z][^:\n]{2,60}):\s+(.+)$", re.DOTALL)
+
+# The SRD prints a trait name and a colon: "Pack Tactics: The goblin has advantage".
+# Strixhaven prints a period instead: "Gravity Shift (Recharge 5-6). The archaic
+# reverses gravity". The colon form does not match that at all, so every trait of
+# every Strixhaven creature rendered nameless -- a wall of bold-less text with the
+# ability name, which is the whole point of the entry, gone.
+#
+# The name is split off in code rather than by regex because the delimiter is
+# ambiguous: "Gravity Shift (Recharge 5-6)" contains both a period and a closing
+# paren, and a regex that stops at the first period yields "Gravity Shift (Recharge
+# 5-6" -- a name with an unbalanced paren, which is worse than no name at all.
+_PERIOD_TRAIT = re.compile(r"\.\s+(?=[A-Z\u201c\"'])")
+
+
+def _period_trait(block: str) -> tuple[str, str] | None:
+    """(name, desc) for a "Name. text" paragraph, or None.
+
+    Split at the EARLIEST period that is followed by a capitalised word and whose
+    prefix has balanced parentheses, so a name carrying a "(Recharge 5-6)" or
+    "(Costs 2 Actions)" qualifier survives intact.
+    """
+    for match in _PERIOD_TRAIT.finditer(block):
+        head, tail = block[:match.start()], block[match.end():]
+        if not 2 <= len(head) <= 70:
+            continue
+        if head.count("(") != head.count(")"):
+            continue
+        if not head[0].isupper():
+            continue
+        return head.strip(), " ".join(tail.split())
+    return None
 
 # Some creatures pack several printed entries into one SRD action, separated by the
 # same em-dash marker used between sections, an Ancient Red Dragon's Fire Breath
@@ -185,95 +240,165 @@ def split_packed(text: str) -> list[tuple[str, str, str]]:
     return out
 
 
-def split_description(description: str) -> tuple[list[dict], list[dict]]:
-    """(traits, actions) parsed out of the SRD's `description` prose.
+# The section word a description paragraph opens with, mapped to the FSB container
+# that holds it. FSB supplies its own headings per container, so the word itself is
+# dropped -- but WHICH container an entry lands in is a fidelity question, and
+# putting a Reaction in the Actions list misrepresents the printed statblock.
+#
+# The SRD only ever writes "Action", so this mapping is inert for it. Homebrew
+# records do use the other sections: the Strixhaven students print "Reaction <em-dash>
+# Beginner's Luck (2/Day)", and that is a reaction, not an action.
+_SECTION_CONTAINER = {
+    "legendary": "legendary_actions",
+    "mythic": "mythic_actions",
+    "action": "actions",
+    "bonus action": "bonus_actions",
+    "reaction": "reactions",
+    "lair action": "lair_actions",
+    "legendary action": "legendary_actions",
+    "mythic action": "mythic_actions",
+}
+
+
+def parse_description(description: str) -> tuple[list[dict], list[tuple[str, dict]]]:
+    """(traits, sections) parsed out of a record's `description` prose.
 
     FSB has no body format, so the text has to arrive as structured frontmatter.
-    The SRD prints traits as "Name: text" paragraphs and actions as
-    "Action <em-dash> Name: text" paragraphs, which maps cleanly onto FSB's
+    Traits are printed as "Name: text" paragraphs and the rest as
+    "Section <em-dash> Name: text" paragraphs, which maps cleanly onto FSB's
     {name, desc} containers.
+
+    `sections` keeps the section word attached to each entry so the caller can route
+    it; `split_description` is the 2-tuple view that discards it.
     """
     traits: list[dict] = []
-    actions: list[dict] = []
+    sections: list[tuple[str, dict]] = []
 
-    for block in _SECTION_SPLIT.split(description.strip()):
+    for block in _PARAGRAPH_SPLIT.split(description.strip()):
         block = block.strip()
         if not block:
             continue
 
-        marked = re.match(
-            r"^(Action|Bonus Action|Reaction|Legendary Action|Mythic Action|Lair Action)"
-            r"\s*\u2014\s*([^:]+):\s*(.+)$",
-            block, re.DOTALL,
-        )
+        marked = _SECTION_LINE.match(block)
         if marked:
-            # The section word ("Action", "Reaction", ...) only marks the block;
-            # FSB supplies its own headings, so it is not carried over.
-            _section, name, desc = marked.groups()
-            desc = " ".join(desc.split())
-            actions.append({"name": name.strip(), "desc": desc})
+            section, name, desc = marked.groups()
+            sections.append((section.strip().lower(),
+                             {"name": name.strip(), "desc": " ".join(desc.split())}))
             continue
 
         trait = _TRAIT_LINE.match(block)
         if trait:
             name, desc = trait.groups()
             traits.append({"name": name.strip(), "desc": " ".join(desc.split())})
-        else:
-            # A paragraph with no "Name:" prefix is still worth showing; give it an
-            # empty name, which FSB renders as description-only.
-            traits.append({"name": "", "desc": " ".join(block.split())})
+            continue
 
-    return traits, actions
+        # No colon form, so try the "Name. text" form before giving up on it.
+        dotted = _period_trait(block)
+        if dotted:
+            name, desc = dotted
+            traits.append({"name": name, "desc": desc})
+            continue
+
+        # A paragraph with no "Name:" prefix is still worth showing; give it an
+        # empty name, which FSB renders as description-only. Spell lists land here,
+        # and used to be swallowed whole by the trait above them.
+        traits.append({"name": "", "desc": " ".join(block.split())})
+
+    return traits, sections
+
+
+def split_description(description: str) -> tuple[list[dict], list[dict]]:
+    """(traits, actions) parsed out of a record's `description` prose.
+
+    The section word is dropped and every entry is treated as an ordinary action,
+    which is correct for the SRD (it prints no other section) and is the historical
+    behaviour kept for callers that only want the flat view.
+    """
+    traits, sections = parse_description(description)
+    return traits, [entry for _section, entry in sections]
 
 
 def build_fields(monster: dict) -> dict:
     """The FSB field dict for one creature. Order is the rendering order."""
-    traits, prose_actions = split_description(monster.get("description", ""))
+    traits, sections = parse_description(monster.get("description", ""))
 
-    # Only 287 of 841 SRD actions carry `raw` (the printed sentence); the builder
-    # decomposed the rest into attack/damage/dc/area objects and left `raw` null.
-    # So the two sources are complementary, not alternatives:
-    #   - `raw` where present is the printed text, preferred
-    #   - the description prose covers every action the builder captured
-    #   - the SRD `actions[]` names are the authority on WHICH actions exist
+    # An action's text lives in one of three places, and which one depends on who
+    # wrote the record:
+    #   - `actions[].raw` -- the SRD's printed sentence, for 287 of 841 actions; the
+    #     builder decomposed the rest into attack/damage/dc/area objects and left
+    #     `raw` null, so this is a PARTIAL source, never the whole story
+    #   - `actions[].desc` -- the key homebrew records use, holding the same printed
+    #     sentence. Reading only `raw` silently dropped every homebrew attack: all
+    #     four of Aurora Luna Wynterstarr's, including her Vampiric Bite.
+    #   - the description prose -- covers entries the `actions[]` list never names
     #
-    # Order follows the description, which is the printed statblock order. Walking
-    # the SRD list and looking each name up in the prose keeps an action that has
-    # neither source out of the output rather than rendering a bare name.
-    prose_by_name = {a["name"]: a for a in prose_actions}
-    raw_by_name = {}
-    for action in monster.get("actions") or []:
-        raw = " ".join((action.get("raw") or "").split())
-        if raw:
-            raw_by_name[action.get("name", "")] = raw
+    # The `actions[]` NAMES are the authority on which entries exist; the text is
+    # the best source available for each. Order follows `actions[]`, which is the
+    # printed order, and an entry with neither source is left out rather than
+    # rendered as a bare name.
+    prose_by_name: dict[str, tuple[str, dict]] = {}
+    for section, entry in sections:
+        prose_by_name.setdefault(entry["name"], (section, entry))
 
-    actions = []
-    legendary: list[dict] = []
-    mythic: list[dict] = []
+    text_by_name: dict[str, str] = {}
+    for action in monster.get("actions") or []:
+        text = " ".join((action.get("raw") or action.get("desc") or "").split())
+        if text:
+            text_by_name[action.get("name", "")] = text
+
+    routed: dict[str, list[dict]] = {}
+    covered: set[str] = set()
     for action in monster.get("actions") or []:
         name = action.get("name", "")
-        desc = raw_by_name.get(name) or prose_by_name.get(name, {}).get("desc", "")
+        # The record's own text when it has any, else the printed prose. Only 287 of
+        # 841 SRD actions carry `raw`, so for the other two thirds the prose IS the
+        # only source -- and a record naming an action with no text anywhere is left
+        # out rather than rendered as a bare name.
+        section, entry = prose_by_name.get(name, ("action", {}))
+        desc = text_by_name.get(name) or entry.get("desc", "")
         if not desc:
             continue
         # A packed body may hold printed legendary/mythic entries of its own; those
         # belong in FSB's separate containers, not appended to the action.
-        body = [p for p in split_packed(desc) if p[2]]
-        for kind, entry_name, entry_desc in body:
-            if kind == "legendary":
-                legendary.append({"name": entry_name, "desc": entry_desc})
-            elif kind == "mythic":
-                mythic.append({"name": entry_name, "desc": entry_desc})
+        for kind, entry_name, entry_desc in [p for p in split_packed(desc) if p[2]]:
+            if kind:
+                section = kind
+                entry_name = entry_name or name
             else:
-                actions.append({"name": name, "desc": entry_desc})
-    if not actions:
-        actions = prose_actions
+                entry_name = name
+            routed.setdefault(
+                _SECTION_CONTAINER.get(section, "actions"), []
+            ).append({"name": entry_name, "desc": entry_desc})
+        covered.add(name)
+
+    # `actions[]` is NOT the authority on which entries EXIST. It never lists
+    # legendary actions at all -- an Ancient Red Dragon's `actions[]` has six names,
+    # none of them Detect / Tail Attack / Wing Attack -- so those three live only in
+    # the prose. Anything the prose prints that `actions[]` did not already cover
+    # is emitted here, or the legendary actions vanish.
+    #
+    # The two lists are reconciled by name, so this cannot double up: an entry in
+    # both is emitted once, from the better text source, in the `actions[]` pass.
+    for section, entry in sections:
+        if entry["name"] in covered:
+            continue
+        body = [p for p in split_packed(entry["desc"]) if p[2]]
+        for kind, entry_name, entry_desc in body:
+            routed.setdefault(
+                _SECTION_CONTAINER.get(kind or section, "actions"), []
+            ).append({"name": entry_name or entry["name"], "desc": entry_desc})
 
     fields: dict = {"name": monster["name"]}
 
-    subheading = [monster.get("size"), monster.get("type"), monster.get("alignment")]
-    fields["size"] = str(monster.get("size") or "")
-    fields["type"] = str(monster.get("type") or "")
-    fields["alignment"] = str(monster.get("alignment") or "")
+    # Only emitted when the record actually carries the value. `size: ""` is not
+    # rendered by FSB (falsy properties are hidden) but it IS a line in the note,
+    # and a stat-LESS record -- a campaign civilian, a corpse -- has no size to
+    # print. Emitting the key because the field exists in the record is the wrong
+    # reason to emit it.
+    for key in ("size", "type", "alignment"):
+        value = str(monster.get(key) or "").strip()
+        if value:
+            fields[key] = value
 
     if monster.get("ac") is not None:
         fields["ac"] = monster["ac"]
@@ -286,7 +411,22 @@ def build_fields(monster: dict) -> dict:
     if sp:
         fields["speed"] = sp
 
-    fields["stats"] = abilities(monster)
+    # A record with no ability scores at all is a stat-LESS creature -- a civilian,
+    # a corpse, an NPC the table never fights -- and FSB renders `stats` as a
+    # fixed-width table, so there is nothing to put in it. Emitting six 10s would
+    # be inventing the scores, which is the one thing this exporter must not do.
+    #
+    # A record that is *partly* filled is a different case and still fails below,
+    # naming the missing abilities: an absent one is refused, not defaulted.
+    present = [a for a in _ABILITY_ORDER if monster.get(a) is not None]
+    if isinstance(monster.get("stats"), list) or len(present) == len(_ABILITY_ORDER):
+        fields["stats"] = abilities(monster)
+    elif present:
+        # Half-filled is not stat-less, and this is the case worth being loud about:
+        # the GM wrote five real scores and the sixth went missing, so rendering a
+        # stat-less civilian hides a data-entry error behind a block that looks
+        # deliberate. `abilities()` names what is absent instead.
+        abilities(monster)
 
     sv = saves(monster)
     if sv:
@@ -316,14 +456,13 @@ def build_fields(monster: dict) -> dict:
 
     if traits:
         fields["traits"] = traits
-    if actions:
-        fields["actions"] = actions
-    if legendary:
-        fields["legendary_actions"] = legendary
-    if mythic:
-        fields["mythic_actions"] = mythic
+    # `actions` is emitted first because it is the first section of a printed
+    # statblock; the rest follow the same order the book prints them in.
+    for container in ("actions", "bonus_actions", "reactions",
+                      "legendary_actions", "mythic_actions", "lair_actions"):
+        if routed.get(container):
+            fields[container] = routed[container]
 
-    del subheading
     return fields
 
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import importlib.util
 import pathlib
+import re
 
 import pytest
 
@@ -291,3 +292,168 @@ def test_a_positional_stats_list_is_still_accepted():
     problem they do not have."""
     assert eb.abilities({"name": "Dummy", "stats": [8, 12, 13, 10, 11, 12]}) == \
         [8, 12, 13, 10, 11, 12]
+
+
+# ── homebrew records: the SRD-shaped and the authored-shaped record ─────────
+#
+# The SRD is not the only `{"monsters": [...]}` file, and the two shapes differ in
+# ways that were all silent. `--data` exists so licensed content stays out of
+# dnd5e_srd.json, so these bugs only ever showed up as a Strixhaven student
+# rendered with no attacks at all.
+
+AURORA = {
+    "name": "Aurora Luna Wynterstarr", "index": "aurora-luna-wynterstarr",
+    "cr": 0.25, "size": "Medium", "type": "humanoid", "alignment": "Neutral",
+    "hp": 33, "hp_dice": "6d8", "ac": 11, "speed": "walk 35 ft., climb 35 ft.",
+    "str": 8, "dex": 12, "con": 13, "int": 10, "wis": 11, "cha": 12,
+    "passive_perception": 10, "languages": "Common, Bullywug, Sylvan",
+    "description": (
+        "Excited to Be Here: Aurora has advantage on initiative rolls.\n\n"
+        "Deathless Nature: Aurora doesn't need to breathe.\n\n"
+        "Spider Climb: Aurora can climb difficult surfaces without a check.\n\n"
+        "Reaction — Beginner's Luck (2/Day): When Aurora fails a saving throw, "
+        "she can reroll the d20. She must use the new roll."),
+    "actions": [
+        {"name": "Magic Flare",
+         "desc": "Melee or Ranged Spell Attack: +3 to hit, reach 5 ft. or range "
+                 "60 ft., one target. Hit: 7 (1d12 + 1) force damage."},
+        {"name": "Vampiric Bite",
+         "desc": "Melee Weapon Attack: +3 to hit, reach 5 ft., one target. Hit: "
+                 "3 (1d4 + 1) piercing damage. Aurora regains hit points equal "
+                 "to the piercing damage dealt."},
+    ],
+}
+
+
+def test_a_homebrew_action_survives():
+    """The `desc` key, not `raw`.
+
+    An exporter that reads only `actions[].raw` -- the SRD's key -- drops every
+    attack in every homebrew record without a word. Aurora rendered with zero
+    attacks, which is a complete-looking statblock for a creature whose whole
+    threat is two attacks.
+    """
+    names = [a["name"] for a in eb.build_fields(AURORA)["actions"]]
+    assert names == ["Magic Flare", "Vampiric Bite"]
+
+
+def test_a_homebrew_action_keeps_its_full_text():
+    fields = eb.build_fields(AURORA)
+    flare = next(a for a in fields["actions"] if a["name"] == "Magic Flare")
+    assert flare["desc"].startswith("Melee or Ranged Spell Attack: +3 to hit")
+
+
+def test_consecutive_trait_paragraphs_do_not_swallow_each_other():
+    """Each printed entry is its own paragraph. Splitting only before "Action
+    <em-dash>" welded every trait to the one above it, and since the trait regex is
+    DOTALL the first name won and ate the rest -- three traits rendered as one."""
+    names = [t["name"] for t in eb.build_fields(AURORA)["traits"]]
+    assert names == ["Excited to Be Here", "Deathless Nature", "Spider Climb"]
+
+
+def test_a_reaction_is_not_filed_as_an_action():
+    """FSB has a `reactions` container and the printed block separates the two.
+    The SRD never writes a "Reaction" section, so this is homebrew-only, and
+    putting it in `actions` misrepresents the source."""
+    fields = eb.build_fields(AURORA)
+    assert [r["name"] for r in fields["reactions"]] == ["Beginner's Luck (2/Day)"]
+    assert "Beginner's Luck" not in [a["name"] for a in fields["actions"]]
+
+
+def test_a_trait_named_with_a_period_is_not_left_nameless():
+    """The SRD prints "Pack Tactics: text". Strixhaven prints "Gravity Shift
+    (Recharge 5-6). text" -- a period, not a colon -- so the colon form misses
+    entirely and the trait renders with no name at all, which is the entry's whole
+    content."""
+    name, desc = eb._period_trait(
+        "Gravity Shift (Recharge 5-6). The archaic reverses gravity for one "
+        "creature it can see within 100 feet of itself.")
+    assert name == "Gravity Shift (Recharge 5-6)", "unbalanced paren, name is wrong"
+    assert desc.startswith("The archaic reverses gravity")
+
+
+def test_period_trait_names_stop_at_the_earliest_balanced_delimiter():
+    """Otherwise "Teleport. The archaic teleports to an unoccupied space" can hand
+    the name a whole second sentence."""
+    name, _ = eb._period_trait("Teleport. The archaic teleports somewhere.")
+    assert name == "Teleport"
+
+
+def test_a_stat_less_record_emits_no_stats_table():
+    """A campaign civilian, a corpse: FSB binds `stats` to a fixed-width table, so
+    there is nothing to put in one. Emitting six 10s would invent six numbers."""
+    fields = eb.build_fields({"name": "Wend Petch", "cr": 0, "hp": 11, "ac": 10})
+    assert "stats" not in fields
+    assert fields["hp"] == 11
+
+
+def test_a_half_filled_record_is_refused_rather_than_treated_as_stat_less():
+    """Five of six scores is a data-entry error, not a civilian. Treating it as
+    stat-less would hide the gap behind a block that looks deliberate; it is
+    refused and the missing ability is named."""
+    with pytest.raises(ValueError, match="CHA"):
+        eb.build_fields({"name": "Wend Petch", "str": 8, "dex": 12, "con": 10,
+                         "int": 10, "wis": 11, "cha": None})
+
+
+def test_a_partial_ability_set_is_refused_by_name_at_all():
+    with pytest.raises(ValueError) as exc:
+        eb.build_fields({"name": "Wend Petch", "str": 8})
+    for ability in ("DEX", "CON", "INT", "WIS", "CHA"):
+        assert ability in str(exc.value)
+
+
+def test_empty_subheading_fields_are_not_emitted():
+    """`size: ""` does not render in FSB, but it is a line in the note, and a
+    stat-less record has no size to print."""
+    fields = eb.build_fields({"name": "Wend Petch", "cr": 0, "hp": 11, "ac": 10})
+    assert "size" not in fields and "type" not in fields
+    assert "alignment" not in fields
+
+
+def test_a_spell_list_survives_as_a_nameless_trait(monsters, by_name):
+    """A paragraph with no "Name:" is still content.
+
+    Acolyte's spell list has no name to split off, so it renders description-only.
+    This is the paragraph that has no other home: it is not an action (no section
+    marker) and not a "Name: text" trait, and an earlier version of the period-form
+    fix left this branch unreachable behind a `continue`, dropping all 13 of them
+    while every test still passed.
+    """
+    fields = eb.build_fields(by_name["Acolyte"])
+    assert any(t["name"] == "" and "sacred flame" in t["desc"]
+               for t in fields["traits"]), "the spell list was dropped"
+
+
+def test_no_description_paragraph_is_dropped(monsters):
+    """Every paragraph of every SRD description must come back as an entry.
+
+    The exact check, at the parser: one printed paragraph in, one trait-or-section
+    out. Comparing text instead does not work -- a trait legitimately splits into a
+    name and a desc, so "Amphibious: The aboleth can breathe air and water." is
+    never a substring of any single emitted field.
+
+    This is the blunt check that would have caught the unreachable branch the
+    Acolyte test above describes, without needing to know which creature it hit.
+    """
+    for monster in monsters:
+        blocks = [b for b in re.split(r"\n\s*\n", monster.get("description", "").strip())
+                  if b.strip()]
+        traits, sections = eb.parse_description(monster.get("description", ""))
+        assert len(traits) + len(sections) == len(blocks), (
+            f"{monster['name']}: {len(blocks)} paragraphs in, "
+            f"{len(traits) + len(sections)} entries out")
+
+
+def test_every_parsed_entry_reaches_the_output(monsters):
+    """The parser is not the only place to lose a paragraph: `build_fields` routes
+    entries into containers and could drop one. Every name the parser found must
+    appear in some container of the emitted block."""
+    containers = ("actions", "bonus_actions", "reactions", "legendary_actions",
+                  "mythic_actions", "lair_actions")
+    for monster in monsters:
+        fields = eb.build_fields(monster)
+        names = {e["name"] for c in containers for e in fields.get(c, [])}
+        _traits, sections = eb.parse_description(monster.get("description", ""))
+        for _section, entry in sections:
+            assert entry["name"] in names, f"{monster['name']}: {entry['name']} unrouted"
