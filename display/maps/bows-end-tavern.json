@@ -1,0 +1,18 @@
+{
+ "name": "Bow's End Tavern",
+ "width": 40,
+ "height": 30,
+ "diagonals": "5",
+ "info": "200 by 150 feet (40x30 squares of 5 ft). Artwork by Ekrahir. Terrain is unpainted: open /maps/bows-end-tavern/edit and paint walls, water and cover before running a fight here.",
+ "image": "images/bows-end-tavern.jpg",
+ "grid": {
+  "cell_px": 100,
+  "offset_x": 0,
+  "offset_y": 0
+ },
+ "credit": "Ekrahir",
+ "source": "Free - Bow's End Tavern - 4000x3000 - 40x30 - 100px - gridless.jpg",
+ "base": "floor",
+ "features": [],
+ "spawns": []
+}

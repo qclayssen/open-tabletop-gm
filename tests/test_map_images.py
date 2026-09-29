@@ -47,18 +47,46 @@ def test_a_map_without_an_image_has_no_image_key():
     assert "image" not in maps.compile_map({"name": "X", "width": 2, "height": 2})["meta"]
 
 
+# The maps that shipped before BV1, named explicitly. `crypt` is the BV1
+# fixture and is expected to carry artwork; the imported art maps
+# (scripts/art_import.py) are expected to as well. Both are excluded by name so
+# that adding art to a *new* map is not the same act as a pre-existing map
+# quietly gaining a field.
+SHIPPED_BEFORE_BV1 = {"blank", "detention-bog", "firejolt-rooftops", "frog-pond",
+                      "mage-tower", "training-yard"}
+
+
+def test_the_pre_bv1_maps_are_still_the_expected_set():
+    """Guards the exclusion below: if one of these six were renamed or deleted,
+    this test would silently check nothing, so the set is asserted too."""
+    available = set(maps.available())
+    assert SHIPPED_BEFORE_BV1 <= available, (
+        f"missing from maps.available(): {sorted(SHIPPED_BEFORE_BV1 - available)}")
+
+
 def test_no_pre_existing_map_gained_an_image():
     """Every map that shipped before BV1 must be untouched, or a regression has
     been introduced somewhere nobody was looking.
 
-    `crypt` is excluded because it is the BV1 fixture: it is the one map to carry
-    artwork, and it is the one map expected to.
+    The list is named rather than derived from `available()`, because the point
+    is about *these* maps: a map added later may legitimately carry artwork.
     """
-    for name in maps.available():
-        if name == "crypt":
-            continue
+    for name in sorted(SHIPPED_BEFORE_BV1):
         meta = maps.load(name)["meta"]
         assert "image" not in meta, f"{name} unexpectedly carries an image"
+
+
+def test_an_imported_art_map_carries_its_image():
+    """The other side: artwork imported by art_import.py does reach the display
+    meta, with the grid alignment that lines it up with the terrain."""
+    with_art = [n for n in maps.available()
+                if maps.load(n)["meta"].get("image")]
+    assert with_art, "no imported art map found; art_import.py output is missing"
+    for name in with_art:
+        meta = maps.load(name)["meta"]
+        assert meta["image"].startswith("images/")
+        # The alignment is what makes the picture line up with the 5 ft grid.
+        assert meta["grid_align"].get("cell_px", 0) > 0, name
 
 
 # ── what the image path carries ─────────────────────────────────────────────

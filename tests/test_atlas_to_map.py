@@ -34,6 +34,13 @@ def _load():
 atm = _load()
 
 
+def _jpeg(width: int, height: int) -> bytes:
+    """A JPEG header only: SOI, then a SOF0 frame header carrying the
+    dimensions. image_size() returns at the SOF and never reads further."""
+    sof = struct.pack(">BHHB", 0xC0, height, width, 3) + b"\x00" * 9
+    return b"\xff\xd8\xff\xc0" + struct.pack(">H", len(sof) + 2) + sof + b"\xff\xd9"
+
+
 def _png(width: int, height: int) -> bytes:
     raw = b"".join(b"\x00" + bytes([30, 30, 40] * width) for _ in range(height))
     def chunk(tag, data):
@@ -109,6 +116,29 @@ def test_image_size_reads_a_png_header(tmp_path):
 def test_image_size_rejects_a_non_image(tmp_path):
     path = tmp_path / "a.txt"
     path.write_text("not an image at all", encoding="utf-8")
+    with pytest.raises(ValueError, match="PNG or JPEG"):
+        atm.image_size(path)
+
+
+def test_image_size_reads_a_jpeg_header(tmp_path):
+    path = tmp_path / "a.jpg"
+    path.write_bytes(_jpeg(400, 300))
+    assert atm.image_size(path) == (400, 300)
+
+
+@pytest.mark.parametrize("name,payload", [
+    # A JPEG that ends before any frame header. The segment walk used to seek
+    # backwards on a zero length and spin forever at EOF; pytest would hang
+    # rather than fail, so this asserts the call *returns*.
+    ("truncated", b"\xff\xd8"),
+    ("eoi_only", b"\xff\xd8\xff\xd9"),
+    ("zero_length_segment", b"\xff\xd8\xff\xfe\x00\x00\xff\xd9"),
+    ("d9_repeated", b"\xff\xd8\xff\xd9\xff\xd9\xff\xd9"),
+    ("sos_only", b"\xff\xd8\xff\xda\x00\x08"),
+])
+def test_a_malformed_jpeg_raises_instead_of_hanging(tmp_path, name, payload):
+    path = tmp_path / f"{name}.jpg"
+    path.write_bytes(payload)
     with pytest.raises(ValueError, match="PNG or JPEG"):
         atm.image_size(path)
 
