@@ -74,7 +74,7 @@ class Notes:
         head = f"## {stamp} - {source or 'advisor'}" + (f" - {who}" if who else "")
         with self._lock:
             self.dir.mkdir(parents=True, exist_ok=True)
-            with open(self.path, "a", encoding="utf-8") as f:
+            with open(self.path, "a", encoding="utf-8", newline="\n") as f:
                 f.write(f"\n{head}\n\n{_escape(body)}\n")
             self._trim()
         return True
@@ -102,7 +102,8 @@ class Notes:
         with self._lock:
             tmp = self.path.with_name(NAME + ".tmp")
             try:
-                tmp.write_text("## " + "\n## ".join(kept), encoding="utf-8")
+                with open(tmp, "w", encoding="utf-8", newline="\n") as f:
+                    f.write("## " + "\n## ".join(kept))
                 os.replace(tmp, self.path)
             except OSError:
                 tmp.unlink(missing_ok=True)
