@@ -19,6 +19,7 @@ where it was made -- in the exit code and the message -- not just in the JSON.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -84,12 +85,15 @@ class WaitForUnknownRequest(unittest.TestCase):
         STATUS.clear()
         STATUS["response"] = response
         with tempfile.TemporaryDirectory() as tmp:
+            # Inherit the real environment and override only what the stub needs.
+            # A hand-built minimal env looks tidier and is wrong: the child
+            # interpreter needs the platform variables to start at all (on
+            # Windows a stripped env fails with "_Py_HashRandomization_Init:
+            # failed to get random numbers" before it reaches main()).
+            env = os.environ.copy()
             # send.py builds its URL from GM_DISPLAY_PORT and always says
             # "localhost", so the stub has to listen there.
-            env = {"PATH": "/usr/bin:/bin", "HOME": tmp,
-                   "GM_DISPLAY_PORT": str(self.port),
-                   # No token on the stub, and no .port file to be inherited.
-                   "GM_DISPLAY_TOKEN": ""}
+            env["GM_DISPLAY_PORT"] = str(self.port)
             proc = subprocess.run(
                 [sys.executable, str(SEND), "--dice-request", "--character", "Kairos",
                  "--wait", "--wait-timeout", "5"],
