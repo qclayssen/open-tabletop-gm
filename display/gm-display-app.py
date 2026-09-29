@@ -1321,8 +1321,8 @@ def map_features(name):
 
     Tokens and the save gate are the two ways work is lost. A GM paints for ten
     minutes, so an overwrite of a map that already has features has to be
-    something they asked for (hence `confirm`) and the previous file is kept
-    as <name>.json.bak either way.
+    something they asked for (hence `confirm`) and the original file is kept
+    as <name>.json.bak (the first original only, never overwritten).
     """
     if not _token_ok():
         return "Forbidden", 403
@@ -1334,11 +1334,16 @@ def map_features(name):
     if not isinstance(strokes, list):
         return jsonify({"error": "strokes must be a list of rectangles"}), 400
     before = path.read_text(encoding="utf-8")
-    spec = json.loads(before)
+    try:
+        spec = json.loads(before)
+    except ValueError as e:
+        return jsonify({"error": f"{path.name} could not be read: {e}"}), 400
+    if not isinstance(spec, dict):
+        return jsonify({"error": f"{path.name} could not be read: not a map object"}), 400
     if spec.get("features") and not body.get("confirm"):
         return jsonify({"error": f"{path.name} already has terrain on it. "
                                  "Re-save with confirm to overwrite it "
-                                 f"({len(spec['features'])} rectangles; a .bak is kept)."}), 409
+                                 f"({len(spec['features'])} rectangles; the original is kept as a .bak)."}), 409
     try:
         merged = _mapeditor.apply_strokes(spec, strokes)
     except ValueError as e:

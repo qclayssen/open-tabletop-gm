@@ -182,9 +182,17 @@
       b.setAttribute('aria-checked', 'false');
       b.dataset.type = p.type;
       b.title = `${p.type}, ${p.move}, sight ${p.sight}${p.cover ? ', ' + p.cover : ''}`;
-      b.innerHTML = `<i style="background:var(--tx-${p.color})"></i>` +
-        `<span><span class="me-name">${p.type}</span><br>` +
-        `<span class="me-meta">${p.move} · ${p.sight}${p.cover ? ' · ' + p.cover : ''}</span></span>`;
+      const sw = document.createElement('i');
+      sw.style.background = `var(--tx-${p.color})`;
+      const name = document.createElement('span');
+      name.className = 'me-name';
+      name.textContent = p.type;
+      const meta = document.createElement('span');
+      meta.className = 'me-meta';
+      meta.textContent = `${p.move} · ${p.sight}${p.cover ? ' · ' + p.cover : ''}`;
+      const label = document.createElement('span');
+      label.append(name, document.createElement('br'), meta);
+      b.append(sw, label);
       b.addEventListener('click', () => {
         type = p.type;
         for (const other of el.palette.children) {
@@ -236,7 +244,7 @@
     }
     adopt(out.state);
     say(`Saved ${out.features.length} rectangle${out.features.length === 1 ? '' : 's'}` +
-        (out.backup ? `, previous file kept as ${out.backup}` : '') + '.', 'good');
+        (out.backup ? `, original kept as ${out.backup}` : '') + '.', 'good');
     refreshButtons();
   }
 
@@ -283,6 +291,6 @@
   refreshButtons();
   if (state.has_features) {
     say('This map already has terrain. Saving merges your strokes into it; ' +
-        'the file you have now is kept as a .bak.', null);
+        'the file you have now is kept as a .bak (only the first save).', null);
   }
 })();

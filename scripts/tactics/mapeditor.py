@@ -167,6 +167,8 @@ def _stroke_rect(s, w: int, h: int, i: int) -> tuple:
         raise ValueError(f"stroke {i}: needs a terrain type and an x, y, w, h rectangle")
     try:
         t = s["type"]
+        if not isinstance(t, str):
+            raise TypeError("terrain type must be a string")
         x, y, fw, fh = _rect(s)
     except (KeyError, TypeError, ValueError):
         raise ValueError(f"stroke {i}: needs a terrain type and an x, y, w, h rectangle")
@@ -239,11 +241,12 @@ def palette(spec: dict) -> list:
 
 
 def write(path, spec: dict):
-    """Write the map atomically, keeping the previous file as <name>.json.bak.
+    """Write the map atomically, keeping the original file as <name>.json.bak.
 
-    The same dance scripts/tactics/state.py does for the encounter file, and for
-    the same reason: the editor overwrites a file a GM hand-wrote, so the hand-
-    written version has to stay recoverable.
+    The editor overwrites a file a GM hand-wrote, so the hand-written version
+    has to stay recoverable. Unlike state.py's rolling .bak, this one is kept
+    only if none exists: a second save must not replace the original with the
+    first save's output.
     """
     path = pathlib.Path(path)
     tmp = path.with_suffix(".json.tmp")
@@ -253,7 +256,7 @@ def write(path, spec: dict):
         f.flush()
         os.fsync(f.fileno())
     bak = path.with_suffix(".json.bak")
-    if path.exists():
+    if path.exists() and not bak.exists():
         shutil.copy2(path, bak)
     os.replace(tmp, path)
     return bak if bak.exists() else path

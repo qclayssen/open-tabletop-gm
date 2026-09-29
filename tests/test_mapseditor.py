@@ -336,6 +336,23 @@ def test_write_keeps_the_previous_file_as_a_bak(tmp_path):
     assert bak["features"] == []
 
 
+def test_a_second_write_keeps_the_first_original_in_the_bak(tmp_path):
+    """The .bak is the hand-written file. A second save must not replace it
+    with the first save's output."""
+    path = tmp_path / "map.json"
+    path.write_text(json.dumps(dict(BARE, name="hand written")), encoding="utf-8")
+    mapeditor.write(path, dict(BARE, features=[stroke("wall", 1, 1)]))
+    mapeditor.write(path, dict(BARE, features=[stroke("water", 2, 2)]))
+    bak = json.loads((tmp_path / "map.json.bak").read_text(encoding="utf-8"))
+    assert bak["name"] == "hand written"
+
+
+@pytest.mark.parametrize("bad", [["wall"], {"a": 1}, 5, None])
+def test_a_stroke_type_that_is_not_a_string_is_a_value_error(bad):
+    with pytest.raises(ValueError):
+        mapeditor.apply_strokes(BARE, [{"type": bad, "x": 0, "y": 0, "w": 1, "h": 1}])
+
+
 def test_write_leaves_no_temp_file_behind(tmp_path):
     path = tmp_path / "map.json"
     mapeditor.write(path, dict(BARE))
@@ -455,6 +472,19 @@ def test_a_confirmed_save_keeps_a_bak(client, tmp_path):
     assert response.status_code == 200
     assert response.get_json()["backup"] == "pond.json.bak"
     assert json.loads((tmp_path / "pond.json.bak").read_text(encoding="utf-8")) == WATER
+
+
+def test_a_non_string_stroke_type_is_a_400(client, scratch):
+    response = client.post("/maps/scratch/features",
+                           json={"strokes": [{"type": ["wall"], "x": 0, "y": 0, "w": 1, "h": 1}]})
+    assert response.status_code == 400
+
+
+def test_saving_a_corrupt_map_is_a_400(client, tmp_path):
+    (tmp_path / "broken.json").write_text("{not json", encoding="utf-8")
+    response = client.post("/maps/broken/features", json={"strokes": [stroke("wall", 0, 0)]})
+    assert response.status_code == 400
+    assert "broken.json" in response.get_json()["error"]
 
 
 def test_a_bare_map_needs_no_confirm(client, scratch):

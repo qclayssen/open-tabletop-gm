@@ -66,7 +66,7 @@ Saving **merges** rather than appends. Your strokes are replayed onto the map's 
 - **A `label` follows its region, not its rectangle.** A region broken into several rectangles keeps one label, re-attached to the first of them, so it can move by a square or two. No label is dropped or duplicated.
 - **Last rectangle wins, as everywhere else.** There is no undo history in the file: painting `floor` over a wall gives `floor`. Undo in the editor drops your stroke before you save; after a save, repaint what was underneath.
 - Squares left at the base terrain with no label get no rectangle at all, which is how you erase.
-- The previous file is kept as `<name>.json.bak`, and saving over a map that already has terrain asks you to confirm first.
+- The original file is kept as `<name>.json.bak` (the first save keeps it; later saves do not overwrite it), and saving over a map that already has terrain asks you to confirm first.
 
 The merge is `scripts/tactics/mapeditor.py`; `tests/test_mapseditor.py` covers it, including the guarantee that re-saving any map in this folder does not move a single square.
 
