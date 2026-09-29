@@ -213,7 +213,8 @@ def test_a_torn_final_line_does_not_break_reading(tmp_path):
 
 def test_the_log_keeps_appending_after_a_torn_line(tmp_path):
     """canon.py's rule: a corrupted append costs one line, not the file. The
-    next roll is still recorded, and the hole is reported rather than skipped."""
+    next roll is still recorded and chains from the last good record, so the
+    unreadable line is a note and nothing is missing."""
     enc = _fight(tmp_path)
     _attack(enc, supplied=[14, 7])
     path = receipts.log_path(tmp_path / "camp")
@@ -221,11 +222,104 @@ def test_the_log_keeps_appending_after_a_torn_line(tmp_path):
         f.write("{not json at all\n")
     receipts.record(enc, "kairos", "attack", [{"who": "kairos", "total": 9}])
     recs = _receipts(tmp_path)
-    assert [r["seq"] for r in recs] == [1, 2, 3]        # the roll after the tear
+    assert [r["seq"] for r in recs] == [1, 2, 3]
+    out = receipts.verify(tmp_path / "camp")
+    assert out["ok"] is True
+    assert any("unreadable line" in line for line in out["lines"])
+
+
+def test_a_partial_line_with_no_newline_does_not_break_the_chain(tmp_path):
+    """The process died mid-write: the tail has no newline. The next append
+    must isolate the fragment, and verify must not call that a break."""
+    enc = _fight(tmp_path)
+    _attack(enc, supplied=[14, 7])
+    path = receipts.log_path(tmp_path / "camp")
+    with open(path, "a", encoding="utf-8") as f:
+        f.write('{"seq": 3, "at": "2026-09-29T21:00:00+00:00", "rol')
+    assert not path.read_text(encoding="utf-8").endswith("\n")
+    receipts.record(enc, "kairos", "attack", [{"who": "kairos", "total": 9}])
+    receipts.record(enc, "kairos", "attack", [{"who": "kairos", "total": 4}])
+    recs = _receipts(tmp_path)
+    assert [r["seq"] for r in recs] == [1, 2, 3, 4]      # head skipped the scrap
+    out = receipts.verify(tmp_path / "camp")
+    assert out["ok"] is True
+    assert out["checked"] == 4
+    assert any("unreadable line" in line for line in out["lines"])
+
+
+def test_a_receipt_replaced_by_garbage_in_the_middle_is_still_a_break(tmp_path):
+    enc = _fight(tmp_path)
+    _attack(enc, supplied=[14, 7])
+    receipts.record(enc, "kairos", "attack", [{"who": "kairos", "total": 9}])
+    path = receipts.log_path(tmp_path / "camp")
+    ls = _lines(path)
+    ls[1] = "{garbage"
+    path.write_text("\n".join(ls) + "\n", encoding="utf-8")
     out = receipts.verify(tmp_path / "camp")
     assert out["ok"] is False
-    assert out["first_bad"] == 3
-    assert "not a receipt" in out["reason"]
+    assert out["first_bad"] == 2
+
+
+def test_the_verdict_does_not_claim_the_tail_is_intact(tmp_path):
+    enc = _fight(tmp_path)
+    _attack(enc, supplied=[14, 7])
+    text = "\n".join(receipts.verify(tmp_path / "camp")["lines"])
+    assert "external anchor" in text
+    assert "removed after the fact" not in text
+
+
+def test_each_batch_is_one_write_and_is_fsynced(tmp_path, monkeypatch):
+    enc = _fight(tmp_path)
+    synced = []
+    real = os.fsync
+    monkeypatch.setattr(os, "fsync", lambda fd: (synced.append(fd), real(fd))[1])
+    receipts.record(enc, "kairos", "attack", [{"total": 1}, {"total": 2}])
+    assert synced
+    assert len(_receipts(tmp_path)) == 2
+
+
+# ─── concurrent writers ───────────────────────────────────────────────────────
+
+def _spawn_record(camp, n):
+    """multiprocessing target: n one-roll receipts into the same campaign."""
+    enc = types.SimpleNamespace(campaign_dir=camp, campaign="x", round=1,
+                                turn_index=0, turn=None, tokens={})
+    for i in range(n):
+        receipts.record(enc, "p", "attack", [{"who": "p", "total": i}])
+
+
+def _assert_gapless(tmp_path, n):
+    recs = _receipts(tmp_path)
+    assert [r["seq"] for r in recs] == list(range(1, n + 1))
+    out = receipts.verify(tmp_path / "camp")
+    assert out["ok"] is True, out["reason"]
+
+
+def test_two_threads_recording_together_keep_a_gapless_chain(tmp_path):
+    import threading
+    enc = _fight(tmp_path)
+    ts = [threading.Thread(target=_spawn_record, args=(enc.campaign_dir, 25))
+          for _ in range(2)]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join()
+    _assert_gapless(tmp_path, 50)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="fork start method")
+def test_two_processes_recording_together_keep_a_gapless_chain(tmp_path):
+    import multiprocessing
+    enc = _fight(tmp_path)
+    ctx = multiprocessing.get_context("fork")
+    ps = [ctx.Process(target=_spawn_record, args=(enc.campaign_dir, 20))
+          for _ in range(2)]
+    for p in ps:
+        p.start()
+    for p in ps:
+        p.join(60)
+        assert p.exitcode == 0
+    _assert_gapless(tmp_path, 40)
 
 
 # ─── the write never raises ───────────────────────────────────────────────────
@@ -384,3 +478,50 @@ def test_the_campaign_is_resolved_through_the_configured_root(tmp_path, monkeypa
     enc.campaign = "c"
     monkeypatch.setenv("GM_CAMPAIGN_ROOT", str(root))
     assert receipts.campaign_dir_for(enc) == root / "campaigns" / "c"
+
+
+def test_an_empty_key_file_is_regenerated_for_a_new_log(tmp_path):
+    """A zero-byte key (crash after create, before write) must not silently
+    switch receipts off on a campaign that has recorded nothing yet."""
+    enc = _fight(tmp_path)
+    receipts.key_path(tmp_path / "camp").write_bytes(b"")
+    assert receipts.record(enc, "kairos", "attack", [{"total": 1}]) == 1
+    assert len(receipts.key_path(tmp_path / "camp").read_bytes()) == 32
+    assert receipts.verify(tmp_path / "camp")["ok"] is True
+
+
+def test_an_empty_key_file_over_an_existing_log_is_refused(tmp_path, capsys):
+    enc = _fight(tmp_path)
+    _attack(enc, supplied=[14, 7])
+    receipts.key_path(tmp_path / "camp").write_bytes(b"")
+    assert receipts.record(enc, "kairos", "attack", [{"total": 1}]) == 0
+    assert len(_receipts(tmp_path)) == 2
+    assert "key" in capsys.readouterr().err
+    assert receipts.verify(tmp_path / "camp")["ok"] is False
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX file modes")
+def test_the_key_is_never_visible_with_a_loose_mode_or_left_as_a_temp(tmp_path):
+    camp = tmp_path / "camp"
+    (camp / "combat").mkdir(parents=True)
+    key = receipts.load_key(camp)
+    assert len(key) == 32
+    assert stat.S_IMODE(receipts.key_path(camp).stat().st_mode) == 0o600
+    assert [p.name for p in (camp / "combat").iterdir()
+            if p.name.startswith(".rolls.key")] == []
+
+
+def test_a_racing_creator_cannot_overwrite_the_winners_key(tmp_path):
+    camp = tmp_path / "camp"
+    (camp / "combat").mkdir(parents=True)
+    winner = receipts.load_key(camp)
+    receipts._mint_key(receipts.key_path(camp))       # the loser arrives late
+    assert receipts.key_path(camp).read_bytes() == winner
+
+
+def test_a_fresh_campaign_with_no_file_verifies_not_ok(tmp_path):
+    """Documented behaviour: nothing recorded is not proof of anything."""
+    camp = tmp_path / "camp"
+    (camp / "combat").mkdir(parents=True)
+    out = receipts.verify(camp)
+    assert out["ok"] is False and out["checked"] == 0

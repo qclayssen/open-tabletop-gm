@@ -53,6 +53,12 @@ party needs the key, the file and this paragraph to reimplement it. Editing,
 deleting or reordering any line changes every signature from that point on, and
 the break is reported at the exact record where it starts.
 
+One limit is inherent and is stated rather than hidden: the chain proves that
+nothing inside the file was changed, it cannot prove that nothing was cut off
+its end. Deleting the last N lines leaves a shorter chain that still verifies.
+Detecting tail truncation needs an anchor kept outside the file (a count or the
+last signature noted somewhere else); `verify` does not claim otherwise.
+
 The key.
 
 `secrets.token_bytes(32)`, written once per campaign, kept OUT of the log (a key
@@ -77,9 +83,19 @@ that prints a warning to stderr and returns. A disputed roll must not cost a
 player their combat. Reading is tolerant in the way scripts/localdm/canon.py is:
 a line that is not JSON (a torn append, a half-written tail, a power cut) is
 skipped and the rest of the file is read, because losing the last line is
-expected and losing the file is not. The one thing tolerance must not cover is
-a hole in the middle: `verify` reports an unreadable line as a break whenever
-any record follows it, since a record that is not there is not a torn append.
+expected and losing the file is not. The append writes each batch of records
+as one string with a single write, flush and fsync, under a cross-process lock,
+and if the file does not end in a newline (a process died mid-write) it first
+writes one, so the fragment stays a line of its own and never glues onto the
+next record. `verify` tolerates an unreadable line and reports it as a note,
+but only because the chain still proves nothing is missing: the record after
+it must continue from the last good record (its seq and its signature). If a
+real record was deleted or replaced by garbage, the next record does not
+continue and that is reported as a break.
+
+`verify` on a campaign with no receipts file returns ok False ("no roll has been
+recorded"): a fresh campaign is not proved clean, it is simply empty. An empty
+but existing file is ok True with a note that it holds nothing.
 
 Verify it in one command, which is the only thing that makes this worth having:
 
@@ -98,7 +114,18 @@ import os
 import pathlib
 import secrets
 import sys
+import tempfile
 import threading
+import contextlib
+
+try:                                                   # POSIX
+    import fcntl
+except ImportError:                                    # pragma: no cover
+    fcntl = None
+try:                                                   # Windows
+    import msvcrt
+except ImportError:
+    msvcrt = None
 
 # Run as a script (python3 scripts/tactics/receipts.py -c NAME) the package is
 # not imported, so tactics/__init__ has not put scripts/ on the path for us.
@@ -138,29 +165,100 @@ def load_key(campaign_dir, create: bool = True) -> bytes | None:
 
     Returns None when there is no key and create is False, or when the key
     cannot be created or read. Never raises: the caller is on the roll path.
+    An existing EMPTY key file counts as missing (a crash between create and
+    write, or a truncation): it is regenerated here, and record() separately
+    refuses to do so over a log that already holds receipts.
     """
     path = key_path(campaign_dir)
     try:
-        if path.exists():
-            data = path.read_bytes()
-            if data:
-                return data
+        data = path.read_bytes() if path.exists() else b""
+        if data:
+            return data
         if not create:
             return None
         path.parent.mkdir(parents=True, exist_ok=True)
-        # "x" so two processes racing the first roll cannot both mint a key:
-        # the loser reads the winner's and chains onto whatever is on disk.
-        # No encoding: this is 32 raw key bytes, not text.
-        try:
-            with open(path, "xb") as f:
-                f.write(secrets.token_bytes(KEY_BYTES))
-        except FileExistsError:
-            pass
-        _restrict(path)
-        data = path.read_bytes()
+        with _locked(campaign_dir):
+            data = path.read_bytes() if path.exists() else b""
+            if data:                       # a racing creator won: use its key
+                return data
+            _mint_key(path)
+            data = path.read_bytes()
         return data or None
     except OSError:
         return None
+
+
+def _mint_key(path: pathlib.Path) -> None:
+    """Write a fresh key atomically: the file never exists half-written or
+    with a loose mode. A temp file in the same directory gets its bytes,
+    fsync and 0600 BEFORE it takes the final name. os.link refuses to clobber,
+    so a creator that raced past the lock cannot overwrite the winner; an
+    existing empty file is replaced. No encoding: 32 raw key bytes."""
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=".rolls.key.")
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(secrets.token_bytes(KEY_BYTES))
+            f.flush()
+            os.fsync(f.fileno())
+        _restrict(pathlib.Path(tmp))
+        if path.exists() and path.stat().st_size == 0:
+            os.replace(tmp, path)
+            return
+        try:
+            os.link(tmp, path)
+        except FileExistsError:
+            pass                            # the winner's key stands
+        except OSError:
+            # a filesystem without hard links: replace only if still absent
+            if not path.exists():
+                os.replace(tmp, path)
+    finally:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+
+
+@contextlib.contextmanager
+def _locked(campaign_dir):
+    """Serialise head-read plus append across threads AND processes.
+
+    A threading lock for this process, plus an advisory lock on
+    combat/rolls.lock (fcntl.flock on POSIX, msvcrt.locking on Windows). If
+    neither is available it degrades to the thread lock alone. Not re-entrant
+    across file descriptors: never nest it.
+    """
+    with _LOCK:
+        lock_file = None
+        try:
+            path = pathlib.Path(campaign_dir) / "combat" / "rolls.lock"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            lock_file = open(path, "a+b")
+            if fcntl is not None:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            elif msvcrt is not None:                   # pragma: no cover
+                lock_file.seek(0)
+                while True:
+                    try:
+                        msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
+                        break
+                    except OSError:
+                        continue
+        except OSError:
+            pass                                       # thread lock only
+        try:
+            yield
+        finally:
+            if lock_file is not None:
+                try:
+                    if fcntl is not None:
+                        fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+                    elif msvcrt is not None:           # pragma: no cover
+                        lock_file.seek(0)
+                        msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+                except OSError:
+                    pass
+                lock_file.close()
 
 
 def _restrict(path: pathlib.Path) -> None:
@@ -299,14 +397,48 @@ def _read(path) -> list:
 
 
 def _append(campaign_dir, records: list) -> None:
-    """The write. Its caller guarantees this never has to raise."""
+    """The write. Its caller guarantees this never has to raise, and holds
+    the lock (see record).
+
+    Every record goes out in ONE string with a single write, then flush and
+    fsync, so a crash tears at most the tail. If the file does not end in a
+    newline a previous write was cut off: write one first so the fragment is
+    isolated as its own unreadable line instead of fusing with this record.
+    """
     path = log_path(campaign_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "a", encoding="utf-8") as f:
-        for rec in records:
-            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    payload = "".join(json.dumps(rec, ensure_ascii=False) + "\n"
+                      for rec in records)
+    try:
+        with open(path, "rb") as f:
+            f.seek(0, os.SEEK_END)
+            if f.tell() > 0:
+                f.seek(-1, os.SEEK_END)
+                if f.read(1) != b"\n":
+                    payload = "\n" + payload
+    except OSError:
+        pass                                   # no file yet
+    with open(path, "a", encoding="utf-8", newline="\n") as f:
+        f.write(payload)
+        f.flush()
+        os.fsync(f.fileno())
     with _LOCK:
         _HEADS.pop(str(path), None)
+
+
+def _has_receipts(camp_dir) -> bool:
+    try:
+        return log_path(camp_dir).stat().st_size > 0
+    except OSError:
+        return False
+
+
+def _key_present(camp_dir) -> bool:
+    """A key file that exists and is not empty. Empty counts as missing."""
+    try:
+        return key_path(camp_dir).stat().st_size > 0
+    except OSError:
+        return False
 
 
 def record(enc, actor: str, kind: str, rolls: list, states: list = None) -> int:
@@ -328,7 +460,7 @@ def record(enc, actor: str, kind: str, rolls: list, states: list = None) -> int:
         # log that already has receipts would leave the old records unverifiable
         # and the new ones chained to nothing, so the log simply stops growing
         # and says so.
-        if log_path(camp_dir).exists() and not key_path(camp_dir).exists():
+        if _has_receipts(camp_dir) and not _key_present(camp_dir):
             print(f"receipts: warning, the chain key for {camp_dir.name} is "
                   f"gone; the receipts cannot be extended and this roll is not "
                   f"recorded", file=sys.stderr)
@@ -338,7 +470,7 @@ def record(enc, actor: str, kind: str, rolls: list, states: list = None) -> int:
             print(f"receipts: warning, no chain key for {camp_dir.name}; "
                   f"rolls are not being recorded", file=sys.stderr)
             return 0
-        with _LOCK:
+        with _locked(camp_dir):
             seq, prev = _head(camp_dir)
             stamp = datetime.datetime.now(datetime.timezone.utc).isoformat(
                 timespec="seconds")
@@ -383,7 +515,6 @@ def verify(campaign_dir) -> dict:
                 "lines": lines + ["  No rolls have been recorded."]}
 
     raw = []
-    torn_at = None            # the seq an unreadable line sits in front of
     torn = 0
     try:
         text = path.read_text(encoding="utf-8")
@@ -391,7 +522,6 @@ def verify(campaign_dir) -> dict:
         return {"ok": False, "checked": 0, "first_bad": None,
                 "reason": f"the receipts file could not be read: {exc}",
                 "lines": lines + [f"  Could not read it: {exc}"]}
-    pending_torn = False
     for line in text.splitlines():
         if not line.strip():
             continue
@@ -400,19 +530,16 @@ def verify(campaign_dir) -> dict:
         except json.JSONDecodeError:
             rec = None
         if not isinstance(rec, dict):
-            # A half-written tail is the expected torn append and costs one
-            # line. Anywhere else it is a record that is gone or replaced,
-            # which is a break, not a note.
+            # Tolerated, not trusted: the chain below decides. If a real
+            # record was lost here, the next one will not continue from the
+            # last good one and that is reported as a break.
             torn += 1
-            pending_torn = True
             continue
-        if pending_torn and torn_at is None:
-            torn_at = rec.get("seq")
-        pending_torn = False
         raw.append(rec)
-    if torn and torn_at is None:
-        lines.append(f"  Note: {torn} unreadable line(s) at the end skipped "
-                     f"(a torn append costs a line, not the file).")
+    if torn:
+        lines.append(f"  Note: {torn} unreadable line(s) skipped (a torn append "
+                     f"costs a line, not the file). The chain is checked "
+                     f"across them, so nothing missing is hidden.")
 
     key = load_key(camp_dir, create=False)
     if not key:
@@ -433,11 +560,6 @@ def verify(campaign_dir) -> dict:
     for rec in raw:
         body = {k: v for k, v in rec.items() if k != "sig"}
         seq = rec.get("seq")
-        if expected_seq == torn_at:
-            first_bad, reason = expected_seq, (
-                f"the line in front of receipt {expected_seq} is not a receipt "
-                f"at all, so a record is missing or was replaced")
-            break
         if seq != expected_seq:
             first_bad, reason = expected_seq, (
                 f"the records run {expected_seq}, {seq}, ...: a line was "
@@ -460,7 +582,9 @@ def verify(campaign_dir) -> dict:
     if first_bad is None:
         lines += ["", f"  VERDICT: VERIFIED. All {len(raw)} receipts check out.",
                   "  Every line still carries the signature it was written with, so",
-                  "  no roll was edited, removed or reordered after the fact."]
+                  "  no roll in the file was edited, removed from the middle or",
+                  "  reordered. Cutting rolls off the END of the file cannot be",
+                  "  detected without an external anchor, so that is not claimed."]
         return {"ok": True, "checked": checked, "first_bad": None, "reason": "",
                 "lines": lines}
     said = reason[:1].upper() + reason[1:]
