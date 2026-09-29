@@ -85,6 +85,13 @@ def compile_map(spec: dict) -> dict:
             "labels": labels, "zones": spec.get("zones", []),
             "spawns": spec.get("spawns", []),
             "colors": {k: v.get("color", k) for k, v in custom.items()}}
+    # A map may carry artwork under the terrain, with the grid aligned to it in the
+    # image's own pixels. Both are display-only: the engine reads `rows` and never
+    # looks at them, so a map without an image behaves exactly as before.
+    image = spec.get("image")
+    if image:
+        meta["image"] = image
+        meta["grid_align"] = spec.get("grid", {})
     return {"grid": grid, "meta": meta}
 
 

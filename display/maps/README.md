@@ -37,7 +37,7 @@ A map is a grid of 5 ft squares. You paint it with rectangles, in order, over a 
 | `diagonals` | no | `"5"` (default, 2014 rule: every square costs 5 ft) or `"5-10-5"` (every second diagonal costs 10 ft) |
 | `info` | no | A short description for the display |
 | `base` | no | Terrain under everything, default `floor` |
-| `features` | no | Rectangles: `type`, `x`, `y`, `w` and `h` (both default 1), optional `label` |
+| `features` | no | Rectangles: `type`, `x`, `y`, `w` and `h` (both default 1), optional `label`. The map editor rewrites this list; see below |
 | `terrain` | no | Extra terrain types for this map (see below) |
 | `zones` | no | x positions of dashed zone lines (the Mage Tower pitch) |
 | `spawns` | no | Suggested token positions; `color` is a college (`quan`, `lore`, `pris`, `silv`, `with`), `danger` or `brass` |
@@ -55,6 +55,20 @@ A map is a grid of 5 ft squares. You paint it with rectangles, in order, over a 
 | `void` | impassable (a drop, a gap between roofs) | clear | none |
 
 A map-specific type in `terrain` takes `cost` (1 normal, 2 difficult, `null` impassable), `blocks_sight`, `cover` (0, 2 or 5) and `color` (which built-in terrain colour the display uses).
+
+## Painting a map in the browser
+
+With the display app running, `/maps/<name>/edit` paints terrain by clicking: pick a type, drag a rectangle, press Save. `/maps/<name>/features` does the writing. The engine is not involved: `grid.rows` changes only where you painted, and a map you did not paint on is left byte-identical.
+
+Saving **merges** rather than appends. Your strokes are replayed onto the map's squares and `features` is re-derived from the result as a set of *disjoint* rectangles, so painting water over a wall replaces the wall's rectangle instead of stacking a second one on top. A few consequences worth knowing before you edit a hand-written map:
+
+- **The file gets longer the first time.** A map written the human way (one big water rectangle, then reeds stamped over it) cannot be described by disjoint rectangles, so the cover has to describe the water *around* each reed. It is a one-off: the second save is the same size as the first, and further edits do not grow it.
+- **A `label` follows its region, not its rectangle.** A region broken into several rectangles keeps one label, re-attached to the first of them, so it can move by a square or two. No label is dropped or duplicated.
+- **Last rectangle wins, as everywhere else.** There is no undo history in the file: painting `floor` over a wall gives `floor`. Undo in the editor drops your stroke before you save; after a save, repaint what was underneath.
+- Squares left at the base terrain with no label get no rectangle at all, which is how you erase.
+- The previous file is kept as `<name>.json.bak`, and saving over a map that already has terrain asks you to confirm first.
+
+The merge is `scripts/tactics/mapeditor.py`; `tests/test_mapseditor.py` covers it, including the guarantee that re-saving any map in this folder does not move a single square.
 
 ## Checking a new map
 

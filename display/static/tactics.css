@@ -190,6 +190,20 @@ body.tx-min #tx-panel { max-height: 132px; overflow: hidden; }
 .tx-fog { fill: var(--tx-void); fill-opacity: .55; pointer-events: none; }
 .tx-fog-hatch { fill: url(#tx-fog-hatch); pointer-events: none; }
 .tx-fog-line { stroke: var(--tx-paper); stroke-opacity: .18; stroke-width: 1.5; }
+
+/* Map artwork. The image is stretched to the whole board (renderBoard sets
+   preserveAspectRatio=none), because the map's width and height were derived from
+   the image by dividing its pixels by the grid cell size, so the grid drawn on top
+   already lines up with the picture. */
+.tx-art { pointer-events: none; }
+
+/* Terrain over artwork: a translucent wash, so the terrain still reads (walls,
+   water, difficult ground) without hiding the map the GM paid for. Opaque fills
+   would make the image pointless. Keyed on data-t, which renderBoard sets. */
+.tx-terrain-over-art rect { fill-opacity: .55; }
+/* Terrain the GM must read at a glance stays solid even over art. */
+.tx-terrain-over-art rect[data-t="wall"],
+.tx-terrain-over-art rect[data-t="void"] { fill-opacity: .85; }
 .tx-nolos { fill: url(#tx-hatch); pointer-events: none; }
 .tx-hatch-line { stroke: var(--tx-ink); stroke-opacity: .45; stroke-width: 2.5; }
 .tx-cov2 { fill: var(--tx-brass); fill-opacity: .2; pointer-events: none; }
