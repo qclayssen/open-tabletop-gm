@@ -287,12 +287,34 @@ def main(argv: list[str] | None = None) -> int:
         print("  note: no image resizer found (looked for magick, convert, ffmpeg, "
               "sips) -- artwork is listed without thumbnails")
     if args.open:
-        import subprocess
-        try:
-            subprocess.run(["open", str(args.out)], check=False)
-        except OSError:                       # not macOS
-            pass
+        _open(args.out)
     return 0
+
+
+def _open(path: pathlib.Path) -> None:
+    """Show the page in a browser, on whatever this machine has.
+
+    `--open` that silently does nothing off macOS is worse than one that is
+    absent, so each platform's opener is tried and a failure is reported rather
+    than swallowed. The catalog is a static file, so printing the path is a
+    perfectly good fallback.
+    """
+    import shutil
+    import subprocess
+    target = str(path)
+    for argv in (["open", target],                      # macOS
+                 ["xdg-open", target],                  # most Linux desktops
+                 ["wslview", target],                   # WSL
+                 ["start", "", target]):                # Windows
+        if not shutil.which(argv[0]):
+            continue
+        try:
+            subprocess.run(argv, check=False, timeout=30,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return
+        except (OSError, subprocess.SubprocessError):
+            continue
+    print(f"no browser opener found; open it yourself: {target}")
 
 
 if __name__ == "__main__":
