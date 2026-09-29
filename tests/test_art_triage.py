@@ -14,6 +14,7 @@ anything.
 from __future__ import annotations
 
 import json
+import pathlib
 import struct
 import sys
 
@@ -40,6 +41,45 @@ def jpeg(w: int, h: int, tag: bytes = b"x") -> bytes:
 def png(w: int, h: int) -> bytes:
     ihdr = struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)
     return b"\x89PNG\r\n\x1a\n" + struct.pack(">I", len(ihdr)) + b"IHDR" + ihdr
+
+
+def make_jpeg(w: int, h: int) -> bytes:
+    """A JPEG that any real decoder can read.
+
+    Prefers an installed encoder so the bytes are genuinely valid, and falls back
+    to a hand-written baseline file when there is none. The fallback is enough for
+    sips and for the header walk, which is what the art_import tests need; the
+    catalog's own thumbnail step is guarded separately.
+    """
+    import shutil
+    import subprocess
+    import tempfile
+    for tool, argv in (("sips", ["sips", "-s", "format", "jpeg", "{src}", "--out", "{dest}"]),
+                       ("ffmpeg", ["ffmpeg", "-v", "error", "-y", "-i", "{src}",
+                                   "-q:v", "4", "{dest}"]),
+                       ("convert", ["convert", "{src}", "{dest}"])):
+        found = shutil.which(tool)
+        if not found:
+            continue
+        with tempfile.TemporaryDirectory() as tmp:
+            src = pathlib.Path(tmp) / "in.ppm"
+            dest = pathlib.Path(tmp) / "out.jpg"
+            # A PPM is trivial to write correctly and every one of these reads it.
+            header = f"P6\n{w} {h}\n255\n".encode()
+            px = bytearray()
+            for y in range(h):
+                for x in range(w):
+                    px += bytes([(x * 255) // max(w - 1, 1), (y * 255) // max(h - 1, 1), 128])
+            src.write_bytes(header + bytes(px))
+            args = [a.replace("{src}", str(src)).replace("{dest}", str(dest)) for a in argv]
+            try:
+                r = subprocess.run([found] + args[1:], capture_output=True,
+                                 timeout=60, check=False)
+            except (OSError, subprocess.SubprocessError):
+                continue
+            if r.returncode == 0 and dest.exists() and dest.stat().st_size > 0:
+                return dest.read_bytes()
+    return decodable_jpeg(w, h, tag=b"fixture")
 
 
 def decodable_jpeg(w: int, h: int, tag: bytes = b"x") -> bytes:
@@ -149,10 +189,13 @@ def artwork():
             "grid": {"cell_px": 100, "offset_x": 0, "offset_y": 0},
             "base": "floor", "features": [], "spawns": []}
     map_path.write_text(json.dumps(spec, indent=1) + "\n", encoding="utf-8")
-    # A real, decodable JPEG rather than a header stub: map_catalog downsizes
-    # with sips, and sips exits 0 without writing anything when it cannot decode
-    # the image, so a header-only fixture yields a catalog with no thumbnails.
-    img_path.write_bytes(decodable_jpeg(400, 300, tag=b"fixture"))
+    # A real, decodable JPEG rather than a header stub. map_catalog downsizes the
+    # artwork, and every resizer refuses a file it cannot decode -- sips exits 0
+    # without writing anything, ffmpeg exits 69 -- so a stub fixture would make the
+    # thumbnail assertions depend on the resizer's error handling rather than on
+    # the catalog. Written by a real encoder when one is available, so it decodes
+    # under ffmpeg and ImageMagick too, not only sips.
+    img_path.write_bytes(make_jpeg(400, 300))
     try:
         yield slug
     finally:
@@ -286,11 +329,46 @@ def test_only_imported_filters_to_maps_with_artwork(artwork):
 
 
 def test_catalog_writes_a_file(tmp_path, artwork):
+    """Writes a page with a card per map on any platform.
+
+    The thumbnails themselves depend on an image resizer being installed, and
+    sips alone is macOS-only -- so the earlier version of this test asserted
+    `data:image/jpeg` and failed on every Linux and Windows CI runner. The page is
+    the deliverable; thumbnails are a nicety that degrades to none.
+    """
     out = tmp_path / "CATALOG.html"
     assert map_catalog.main(["--out", str(out)]) == 0
     page = out.read_text(encoding="utf-8")
     assert "<figure" in page
-    assert "data:image/jpeg;base64," in page
+    assert "Artwork Fixture" in page
+    if map_catalog._resizer() is not None:
+        assert "data:image/jpeg;base64," in page
+    else:
+        # Said out loud rather than silently blank.
+        assert "No image resizer found" in page
+
+
+def test_no_resizer_degrades_instead_of_failing(tmp_path, artwork, monkeypatch):
+    """No resizer on this machine is a degraded catalog, not a broken tool. This
+    is the Linux and Windows path."""
+    monkeypatch.setattr(map_catalog, "_resizer", lambda: None)
+    assert map_catalog.downscale(artwork_path(), 100, tmp_path / "t.jpg") is None
+    entries = map_catalog.collect(only_imported=True)
+    assert entries, "maps with artwork should still be listed"
+    page = map_catalog.build_html(entries, tmp_path / "thumbs")
+    assert "<figure" in page
+    assert "No image resizer found" in page
+    assert "artwork present but not resized" in page
+
+
+def test_a_broken_resizer_is_reported_not_raised(tmp_path, artwork, monkeypatch):
+    """A resizer that exists but fails must not take the catalog down with it."""
+    monkeypatch.setattr(map_catalog, "_resizer", lambda: ("/nonexistent/tool", ["x"]))
+    assert map_catalog.downscale(artwork_path(), 100, tmp_path / "t.jpg") is None
+
+
+def artwork_path() -> pathlib.Path:
+    return art_import.MAPS_DIR / "images" / "_artwork_fixture.jpg"
 
 
 def test_catalog_says_so_when_artwork_is_missing():

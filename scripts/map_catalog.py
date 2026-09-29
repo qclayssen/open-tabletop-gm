@@ -49,15 +49,56 @@ MAX_IMAGE_BYTES = 4 * 1024 * 1024
 THUMB_WIDTH = 420
 
 
+# Image resizers, best first. None of these is a dependency of the engine, and a
+# contact sheet is a GM convenience, not a runtime path -- so the catalog is a
+# generated artefact and a missing resizer must degrade to "no thumbnail" rather
+# than fail. Windows is third because it is both cross-platform-wrapped and
+# inconsistent across installs; ffmpeg is a common third-party install, ImageMagick
+# a common package-manager one, and sips ships with every macOS.
+_RESIZERS = (
+    ("magick", ["magick", "{src}", "-resize", "{width}x", "-quality", "82", "{dest}"]),
+    ("convert", ["convert", "{src}", "-resize", "{width}x", "-quality", "82", "{dest}"]),
+    ("ffmpeg", ["ffmpeg", "-v", "error", "-y", "-i", "{src}", "-vf",
+                "scale=w='min({width},iw)':h=-2", "-q:v", "4", "{dest}"]),
+    ("sips", ["sips", "-Z", "{width}", "-s", "format", "jpeg", "{src}", "--out", "{dest}"]),
+)
+
+
+def _resizer() -> tuple[str, list[str]] | None:
+    """The first resizer actually present on this machine, or None."""
+    import shutil as _shutil
+    for name, argv in _RESIZERS:
+        found = _shutil.which(name)
+        if found:
+            return found, argv
+    return None
+
+
 def downscale(path: pathlib.Path, width: int, dest: pathlib.Path) -> pathlib.Path | None:
-    """A JPEG thumbnail via sips, which macOS ships. Pillow is not a dependency
-    of the engine and adding one to build a contact sheet would be silly."""
+    """A JPEG thumbnail, or None when this machine has no image resizer.
+
+    Pillow is not a dependency of the engine and adding one to build a contact
+    sheet would be silly, so this shells out -- which means the tool is
+    platform-dependent, and `sips` alone made the catalog fail outright on Linux
+    and Windows. Every failure mode here returns None instead of raising: a map
+    with no thumbnail still belongs in the catalog, and the page says which
+    artwork it could not render.
+    """
+    import subprocess
+    tool = _resizer()
+    if tool is None:
+        return None
+    found, argv = tool
+    argv = [a.replace("{src}", str(path)).replace("{dest}", str(dest))
+            .replace("{width}", str(width)) for a in argv]
     dest.parent.mkdir(parents=True, exist_ok=True)
-    result = __import__("subprocess").run(
-        ["/usr/bin/sips", "-Z", str(width), "-s", "format", "jpeg", str(path),
-         "--out", str(dest)],
-        capture_output=True)
-    if result.returncode != 0 or not dest.exists():
+    try:
+        result = subprocess.run([found] + argv[1:], capture_output=True,
+                                timeout=60, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0 or not dest.exists() or dest.stat().st_size == 0:
+        dest.unlink(missing_ok=True)
         return None
     return dest
 
@@ -106,7 +147,7 @@ def collect(only_imported: bool) -> list[dict]:
 
 
 def build_html(entries: list[dict], cache: pathlib.Path) -> str:
-    cards, missing, total_bytes = [], [], 0
+    cards, missing, no_resizer, total_bytes = [], [], [], 0
     for d in entries:
         if d.get("error"):
             missing.append(f"{d['name']}: {d['error']}")
@@ -126,6 +167,12 @@ def build_html(entries: list[dict], cache: pathlib.Path) -> str:
                 if thumb.stat().st_size <= MAX_IMAGE_BYTES:
                     full_html = (f'<a href="{html.escape(d["title"])}.jpg" '
                                  f'download="{html.escape(d["title"])}.jpg">full size</a>')
+            else:
+                # The picture is installed but this machine could not resize it.
+                # Saying "no artwork installed" here would be a lie that costs an
+                # hour of debugging, so it is named separately.
+                no_resizer.append(f"{d['name']}: artwork present but not resized "
+                                  f"(no image resizer found)")
 
         badge = ' <span class="credit">credited</span>' if d["has_credit"] else ""
         terrain = " ".join(f'<code>{html.escape(t)}</code>' for t in d["terrain"])
@@ -142,11 +189,19 @@ def build_html(entries: list[dict], cache: pathlib.Path) -> str:
       </figcaption>
     </figure>""")
 
+    notes = missing + no_resizer
+    tool = _resizer()
+    resizer_note = ("" if tool is not None else
+                    "<strong>No image resizer found on this machine</strong> "
+                    "(looked for magick, convert, ffmpeg, sips), so maps with "
+                    "artwork are listed without a thumbnail. Install one and "
+                    "re-run, or open the picture in "
+                    "<code>display/maps/images/</code> directly.")
     note = ""
-    if missing:
+    if notes:
         note = ("<details class='missing'><summary>"
-                f"{len(missing)} note(s)</summary><ul>"
-                + "".join(f"<li>{html.escape(m)}</li>" for m in missing)
+                f"{len(notes)} note(s)</summary><ul>"
+                + "".join(f"<li>{html.escape(m)}</li>" for m in notes)
                 + "</ul></details>")
 
     return f"""<!doctype html>
@@ -189,7 +244,8 @@ def build_html(entries: list[dict], cache: pathlib.Path) -> str:
 <h1>Battle map catalog</h1>
 <p class="sub">{len(cards)} map(s) available. Thumbnail payload {total_bytes / 1024:.0f} KB.
 Built by <code>scripts/map_catalog.py</code> from <code>display/maps/*.json</code> and
-the artwork in <code>display/maps/images/</code>. Nothing here is fetched.</p>
+the artwork in <code>display/maps/images/</code>. Nothing here is fetched.
+{resizer_note}</p>
 <div class="grid">{''.join(cards)}
 </div>
 {note}
@@ -226,8 +282,16 @@ def main(argv: list[str] | None = None) -> int:
     if with_art < len(entries):
         print(f"  {len(entries) - with_art} map(s) have no artwork installed -- "
               f"run scripts/art_import.py, see display/maps/README.md")
+    if with_art and _resizer() is None:
+        # Not an error: the page is still useful, and the page says so itself.
+        print("  note: no image resizer found (looked for magick, convert, ffmpeg, "
+              "sips) -- artwork is listed without thumbnails")
     if args.open:
-        __import__("subprocess").run(["open", str(args.out)])
+        import subprocess
+        try:
+            subprocess.run(["open", str(args.out)], check=False)
+        except OSError:                       # not macOS
+            pass
     return 0
 
 
