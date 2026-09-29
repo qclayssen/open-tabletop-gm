@@ -119,7 +119,7 @@ python3 scripts/tactics/play.py frogs        # two giant frogs: hard. Their bite
 Build your own from any map in `display/maps/` and any SRD monster:
 
 ```bash
-python3 scripts/tactics/play.py --map mage-tower --at B5 --monster "goblin@H4" --monster "goblin@H8"
+python3 scripts/tactics/play.py --map mage-tower --at U10 --monster "goblin@T10" --monster "goblin@U9"
 ```
 
 Other options: `--sheet path/to/YourCharacter.md` plays your own character sheet, `--seed N` replays the same enemy dice, `--auto-dice` rolls for you, `--no-color` for plain output. The exit code is 0 for a victory, 3 for a defeat, 4 for a draw (the fight passed round 30) and 5 if you quit.

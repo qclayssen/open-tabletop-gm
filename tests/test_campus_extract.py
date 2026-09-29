@@ -114,7 +114,7 @@ def test_battle_map_matches_engine(data, page_key, engine_name):
 def test_features_including_unlabelled_ones_are_all_captured(data):
     """Regression: the feature pattern once required a trailing label, which
     dropped every unnamed rectangle -- frog-pond came back with 2 of 9."""
-    expected = {"mage-tower": 9, "firejolt-rooftops": 17, "detention-bog": 11,
+    expected = {"mage-tower": 106, "firejolt-rooftops": 17, "detention-bog": 11,
                 "frog-pond": 9, "blank": 0}
     got = {b["map"]: len(b["features"]) for b in data["battle_maps"]}
     assert got == expected
@@ -134,7 +134,7 @@ def test_each_map_chunk_does_not_leak_into_the_next(data):
     last entry lacks, so every map inherited the next one's rectangles."""
     counts = {b["map"]: len(b["features"]) for b in data["battle_maps"]}
     assert counts["blank"] == 0, "the empty map must stay empty"
-    assert counts["mage-tower"] == 9, "stadium must not carry the cafe's features"
+    assert counts["mage-tower"] == 106, "stadium must not carry the cafe's features"
 
 
 def test_token_squares_are_valid(data):

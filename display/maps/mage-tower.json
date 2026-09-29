@@ -1,179 +1,857 @@
 {
  "name": "Mage Tower Stadium",
- "width": 30,
- "height": 12,
+ "width": 32,
+ "height": 41,
  "diagonals": "5",
- "info": "Five zones, left to right: Quandrix Tower, Quandrix Half, Midfield, Opponent Half, Opponent Tower. Each zone is 6 squares wide. Carry the mascot into your own tower zone to score. Spells are allowed; harming a player is a foul.",
- "base": "floor",
- "terrain": {
-  "tower": {
-   "cost": 1,
-   "blocks_sight": false,
-   "cover": 0,
-   "color": "feature"
-  }
+ "info": "The Mage Tower pitch, 160 by 205 feet. The inner octagon is in bounds, divided by the dashed line into the four sections of the game: 1 thick mud, which is difficult terrain and catches fire, 2 dry dirt, 3 a garden, 4 the pond. The planking is raised decking and gives half cover. The water ring around the octagon is the moat, and a creature in the moat is out of bounds. The terrace, the lawns and the stands beyond it are off the pitch but walkable; paint them out if you want the match contained. Towers A and B hold the mascots; the planked deck in front of each is where a creature wearing a Mage Tower Ring spends an action to restore temporary hit points. Carry an enemy mascot into your own tower to score. Halftime after 6 rounds, the match ends at 12 rounds or on 3 mascots, and harming a player is a foul.",
+ "image": "images/mage-tower.jpg",
+ "grid": {
+  "cell_px": 100,
+  "offset_x": 0,
+  "offset_y": 0
  },
+ "credit": "Strixhaven Student Life, Wizards of the Coast",
+ "source": "Mage Stadium, gridded and diagram variants",
+ "base": "floor",
  "features": [
   {
-   "type": "tower",
-   "x": 0,
-   "y": 0,
+   "type": "feature",
+   "x": 13,
+   "y": 3,
    "w": 6,
-   "h": 12,
-   "label": "Quandrix Tower"
+   "h": 3,
+   "label": "Tower A"
   },
   {
-   "type": "floor",
-   "x": 6,
-   "y": 0,
-   "w": 6,
-   "h": 12,
-   "label": "Quandrix Half"
-  },
-  {
-   "type": "floor",
+   "type": "water",
    "x": 12,
-   "y": 0,
+   "y": 5,
+   "w": 1,
+   "h": 2
+  },
+  {
+   "type": "water",
+   "x": 19,
+   "y": 5,
+   "w": 1,
+   "h": 2
+  },
+  {
+   "type": "water",
+   "x": 11,
+   "y": 6,
+   "w": 1,
+   "h": 2
+  },
+  {
+   "type": "feature",
+   "x": 13,
+   "y": 6,
    "w": 6,
-   "h": 12,
-   "label": "Midfield"
+   "h": 1,
+   "label": "Restore deck A"
+  },
+  {
+   "type": "water",
+   "x": 20,
+   "y": 6,
+   "w": 1,
+   "h": 2
+  },
+  {
+   "type": "difficult",
+   "x": 8,
+   "y": 7,
+   "w": 2,
+   "h": 1
+  },
+  {
+   "type": "water",
+   "x": 10,
+   "y": 7,
+   "w": 1,
+   "h": 2
+  },
+  {
+   "type": "difficult",
+   "x": 12,
+   "y": 7,
+   "w": 3,
+   "h": 3
+  },
+  {
+   "type": "feature",
+   "x": 15,
+   "y": 7,
+   "w": 4,
+   "h": 1
+  },
+  {
+   "type": "water",
+   "x": 21,
+   "y": 7,
+   "w": 1,
+   "h": 2
+  },
+  {
+   "type": "water",
+   "x": 9,
+   "y": 8,
+   "w": 1,
+   "h": 1
+  },
+  {
+   "type": "difficult",
+   "x": 11,
+   "y": 8,
+   "w": 1,
+   "h": 3
+  },
+  {
+   "type": "difficult",
+   "x": 15,
+   "y": 8,
+   "w": 1,
+   "h": 2
+  },
+  {
+   "type": "feature",
+   "x": 16,
+   "y": 8,
+   "w": 2,
+   "h": 8
+  },
+  {
+   "type": "feature",
+   "x": 19,
+   "y": 8,
+   "w": 1,
+   "h": 1
+  },
+  {
+   "type": "water",
+   "x": 22,
+   "y": 8,
+   "w": 1,
+   "h": 1
+  },
+  {
+   "type": "difficult",
+   "x": 10,
+   "y": 9,
+   "w": 1,
+   "h": 1
+  },
+  {
+   "type": "feature",
+   "x": 18,
+   "y": 9,
+   "w": 1,
+   "h": 1
+  },
+  {
+   "type": "floor",
+   "x": 20,
+   "y": 9,
+   "w": 1,
+   "h": 1,
+   "label": "2. Dry dirt"
+  },
+  {
+   "type": "difficult",
+   "x": 12,
+   "y": 10,
+   "w": 1,
+   "h": 3
+  },
+  {
+   "type": "difficult",
+   "x": 13,
+   "y": 10,
+   "w": 1,
+   "h": 1,
+   "label": "1. Thick mud"
+  },
+  {
+   "type": "difficult",
+   "x": 14,
+   "y": 10,
+   "w": 1,
+   "h": 6
+  },
+  {
+   "type": "feature",
+   "x": 15,
+   "y": 10,
+   "w": 1,
+   "h": 3
+  },
+  {
+   "type": "feature",
+   "x": 19,
+   "y": 10,
+   "w": 1,
+   "h": 3
+  },
+  {
+   "type": "difficult",
+   "x": 13,
+   "y": 11,
+   "w": 1,
+   "h": 5
+  },
+  {
+   "type": "water",
+   "x": 5,
+   "y": 12,
+   "w": 1,
+   "h": 18
+  },
+  {
+   "type": "water",
+   "x": 6,
+   "y": 12,
+   "w": 1,
+   "h": 1
+  },
+  {
+   "type": "feature",
+   "x": 18,
+   "y": 12,
+   "w": 1,
+   "h": 8
+  },
+  {
+   "type": "water",
+   "x": 25,
+   "y": 12,
+   "w": 2,
+   "h": 1
+  },
+  {
+   "type": "water",
+   "x": 4,
+   "y": 13,
+   "w": 1,
+   "h": 16
+  },
+  {
+   "type": "difficult",
+   "x": 15,
+   "y": 13,
+   "w": 1,
+   "h": 3
+  },
+  {
+   "type": "water",
+   "x": 26,
+   "y": 13,
+   "w": 2,
+   "h": 16
+  },
+  {
+   "type": "difficult",
+   "x": 6,
+   "y": 14,
+   "w": 3,
+   "h": 2
+  },
+  {
+   "type": "feature",
+   "x": 9,
+   "y": 14,
+   "w": 3,
+   "h": 1
+  },
+  {
+   "type": "difficult",
+   "x": 12,
+   "y": 14,
+   "w": 1,
+   "h": 1
+  },
+  {
+   "type": "feature",
+   "x": 19,
+   "y": 14,
+   "w": 1,
+   "h": 6
+  },
+  {
+   "type": "feature",
+   "x": 22,
+   "y": 14,
+   "w": 4,
+   "h": 1
+  },
+  {
+   "type": "difficult",
+   "x": 9,
+   "y": 15,
+   "w": 1,
+   "h": 3
+  },
+  {
+   "type": "feature",
+   "x": 10,
+   "y": 15,
+   "w": 3,
+   "h": 1
+  },
+  {
+   "type": "feature",
+   "x": 23,
+   "y": 15,
+   "w": 3,
+   "h": 1
+  },
+  {
+   "type": "water",
+   "x": 6,
+   "y": 16,
+   "w": 1,
+   "h": 1
+  },
+  {
+   "type": "difficult",
+   "x": 7,
+   "y": 16,
+   "w": 1,
+   "h": 5
+  },
+  {
+   "type": "difficult",
+   "x": 8,
+   "y": 16,
+   "w": 1,
+   "h": 2
+  },
+  {
+   "type": "difficult",
+   "x": 10,
+   "y": 16,
+   "w": 1,
+   "h": 2
+  },
+  {
+   "type": "feature",
+   "x": 11,
+   "y": 16,
+   "w": 6,
+   "h": 1
+  },
+  {
+   "type": "feature",
+   "x": 21,
+   "y": 16,
+   "w": 1,
+   "h": 8
+  },
+  {
+   "type": "feature",
+   "x": 25,
+   "y": 16,
+   "w": 1,
+   "h": 1
+  },
+  {
+   "type": "difficult",
+   "x": 6,
+   "y": 17,
+   "w": 1,
+   "h": 4
+  },
+  {
+   "type": "difficult",
+   "x": 11,
+   "y": 17,
+   "w": 1,
+   "h": 3
+  },
+  {
+   "type": "feature",
+   "x": 12,
+   "y": 17,
+   "w": 6,
+   "h": 1
+  },
+  {
+   "type": "feature",
+   "x": 22,
+   "y": 17,
+   "w": 2,
+   "h": 7
+  },
+  {
+   "type": "feature",
+   "x": 8,
+   "y": 18,
+   "w": 3,
+   "h": 6
+  },
+  {
+   "type": "difficult",
+   "x": 12,
+   "y": 18,
+   "w": 3,
+   "h": 3
+  },
+  {
+   "type": "feature",
+   "x": 15,
+   "y": 18,
+   "w": 3,
+   "h": 1
+  },
+  {
+   "type": "feature",
+   "x": 20,
+   "y": 18,
+   "w": 1,
+   "h": 1
+  },
+  {
+   "type": "feature",
+   "x": 25,
+   "y": 18,
+   "w": 1,
+   "h": 1
+  },
+  {
+   "type": "difficult",
+   "x": 15,
+   "y": 19,
+   "w": 1,
+   "h": 2
+  },
+  {
+   "type": "feature",
+   "x": 17,
+   "y": 19,
+   "w": 1,
+   "h": 2
+  },
+  {
+   "type": "water",
+   "x": 11,
+   "y": 20,
+   "w": 1,
+   "h": 1
+  },
+  {
+   "type": "feature",
+   "x": 16,
+   "y": 20,
+   "w": 1,
+   "h": 6
+  },
+  {
+   "type": "feature",
+   "x": 20,
+   "y": 20,
+   "w": 1,
+   "h": 1
+  },
+  {
+   "type": "feature",
+   "x": 15,
+   "y": 21,
+   "w": 1,
+   "h": 4
+  },
+  {
+   "type": "water",
+   "x": 18,
+   "y": 21,
+   "w": 3,
+   "h": 4
+  },
+  {
+   "type": "water",
+   "x": 24,
+   "y": 21,
+   "w": 2,
+   "h": 7
+  },
+  {
+   "type": "feature",
+   "x": 17,
+   "y": 22,
+   "w": 1,
+   "h": 5
+  },
+  {
+   "type": "feature",
+   "x": 14,
+   "y": 23,
+   "w": 1,
+   "h": 3
+  },
+  {
+   "type": "feature",
+   "x": 13,
+   "y": 24,
+   "w": 1,
+   "h": 4
+  },
+  {
+   "type": "water",
+   "x": 21,
+   "y": 24,
+   "w": 3,
+   "h": 5
+  },
+  {
+   "type": "floor",
+   "x": 9,
+   "y": 25,
+   "w": 1,
+   "h": 1,
+   "label": "3. Garden"
   },
   {
    "type": "floor",
    "x": 18,
-   "y": 0,
-   "w": 6,
-   "h": 12,
-   "label": "Opponent Half"
+   "y": 25,
+   "w": 1,
+   "h": 1,
+   "label": "4. Pond"
   },
   {
-   "type": "tower",
+   "type": "water",
+   "x": 19,
+   "y": 25,
+   "w": 2,
+   "h": 1
+  },
+  {
+   "type": "water",
+   "x": 6,
+   "y": 26,
+   "w": 1,
+   "h": 2
+  },
+  {
+   "type": "feature",
+   "x": 12,
+   "y": 26,
+   "w": 1,
+   "h": 2
+  },
+  {
+   "type": "feature",
+   "x": 18,
+   "y": 26,
+   "w": 1,
+   "h": 2
+  },
+  {
+   "type": "water",
+   "x": 20,
+   "y": 26,
+   "w": 1,
+   "h": 1
+  },
+  {
+   "type": "feature",
+   "x": 11,
+   "y": 27,
+   "w": 1,
+   "h": 1
+  },
+  {
+   "type": "water",
+   "x": 15,
+   "y": 27,
+   "w": 2,
+   "h": 1
+  },
+  {
+   "type": "feature",
+   "x": 19,
+   "y": 27,
+   "w": 1,
+   "h": 3
+  },
+  {
+   "type": "water",
+   "x": 16,
+   "y": 28,
+   "w": 2,
+   "h": 6
+  },
+  {
+   "type": "feature",
+   "x": 20,
+   "y": 28,
+   "w": 1,
+   "h": 2
+  },
+  {
+   "type": "water",
    "x": 24,
-   "y": 0,
+   "y": 28,
+   "w": 1,
+   "h": 1
+  },
+  {
+   "type": "water",
+   "x": 6,
+   "y": 29,
+   "w": 1,
+   "h": 2
+  },
+  {
+   "type": "water",
+   "x": 18,
+   "y": 29,
+   "w": 1,
+   "h": 5
+  },
+  {
+   "type": "feature",
+   "x": 21,
+   "y": 29,
+   "w": 1,
+   "h": 1
+  },
+  {
+   "type": "water",
+   "x": 22,
+   "y": 29,
+   "w": 2,
+   "h": 1
+  },
+  {
+   "type": "water",
+   "x": 25,
+   "y": 29,
+   "w": 2,
+   "h": 1
+  },
+  {
+   "type": "water",
+   "x": 7,
+   "y": 30,
+   "w": 1,
+   "h": 2
+  },
+  {
+   "type": "water",
+   "x": 19,
+   "y": 30,
+   "w": 4,
+   "h": 1
+  },
+  {
+   "type": "water",
+   "x": 24,
+   "y": 30,
+   "w": 2,
+   "h": 1
+  },
+  {
+   "type": "water",
+   "x": 8,
+   "y": 31,
+   "w": 1,
+   "h": 2
+  },
+  {
+   "type": "water",
+   "x": 19,
+   "y": 31,
+   "w": 3,
+   "h": 1
+  },
+  {
+   "type": "water",
+   "x": 23,
+   "y": 31,
+   "w": 2,
+   "h": 1
+  },
+  {
+   "type": "water",
+   "x": 9,
+   "y": 32,
+   "w": 1,
+   "h": 2
+  },
+  {
+   "type": "water",
+   "x": 19,
+   "y": 32,
+   "w": 2,
+   "h": 1
+  },
+  {
+   "type": "water",
+   "x": 22,
+   "y": 32,
+   "w": 2,
+   "h": 1
+  },
+  {
+   "type": "water",
+   "x": 10,
+   "y": 33,
+   "w": 1,
+   "h": 2
+  },
+  {
+   "type": "water",
+   "x": 19,
+   "y": 33,
+   "w": 1,
+   "h": 1
+  },
+  {
+   "type": "water",
+   "x": 21,
+   "y": 33,
+   "w": 2,
+   "h": 1
+  },
+  {
+   "type": "water",
+   "x": 11,
+   "y": 34,
+   "w": 1,
+   "h": 2
+  },
+  {
+   "type": "feature",
+   "x": 13,
+   "y": 34,
    "w": 6,
-   "h": 12,
-   "label": "Opponent Tower"
+   "h": 1,
+   "label": "Restore deck B"
   },
   {
-   "type": "wall",
-   "x": 2,
-   "y": 5,
+   "type": "water",
+   "x": 20,
+   "y": 34,
    "w": 2,
+   "h": 1
+  },
+  {
+   "type": "water",
+   "x": 12,
+   "y": 35,
+   "w": 1,
    "h": 2
   },
   {
-   "type": "wall",
-   "x": 26,
-   "y": 5,
+   "type": "feature",
+   "x": 13,
+   "y": 35,
+   "w": 6,
+   "h": 4,
+   "label": "Tower B"
+  },
+  {
+   "type": "water",
+   "x": 19,
+   "y": 35,
    "w": 2,
-   "h": 2
+   "h": 1
   },
   {
-   "type": "difficult",
-   "x": 13,
-   "y": 2,
-   "w": 4,
-   "h": 2,
-   "label": "Snarl eddy"
-  },
-  {
-   "type": "difficult",
-   "x": 13,
-   "y": 8,
-   "w": 4,
-   "h": 2
+   "type": "water",
+   "x": 19,
+   "y": 36,
+   "w": 1,
+   "h": 1
   }
  ],
  "zones": [
-  6,
-  12,
-  18,
-  24
+  16
  ],
  "spawns": [
   {
    "id": "K",
    "name": "Kairos",
    "color": "quan",
-   "x": 8,
-   "y": 5
+   "x": 17,
+   "y": 16
   },
   {
    "id": "M",
    "name": "Mabli",
    "color": "lore",
-   "x": 7,
-   "y": 8
+   "x": 20,
+   "y": 16
   },
   {
    "id": "J",
    "name": "Juno",
    "color": "with",
-   "x": 9,
-   "y": 3
+   "x": 20,
+   "y": 15
   },
   {
    "id": "Q1",
    "name": "Quandrix guard",
    "color": "quan",
-   "x": 4,
-   "y": 3
+   "x": 18,
+   "y": 10
   },
   {
    "id": "Q2",
    "name": "Quandrix guard",
    "color": "quan",
-   "x": 4,
-   "y": 8
+   "x": 20,
+   "y": 10
   },
   {
    "id": "m",
    "name": "Quandrix mascot",
    "color": "brass",
-   "x": 1,
-   "y": 6
+   "x": 15,
+   "y": 4
   },
   {
    "id": "T",
    "name": "Theodric",
    "color": "silv",
-   "x": 21,
-   "y": 6
+   "x": 17,
+   "y": 27
   },
   {
    "id": "S",
    "name": "Saffi",
    "color": "pris",
-   "x": 22,
-   "y": 3
+   "x": 20,
+   "y": 27
   },
   {
    "id": "R",
    "name": "Rennick",
    "color": "with",
-   "x": 22,
-   "y": 9
+   "x": 7,
+   "y": 27
   },
   {
    "id": "O1",
    "name": "Opponent guard",
    "color": "silv",
-   "x": 25,
-   "y": 3
+   "x": 23,
+   "y": 30
   },
   {
    "id": "O2",
    "name": "Opponent guard",
    "color": "silv",
-   "x": 25,
-   "y": 8
+   "x": 21,
+   "y": 32
   },
   {
    "id": "o",
    "name": "Opponent mascot",
    "color": "brass",
-   "x": 28,
-   "y": 6
+   "x": 15,
+   "y": 36
   }
  ]
 }

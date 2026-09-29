@@ -301,7 +301,7 @@ def test_catalog_measures_squares_from_the_row_strings():
     d = map_catalog.describe("frog-pond")
     assert d["width"] == 20 and d["height"] == 14
     d = map_catalog.describe("mage-tower")
-    assert d["width"] == 30 and d["height"] == 12
+    assert d["width"] == 32 and d["height"] == 41
 
 
 def test_catalog_renders_and_names_the_maps():

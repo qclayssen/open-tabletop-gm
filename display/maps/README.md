@@ -39,7 +39,7 @@ A map is a grid of 5 ft squares. You paint it with rectangles, in order, over a 
 | `base` | no | Terrain under everything, default `floor` |
 | `features` | no | Rectangles: `type`, `x`, `y`, `w` and `h` (both default 1), optional `label`. The map editor rewrites this list; see below |
 | `terrain` | no | Extra terrain types for this map (see below) |
-| `zones` | no | x positions of dashed zone lines (the Mage Tower pitch) |
+| `zones` | no | x positions of dashed vertical lines across the board (the Mage Tower halfway line) |
 | `spawns` | no | Suggested token positions; `color` is a college (`quan`, `lore`, `pris`, `silv`, `with`), `danger` or `brass` |
 
 ## Terrain types
@@ -78,7 +78,9 @@ python3 -c "import sys; sys.path.insert(0, 'scripts'); from tactics import maps;
 
 It prints the map as text (`.` floor, `#` wall, `,` difficult, `~` water, `^` hazard, `o` feature, `_` void), or a clear error naming the rectangle that is wrong. `python3 -m pytest tests/test_tactics_cli.py` also checks that every map in this folder loads.
 
-`training-yard.json` is the tutorial map (`scripts/tactics/play.py tutorial`, see `docs/TUTORIAL.md`). The other five maps are ported from the player-facing tabs of `display/static/reference/strixhaven_map_table.html`.
+`training-yard.json` is the tutorial map (`scripts/tactics/play.py tutorial`, see `docs/TUTORIAL.md`). The other five maps are ported from the player-facing tabs of `display/static/reference/strixhaven_map_table.html`, which is kept in step by `scripts/campus_extract.py --check`.
+
+`mage-tower.json` is the exception worth reading before you paint on it. Its terrain was derived from the Strixhaven Mage Stadium art rather than clicked out: the octagons, the two towers and the two halfway lines are the mapmaker's own, and the water and the planking are read off the picture. The ground inside the pitch is the four numbered sections of the game, so a square you repaint changes the section it is in. Only the moat is out of bounds in those rules, so the terrace, the lawns and the stands beyond it are left as ordinary ground and the map's own artwork carries them; paint them out if you want the match contained.
 
 ## Artwork
 

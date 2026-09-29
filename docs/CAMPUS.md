@@ -109,7 +109,7 @@ The page's five maps, and the engine file each was ported to. Squares are 5 ft; 
 
 | Page key | Engine map | Name | Size | Features | Tokens |
 |---|---|---|---|---|---|
-| `tower` | `mage-tower` | Mage Tower Stadium | 30×12 | 9 | 12 |
+| `tower` | `mage-tower` | Mage Tower Stadium | 32×41 | 106 | 12 |
 | `cafe` | `firejolt-rooftops` | Firejolt Café and Rooftops | 24×16 | 17 | 6 |
 | `bog` | `detention-bog` | Detention Bog | 24×18 | 11 | 6 |
 | `pond` | `frog-pond` | Frog Pond | 20×14 | 9 | 5 |
@@ -117,36 +117,133 @@ The page's five maps, and the engine file each was ported to. Squares are 5 ft; 
 
 ### Mage Tower Stadium — `mage-tower.json`
 
-30×12 squares (150×60 ft). Five zones, left to right: Quandrix Tower, Quandrix Half, Midfield, Opponent Half, Opponent Tower. Each zone is 6 squares wide. Carry the mascot into your own tower zone to score. Spells are allowed; harming a player is a foul.
+32×41 squares (160×205 ft). The Mage Tower pitch, 160 by 205 feet. The inner octagon is in bounds, divided by the dashed line into the four sections of the game: 1 thick mud, which is difficult terrain and catches fire, 2 dry dirt, 3 a garden, 4 the pond. The planking is raised decking and gives half cover. The water ring around the octagon is the moat, and a creature in the moat is out of bounds. The terrace, the lawns and the stands beyond it are off the pitch but walkable; paint them out if you want the match contained. Towers A and B hold the mascots; the planked deck in front of each is where a creature wearing a Mage Tower Ring spends an action to restore temporary hit points. Carry an enemy mascot into your own tower to score. Halftime after 6 rounds, the match ends at 12 rounds or on 3 mascots, and harming a player is a foul.
 
-Zone lines at x = 6, 12, 18, 24.
+Zone lines at x = 16.
 
 | Type | x | y | w | h | Label |
 |---|---|---|---|---|---|
-| Feature / cover | 0 | 0 | 6 | 12 | Quandrix Tower |
-| Floor | 6 | 0 | 6 | 12 | Quandrix Half |
-| Floor | 12 | 0 | 6 | 12 | Midfield |
-| Floor | 18 | 0 | 6 | 12 | Opponent Half |
-| Feature / cover | 24 | 0 | 6 | 12 | Opponent Tower |
-| Wall / blocking | 2 | 5 | 2 | 2 |  |
-| Wall / blocking | 26 | 5 | 2 | 2 |  |
-| Difficult terrain | 13 | 2 | 4 | 2 | Snarl eddy |
-| Difficult terrain | 13 | 8 | 4 | 2 |  |
+| Feature / cover | 13 | 3 | 6 | 3 | Tower A |
+| Water | 12 | 5 | 1 | 2 |  |
+| Water | 19 | 5 | 1 | 2 |  |
+| Water | 11 | 6 | 1 | 2 |  |
+| Feature / cover | 13 | 6 | 6 | 1 | Restore deck A |
+| Water | 20 | 6 | 1 | 2 |  |
+| Difficult terrain | 8 | 7 | 2 | 1 |  |
+| Water | 10 | 7 | 1 | 2 |  |
+| Difficult terrain | 12 | 7 | 3 | 3 |  |
+| Feature / cover | 15 | 7 | 4 | 1 |  |
+| Water | 21 | 7 | 1 | 2 |  |
+| Water | 9 | 8 | 1 | 1 |  |
+| Difficult terrain | 11 | 8 | 1 | 3 |  |
+| Difficult terrain | 15 | 8 | 1 | 2 |  |
+| Feature / cover | 16 | 8 | 2 | 8 |  |
+| Feature / cover | 19 | 8 | 1 | 1 |  |
+| Water | 22 | 8 | 1 | 1 |  |
+| Difficult terrain | 10 | 9 | 1 | 1 |  |
+| Feature / cover | 18 | 9 | 1 | 1 |  |
+| Floor | 20 | 9 | 1 | 1 | 2. Dry dirt |
+| Difficult terrain | 12 | 10 | 1 | 3 |  |
+| Difficult terrain | 13 | 10 | 1 | 1 | 1. Thick mud |
+| Difficult terrain | 14 | 10 | 1 | 6 |  |
+| Feature / cover | 15 | 10 | 1 | 3 |  |
+| Feature / cover | 19 | 10 | 1 | 3 |  |
+| Difficult terrain | 13 | 11 | 1 | 5 |  |
+| Water | 5 | 12 | 1 | 18 |  |
+| Water | 6 | 12 | 1 | 1 |  |
+| Feature / cover | 18 | 12 | 1 | 8 |  |
+| Water | 25 | 12 | 2 | 1 |  |
+| Water | 4 | 13 | 1 | 16 |  |
+| Difficult terrain | 15 | 13 | 1 | 3 |  |
+| Water | 26 | 13 | 2 | 16 |  |
+| Difficult terrain | 6 | 14 | 3 | 2 |  |
+| Feature / cover | 9 | 14 | 3 | 1 |  |
+| Difficult terrain | 12 | 14 | 1 | 1 |  |
+| Feature / cover | 19 | 14 | 1 | 6 |  |
+| Feature / cover | 22 | 14 | 4 | 1 |  |
+| Difficult terrain | 9 | 15 | 1 | 3 |  |
+| Feature / cover | 10 | 15 | 3 | 1 |  |
+| Feature / cover | 23 | 15 | 3 | 1 |  |
+| Water | 6 | 16 | 1 | 1 |  |
+| Difficult terrain | 7 | 16 | 1 | 5 |  |
+| Difficult terrain | 8 | 16 | 1 | 2 |  |
+| Difficult terrain | 10 | 16 | 1 | 2 |  |
+| Feature / cover | 11 | 16 | 6 | 1 |  |
+| Feature / cover | 21 | 16 | 1 | 8 |  |
+| Feature / cover | 25 | 16 | 1 | 1 |  |
+| Difficult terrain | 6 | 17 | 1 | 4 |  |
+| Difficult terrain | 11 | 17 | 1 | 3 |  |
+| Feature / cover | 12 | 17 | 6 | 1 |  |
+| Feature / cover | 22 | 17 | 2 | 7 |  |
+| Feature / cover | 8 | 18 | 3 | 6 |  |
+| Difficult terrain | 12 | 18 | 3 | 3 |  |
+| Feature / cover | 15 | 18 | 3 | 1 |  |
+| Feature / cover | 20 | 18 | 1 | 1 |  |
+| Feature / cover | 25 | 18 | 1 | 1 |  |
+| Difficult terrain | 15 | 19 | 1 | 2 |  |
+| Feature / cover | 17 | 19 | 1 | 2 |  |
+| Water | 11 | 20 | 1 | 1 |  |
+| Feature / cover | 16 | 20 | 1 | 6 |  |
+| Feature / cover | 20 | 20 | 1 | 1 |  |
+| Feature / cover | 15 | 21 | 1 | 4 |  |
+| Water | 18 | 21 | 3 | 4 |  |
+| Water | 24 | 21 | 2 | 7 |  |
+| Feature / cover | 17 | 22 | 1 | 5 |  |
+| Feature / cover | 14 | 23 | 1 | 3 |  |
+| Feature / cover | 13 | 24 | 1 | 4 |  |
+| Water | 21 | 24 | 3 | 5 |  |
+| Floor | 9 | 25 | 1 | 1 | 3. Garden |
+| Floor | 18 | 25 | 1 | 1 | 4. Pond |
+| Water | 19 | 25 | 2 | 1 |  |
+| Water | 6 | 26 | 1 | 2 |  |
+| Feature / cover | 12 | 26 | 1 | 2 |  |
+| Feature / cover | 18 | 26 | 1 | 2 |  |
+| Water | 20 | 26 | 1 | 1 |  |
+| Feature / cover | 11 | 27 | 1 | 1 |  |
+| Water | 15 | 27 | 2 | 1 |  |
+| Feature / cover | 19 | 27 | 1 | 3 |  |
+| Water | 16 | 28 | 2 | 6 |  |
+| Feature / cover | 20 | 28 | 1 | 2 |  |
+| Water | 24 | 28 | 1 | 1 |  |
+| Water | 6 | 29 | 1 | 2 |  |
+| Water | 18 | 29 | 1 | 5 |  |
+| Feature / cover | 21 | 29 | 1 | 1 |  |
+| Water | 22 | 29 | 2 | 1 |  |
+| Water | 25 | 29 | 2 | 1 |  |
+| Water | 7 | 30 | 1 | 2 |  |
+| Water | 19 | 30 | 4 | 1 |  |
+| Water | 24 | 30 | 2 | 1 |  |
+| Water | 8 | 31 | 1 | 2 |  |
+| Water | 19 | 31 | 3 | 1 |  |
+| Water | 23 | 31 | 2 | 1 |  |
+| Water | 9 | 32 | 1 | 2 |  |
+| Water | 19 | 32 | 2 | 1 |  |
+| Water | 22 | 32 | 2 | 1 |  |
+| Water | 10 | 33 | 1 | 2 |  |
+| Water | 19 | 33 | 1 | 1 |  |
+| Water | 21 | 33 | 2 | 1 |  |
+| Water | 11 | 34 | 1 | 2 |  |
+| Feature / cover | 13 | 34 | 6 | 1 | Restore deck B |
+| Water | 20 | 34 | 2 | 1 |  |
+| Water | 12 | 35 | 1 | 2 |  |
+| Feature / cover | 13 | 35 | 6 | 4 | Tower B |
+| Water | 19 | 35 | 2 | 1 |  |
+| Water | 19 | 36 | 1 | 1 |  |
 
 | Token | Name | Side | Square |
 |---|---|---|---|
-| `K` | Kairos | Ally (teal) | `I6` |
-| `M` | Mabli | Lorehold | `H9` |
-| `J` | Juno | Witherbloom | `J4` |
-| `Q1` | Quandrix guard | Ally (teal) | `E4` |
-| `Q2` | Quandrix guard | Ally (teal) | `E9` |
-| `m` | Quandrix mascot | Object | `B7` |
-| `T` | Theodric | Silverquill | `V7` |
-| `S` | Saffi | Prismari | `W4` |
-| `R` | Rennick | Witherbloom | `W10` |
-| `O1` | Opponent guard | Silverquill | `Z4` |
-| `O2` | Opponent guard | Silverquill | `Z9` |
-| `o` | Opponent mascot | Object | `]7` |
+| `K` | Kairos | Ally (teal) | `R17` |
+| `M` | Mabli | Lorehold | `U17` |
+| `J` | Juno | Witherbloom | `U16` |
+| `Q1` | Quandrix guard | Ally (teal) | `S11` |
+| `Q2` | Quandrix guard | Ally (teal) | `U11` |
+| `m` | Quandrix mascot | Object | `P5` |
+| `T` | Theodric | Silverquill | `R28` |
+| `S` | Saffi | Prismari | `U28` |
+| `R` | Rennick | Witherbloom | `H28` |
+| `O1` | Opponent guard | Silverquill | `X31` |
+| `O2` | Opponent guard | Silverquill | `V33` |
+| `o` | Opponent mascot | Object | `P37` |
 
 ### Firejolt Café and Rooftops — `firejolt-rooftops.json`
 
