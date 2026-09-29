@@ -241,3 +241,109 @@ def test_the_odds_of_a_creature_the_players_can_see_are_kept():
                                         "about": "goblin-1", "advantage": "normal"}}]})
     out = sight.redact_log(enc, enc.log, sight.fog(enc))
     assert out[0]["rolls"][0]["odds"]["percent"] == 60
+
+
+# ─── the odds, through the real engine rather than a hand-built entry ───────
+#
+# The two tests above append a log entry by hand, which is right for pinning
+# redact_log but leaves the interesting path untested: a roll the ENGINE made,
+# for a creature the players genuinely cannot see, arriving in the snapshot the
+# display is actually sent. That path is where a chance would leak, and it is
+# the one that was open when RI2's display half shipped.
+#
+# Finding the scenario took some care, which is itself worth recording. A wall
+# does not produce it: the engine refuses an attack through a wall ("Kairos has
+# no line of sight to Goblin"), so nothing is ever logged to redact. A hidden
+# creature does, but ATTACKING reveals it -- the scimitar entry ends "Goblin is
+# no longer hidden", so by the time the snapshot is taken the creature is
+# visible and correctly not redacted. The window is the turn itself: a hidden
+# creature acting while unseen_turn is set, before it has given itself away.
+#
+# That last part is the trap for anyone extending this. The obvious test --
+# have the hidden goblin attack -- passes while testing nothing, because the
+# attack reveals the goblin and the redaction never engages.
+
+def _hidden_creature_acting():
+    """A goblin with `hidden`, whose turn it is, and the snapshot for it."""
+    from tests.tactics_fixtures import ScriptedDice
+    from tactics import engine, roller
+    k, g = kairos(pos=(0, 0)), goblin("goblin-1", (1, 0))
+    enc = start(encounter([k, g], rows=ROWS), ["kairos", "goblin-1"])
+    enc.meta["fog"] = "hide"
+    g.conditions.append("hidden")
+    engine.end_turn(enc, roller.Roller(rng=ScriptedDice()))
+    return enc
+
+
+def test_a_hidden_creature_acting_is_an_unseen_turn_with_nothing_drawn():
+    enc = _hidden_creature_acting()
+    snap = sync.snapshot(enc)
+    assert snap["unseen_turn"] is True
+    assert "goblin-1" not in [t["id"] for t in snap["tokens"]]
+    assert "goblin-1" not in [t.get("actor") for t in snap["log"]]
+
+
+def test_a_roll_the_engine_made_for_a_hidden_creature_is_redacted_whole():
+    """The real path: rules.saving_throw() fills Roll.odds in, the engine logs
+    it, and the display must receive none of it -- not the faces, and not the
+    chance, which is a function of a DC the players were never told."""
+    from tactics import rules as rules_mod
+    enc = _hidden_creature_acting()
+    R = rules_mod.load("dnd5e")
+    from tests.tactics_fixtures import ScriptedDice
+    from tactics import roller
+    r = roller.Roller(rng=ScriptedDice(9))
+    R.saving_throw(enc.tokens["kairos"], "dex", 15, r, False)
+    # The engine DID compute a chance, and it is a real one.
+    assert r.log[0].odds == {"percent": 60, "label": "to fail the save",
+                             "about": "kairos", "advantage": "normal"}
+    enc.log.append({"round": enc.round, "actor": "goblin-1", "kind": "save",
+                    "text": "Goblin's burning hands: Kairos DEX save DC 15.",
+                    "rolls": [x.to_dict() for x in r.log]})
+
+    entry = sync.snapshot(enc)["log"][-1]
+    assert entry["text"].startswith("An unseen creature"), entry["text"]
+    # Everything about the roll is gone, which is the whole point: an odds dict
+    # surviving here would hand over the DC the entry just described.
+    assert entry["rolls"] == [], f"the display was sent {entry['rolls']}"
+    assert "odds" not in str(entry)
+
+
+def test_the_odds_display_shows_nothing_for_a_redacted_entry():
+    """The last hop, and the one this file cannot see: the display's own
+    formatter, run over the real snapshot entry. Empty rolls in, no line out --
+    so a redacted entry is silent in the log and the toast rather than showing
+    a bare percent.
+
+    Skipped without node, like the other pure-helper tests."""
+    import json as _json
+    import pathlib as _pathlib
+    import re as _re
+    import shutil as _shutil
+    import subprocess as _subprocess
+    node = _shutil.which("node")
+    if not node:
+        return
+    enc = _hidden_creature_acting()
+    from tactics import roller, rules as rules_mod
+    from tests.tactics_fixtures import ScriptedDice
+    R = rules_mod.load("dnd5e")
+    r = roller.Roller(rng=ScriptedDice(9))
+    R.saving_throw(enc.tokens["kairos"], "dex", 15, r, False)
+    enc.log.append({"round": enc.round, "actor": "goblin-1", "kind": "save",
+                    "text": "Goblin's burning hands: Kairos DEX save DC 15.",
+                    "rolls": [x.to_dict() for x in r.log]})
+    entry = sync.snapshot(enc)["log"][-1]
+
+    js = (_pathlib.Path(__file__).resolve().parent.parent
+          / "display" / "static" / "tactics.js").read_text(encoding="utf-8")
+    pure = _re.search(r"/\* Pure helpers:.*?\*/(.*?)/\* end pure helpers \*/", js, _re.S)
+    assert pure, "tactics.js no longer has its marked pure-helper block"
+    program = ("const out=(()=>{" + pure.group(1) +
+               "\nreturn {line: entryOdds(" + _json.dumps(entry) + ")};})();"
+               "process.stdout.write(JSON.stringify(out));")
+    res = _subprocess.run([node, "-"], input=program.encode("utf-8"),
+                          capture_output=True, timeout=30)
+    assert res.returncode == 0, res.stderr.decode("utf-8", "replace")
+    assert _json.loads(res.stdout.decode("utf-8"))["line"] == "", \
+        "a redacted entry still produced an odds line"
