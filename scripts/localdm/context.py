@@ -262,6 +262,23 @@ def skill_bonus(camp_dir, skill: str):
     return None
 
 
+def sheet_skills(camp_dir):
+    """The skill names on the first sheet's skills table.
+
+    Only used to name a fabricated skill back to the DM, so order does not matter and
+    a sheet with no skills table simply yields nothing.
+    """
+    sheet = first_sheet_path(camp_dir)
+    if sheet is None:
+        return []
+    try:
+        text = sheet.read_text(encoding="utf-8")
+    except OSError:
+        return []
+    return [m.group(1).strip() for m in
+            re.finditer(r"^\|\s*([A-Za-z][A-Za-z ]*?)\s*\|[^|]*\|\s*[+-]?\d+\s*\|", text, re.M)]
+
+
 def council_setting(state_md: str) -> str:
     m = _COUNCIL.search(state_md or "")
     return "off" if m and m.group(1).lower() == "off" else "auto"

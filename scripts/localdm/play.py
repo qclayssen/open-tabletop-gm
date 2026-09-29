@@ -73,6 +73,24 @@ NO_FIGHT = ("(engine) There is no fight running, so there is nothing to attack. 
             "with /c start <map>, or say it in the fiction and let the scene play out.")
 NARRATE = ("Narrate what the Engine section says just happened, in 1 to 4 sentences. "
            "Then the JSON line with null for both fields.")
+# The ordinary player turn used to be sent with no task at all, so context.build_messages
+# emitted no "## Your task" block at all (`if task:` in build_messages). The user message
+# was then just story-so-far, the player's line and the recent turns, which never poses the
+# question "is this outcome uncertain?". dm.md mandates a check for every uncertain action
+# and was carrying that rule alone, ~40 lines into a 100-line system prompt. The model was
+# never asked, so it never decided to roll: a full playtest transcript had zero "check"
+# fields, and under a natural 1 the outcome came out better than under a natural 20. That is
+# the whole "the die is decorative" finding, and the JSON example is not the lever -- the
+# arbiter tested it in both directions and found the model formats a well-formed line with
+# check simply absent. Formatting was never the problem. Not asking was.
+PLAYER_TURN = ("First decide the outcome. If what the player is attempting has an uncertain "
+               "outcome (search, sneak, persuade, deceive, read someone, climb, notice, "
+               "recall lore, track, anything that might not work), do not decide it: narrate "
+               "only the character beginning the attempt, revealing nothing the roll "
+               'decides, and end with the check: {"check": "<Skill from the sheet> <DC>"}. '
+               "Use DC 10 (easy), 13 (moderate) or 16 (hard). If the outcome is not "
+               "uncertain, set check to null and narrate what happens instead. Then 2 to 5 "
+               "sentences of narration, and the JSON line with null for every other field.")
 CHECK_OK = ("Narrate what the check found in 1 to 4 sentences. Do not mention the number "
             "or the DC. Then the JSON line with null for every field.")
 CHECK_FAIL = ("Narrate this failure in 1 to 4 sentences, and make the world move. Let the "
@@ -675,6 +693,15 @@ class Session:
         m = re.match(r"\s*([A-Za-z ]+?)\s*(?:DC\s*)?(\d+)?\s*$", spec)
         skill, dc = (m.group(1), int(m.group(2) or 12)) if m else (spec, 12)
         found = context.skill_bonus(self.camp_dir, skill)
+        if found is None and context.first_sheet_path(self.camp_dir) is not None:
+            # The sheet exists and does not list this skill. Rolling it anyway made a
+            # fabrication into a real die result: the player was told they rolled a
+            # Swim check at +0, a roll no character has a stake in and no bonus against.
+            # Naming the sheet's skills back is cheaper than silently substituting one,
+            # and it keeps the invented-skill class visible instead of laundering it.
+            listed = ", ".join(context.sheet_skills(self.camp_dir) or ["none listed"]) or "none listed"
+            return [f"(engine) {skill.title()} is not a skill on this sheet, so nothing was "
+                    f"rolled. Skills on the sheet: {listed}."]
         who, skill, bonus = found or ("", skill.title(), 0)
         total = None
         if self.display is not None and self.display.registered:
@@ -881,7 +908,7 @@ class Session:
             snap = self.bridge.snapshot()
             return self._engine(resolve_names(args, snap["tokens"]) if snap else args)
         self.turn += 1
-        r = self._dm(player=line, engine=engine, notes=notes)
+        r = self._dm(player=line, engine=engine, notes=notes, task=PLAYER_TURN)
         # The DM may ask a smarter advisor for help on any turn, and is never
         # throttled out of it: this used to be limited to one ask every three turns,
         # which meant the model escalated into a void and narrated anyway. Repeats
@@ -890,7 +917,7 @@ class Session:
             helped = self._help(r.escalate)
             if helped:
                 notes = _join(notes, helped)
-                r = self._dm(player=line, engine=engine, notes=notes)
+                r = self._dm(player=line, engine=engine, notes=notes, task=PLAYER_TURN)
         self.memory.add("player", line)
         out = self._notes_out(notes)
         # N5: this beat is the one *before* a roll when r.check is set, so it must

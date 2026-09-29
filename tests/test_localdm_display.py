@@ -144,8 +144,12 @@ ADVICE = "SECRET-ADVICE: the dean is the culprit."
 def responder(body):
     if body["model"] == "dm-advisor":
         return ADVICE
+    # Match the player's own line wherever it sits in the user message. It used to
+    # key on the last line because nothing followed "## Player now"; the turn now
+    # ends with a "## Your task" block asking about checks, so the tail is no longer
+    # the input.
     last = body["messages"][-1]["content"]
-    if "BREAK" in last.splitlines()[-1]:
+    if "BREAK" in last:
         raise llm.LLMError("cannot reach http://ollama: Connection refused")
     return "<think>hidden reasoning here</think>" + NARRATION + NULLS
 
