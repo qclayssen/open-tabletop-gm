@@ -853,5 +853,10 @@
    "x": 15,
    "y": 36
   }
- ]
+ ],
+ "token_art": {
+  "K": "atlas-vtt/assets/XW4tQg9_1790718416294_uz4mul.webp",
+  "Q1": "atlas-vtt/assets/XW4tQg9_1790718416294_uz4mul.webp",
+  "Q2": "atlas-vtt/assets/XW4tQg9_1790718416294_uz4mul.webp"
+ }
 }

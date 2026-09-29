@@ -5,6 +5,10 @@ display/text_log.json
 display/session_tail.json
 display/app.log
 display/app.pid
+# The display can run on any port, and the pid file is named for it. Listing
+# ports one at a time (app-5001.pid) meant a server on the next port left an
+# untracked file that `git add -A` would happily commit. Glob it.
+display/app-*.pid
 display/cert.pem
 display/key.pem
 display/.campaign
@@ -20,7 +24,6 @@ display/player_input.json
 # GM-watcher runtime artefacts (B12: these were untracked and accumulating)
 display/.gm-watch.log
 display/.gm-watch.pid
-display/app-5001.pid
 display/.input_queue.taken
 
 # Battle map artwork (third-party, 5-13MB each). The map JSONs in
