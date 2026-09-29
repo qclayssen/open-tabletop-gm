@@ -51,7 +51,7 @@ import re
 TOKENS_DIR = None  # set below, once pathlib is available and __file__ resolves
 
 CREDIT = "hearden"
-SOURCE = "Strixhaven Tokens (made by hearden) -- hearden, r/StrixhavenDMs"
+SOURCE = "Strixhaven Tokens, r/StrixhavenDMs"
 
 # College folder -> the `color` value a map's spawns use for that college, from
 # display/maps/README.md. Not used for rendering: the colour comes from the
