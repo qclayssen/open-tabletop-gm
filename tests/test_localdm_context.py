@@ -21,14 +21,22 @@ STATE = """# Campaign: demo
 
 ## World State
 - **Season:** spring
+- **Threat arc stage:** 2 - Pressure
 
 ## Live State Flags
 **NPC dispositions**:
 - Mira: grateful
 
+## Faction Moves
+- The Ninefold moved against Frog Pond.
+
 ## Session Flags
 roll_mode: players
 council: off
+
+## Campaign Arc
+steering_notes: >
+  The Ninefold has to come for her in Act 2.
 
 ## GM Notes (hidden from players)
 The frogs serve the hag.
@@ -40,11 +48,67 @@ def test_the_digest_keeps_only_the_hot_sections_and_drops_helper_text():
     assert "### Current Situation" in d and "Frog Pond" in d
     assert "Mira's brother" in d and "Mira: grateful" in d
     assert "**NPC dispositions**:" in d
-    assert "Soft facts" not in d and "spring" not in d and "hag" not in d
+    assert "Soft facts" not in d and "hag" not in d
+
+
+def test_the_dm_is_told_what_the_world_did_while_the_party_was_busy():
+    """World State and Faction Moves used to be dropped, so the off-screen faction
+    clocks were computed and never reached the DM."""
+    d = context.state_digest(STATE)
+    assert "### World State" in d and "Pressure" in d
+    assert "### Faction Moves" in d and "moved against Frog Pond" in d
+
+
+def test_the_digest_never_hands_the_dm_the_arc_or_the_session_flags():
+    """Campaign Arc carries steering_notes and outstanding_beats: handing the DM the
+    whole arc is how NPCs end up voicing the mystery early. Session Flags is the
+    operator's, not the DM's."""
+    d = context.state_digest(STATE)
+    assert "Act 2" not in d and "Campaign Arc" not in d
+    assert "roll_mode" not in d and "council: off" not in d
+
+
+def test_an_unfilled_section_costs_the_prompt_nothing():
+    """A fresh campaign is a blank template. Without this the DM was briefed that the
+    in-world date was "<Day, Month, Year - canonical source; keep in sync above>"."""
+    template = (ROOT / "templates" / "state.md").read_text(encoding="utf-8")
+    d = context.state_digest(template)
+    assert "<" not in d
+    assert "canonical source" not in d
+
+
+def test_a_filled_line_still_survives_the_template_test():
+    d = context.state_digest("## World State\n- **Season:** winter\n")
+    assert "winter" in d
+    assert context.state_digest("## World State\n- **Season:**\n") == ""
 
 
 def test_the_digest_respects_its_limit():
-    assert len(context.state_digest(STATE, limit=40)) == 40
+    assert len(context.state_digest(STATE, limit=40)) <= 40
+
+
+def test_a_truncated_digest_says_it_was_truncated():
+    """A bare [:limit] cut mid-line and said nothing, so a state.md that outgrew the
+    budget lost its tail invisibly."""
+    big = "## Open Threads & Rumours\n" + "\n".join(f"- rumour {i}" for i in range(400))
+    d = context.state_digest(big, limit=600)
+    assert "[truncated" in d
+    assert len(d) <= 600
+
+
+def test_a_digest_that_fits_is_not_marked():
+    assert "[truncated" not in context.state_digest(STATE)
+
+
+def test_the_faction_log_the_engine_writes_reaches_the_dm(tmp_path):
+    """world.py writes faction moves to faction_log.md; it used to be in neither
+    NOTE_FILES nor the digest, so the clocks were computed and thrown away."""
+    (tmp_path / "faction_log.md").write_text(
+        "## 2026-09-29 12:00:00 (GM-only)\n"
+        "The Ninefold moved against Frog Pond: 2/6 -> 3/6 (rain).\n",
+        encoding="utf-8")
+    d = context.notes_digest(tmp_path)
+    assert "Ninefold moved against Frog Pond" in d
 
 
 def test_council_setting():
