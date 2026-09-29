@@ -60,11 +60,24 @@ SUPPORTED = {"square"}
 
 
 def load_scene(path: pathlib.Path) -> dict:
+    """Read a `.atlasmap` and return the MapFile it holds.
+
+    Atlas persists through zustand's `persist` middleware, so what is on disk is
+    the storage envelope `{state: <MapFile>, version: N}`, not the bare MapFile
+    (`MapLoader.ts:36-37` unwraps it the same way before reading `background`).
+    The bare shape is accepted too: `migrateMapFile` writes it, and an older or
+    hand-made file may hold one. Both are real; neither is a guess.
+    """
     with open(path, encoding="utf-8") as fh:
-        scene = json.load(fh)
-    if scene.get("schema") != ATLAS_SCHEMA:
+        raw = json.load(fh)
+
+    envelope = raw.get("state") if isinstance(raw, dict) else None
+    scene = envelope if isinstance(envelope, dict) else raw
+
+    if not isinstance(scene, dict) or scene.get("schema") != ATLAS_SCHEMA:
+        got = scene.get("schema") if isinstance(scene, dict) else None
         raise ValueError(
-            f"{path.name}: expected schema {ATLAS_SCHEMA!r}, got {scene.get('schema')!r}. "
+            f"{path.name}: expected schema {ATLAS_SCHEMA!r}, got {got!r}. "
             "Is this an Atlas scene file?")
     return scene
 
@@ -113,6 +126,18 @@ def grid_geometry(scene: dict, scene_path: Path) -> tuple[int, int, int, int]:
             f"background {bg!r} is remote or missing; a local image is required so "
             "the map can be copied next to its JSON")
     px_w, px_h = image_size(image_path)
+
+    # Atlas offers yards, metres and bare "units" as well as feet. Only feet is
+    # ours, and the two are not interchangeable: a 5-metre cell read as 5 feet is
+    # a map where every range, reach and speed is wrong by a factor of ~1.6, which
+    # is exactly the plausible-but-wrong map KC4 exists to refuse. Unset means
+    # feet, which is Atlas's own default.
+    unit_type = grid.get("unitType") or "feet"
+    if unit_type != "feet":
+        raise ValueError(
+            f"scene grid is measured in {unit_type!r}; the engine assumes 5 ft "
+            "squares (SQUARE_FT in grid.py). Re-set the grid units to feet in "
+            "Atlas, or change the engine deliberately, do not let it drift per map.")
 
     off_x = float(grid.get("offsetX") or 0)
     off_y = float(grid.get("offsetY") or 0)

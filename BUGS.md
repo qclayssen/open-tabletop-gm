@@ -170,6 +170,24 @@ Claim: `Kairos.md:69` parentheticals "sum to 2 and 6, not 12 and 16," so the hea
 
 ---
 
+## Severity 1 — the Atlas import never worked on a real scene file
+
+### B21 — `atlas_to_map.py` read `schema` off the top level and refused every real `.atlasmap` — **FIXED**
+Atlas persists through zustand's `persist` middleware, so the file on disk is the storage **envelope** `{state: <MapFile>, version: N}`, not the bare `MapFile` (`MapPersistence.ts` `setItem`; Atlas's own `MapLoader.ts:36-37` unwraps `state` before reading `background`). `load_scene` did `scene.get("schema")` on the envelope, found `None`, and raised `expected schema 'atlas-vtt', got None` on every scene Atlas has ever written.
+
+The test fixture held a **bare `MapFile`** — a shape Atlas does not write — so the whole suite passed green against a format that cannot occur. Nothing exercised the real file.
+
+**Evidence:** a hand-built envelope matching the real shape (`MapPersistence.ts` `MapFile` + persist envelope) reproduces the failure exactly; it passes after the fix and converts end to end (20x14 cells, image copied, `compile_map` accepts it).
+
+**Fix applied:** `load_scene` unwraps `state` when it is a dict and falls back to the bare shape — `migrateMapFile` produces the unwrapped one, so both are real and both load. The schema check still runs against the unwrapped object, so unwrapping is not a way in (`test_an_envelope_holding_a_foreign_schema_is_refused`); a non-dict `state` is refused rather than silently read as an empty map. The fixture is now the envelope, with the bare-MapFile case kept as its own test. 7 new tests.
+
+### B22 — `atlas_to_map.py` ignored `unitType` and read a metric grid as feet — **FIXED**
+`grid_geometry` read `unitDistance` and assumed feet. Atlas offers `feet | yards | meters | units` (`MapPersistence.ts` `GridState`). A scene set to metres with `unitDistance: 5` converted to a 5-foot grid: a map where every range, reach, speed and opportunity-attack distance is out by ~1.6×, rendering correctly and playing wrong. Exactly the failure KC4 exists to prevent, in the one script that claims to refuse it.
+
+**Fix applied:** `grid_geometry` refuses a non-`feet` `unitType`, naming the fix. Unset stays feet — that is Atlas's own default and what a fresh scene carries. 4 new tests.
+
+---
+
 ## OPEN, low severity
 
 ### B18 — backup accumulation — **OPEN**
