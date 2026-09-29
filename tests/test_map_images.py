@@ -52,12 +52,17 @@ def test_a_map_without_an_image_has_no_image_key():
 # (scripts/art_import.py) are expected to as well. Both are excluded by name so
 # that adding art to a *new* map is not the same act as a pre-existing map
 # quietly gaining a field.
+#
+# `mage-tower` was on this list until the stadium was rebuilt from the Strixhaven
+# Mage Stadium art, which gave it a gridless background like every other map
+# with artwork. Removing a name here is a reviewed act, not a way to make this
+# test pass, so the reason travels with the list.
 SHIPPED_BEFORE_BV1 = {"blank", "detention-bog", "firejolt-rooftops", "frog-pond",
-                      "mage-tower", "training-yard"}
+                      "training-yard"}
 
 
 def test_the_pre_bv1_maps_are_still_the_expected_set():
-    """Guards the exclusion below: if one of these six were renamed or deleted,
+    """Guards the exclusion below: if one of these maps were renamed or deleted,
     this test would silently check nothing, so the set is asserted too."""
     available = set(maps.available())
     assert SHIPPED_BEFORE_BV1 <= available, (
