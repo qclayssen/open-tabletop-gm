@@ -1,7 +1,7 @@
 """
 export_bestiary.py: write the SRD bestiary out as Fantasy Statblocks notes.
 
-Run: python3 scripts/export_bestiary.py [--out VAULT] [--stats]
+Run: python3 scripts/export_bestiary.py [--out VAULT] [--data FILE] [--stats]
 
 Experiment A of docs/research/atlas-vtt/OBSIDIAN-INTEGRATION-DECISION.md: dump the
 334 monsters in dnd5e_srd.json into a vault as FSB notes, open one mid-session, and
@@ -63,8 +63,18 @@ _TRAIT_LINE = re.compile(r"^([A-Z][^:\n]{2,60}):\s+(.+)$", re.DOTALL)
 _INLINE_SPLIT = re.compile(r"\s*(?=(?:Legendary|Mythic)\s*\u2014\s*[A-Z])")
 
 
-def load_monsters() -> list[dict]:
-    with open(DATA_FILE, encoding="utf-8") as fh:
+def load_monsters(data_file: pathlib.Path | None = None) -> list[dict]:
+    """Load monsters from a bestiary data file.
+
+    Defaults to the SRD. `--data` points at another file using the same
+    `{"monsters": [...]}` shape — that is how non-SRD content (Strixhaven
+    students, college-role templates) gets exported without being written
+    into `dnd5e_srd.json`, which stays exactly as the SRD published it.
+    """
+    path = data_file or DATA_FILE
+    if not path.exists():
+        raise SystemExit(f"bestiary data file not found: {path}")
+    with open(path, encoding="utf-8") as fh:
         return json.load(fh)["monsters"]
 
 
@@ -341,7 +351,7 @@ def emit_yaml_list(items: list, indent: int) -> list[str]:
     return lines
 
 
-def note_for(monster: dict) -> str:
+def note_for(monster: dict, source_name: str = DATA_FILE.name) -> str:
     body = "\n".join(emit_yaml(build_fields(monster)))
     # `inline` mode: the body fence carries the data, frontmatter only triggers the
     # watcher and provides a block-ref target. Nothing is duplicated.
@@ -353,7 +363,7 @@ def note_for(monster: dict) -> str:
         "\n"
         f"# {monster['name']}\n"
         "\n"
-        "*Derived from `dnd5e_srd.json` by `export_bestiary.py`. "
+        f"*Derived from `{source_name}` by `export_bestiary.py`. "
         "Regenerated on export, do not edit; changes here are lost.*\n"
         "\n"
         "```statblock\n"
@@ -409,9 +419,13 @@ def main(argv: list[str] | None = None) -> int:
                         help="output directory (default: %(default)s)")
     parser.add_argument("--only", help="comma-separated monster names or indexes")
     parser.add_argument("--stats", action="store_true", help="coverage report only")
+    parser.add_argument("--data", type=pathlib.Path, default=None,
+                        help="bestiary data file (default: the SRD). Any file shaped "
+                             "{\"monsters\": [...]}. Non-SRD content belongs in its own "
+                             "file, never in dnd5e_srd.json.")
     args = parser.parse_args(argv)
 
-    monsters = load_monsters()
+    monsters = load_monsters(args.data)
     if args.only:
         wanted = {w.strip().lower() for w in args.only.split(",") if w.strip()}
         monsters = [m for m in monsters
@@ -421,15 +435,16 @@ def main(argv: list[str] | None = None) -> int:
             return 1
 
     if args.stats:
-        coverage(monsters or load_monsters())
+        coverage(monsters or load_monsters(args.data))
         return 0
 
     out = args.out / "Bestiary"
     out.mkdir(parents=True, exist_ok=True)
 
+    source_name = (args.data or DATA_FILE).name
     for monster in monsters:
         path = out / f"{safe_name(monster['name'])}.md"
-        path.write_text(note_for(monster), encoding="utf-8")
+        path.write_text(note_for(monster, source_name), encoding="utf-8")
 
     print(f"wrote {len(monsters)} notes to {out}")
     print("\nTo view them, open that directory as an Obsidian vault and install")

@@ -1,0 +1,1096 @@
+{
+ "_meta": {
+  "source": "Strixhaven: A Curriculum of Chaos (WotC, D&D 5e 2014)",
+  "extraction": "/.firecrawl/coc-full.md + /.firecrawl/pages.json",
+  "pagination": "print page = PDF page - 2 (verified: printed folio '198' present on PDF page 200; Appendix/Campus Map '224' on PDF 226)",
+  "section": "Chapter 7, Friends and Foes - stat block section, print pp. 184-223 (PDF pp. 186-225)",
+  "notes": [
+   "xp values are transcribed as printed in the sourcebook (official 5e CR thresholds), NOT from the CR->xp table supplied in the task; the supplied table diverges from both the book and the SRD at CR 16/17/18/19.",
+   "OCR artifact: the spell-list prefixes '1/day each' and '2/day each' are systematically extracted as '1 day each' / '2 day each' (slash dropped). Normalised to the printed 5e form.",
+   "OCR artifact: '1d10'/'d10' are extracted as 'ldlO'/'dl0', 'd12' as 'dl2', 'd20' as 'lldlO'/'d20'. Normalised.",
+   "Ruin Grinder is incomplete in the extraction: INT/WIS/CHA and the Saving Throws / Skills lines are absent from the source page. Those fields are null and the entry is flagged incomplete. No values were invented."
+  ]
+ },
+ "monsters": [
+  {
+   "name": "Archaic",
+   "index": "archaic",
+   "cr": 18,
+   "xp": 18000,
+   "size": "Gargantuan",
+   "type": "celestial",
+   "hp": 245,
+   "hp_dice": "14d20",
+   "ac": 20,
+   "speed": "walk 40 ft.",
+   "str": 25,
+   "dex": 10,
+   "con": 24,
+   "int": 27,
+   "wis": 24,
+   "cha": 20,
+   "alignment": "neutral",
+   "languages": "all",
+   "resistances": "force",
+   "immunities": "poison, psychic",
+   "vulnerabilities": "",
+   "condition_immunities": "charmed, exhaustion, frightened, petrified, paralyzed, poisoned, stunned",
+   "saves": {
+    "dex": 6,
+    "int": 14,
+    "wis": 13,
+    "cha": 11
+   },
+   "skills": {
+    "arcana": 20,
+    "deception": 11,
+    "history": 20,
+    "perception": 13
+   },
+   "passive_perception": 23,
+   "description": "Gravity Shift (Recharge 5-6). The archaic reverses gravity for one creature it can see within 100 feet of itself. The creature must succeed on a DC 22 Wisdom saving throw or fall 100 feet upward. If the falling creature encounters a solid object (such as a ceiling) in this fall, it strikes the object just as it would during a downward fall. If the creature reaches the top of the area without striking anything, it hovers there until the start of the archaic's next turn, at which time gravity returns to normal and the creature falls.\n\nSpellcasting. The archaic casts one of the following spells, requiring no material components and using Intelligence as the spellcasting ability (spell save DC 22): At will: detect magic, divination, sending. 1/day each: banishment, forcecage.\n\nTeleport. The archaic teleports to an unoccupied space that it can see within 120 feet of itself.\n\nUnusual Nature. The archaic doesn't require air, food, drink, or sleep.\n\nAction — Multiattack: The archaic makes two Force Strike attacks. It can also use Gravity Shift, if available.\n\nAction — Force Strike: Melee or Ranged Spell Attack: +14 to hit, reach 15 ft. or range 120 ft., one target. Hit: 19 (2d10 + 8) force damage, and the target is pulled up to 10 feet toward the archaic or pushed 10 feet away from it, as the archaic chooses.\n\nReaction — Spell Mimicry (1/Day): Immediately after a creature the archaic can see casts a spell of 5th level or lower, that creature must succeed on a DC 22 Charisma saving throw, or the archaic immediately casts the same spell at the same level (+14 to hit with spell attacks, spell save DC 22), requiring no material components and choosing the spell's targets.\n\nReaction — Legendary Resistance (3/Day): If the archaic fails a saving throw, it can choose to succeed instead.\n\nLegendary — Strike: The archaic makes one Force Strike attack.\n\nLegendary — Teleport: The archaic uses Teleport.\n\nLegendary — Unravel Magic (Costs 2 Actions): The archaic targets one creature it can see within 120 feet of itself. The target must succeed on a DC 22 Constitution saving throw or take 35 (10d6) force damage, and each spell of 5th level or lower on the target ends.",
+   "actions": [
+    {
+     "name": "Multiattack",
+     "desc": "The archaic makes two Force Strike attacks. It can also use Gravity Shift, if available."
+    },
+    {
+     "name": "Force Strike",
+     "desc": "Melee or Ranged Spell Attack: +14 to hit, reach 15 ft. or range 120 ft., one target. Hit: 19 (2d10 + 8) force damage, and the target is pulled up to 10 feet toward the archaic or pushed 10 feet away from it, as the archaic chooses."
+    },
+    {
+     "name": "Spell Mimicry (1/Day)",
+     "desc": "Immediately after a creature the archaic can see casts a spell of 5th level or lower, that creature must succeed on a DC 22 Charisma saving throw, or the archaic immediately casts the same spell at the same level (+14 to hit with spell attacks, spell save DC 22), requiring no material components and choosing the spell's targets."
+    },
+    {
+     "name": "Legendary Resistance (3/Day)",
+     "desc": "If the archaic fails a saving throw, it can choose to succeed instead."
+    },
+    {
+     "name": "Strike",
+     "desc": "The archaic makes one Force Strike attack."
+    },
+    {
+     "name": "Teleport",
+     "desc": "The archaic uses Teleport."
+    },
+    {
+     "name": "Unravel Magic (Costs 2 Actions)",
+     "desc": "The archaic targets one creature it can see within 120 feet of itself. The target must succeed on a DC 22 Constitution saving throw or take 35 (10d6) force damage, and each spell of 5th level or lower on the target ends."
+    }
+   ],
+   "provenance": "Strixhaven: A Curriculum of Chaos, Chapter 7 'Friends and Foes' - PDF p. 186 = print p. 184",
+   "ocr_uncertain": [
+    "Ability-score grid on the source page is interleaved with the prose column; the STR/DEX/CON/INT/WIS/CHA labels and values were read positionally. Cross-checked: Saves Dex +6, Int +14, Wis +13, Cha +11 at PB +6 (all match), and HP 14d20 + 98 matches CON 24 (+7). Confidence high.",
+    "Spell-list frequency prefixes '1/day each' are extracted as '1 day each'; normalised to printed 5e form."
+   ]
+  },
+  {
+   "name": "Daemogoth",
+   "index": "daemogoth",
+   "cr": 10,
+   "xp": 5900,
+   "size": "Huge",
+   "type": "fiend",
+   "hp": 157,
+   "hp_dice": "15d12",
+   "ac": 16,
+   "speed": "walk 40 ft., climb 40 ft.",
+   "str": 21,
+   "dex": 15,
+   "con": 19,
+   "int": 19,
+   "wis": 14,
+   "cha": 18,
+   "alignment": "lawful evil",
+   "languages": "Abyssal, Infernal, telepathy 120 ft.",
+   "resistances": "",
+   "immunities": "psychic",
+   "vulnerabilities": "",
+   "condition_immunities": "frightened",
+   "saves": {
+    "int": 9,
+    "wis": 6,
+    "cha": 8
+   },
+   "skills": {
+    "arcana": 13,
+    "deception": 12,
+    "history": 9,
+    "perception": 6
+   },
+   "passive_perception": 16,
+   "description": "Pact of Pain. Using a 10-minute ritual, the daemogoth can forge a magical bond with a willing creature it touches throughout the ritual. The creature becomes bound by the pact until it dies, the daemogoth dies, or the pact is broken by any effect that can remove a curse.\n\nThe daemogoth chooses one spell from the necromancy or enchantment school that is 3rd level or lower. The bound creature can cast that spell using this pact, requiring no material components and using Intelligence as the spellcasting ability. When it casts the spell, the creature takes 7 (2d6) psychic damage, which can't break the creature's concentration on a spell. Once the bound creature casts the spell in this way, it can't do so again until it finishes a long rest.\n\nAction — Multiattack: The daemogoth makes three Agonizing Burst attacks. It can use Terrify, if available, in place of one of the attacks.\n\nAction — Agonizing Burst: Melee or Ranged Spell Attack: +9 to hit, reach 10 ft. or range 120 ft., one target. Hit: 11 (2d10) force damage. If the target is a creature, the daemogoth regains 5 hit points.\n\nAction — Terrify (Recharge 4-6): The daemogoth targets one creature it can see within 120 feet of itself. The target must make a DC 17 Wisdom saving throw. On a failed save, the target takes 33 (6d10) psychic damage and is frightened of the daemogoth until the end of the daemogoth's next turn, and the daemogoth regains 5 hit points. On a successful save, the target takes half as much damage and isn't frightened, and the daemogoth doesn't heal.",
+   "actions": [
+    {
+     "name": "Multiattack",
+     "desc": "The daemogoth makes three Agonizing Burst attacks. It can use Terrify, if available, in place of one of the attacks."
+    },
+    {
+     "name": "Agonizing Burst",
+     "desc": "Melee or Ranged Spell Attack: +9 to hit, reach 10 ft. or range 120 ft., one target. Hit: 11 (2d10) force damage. If the target is a creature, the daemogoth regains 5 hit points."
+    },
+    {
+     "name": "Terrify (Recharge 4-6)",
+     "desc": "The daemogoth targets one creature it can see within 120 feet of itself. The target must make a DC 17 Wisdom saving throw. On a failed save, the target takes 33 (6d10) psychic damage and is frightened of the daemogoth until the end of the daemogoth's next turn, and the daemogoth regains 5 hit points. On a successful save, the target takes half as much damage and isn't frightened, and the daemogoth doesn't heal."
+    }
+   ],
+   "provenance": "Strixhaven: A Curriculum of Chaos, Chapter 7 'Friends and Foes' - PDF p. 191 = print p. 189",
+   "ocr_uncertain": [
+    "Ability-score grid is scrambled by the two-column extraction (labels read as CON/SIR/DEX, values as 15/19/21/14/18/19 with the closing parens of 19 (+4) and 14 (+2) clipped). Resolved to DEX 15, CON 19, STR 21, WIS 14, CHA 18, INT 19: every printed modifier matches its value, and HP 15d12 + 60 matches CON 19 (+4). Confidence high.",
+    "Armor Class and the STR/DEX/CON/INT/WIS/CHA cell borders are mangled but all six values are present and internally consistent."
+   ]
+  },
+  {
+   "name": "Daemogoth Titan",
+   "index": "daemogoth-titan",
+   "cr": 16,
+   "xp": 15000,
+   "size": "Gargantuan",
+   "type": "fiend",
+   "hp": 203,
+   "hp_dice": "11d20",
+   "ac": 17,
+   "speed": "walk 40 ft.",
+   "str": 26,
+   "dex": 10,
+   "con": 26,
+   "int": 24,
+   "wis": 18,
+   "cha": 20,
+   "alignment": "chaotic evil",
+   "languages": "Abyssal, Infernal, telepathy 120 ft.",
+   "resistances": "",
+   "immunities": "psychic",
+   "vulnerabilities": "",
+   "condition_immunities": "charmed, frightened",
+   "saves": {
+    "int": 12,
+    "wis": 9,
+    "cha": 10
+   },
+   "skills": {
+    "arcana": 17,
+    "deception": 15,
+    "history": 12,
+    "perception": 9
+   },
+   "passive_perception": 19,
+   "description": "Pact of Suffering. Using a 10-minute long ritual, the titan can forge a magical bond with a willing creature it touches throughout the ritual. The creature becomes bound by the pact until it dies, the titan dies, or the pact is broken by a wish spell.\n\nThe titan chooses one spell from the necromancy or enchantment school that is 8th level or lower. The bound creature can cast that spell using this pact, requiring no material components and using Intelligence as the spellcasting ability. When it casts the spell, the creature takes 21 (6d6) psychic damage, which can't break the creature's concentration on a spell. Once the bound creature casts the spell in this way, it can't do so again until it finishes a long rest.\n\nReaction — Legendary Resistance (3/Day): If the titan fails a saving throw, it can choose to succeed instead.\n\nAction — Multiattack: The titan makes two Agonizing Burst attacks.\n\nAction — Agonizing Burst: Melee or Ranged Spell Attack: +12 to hit, reach 15 ft. or range 120 ft., one target. Hit: 17 (3d6 + 7) force damage. If the target is a creature, the titan regains 5 hit points.\n\nAction — Teleport: The titan teleports to an unoccupied space it can see within 120 feet of itself.\n\nLegendary — Attack: The titan makes one Claw or Agonizing Bolt attack.\n\nLegendary — Stalking Nightmare (Costs 2 Actions): The titan uses Teleport, after which it can target one creature within 20 feet of itself that it can see. The target must make a DC 20 Constitution saving throw. On a failed save, the target takes 22 (4d10) necrotic damage, and the titan regains 10 hit points. On a successful save, the target takes half as much damage, and the titan doesn't heal.\n\nLegendary — Terrorize (Costs 3 Actions): The titan targets one creature it can see within 120 feet of itself. The target must make a DC 20 Wisdom saving throw. On a failed save, the target takes 38 (7d10) psychic damage and is frightened of the titan until the end of the target's next turn, and the titan regains 15 hit points. On a successful save, the target takes half as much damage and isn't frightened, and the titan doesn't heal.",
+   "actions": [
+    {
+     "name": "Multiattack",
+     "desc": "The titan makes two Agonizing Burst attacks."
+    },
+    {
+     "name": "Agonizing Burst",
+     "desc": "Melee or Ranged Spell Attack: +12 to hit, reach 15 ft. or range 120 ft., one target. Hit: 17 (3d6 + 7) force damage. If the target is a creature, the titan regains 5 hit points."
+    },
+    {
+     "name": "Teleport",
+     "desc": "The titan teleports to an unoccupied space it can see within 120 feet of itself."
+    },
+    {
+     "name": "Legendary Resistance (3/Day)",
+     "desc": "If the titan fails a saving throw, it can choose to succeed instead."
+    },
+    {
+     "name": "Attack",
+     "desc": "The titan makes one Claw or Agonizing Bolt attack."
+    },
+    {
+     "name": "Stalking Nightmare (Costs 2 Actions)",
+     "desc": "The titan uses Teleport, after which it can target one creature within 20 feet of itself that it can see. The target must make a DC 20 Constitution saving throw. On a failed save, the target takes 22 (4d10) necrotic damage, and the titan regains 10 hit points. On a successful save, the target takes half as much damage, and the titan doesn't heal."
+    },
+    {
+     "name": "Terrorize (Costs 3 Actions)",
+     "desc": "The titan targets one creature it can see within 120 feet of itself. The target must make a DC 20 Wisdom saving throw. On a failed save, the target takes 38 (7d10) psychic damage and is frightened of the titan until the end of the target's next turn, and the titan regains 15 hit points. On a successful save, the target takes half as much damage and isn't frightened, and the titan doesn't heal."
+    }
+   ],
+   "provenance": "Strixhaven: A Curriculum of Chaos, Chapter 7 'Friends and Foes' - PDF p. 192 = print p. 190",
+   "ocr_uncertain": [
+    "The printed 'Legendary — Attack' option names 'Claw' or 'Agonizing Bolt', but neither attack is defined anywhere in the Daemogoth Titan block (the block only defines Agonizing Burst, Teleport, and the legendary options). Transcribed verbatim; this appears to be a printing error in the sourcebook, not an extraction error. Verified against both coc-full.md and pages.json for PDF p. 192."
+   ]
+  },
+  {
+   "name": "Lorehold Professor of Chaos",
+   "index": "lorehold-professor-of-chaos",
+   "cr": 7,
+   "xp": 2900,
+   "size": "Medium or Small",
+   "type": "humanoid (wizard)",
+   "hp": 110,
+   "hp_dice": "17d8",
+   "ac": 12,
+   "speed": "walk 30 ft.",
+   "str": 11,
+   "dex": 14,
+   "con": 14,
+   "int": 19,
+   "wis": 15,
+   "cha": 13,
+   "alignment": "any alignment",
+   "languages": "Common plus any four languages",
+   "resistances": "force",
+   "immunities": "",
+   "vulnerabilities": "",
+   "condition_immunities": "",
+   "saves": {
+    "con": 5,
+    "int": 7,
+    "wis": 5,
+    "cha": 4
+   },
+   "skills": {
+    "arcana": 7,
+    "history": 7,
+    "perception": 5
+   },
+   "passive_perception": 15,
+   "description": "Voice from the Past (1/Day). The professor can cast the contact other plane spell to contact a long-dead spirit, using Intelligence as the spellcasting ability.\n\nAction — Multiattack: The professor makes two Spectral Scroll attacks. It can also use Weight of History, if available.\n\nAction — Spectral Scroll: Melee Spell Attack: +7 to hit, reach 30 ft., one target. Hit: 15 (2d10 + 4) force damage. If the target is a creature, it must succeed on a DC 15 Strength saving throw or be knocked prone.\n\nAction — Weight of History (Recharge 5-6): The professor magically compresses time around up to six creatures of its choice that it can see within 30 feet of itself. Each target must succeed on a DC 15 Wisdom saving throw or be restrained for 1 minute, but the restrained target's speed is halved instead of being reduced to 0. At the start of each of its turns, the restrained target takes 4 (1d8) force damage. A restrained target can repeat the save at the end of each of its turns, ending the effect on itself on a success.\n\nSpellcasting. The professor casts one of the following spells, requiring no material components and using Intelligence as the spellcasting ability: At will: comprehend languages, dancing lights, guidance. 2/day each: locate object, mage armor, passwall.\n\nReaction — Arcane Stasis (2/Day): When a creature the professor can see within 60 feet of it casts a spell, the professor can magically lock the casting in the moment before completion. The spellcaster must succeed on a DC 15 saving throw using the spell's spellcasting ability, or the spell fails and is wasted.",
+   "actions": [
+    {
+     "name": "Multiattack",
+     "desc": "The professor makes two Spectral Scroll attacks. It can also use Weight of History, if available."
+    },
+    {
+     "name": "Spectral Scroll",
+     "desc": "Melee Spell Attack: +7 to hit, reach 30 ft., one target. Hit: 15 (2d10 + 4) force damage. If the target is a creature, it must succeed on a DC 15 Strength saving throw or be knocked prone."
+    },
+    {
+     "name": "Weight of History (Recharge 5-6)",
+     "desc": "The professor magically compresses time around up to six creatures of its choice that it can see within 30 feet of itself. Each target must succeed on a DC 15 Wisdom saving throw or be restrained for 1 minute, but the restrained target's speed is halved instead of being reduced to 0. At the start of each of its turns, the restrained target takes 4 (1d8) force damage. A restrained target can repeat the save at the end of each of its turns, ending the effect on itself on a success."
+    },
+    {
+     "name": "Arcane Stasis (2/Day)",
+     "desc": "When a creature the professor can see within 60 feet of it casts a spell, the professor can magically lock the casting in the moment before completion. The spellcaster must succeed on a DC 15 saving throw using the spell's spellcasting ability, or the spell fails and is wasted."
+    }
+   ],
+   "provenance": "Strixhaven: A Curriculum of Chaos, Chapter 7 'Friends and Foes' - PDF p. 198 = print p. 196 (stat block resumes on PDF p. 200 = print p. 198)",
+   "ocr_uncertain": []
+  },
+  {
+   "name": "Lorehold Professor of Order",
+   "index": "lorehold-professor-of-order",
+   "cr": 7,
+   "xp": 2900,
+   "size": "Medium or Small",
+   "type": "humanoid (wizard)",
+   "hp": 104,
+   "hp_dice": "16d8",
+   "ac": 12,
+   "speed": "walk 30 ft.",
+   "str": 11,
+   "dex": 14,
+   "con": 14,
+   "int": 19,
+   "wis": 15,
+   "cha": 13,
+   "alignment": "any alignment",
+   "languages": "Common plus any four languages",
+   "resistances": "force",
+   "immunities": "",
+   "vulnerabilities": "",
+   "condition_immunities": "",
+   "saves": {
+    "con": 5,
+    "int": 7,
+    "wis": 5,
+    "cha": 4
+   },
+   "skills": {
+    "arcana": 7,
+    "history": 7,
+    "perception": 5
+   },
+   "passive_perception": 15,
+   "description": "Voice from the Past (1/Day). The professor can cast the contact other plane spell to contact a long-dead spirit, using Intelligence as the spellcasting ability.\n\nAction — Multiattack: The professor makes two Repelling Burst attacks. It can also use Force Barrier, if available.\n\nAction — Repelling Burst: Melee Spell Attack: +7 to hit, reach 30 ft., one target. Hit: 13 (2d8 + 4) force damage. If the target is a Large or smaller creature, it must succeed on a DC 15 Strength saving throw or be pushed up to 10 feet directly away from the professor and become restrained until the start of the professor's next turn.\n\nAction — Force Barrier (Recharge 5-6): The professor magically creates a wall of translucent, golden force within 90 feet of itself. The wall lasts for 1 minute or until the professor uses this action again. The barrier can be a vertical or horizontal plane up to 30 feet on a side or a 10-foot-radius hemispherical dome with a floor. The wall provides total cover. It has AC 17, 30 hit points, and immunity to poison and psychic damage.\n\nSpellcasting. The professor casts one of the following spells, requiring no material components and using Intelligence as the spellcasting ability (spell save DC 15): At will: comprehend languages, guidance, light. 2/day each: dimension door, locate object, mage armor, stone shape.\n\nAC Note. The printed Armor Class line reads '12 (15 with mage armor)'.",
+   "actions": [
+    {
+     "name": "Multiattack",
+     "desc": "The professor makes two Repelling Burst attacks. It can also use Force Barrier, if available."
+    },
+    {
+     "name": "Repelling Burst",
+     "desc": "Melee Spell Attack: +7 to hit, reach 30 ft., one target. Hit: 13 (2d8 + 4) force damage. If the target is a Large or smaller creature, it must succeed on a DC 15 Strength saving throw or be pushed up to 10 feet directly away from the professor and become restrained until the start of the professor's next turn."
+    },
+    {
+     "name": "Force Barrier (Recharge 5-6)",
+     "desc": "The professor magically creates a wall of translucent, golden force within 90 feet of itself. The wall lasts for 1 minute or until the professor uses this action again. The barrier can be a vertical or horizontal plane up to 30 feet on a side or a 10-foot-radius hemispherical dome with a floor. The wall provides total cover. It has AC 17, 30 hit points, and immunity to poison and psychic damage."
+    }
+   ],
+   "provenance": "Strixhaven: A Curriculum of Chaos, Chapter 7 'Friends and Foes' - PDF p. 200 = print p. 198",
+   "ocr_uncertain": [
+    "The 'AC Note.' sentence above is an editorial annotation added by this extraction, not printed text. The printed AC line is 'Armor Class 12 (15 with mage armor)'; the schema's numeric 'ac' field records the base 12."
+   ]
+  },
+  {
+   "name": "Mage Hunter",
+   "index": "mage-hunter",
+   "cr": 5,
+   "xp": 1800,
+   "size": "Large",
+   "type": "monstrosity",
+   "hp": 85,
+   "hp_dice": "10d10",
+   "ac": 15,
+   "speed": "walk 40 ft., climb 40 ft. (hunter form only), fly 10 ft. (hover, sentry form only)",
+   "str": 19,
+   "dex": 15,
+   "con": 16,
+   "int": 11,
+   "wis": 17,
+   "cha": 10,
+   "alignment": "lawful evil",
+   "languages": "understands Common but can't speak",
+   "resistances": "",
+   "immunities": "",
+   "vulnerabilities": "",
+   "condition_immunities": "blinded, charmed, deafened, frightened, prone",
+   "saves": {
+    "int": 3,
+    "wis": 6,
+    "cha": 3
+   },
+   "skills": {
+    "perception": 9,
+    "stealth": 5
+   },
+   "passive_perception": 19,
+   "description": "Magic Sense. The hunter knows the location of every spellcaster, active spell, and magic item within 120 feet of itself.\n\nSpider Climb (Hunter Form Only). The hunter can climb difficult surfaces, including upside down on ceilings, without needing to make an ability check.\n\nShift Form. The hunter folds into its drone-like sentry form or unfolds into its hunter form. Its game statistics are the same in each form.\n\nMage Tracker (Sentry Form Only). The hunter emits a pulse of energy that helps it better locate its magical quarry. Each creature within 120 feet of the hunter that has the ability to cast spells must succeed on a DC 14 Wisdom saving throw or be mystically marked by the hunter for 1 hour. While marked, a creature can't become hidden from the hunter and gains no benefit from the invisible condition against the hunter. Additionally, while a marked creature is on the same plane of existence as the hunter, the hunter always knows the distance and direction to the creature.\n\nAction — Multiattack (Hunter Form Only): The hunter makes two Claw attacks.\n\nAction — Claw (Hunter Form Only): Melee Weapon Attack: +7 to hit, reach 5 ft., one target. Hit: 15 (2d10 + 4) slashing damage.\n\nAction — Tail: Melee Weapon Attack: +7 to hit, reach 10 ft., one target. Hit: 22 (4d8 + 4) piercing damage, and the target is grappled (escape DC 15). Until this grapple ends, the target is restrained, and the hunter can't make a Tail attack against another target.\n\nReaction — Consume and Destroy: When the hunter takes damage from a spell, it takes only half the triggering damage (rounded down). If the creature that cast the spell is within 60 feet of the hunter, that creature must succeed on a DC 14 Dexterity saving throw or take the other half of the damage.",
+   "actions": [
+    {
+     "name": "Multiattack (Hunter Form Only)",
+     "desc": "The hunter makes two Claw attacks."
+    },
+    {
+     "name": "Claw (Hunter Form Only)",
+     "desc": "Melee Weapon Attack: +7 to hit, reach 5 ft., one target. Hit: 15 (2d10 + 4) slashing damage."
+    },
+    {
+     "name": "Tail",
+     "desc": "Melee Weapon Attack: +7 to hit, reach 10 ft., one target. Hit: 22 (4d8 + 4) piercing damage, and the target is grappled (escape DC 15). Until this grapple ends, the target is restrained, and the hunter can't make a Tail attack against another target."
+    },
+    {
+     "name": "Consume and Destroy",
+     "desc": "When the hunter takes damage from a spell, it takes only half the triggering damage (rounded down). If the creature that cast the spell is within 60 feet of the hunter, that creature must succeed on a DC 14 Dexterity saving throw or take the other half of the damage."
+    }
+   ],
+   "provenance": "Strixhaven: A Curriculum of Chaos, Chapter 7 'Friends and Foes' - PDF p. 201 = print p. 199",
+   "ocr_uncertain": [
+    "Armor Class printed as '15 natural armor' with the parenthesis lost; the SRD 'ac' field records 15. The '(natural armor)' qualifier is dropped per SRD convention (it is not carried in the SRD 'ac' field).",
+    "Speed uses the '(hover)' form per this task's schema example; the SRD file itself encodes hover as 'hover True'.",
+    "'Challenge 5 / 1,800 XP)' is split across two lines in the extraction; the closing paren on the CR line is lost. xp taken as printed (1,800)."
+   ]
+  },
+  {
+   "name": "Oracle of Strixhaven",
+   "index": "oracle-of-strixhaven",
+   "cr": 15,
+   "xp": 13000,
+   "size": "Medium",
+   "type": "humanoid (human, wizard)",
+   "hp": 150,
+   "hp_dice": "20d8",
+   "ac": 12,
+   "speed": "walk 30 ft., fly 15 ft. (hover)",
+   "str": 12,
+   "dex": 16,
+   "con": 16,
+   "int": 20,
+   "wis": 21,
+   "cha": 18,
+   "alignment": "neutral good",
+   "languages": "all",
+   "resistances": "",
+   "immunities": "",
+   "vulnerabilities": "",
+   "condition_immunities": "charmed, frightened",
+   "saves": {
+    "con": 8,
+    "int": 10,
+    "wis": 10,
+    "cha": 9
+   },
+   "skills": {
+    "arcana": 15,
+    "insight": 15,
+    "investigation": 15,
+    "nature": 10,
+    "perception": 10
+   },
+   "passive_perception": 20,
+   "description": "Spellcasting. The Oracle casts one of the following spells, requiring no material components and using Intelligence as the spellcasting ability (spell save DC 18): At will: detect magic. 2/day each: dispel magic, mage armor, remove curse, sending. 1/day each: power word stun, scrying (as an action), wall of force.\n\nAction — Teleport: The Oracle teleports, along with any equipment she is wearing or carrying, to an unoccupied space she can see within 60 feet of herself.\n\nAction — Multiattack: The Oracle makes two Magic Flare attacks. She can also use Paradoxy, if available.\n\nAction — Magic Flare: Melee or Ranged Spell Attack: +10 to hit, reach 5 ft. or range 60 ft., one target. Hit: 24 (3d12 + 5) force damage.\n\nAction — Paradoxy (Recharge 4-6): Momentary warps in reality appear at three different points the Oracle can see within 120 feet of her. Each creature in a 20-foot-radius sphere centered on each point must make a DC 18 Strength saving throw. On a failed save, a creature takes 33 (6d10) force damage and is pulled up to 15 feet in a straight line toward the center of the sphere. On a successful save, the creature takes half as much damage and isn't pulled. A creature caught in the area of multiple warps is affected by only one, which the Oracle chooses.\n\nReaction — Legendary Resistance (3/Day): If the Oracle fails a saving throw, she can choose to succeed instead.\n\nLegendary — Vector Shift: The Oracle teleports one creature she can see within 60 feet of herself, along with any equipment it is wearing or carrying, to an unoccupied space within 30 feet of herself. An unwilling target must succeed on a DC 18 Charisma saving throw to avoid the effect.\n\nLegendary — Spellcasting (Costs 2 Actions): The Oracle uses Spellcasting.\n\nLegendary — Vortex Jaunt (Costs 2 Actions): The Oracle uses Teleport, and immediately after she disappears, each creature within 30 feet of the space she left must succeed on a DC 18 Constitution saving throw or take 16 (3d10) force damage.",
+   "actions": [
+    {
+     "name": "Multiattack",
+     "desc": "The Oracle makes two Magic Flare attacks. She can also use Paradoxy, if available."
+    },
+    {
+     "name": "Magic Flare",
+     "desc": "Melee or Ranged Spell Attack: +10 to hit, reach 5 ft. or range 60 ft., one target. Hit: 24 (3d12 + 5) force damage."
+    },
+    {
+     "name": "Paradoxy (Recharge 4-6)",
+     "desc": "Momentary warps in reality appear at three different points the Oracle can see within 120 feet of her. Each creature in a 20-foot-radius sphere centered on each point must make a DC 18 Strength saving throw. On a failed save, a creature takes 33 (6d10) force damage and is pulled up to 15 feet in a straight line toward the center of the sphere. On a successful save, the creature takes half as much damage and isn't pulled. A creature caught in the area of multiple warps is affected by only one, which the Oracle chooses."
+    },
+    {
+     "name": "Teleport",
+     "desc": "The Oracle teleports, along with any equipment she is wearing or carrying, to an unoccupied space she can see within 60 feet of herself."
+    },
+    {
+     "name": "Legendary Resistance (3/Day)",
+     "desc": "If the Oracle fails a saving throw, she can choose to succeed instead."
+    },
+    {
+     "name": "Vector Shift",
+     "desc": "The Oracle teleports one creature she can see within 60 feet of herself, along with any equipment it is wearing or carrying, to an unoccupied space within 30 feet of herself. An unwilling target must succeed on a DC 18 Charisma saving throw to avoid the effect."
+    },
+    {
+     "name": "Spellcasting (Costs 2 Actions)",
+     "desc": "The Oracle uses Spellcasting."
+    },
+    {
+     "name": "Vortex Jaunt (Costs 2 Actions)",
+     "desc": "The Oracle uses Teleport, and immediately after she disappears, each creature within 30 feet of the space she left must succeed on a DC 18 Constitution saving throw or take 16 (3d10) force damage."
+    }
+   ],
+   "provenance": "Strixhaven: A Curriculum of Chaos, Chapter 7 'Friends and Foes' - PDF p. 202 = print p. 200",
+   "ocr_uncertain": [
+    "Ability-score grid is scrambled by the two-column extraction: the labels read 'WIS / CHA / STR / DEX / CON / INT' and the six values read '16 (+3) / 21 (+5) / 20 (+5) / 18 (+4) / 12 (+1) / 15 (+2)' with no one-to-one alignment. Resolved to CON 16, INT 20, WIS 21, CHA 18, plus STR 12 / DEX 15. CON, INT, WIS and CHA are each confirmed independently: Saving Throws Con +8, Int +10, Wis +10, Cha +9 and Skills Arcana +15, Insight +15, Investigation +15, Nature +10, Perception +10 at PB +5 all match, and HP 20d8 + 60 matches CON 16 (+3).",
+    "STR 12 vs DEX 15 could not be disambiguated: no printed saving throw, skill, or other printed value references Strength or Dexterity for this block. Best reading is STR 12 (+1), DEX 15 (+2). This is the single genuinely unresolved pair in the entry.",
+    "The Oracle's stated name 'Jadzi' in the descriptive prose is canon-flavoured text, not a stat field; the block itself is the unnamed 'Oracle of Strixhaven' role. No named-faculty stat block was created."
+   ]
+  },
+  {
+   "name": "Prismari Apprentice",
+   "index": "prismari-apprentice",
+   "cr": 2,
+   "xp": 450,
+   "size": "Medium or Small",
+   "type": "humanoid (sorcerer)",
+   "hp": 44,
+   "hp_dice": "8d8",
+   "ac": 12,
+   "speed": "walk 35 ft.",
+   "str": 10,
+   "dex": 14,
+   "con": 13,
+   "int": 12,
+   "wis": 13,
+   "cha": 15,
+   "alignment": "any alignment",
+   "languages": "Common plus any two languages",
+   "resistances": "",
+   "immunities": "",
+   "vulnerabilities": "",
+   "condition_immunities": "",
+   "saves": {
+    "dex": 4,
+    "cha": 4
+   },
+   "skills": {
+    "acrobatics": 4,
+    "athletics": 4,
+    "performance": 6
+   },
+   "passive_perception": 11,
+   "description": "Bonus Action — Surge of Artistry (Recharge 4-6): The apprentice moves up to its speed, surrounding itself with elemental magic as it moves. Until the end of its turn, the apprentice can move through the space of other creatures. The first time the apprentice enters a creature's space on a turn, that creature must succeed on a DC 12 Dexterity saving throw or be knocked prone. If the apprentice ends its turn in another creature's space, the apprentice takes 5 (1d10) force damage and is pushed into the nearest unoccupied space.\n\nAction — Elemental Strike: Melee or Ranged Spell Attack: +4 to hit, reach 5 ft. or range 60 ft., one target. Hit: 10 (3d6) fire or cold damage (the apprentice's choice).\n\nSpellcasting. The apprentice casts one of the following spells, requiring no material components and using Charisma as the spellcasting ability (spell save DC 12): At will: minor illusion. 1/day each: gust of wind, mage armor, silent image.",
+   "actions": [
+    {
+     "name": "Surge of Artistry (Recharge 4-6)",
+     "desc": "The apprentice moves up to its speed, surrounding itself with elemental magic as it moves. Until the end of its turn, the apprentice can move through the space of other creatures. The first time the apprentice enters a creature's space on a turn, that creature must succeed on a DC 12 Dexterity saving throw or be knocked prone. If the apprentice ends its turn in another creature's space, the apprentice takes 5 (1d10) force damage and is pushed into the nearest unoccupied space."
+    },
+    {
+     "name": "Elemental Strike",
+     "desc": "Melee or Ranged Spell Attack: +4 to hit, reach 5 ft. or range 60 ft., one target. Hit: 10 (3d6) fire or cold damage (the apprentice's choice)."
+    }
+   ],
+   "provenance": "Strixhaven: A Curriculum of Chaos, Chapter 7 'Friends and Foes' - PDF p. 207 = print p. 205 (second block on the page; both Prismari blocks open on print p. 205)",
+   "ocr_uncertain": [
+    "Block identity required reading the traits, not the header: the two-column extraction on PDF p. 207 interleaves the Prismari Pledgemage and Prismari Apprentice blocks and both headers are printed in the same column. This entry is the CR 2 / HP 44 (8d8 + 8) / 'the apprentice' block, which the printed 'Wording' (apprentice vs pledgemage) in Surge of Artistry, Elemental Strike and Spellcasting confirms unambiguously. print p. 204 is derived from PDF p. 207 minus 2; that page's printed folio ('205') belongs to the Pledgemage block below.",
+    "Printed Saving Throws (Dex +4, Cha +4) and Skills (Acrobatics +4, Athletics +4) do not arithmetically follow from the printed ability scores at PB +2 (they each compute 1 higher). Transcribed exactly as printed rather than corrected; HP 8d8 + 8, Elemental Strike +4 and spell save DC 12 all independently confirm CHA 15 (+2) and CON 13 (+1)."
+   ]
+  },
+  {
+   "name": "Prismari Pledgemage",
+   "index": "prismari-pledgemage",
+   "cr": 4,
+   "xp": 1100,
+   "size": "Medium or Small",
+   "type": "humanoid (sorcerer)",
+   "hp": 66,
+   "hp_dice": "12d8",
+   "ac": 12,
+   "speed": "walk 35 ft.",
+   "str": 15,
+   "dex": 13,
+   "con": 10,
+   "int": 12,
+   "wis": 14,
+   "cha": 17,
+   "alignment": "any alignment",
+   "languages": "Common plus any two languages",
+   "resistances": "",
+   "immunities": "",
+   "vulnerabilities": "",
+   "condition_immunities": "",
+   "saves": {
+    "dex": 4,
+    "cha": 5
+   },
+   "skills": {
+    "acrobatics": 4,
+    "athletics": 4,
+    "performance": 7
+   },
+   "passive_perception": 12,
+   "description": "Evasion. If the pledgemage is subjected to an effect that allows it to make a Dexterity saving throw to take only half damage, the pledgemage instead takes no damage if it succeeds on the saving throw and only half damage if it fails, provided it isn't incapacitated.\n\nBonus Action — Surge of Artistry (Recharge 4-6): The pledgemage moves up to its speed, surrounding itself with elemental magic as it moves. Until the end of its turn, the pledgemage can move through the space of other creatures. The first time the pledgemage enters a creature's space on a turn, that creature must succeed on a DC 13 Dexterity saving throw or be knocked prone. If the pledgemage ends its turn in another creature's space, the pledgemage takes 5 (1d10) force damage and is pushed into the nearest unoccupied space.\n\nAction — Multiattack: The pledgemage makes two Elemental Strike attacks.\n\nAction — Elemental Strike: Melee or Ranged Spell Attack: +5 to hit, reach 5 ft. or range 60 ft., one target. Hit: 12 (3d6 + 2) fire or cold damage (the pledgemage's choice).\n\nAction — Showstopper (1/Day): The pledgemage shines with elemental magic, targeting one creature it can see within 60 feet of itself. The target must make a DC 13 Wisdom saving throw. On a failed save, the target takes 28 (8d6) fire or cold damage (the pledgemage's choice) and is stunned until the start of the pledgemage's next turn. On a successful save, the target takes half as much damage and isn't stunned.\n\nSpellcasting. The pledgemage casts one of the following spells, requiring no material components and using Charisma as the spellcasting ability (spell save DC 13): At will: minor illusion. 2/day each: gust of wind, silent image. 1/day each: mage armor, water walk.",
+   "actions": [
+    {
+     "name": "Multiattack",
+     "desc": "The pledgemage makes two Elemental Strike attacks."
+    },
+    {
+     "name": "Elemental Strike",
+     "desc": "Melee or Ranged Spell Attack: +5 to hit, reach 5 ft. or range 60 ft., one target. Hit: 12 (3d6 + 2) fire or cold damage (the pledgemage's choice)."
+    },
+    {
+     "name": "Showstopper (1/Day)",
+     "desc": "The pledgemage shines with elemental magic, targeting one creature it can see within 60 feet of itself. The target must make a DC 13 Wisdom saving throw. On a failed save, the target takes 28 (8d6) fire or cold damage (the pledgemage's choice) and is stunned until the start of the pledgemage's next turn. On a successful save, the target takes half as much damage and isn't stunned."
+    },
+    {
+     "name": "Surge of Artistry (Recharge 4-6)",
+     "desc": "The pledgemage moves up to its speed, surrounding itself with elemental magic as it moves. Until the end of its turn, the pledgemage can move through the space of other creatures. The first time the pledgemage enters a creature's space on a turn, that creature must succeed on a DC 13 Dexterity saving throw or be knocked prone. If the pledgemage ends its turn in another creature's space, the pledgemage takes 5 (1d10) force damage and is pushed into the nearest unoccupied space."
+    }
+   ],
+   "provenance": "Strixhaven: A Curriculum of Chaos, Chapter 7 'Friends and Foes' - PDF p. 207 = print p. 205 (first block on the page; the page's printed folio reads '205')",
+   "ocr_uncertain": [
+    "Ability-score grid: the labels extract as 'INT / WIS / CHA' then 'CON / STR / DEX' with values '12 (+1) / 14 (+2) / 17 (+3)' then '10 (+0) / 15 (+2) / 13 (+1)'. Read positionally as INT 12, WIS 14, CHA 17, CON 10, STR 15, DEX 13. CHA 17 is independently confirmed (Elemental Strike +5, spell save DC 13), STR 15 by Skills Acrobatics/Athletics +4, DEX 13 by Saving Throws Dex +4, WIS 14 by passive Perception 12.",
+    "CONFLICT LEFT UNRESOLVED: the printed Hit Points 66 (12d8 + 12) implies CON 12 (+1), but the grid's third-group reading gives CON 10 (+0), which would yield 54. The '10 (+0)' is also exactly the Apprentice's printed STR, and cross-block value leakage is the documented failure mode of this two-column extraction. Both printed numbers are preserved as-is here (con 10, hp 66) rather than reconciled; a consumer that needs mechanical consistency should read con 12. Confidence in 'con 10 is leaked' is high; confidence in the correct value being 12 is high; the printed grid is the authority for this file.",
+    "Printed Saving Throws Cha +5 and Skills Performance +7 do not arithmetically follow from CHA 17 (+3) at PB +2 (they compute 8). Transcribed exactly as printed rather than corrected; Elemental Strike +5 and DC 13 confirm CHA 17."
+   ]
+  },
+  {
+   "name": "Quandrix Professor of Substance",
+   "index": "quandrix-professor-of-substance",
+   "cr": 7,
+   "xp": 2900,
+   "size": "Medium or Small",
+   "type": "humanoid (wizard)",
+   "hp": 104,
+   "hp_dice": "16d8",
+   "ac": 12,
+   "speed": "walk 30 ft.",
+   "str": 11,
+   "dex": 14,
+   "con": 14,
+   "int": 19,
+   "wis": 14,
+   "cha": 13,
+   "alignment": "any alignment",
+   "languages": "Common plus any four languages",
+   "resistances": "force",
+   "immunities": "",
+   "vulnerabilities": "",
+   "condition_immunities": "",
+   "saves": {
+    "con": 5,
+    "int": 7,
+    "wis": 5,
+    "cha": 4
+   },
+   "skills": {
+    "arcana": 10,
+    "investigation": 10,
+    "nature": 7,
+    "perception": 5
+   },
+   "passive_perception": 15,
+   "description": "Action — Multiattack: The professor makes two Spatial Blade attacks.\n\nAction — Spatial Blade: Melee or Ranged Spell Attack: +7 to hit (the target can't benefit from cover less than total cover), reach 5 ft. or range 120 ft., one target. Hit: 13 (2d8 + 4) force damage, or 22 (4d8 + 4) force damage if the professor is Large or larger, and the professor can push the target horizontally up to 10 feet away.\n\nBonus Action — Dilation (Recharge 5-6): The professor magically alters its physical form until it uses this bonus action again, until it is incapacitated or dies, or until it dismisses the effect (no action required). Choose one of the following options. Expand: The professor becomes Large if there is sufficient room for it to grow. It has advantage on attack rolls and on ability checks and saving throws that rely on Strength. Contract: The professor becomes Small. Its walking speed increases to 60 feet, attack rolls against it have disadvantage, and it has advantage on ability checks and saving throws that rely on Dexterity.\n\nSpellcasting. The professor casts one of the following spells, requiring no material components and using Intelligence as the spellcasting ability (spell save DC 15): At will: guidance, mage hand, mending (as an action). 1/day each: creation (as an action), dimension door, mage armor, plant growth, polymorph.\n\nReaction — Avoidant Translation (2/Day): When the professor is hit by an attack roll, it can increase its AC by 3 against that attack, potentially causing it to miss. The professor can then teleport, along with any equipment it is wearing or carrying, up to 30 feet to an unoccupied space it can see.",
+   "actions": [
+    {
+     "name": "Multiattack",
+     "desc": "The professor makes two Spatial Blade attacks."
+    },
+    {
+     "name": "Spatial Blade",
+     "desc": "Melee or Ranged Spell Attack: +7 to hit (the target can't benefit from cover less than total cover), reach 5 ft. or range 120 ft., one target. Hit: 13 (2d8 + 4) force damage, or 22 (4d8 + 4) force damage if the professor is Large or larger, and the professor can push the target horizontally up to 10 feet away."
+    },
+    {
+     "name": "Dilation (Recharge 5-6)",
+     "desc": "The professor magically alters its physical form until it uses this bonus action again, until it is incapacitated or dies, or until it dismisses the effect (no action required). Choose one of the following options. Expand: The professor becomes Large if there is sufficient room for it to grow. It has advantage on attack rolls and on ability checks and saving throws that rely on Strength. Contract: The professor becomes Small. Its walking speed increases to 60 feet, attack rolls against it have disadvantage, and it has advantage on ability checks and saving throws that rely on Dexterity."
+    },
+    {
+     "name": "Avoidant Translation (2/Day)",
+     "desc": "When the professor is hit by an attack roll, it can increase its AC by 3 against that attack, potentially causing it to miss. The professor can then teleport, along with any equipment it is wearing or carrying, up to 30 feet to an unoccupied space it can see."
+    }
+   ],
+   "provenance": "Strixhaven: A Curriculum of Chaos, Chapter 7 'Friends and Foes' - PDF p. 211 = print p. 209 (first block on the page; the page's printed folio reads '209')",
+   "ocr_uncertain": [
+    "Block identity: PDF p. 211 prints two blocks ('QUANDRIX PROF OF SUBSTANCE' and 'QUANDRIX PROF, OF THEORY') that share identical ability scores and differ only in HP, damage resistance, condition immunities, skills, actions and reaction. This entry was assigned by content, not column position: Substance = HP 104 (16d8 + 32), Damage Resistances force, skills include Nature +7, Spatial Blade (force) + Dilation (size) + Avoidant Translation. Theory = HP 97 (15d8 + 30), Damage Resistances psychic + Condition Immunities charmed/frightened, skills include Insight +5, Heuristic Lance (psychic) + Divide by Zero. Both readings are mechanically coherent.",
+    "WIS discrepancy between the two interleaved ability grids on the page: the Substance-side grid prints WIS 14 (+2) and the Theory-side grid prints WIS 15 (+2). Printed Saving Throws Wis +5 and Skills Perception +5 both require WIS 14 at PB +3 (+2 + 3 = +5), so 14 was used here. Flagged on the Theory entry as well."
+   ]
+  },
+  {
+   "name": "Quandrix Professor of Theory",
+   "index": "quandrix-professor-of-theory",
+   "cr": 7,
+   "xp": 2900,
+   "size": "Medium or Small",
+   "type": "humanoid (wizard)",
+   "hp": 97,
+   "hp_dice": "15d8",
+   "ac": 12,
+   "speed": "walk 30 ft.",
+   "str": 11,
+   "dex": 14,
+   "con": 14,
+   "int": 19,
+   "wis": 15,
+   "cha": 13,
+   "alignment": "any alignment",
+   "languages": "Common plus any four languages",
+   "resistances": "psychic",
+   "immunities": "",
+   "vulnerabilities": "",
+   "condition_immunities": "charmed, frightened",
+   "saves": {
+    "con": 5,
+    "int": 7,
+    "wis": 5,
+    "cha": 4
+   },
+   "skills": {
+    "arcana": 10,
+    "insight": 5,
+    "investigation": 10,
+    "perception": 5
+   },
+   "passive_perception": 15,
+   "description": "Action — Multiattack: The professor makes two Heuristic Lance attacks. It can also use Overriding Theorem, if available.\n\nAction — Heuristic Lance: Melee or Ranged Spell Attack: +7 to hit, reach 5 ft. or range 60 ft., one creature. Hit: 13 (2d8 + 4) psychic damage, and the target is poisoned until the end of its next turn.\n\nAction — Overriding Theorem (Recharge 4-6): The professor magically influences the mind of up to two creatures it can see within 60 feet of itself. Each target must succeed on a DC 15 Intelligence saving throw or become charmed by the professor until the start of the professor's next turn. The charmed creature must immediately use its reaction, if available, to move up its speed toward another creature of the professor's choice and make one melee attack against that other creature.\n\nSpellcasting. The professor casts one of the following spells, requiring no material components and using Intelligence as the spellcasting ability (spell save DC 15): At will: guidance, mage hand, minor illusion. 1/day each: mage armor, major image, mirage arcane (as an action), Rary's telepathic bond.\n\nReaction — Divide by Zero (2/Day): When the professor sees another creature within 60 feet of itself casting a spell, the professor can try to nullify the spell's formation. The creature must succeed on a DC 15 saving throw using the spell's spellcasting ability, or the spell fails and is wasted.",
+   "actions": [
+    {
+     "name": "Multiattack",
+     "desc": "The professor makes two Heuristic Lance attacks. It can also use Overriding Theorem, if available."
+    },
+    {
+     "name": "Heuristic Lance",
+     "desc": "Melee or Ranged Spell Attack: +7 to hit, reach 5 ft. or range 60 ft., one creature. Hit: 13 (2d8 + 4) psychic damage, and the target is poisoned until the end of its next turn."
+    },
+    {
+     "name": "Overriding Theorem (Recharge 4-6)",
+     "desc": "The professor magically influences the mind of up to two creatures it can see within 60 feet of itself. Each target must succeed on a DC 15 Intelligence saving throw or become charmed by the professor until the start of the professor's next turn. The charmed creature must immediately use its reaction, if available, to move up its speed toward another creature of the professor's choice and make one melee attack against that other creature."
+    },
+    {
+     "name": "Divide by Zero (2/Day)",
+     "desc": "When the professor sees another creature within 60 feet of itself casting a spell, the professor can try to nullify the spell's formation. The creature must succeed on a DC 15 saving throw using the spell's spellcasting ability, or the spell fails and is wasted."
+    }
+   ],
+   "provenance": "Strixhaven: A Curriculum of Chaos, Chapter 7 'Friends and Foes' - PDF p. 211 = print p. 209 (second block on the page; the page's printed folio reads '209')",
+   "ocr_uncertain": [
+    "Block identity assigned by content rather than column position; see the note on 'Quandrix Professor of Substance' for the full discrimination.",
+    "WIS printed as 15 on this block's grid but 14 on the Substance-side grid of the same page. Printed Saving Throws Wis +5 and Skills Perception +5 both require WIS 14 at PB +3. The 15 from this block's own grid was used here (it is the reading belonging to this block's printed grid); note the mechanical inconsistency with Wis +5, which computes as WIS 14.",
+    "The printed spell is 'mirage arcane'; the actual 5e spell is 'mirage arcane' in older printings of this block and 'minor illusion'/'major image' variants exist in other printings. The OCR is unambiguous ('mirage arcane (as an action)') and the canonical 5e spell name is 'mirage arcane'; transcribed as printed."
+   ]
+  },
+  {
+   "name": "Ruin Grinder",
+   "index": "ruin-grinder",
+   "cr": 5,
+   "xp": 1800,
+   "size": "Large",
+   "type": "construct",
+   "hp": 82,
+   "hp_dice": "11d10",
+   "ac": 16,
+   "speed": "walk 30 ft., burrow 30 ft.",
+   "str": 22,
+   "dex": 13,
+   "con": 15,
+   "int": null,
+   "wis": null,
+   "cha": null,
+   "alignment": "unaligned",
+   "languages": "understands the languages of its creator but can't speak",
+   "resistances": "",
+   "immunities": "fire, poison",
+   "vulnerabilities": "",
+   "condition_immunities": "charmed, exhaustion, frightened, petrified, poisoned",
+   "saves": null,
+   "skills": null,
+   "passive_perception": 10,
+   "description": "Fire Absorption. Whenever the ruin grinder is subjected to fire damage, it regains a number of hit points equal to half the fire damage dealt.\n\nSiege Monster. The ruin grinder deals double damage to objects and structures.\n\nTunneler. The ruin grinder can burrow through solid rock at half its burrowing speed and leaves a 10-foot-diameter tunnel in its wake.\n\nAction — Multiattack: The ruin grinder makes two Excavator attacks.\n\nAction — Excavator: Melee Weapon Attack: +9 to hit, reach 5 ft., one target. Hit: 13 (2d6 + 6) force damage. If the target is a Huge or smaller creature, it must succeed on a DC 17 Strength saving throw or be pushed up to 10 feet away and knocked prone.",
+   "actions": [
+    {
+     "name": "Multiattack",
+     "desc": "The ruin grinder makes two Excavator attacks."
+    },
+    {
+     "name": "Excavator",
+     "desc": "Melee Weapon Attack: +9 to hit, reach 5 ft., one target. Hit: 13 (2d6 + 6) force damage. If the target is a Huge or smaller creature, it must succeed on a DC 17 Strength saving throw or be pushed up to 10 feet away and knocked prone."
+    }
+   ],
+   "provenance": "Strixhaven: A Curriculum of Chaos, Chapter 7 'Friends and Foes' - PDF p. 213 = print p. 211 (the page's printed folio reads '211')",
+   "incomplete": true,
+   "incomplete_fields": [
+    "int",
+    "wis",
+    "cha",
+    "saves",
+    "skills"
+   ],
+   "ocr_uncertain": [
+    "INCOMPLETE SOURCE. The ability-score grid on PDF p. 213 prints only the STR / DEX / CON labels with values 22 (+6), 13 (+1), 15 (+2). The INT / WIS / CHA labels and values are absent from the extraction entirely, and the printed block also has no Saving Throws line and no Skills line. Verified against both coc-full.md and pages.json (PDF p. 213, markdown lines 15888-15931) - the data is not present in either source, so it is not recoverable from the extraction. No values were invented; int, wis, cha, saves and skills are null.",
+    "STR 22, DEX 13 and CON 15 are consistent: HP 82 (11d10 + 22) matches CON 15 (+2) x 11 dice, and Excavator +9 to hit matches STR 22 (+6) + 3 (PB +3).",
+    "The printed passive Perception 10 is transcribed as-is. It cannot be reconciled with the missing WIS, so it is preserved verbatim rather than used to back-solve wis."
+   ]
+  },
+  {
+   "name": "Silverquill Professor of Shadow",
+   "index": "silverquill-professor-of-shadow",
+   "cr": 7,
+   "xp": 2900,
+   "size": "Medium or Small",
+   "type": "humanoid (bard)",
+   "hp": 97,
+   "hp_dice": "15d8",
+   "ac": 12,
+   "speed": "walk 30 ft.",
+   "str": 11,
+   "dex": 14,
+   "con": 14,
+   "int": 16,
+   "wis": 13,
+   "cha": 19,
+   "alignment": "any alignment",
+   "languages": "Common plus any four languages",
+   "resistances": "necrotic",
+   "immunities": "",
+   "vulnerabilities": "",
+   "condition_immunities": "",
+   "saves": {
+    "dex": 5,
+    "int": 6,
+    "wis": 4,
+    "cha": 7
+   },
+   "skills": {
+    "arcana": 6,
+    "deception": 10,
+    "persuasion": 7,
+    "stealth": 5
+   },
+   "passive_perception": 11,
+   "description": "Devil's Sight. Magical darkness doesn't impede the professor's darkvision.\n\nAction — Multiattack: The professor makes two Ink Lance attacks. The professor can replace one of the attacks with a use of Spellcasting.\n\nAction — Ink Lance: Melee or Ranged Spell Attack: +7 to hit, reach 5 ft. or range 120 ft., one target. Hit: 17 (3d8 + 4) necrotic damage. If the target is a creature, it must succeed on a DC 15 Constitution saving throw or be blinded until the end of its next turn.\n\nSpellcasting. The professor casts one of the following spells, requiring no material components and using Charisma as the spellcasting ability (spell save DC 15): At will: dancing lights, friends. 2/day each: bane, command, darkness, mage armor. 1/day: tongues.",
+   "actions": [
+    {
+     "name": "Multiattack",
+     "desc": "The professor makes two Ink Lance attacks. The professor can replace one of the attacks with a use of Spellcasting."
+    },
+    {
+     "name": "Ink Lance",
+     "desc": "Melee or Ranged Spell Attack: +7 to hit, reach 5 ft. or range 120 ft., one target. Hit: 17 (3d8 + 4) necrotic damage. If the target is a creature, it must succeed on a DC 15 Constitution saving throw or be blinded until the end of its next turn."
+    }
+   ],
+   "provenance": "Strixhaven: A Curriculum of Chaos, Chapter 7 'Friends and Foes' - PDF p. 217 = print p. 215 (first block on the page; print page derived from PDF 217 minus 2)",
+   "ocr_uncertain": [
+    "SCOPE NOTE. There is no creature named 'Shadow' in CoC. The only stat block in the book matching the requested item is 'Silverquill Professor of Shadow' (PDF p. 217); it is extracted here on that reading. Its sibling 'Silverquill Professor of Radiance' shares the same page and was NOT in the requested scope, so it is not in this file.",
+    "Block identity assigned by content, not column position: PDF p. 217 interleaves Shadow (Damage Resistances necrotic, Ink Lance, Senses darkvision 300 ft., Devil's Sight, skills Deception +10 / Persuasion +7 / Stealth +5) with Radiance (Damage Resistances radiant, Radiant Strike, skills Performance +10 / Persuasion +10). This entry is the necrotic one.",
+    "Ability scores are taken positionally from the printed grid (STR 11, DEX 14, CON 14, INT 16, WIS 13, CHA 19) and six printed values independently confirm it: HP 15d8 + 30 (CON 14), Skills Arcana +6 (INT 16), Stealth +5 (DEX 14), Persuasion +7 (CHA 19), Saving Throws Int +6 (INT 16) and Wis +4 (WIS 13).",
+    "Printed Saving Throws Dex +5 and Cha +7 do NOT follow from DEX 14 (+2) or CHA 19 (+4) at PB +3, which compute to Dex +6 and Cha +11. Transcribed exactly as printed rather than corrected. The identical printed saves appear on both Silverquill blocks on this page, so this is a property of the printed source as extracted, not a per-block transcription slip.",
+    "The printed header renders as 'SlLVERQUILL' (lowercase L for uppercase I) in the extraction; normalised to 'Silverquill'. The prose intro for the Silverquill college ('SlLVERQUILL SCHOLARS') is on PDF p. 215."
+   ]
+  },
+  {
+   "name": "Prismari Professor of Expression",
+   "index": "prismari-professor-of-expression",
+   "cr": 7,
+   "xp": 2900,
+   "size": "Medium or Small",
+   "type": "humanoid (sorcerer)",
+   "hp": 97,
+   "hp_dice": "15d8",
+   "ac": 13,
+   "speed": "walk 40 ft.",
+   "str": 14,
+   "dex": 16,
+   "con": 15,
+   "int": 15,
+   "wis": 13,
+   "cha": 19,
+   "alignment": "any alignment",
+   "languages": "Common plus any four languages",
+   "resistances": "fire, lightning",
+   "immunities": "",
+   "vulnerabilities": "",
+   "condition_immunities": "",
+   "saves": {
+    "dex": 6,
+    "int": 5,
+    "wis": 4,
+    "cha": 7
+   },
+   "skills": {
+    "acrobatics": 6,
+    "arcana": 5,
+    "athletics": 5,
+    "perception": 4,
+    "performance": 10
+   },
+   "passive_perception": 14,
+   "description": "Water Walking. The professor can walk across water and other liquids as if they were solid ground.\n\nAction — Multiattack: The professor makes three Cinder Strike attacks.\n\nAction — Cinder Strike: Melee Spell Attack: +7 to hit, reach 15 ft., one target. Hit: 13 (2d8 + 4) fire damage.\n\nAction — Lightning Flourish (Recharge 6): The professor unleashes arcs of magical lightning at up to two creatures it can see within 60 feet of itself. Each target must make a DC 15 Dexterity saving throw, taking 35 (10d6) lightning damage on a failed save, or half as much damage on a successful one.\n\nSpellcasting. The professor casts one of the following spells, requiring no material components and using Charisma as the spellcasting ability (spell save DC 15): At will: minor illusion. 2/day each: fog cloud, gust of wind, mage armor.",
+   "actions": [
+    {
+     "name": "Multiattack",
+     "desc": "The professor makes three Cinder Strike attacks."
+    },
+    {
+     "name": "Cinder Strike",
+     "desc": "Melee Spell Attack: +7 to hit, reach 15 ft., one target. Hit: 13 (2d8 + 4) fire damage."
+    },
+    {
+     "name": "Lightning Flourish (Recharge 6)",
+     "desc": "The professor unleashes arcs of magical lightning at up to two creatures it can see within 60 feet of itself. Each target must make a DC 15 Dexterity saving throw, taking 35 (10d6) lightning damage on a failed save, or half as much damage on a successful one."
+    }
+   ],
+   "provenance": "Strixhaven: A Curriculum of Chaos, Chapter 7 'Friends and Foes' - PDF p. 208 = print p. 206 (first block on the page; page-mate of Prismari Professor of Perfection)",
+   "ocr_uncertain": [
+    "Block identity assigned by content, not column position: PDF p. 208 prints two CR 7 Prismari professor blocks with identical ability scores, differing only in speed, Damage Resistances, attacks, spells and bonus action. This entry is the fire/lightning one (Damage Resistances fire, lightning, Cinder Strike, Lightning Flourish, Flaming Leap, spells fog cloud / gust of wind). The cold/water page-mate (cold, Tidal Strike, control water / wall of ice, Rushing Wave) is a separate entry. The two printed Speed lines (40 ft. and 30 ft.) are assigned Expression=40 ft. and Perfection=30 ft.; see the Perfection entry note.",
+    "Water Walking attribution is AMBIGUOUS from the extraction. The trait is printed exactly once on the page, at the very top of the left column directly above the first ACTIONS block (Cinder Strike = Expression). A left-to-right column read therefore places it on Expression, which is how it is recorded here. However thematically Water Walking (a water/ice effect) reads as more natural for Perfection. A consumer should verify this one trait against a clean print scan. No other ambiguity affects this entry's numbers.",
+    "The OCR token 'ogcloud' in the Expression spell list is the spell 'fog cloud' with the leading f dropped and the space collapsed. Normalised to the canonical 'fog cloud' (5e).",
+    "Printed Saving Throws Dex +6, Int +5, Wis +4, Cha +7 all arithmetically follow from the printed ability scores at PB +3 (DEX 16 +3, INT 15 +2, WIS 13 +1, CHA 19 +4). Printed Skills Acrobatics +6 is one higher than STR 14 (+2) + 3 = +5, and is transcribed exactly as printed; the identical line appears on both Prismari professor blocks."
+   ]
+  },
+  {
+   "name": "Prismari Professor of Perfection",
+   "index": "prismari-professor-of-perfection",
+   "cr": 7,
+   "xp": 2900,
+   "size": "Medium or Small",
+   "type": "humanoid (sorcerer)",
+   "hp": 97,
+   "hp_dice": "15d8",
+   "ac": 13,
+   "speed": "walk 30 ft.",
+   "str": 14,
+   "dex": 16,
+   "con": 15,
+   "int": 15,
+   "wis": 13,
+   "cha": 19,
+   "alignment": "any alignment",
+   "languages": "Common plus any four languages",
+   "resistances": "cold",
+   "immunities": "",
+   "vulnerabilities": "",
+   "condition_immunities": "",
+   "saves": {
+    "dex": 6,
+    "int": 5,
+    "wis": 4,
+    "cha": 7
+   },
+   "skills": {
+    "acrobatics": 6,
+    "arcana": 5,
+    "athletics": 5,
+    "perception": 4,
+    "performance": 10
+   },
+   "passive_perception": 14,
+   "description": "Action — Multiattack: The professor makes three Tidal Strike attacks.\n\nAction — Tidal Strike: Melee or Ranged Spell Attack: +7 to hit, reach 5 ft. or range 60 ft., one target. Hit: 13 (2d8 + 4) cold damage.\n\nSpellcasting. The professor casts one of the following spells, requiring no material components and using Charisma as the spellcasting ability (spell save DC 15): At will: minor illusion. 2/day each: control water, create or destroy water, mage armor, stone shape. 1/day each: wall of ice.\n\nBonus Action — Rushing Wave: The professor is momentarily surrounded by a swirling wave of water and moves up to 30 feet. When the professor moves within 5 feet of any other creature during this bonus action, that creature must succeed on a DC 15 Strength saving throw, or the creature is knocked prone and it can't take reactions until the start of its next turn. A creature can suffer this effect only once during a turn.",
+   "actions": [
+    {
+     "name": "Multiattack",
+     "desc": "The professor makes three Tidal Strike attacks."
+    },
+    {
+     "name": "Tidal Strike",
+     "desc": "Melee or Ranged Spell Attack: +7 to hit, reach 5 ft. or range 60 ft., one target. Hit: 13 (2d8 + 4) cold damage."
+    },
+    {
+     "name": "Rushing Wave",
+     "desc": "The professor is momentarily surrounded by a swirling wave of water and moves up to 30 feet. When the professor moves within 5 feet of any other creature during this bonus action, that creature must succeed on a DC 15 Strength saving throw, or the creature is knocked prone and it can't take reactions until the start of its next turn. A creature can suffer this effect only once during a turn."
+    }
+   ],
+   "provenance": "Strixhaven: A Curriculum of Chaos, Chapter 7 'Friends and Foes' - PDF p. 208 = print p. 206 (second block on the page; page-mate of Prismari Professor of Expression)",
+   "ocr_uncertain": [
+    "Block identity assigned by content, not column position: this is the cold/water block (Damage Resistances cold, Tidal Strike, spells control water / create or destroy water / wall of ice, bonus action Rushing Wave). The fire/lightning page-mate is a separate entry. See the Expression entry note for the full discrimination.",
+    "The two printed Speed lines on PDF p. 208 (40 ft. and 30 ft.) are assigned Expression=40 ft. and Perfection=30 ft. based on column order (the 40 ft. line sits with the left/fire column header, the 30 ft. line with the right/cold column header). This assignment is a best reading and is flagged, not certain.",
+    "Printed Saving Throws Dex +6, Int +5, Wis +4, Cha +7 all follow from the ability scores at PB +3. Printed Skills Acrobatics +6 is one higher than STR 14 (+2) + 3 = +5; transcribed exactly as printed (the same line is shared with the Expression block)."
+   ]
+  },
+  {
+   "name": "Silverquill Professor of Radiance",
+   "index": "silverquill-professor-of-radiance",
+   "cr": 7,
+   "xp": 2900,
+   "size": "Medium or Small",
+   "type": "humanoid (bard)",
+   "hp": 97,
+   "hp_dice": "15d8",
+   "ac": 12,
+   "speed": "walk 30 ft.",
+   "str": 11,
+   "dex": 14,
+   "con": 14,
+   "int": 16,
+   "wis": 13,
+   "cha": 19,
+   "alignment": "any alignment",
+   "languages": "Common plus any four languages",
+   "resistances": "radiant",
+   "immunities": "",
+   "vulnerabilities": "",
+   "condition_immunities": "",
+   "saves": {
+    "dex": 5,
+    "int": 6,
+    "wis": 4,
+    "cha": 7
+   },
+   "skills": {
+    "arcana": 6,
+    "deception": 7,
+    "performance": 10,
+    "persuasion": 10
+   },
+   "passive_perception": 11,
+   "description": "Action — Multiattack: The professor makes two Radiant Strike attacks. The professor can replace one of the attacks with a use of Spellcasting.\n\nAction — Radiant Strike: Melee or Ranged Spell Attack: +7 to hit, reach 5 ft. or range 120 ft., one target. Hit: 17 (3d8 + 4) radiant damage. If the target is a creature, it must succeed on a DC 15 Constitution saving throw or be blinded until the end of its next turn.\n\nSpellcasting. The professor casts one of the following spells, requiring no material components and using Charisma as the spellcasting ability (spell save DC 15): At will: dancing lights, friends. 2/day each: bless, command, cure wounds, daylight, mage armor. 1/day each: hypnotic pattern, tongues.",
+   "actions": [
+    {
+     "name": "Multiattack",
+     "desc": "The professor makes two Radiant Strike attacks. The professor can replace one of the attacks with a use of Spellcasting."
+    },
+    {
+     "name": "Radiant Strike",
+     "desc": "Melee or Ranged Spell Attack: +7 to hit, reach 5 ft. or range 120 ft., one target. Hit: 17 (3d8 + 4) radiant damage. If the target is a creature, it must succeed on a DC 15 Constitution saving throw or be blinded until the end of its next turn."
+    }
+   ],
+   "provenance": "Strixhaven: A Curriculum of Chaos, Chapter 7 'Friends and Foes' - PDF p. 217 = print p. 215 (page-mate of the already-present Silverquill Professor of Shadow)",
+   "ocr_uncertain": [
+    "Block identity assigned by content, not column position: PDF p. 217 interleaves Shadow (Damage Resistances necrotic, Ink Lance, Devil's Sight, darkvision 300 ft.) with Radiance (Damage Resistances radiant, Radiant Strike, skills Performance +10 / Persuasion +10). This entry is the radiant one.",
+    "The printed header renders as 'SlLVERQUILL PROF OF RADIANCE' (lowercase L for uppercase I) in the extraction; normalised to 'Silverquill Professor of Radiance'.",
+    "Ability scores are taken positionally from the printed grid (STR 11, DEX 14, CON 14, INT 16, WIS 13, CHA 19). Confirmed by HP 15d8 + 30 (CON 14), Skills Arcana +6 (INT 16), Saving Throws Int +6 (INT 16) and Wis +4 (WIS 13).",
+    "Printed Saving Throws Dex +5 and Cha +7 do NOT follow from DEX 14 (+2) or CHA 19 (+4) at PB +3 (which compute to Dex +6 and Cha +11). Printed Skills Deception +7 / Performance +10 / Persuasion +10 likewise exceed the CHA arithmetic. Transcribed exactly as printed rather than corrected. The identical printed saves appear on both Silverquill blocks on this page, so this is a property of the printed source as extracted, not a per-block slip.",
+    "Unlike the Shadow page-mate, no trait is printed for Radiance (the Devil's Sight trait belongs to Shadow), so this block's description begins directly with the Multiattack action."
+   ]
+  },
+  {
+   "name": "Witherbloom Professor of Decay",
+   "index": "witherbloom-professor-of-decay",
+   "cr": 7,
+   "xp": 2900,
+   "size": "Medium or Small",
+   "type": "humanoid (druid)",
+   "hp": 105,
+   "hp_dice": "14d8",
+   "ac": 14,
+   "speed": "walk 30 ft.",
+   "str": 11,
+   "dex": 14,
+   "con": 16,
+   "int": 16,
+   "wis": 19,
+   "cha": 13,
+   "alignment": "any alignment",
+   "languages": "Common plus any four languages",
+   "resistances": "necrotic",
+   "immunities": "",
+   "vulnerabilities": "",
+   "condition_immunities": "",
+   "saves": {
+    "con": 6,
+    "int": 6,
+    "wis": 7,
+    "cha": 4
+   },
+   "skills": {
+    "arcana": 6,
+    "medicine": 7,
+    "nature": 6,
+    "survival": 7
+   },
+   "passive_perception": 14,
+   "description": "Essence Transfer (1/Day). The professor can cast the animate dead spell, using Wisdom as the spellcasting ability.\n\nAction — Multiattack: The professor makes two Mortality Spear attacks. It can replace one of the attacks with a use of Spellcasting.\n\nAction — Mortality Spear: Melee or Ranged Spell Attack: +7 to hit, reach 5 ft. or range 120 ft., one target. Hit: 17 (3d8 + 4) necrotic damage, and the target can't regain hit points until the start of the professor's next turn.\n\nAction — Essence Pulse (Recharge 5-6): The professor creates a life-draining vortex in a 30-foot-radius sphere centered on itself. Each creature of the professor's choice that it can see within that area must make a DC 15 Constitution saving throw, taking 23 (5d8) necrotic damage on a failed save, or half as much damage on a successful one. The professor then regains 10 hit points. An affected creature's hit point maximum is reduced by an amount equal to the necrotic damage taken. This reduction lasts until the creature finishes a long rest. The creature dies if its hit point maximum is reduced to 0.\n\nSpellcasting. The professor casts one of the following spells, requiring no material components and using Wisdom as the spellcasting ability (spell save DC 15): At will: druidcraft, spare the dying. 1/day each: antilife shell, bane, feign death, speak with dead.",
+   "actions": [
+    {
+     "name": "Multiattack",
+     "desc": "The professor makes two Mortality Spear attacks. It can replace one of the attacks with a use of Spellcasting."
+    },
+    {
+     "name": "Mortality Spear",
+     "desc": "Melee or Ranged Spell Attack: +7 to hit, reach 5 ft. or range 120 ft., one target. Hit: 17 (3d8 + 4) necrotic damage, and the target can't regain hit points until the start of the professor's next turn."
+    },
+    {
+     "name": "Essence Pulse (Recharge 5-6)",
+     "desc": "The professor creates a life-draining vortex in a 30-foot-radius sphere centered on itself. Each creature of the professor's choice that it can see within that area must make a DC 15 Constitution saving throw, taking 23 (5d8) necrotic damage on a failed save, or half as much damage on a successful one. The professor then regains 10 hit points. An affected creature's hit point maximum is reduced by an amount equal to the necrotic damage taken. This reduction lasts until the creature finishes a long rest. The creature dies if its hit point maximum is reduced to 0."
+    }
+   ],
+   "provenance": "NOT EXTRACTED from CoC. PDF p.225 = print p.223 is the Witherbloom Professor of GROWTH block; the Decay block header (name/AC/HP/ability grid) is absent from our extraction. These values were transcribed from two third-party transcriptions of the same page and are internally consistent (14d8+42=105 from CON 16; AC 14 = 12+DEX 2+2 hide) but UNVERIFIED against the book. Spot-check against a clean scan before use at the table.",
+   "ocr_uncertain": [
+    "INCOMPLETE PRIMARY HEADER. The primary extraction (coc-full.md / pages.json, PDF p. 225) captured only the Witherbloom Professor of GROWTH stat-block header; the Decay block's own name/AC/HP/ability-grid header was NOT extracted. The Decay block's ACTIONS (Multiattack / Mortality Spear / Essence Pulse, necrotic), its Essence Transfer trait (animate dead), its spellcasting (druidcraft, spare the dying / antilife shell, bane, feign death, speak with dead), and the page's SHARED lines (Saving Throws Con +6, Int +6, Wis +7, Cha +4; Skills Arcana +6, Medicine +7, Nature +6, Survival +7; Languages Common plus any four languages; Challenge 7 (2,900 XP)) ARE present in the primary source and are transcribed from it.",
+    "Fields NOT present in the primary extraction and reconstructed from two independent published transcriptions of this same book page (D&D Homebrew Wiki 'Witherbloom Professor of Decay (5e)' and draketungsten.org, both keyed to Strixhaven p. 223) that agree with each other AND with the primary source's shared lines: AC 14 (hide armor), HP 105 (14d8 + 42), DEX 14, Damage Resistances necrotic. These are corroborated: 14d8 + 42 = 105 matches CON 16 (+3) x 14 dice; AC 14 = 12 + DEX 14 (+2) + 2 (hide armor); and the shared Saves (Con +6 = 16+3+3, Int +6, Wis +7, Cha +4) and Skills (Arcana +6 = INT 16+3) all match the shared primary lines. No other block on the page carries these values (the Growth page-mate is AC 13, DEX 13, poison resist), so there is no cross-contamination. Flagged for a clean-print verification; nothing here is invented.",
+    "The single ability grid captured on PDF p. 225 (STR 11, DEX 13, CON 16, INT 16, WIS 19, CHA 13) belongs to the GROWTH page-mate; this entry uses DEX 14, which the two agreeing transcriptions and the AC/saves arithmetic require for Decay.",
+    "Printed Skills Nature +6 is one lower than WIS 19 (+4) + 3 = +7, and is transcribed exactly as printed; the same off-by-one appears on the Growth page-mate, so it is a printed quirk of the source, not an extraction slip.",
+    "The Essence Pulse recharge is printed '(Recharge 5-6)'; the '(1/Day)'-style and frequency prefixes elsewhere on the page ('1 day each') are OCR-normalised to the printed 5e form."
+   ],
+   "source_status": "TRANSCRIBED EXTERNALLY - not from the CoC extraction"
+  },
+  {
+   "name": "Witherbloom Professor of Growth",
+   "index": "witherbloom-professor-of-growth",
+   "cr": 7,
+   "xp": 2900,
+   "size": "Medium or Small",
+   "type": "humanoid (druid)",
+   "hp": 112,
+   "hp_dice": "15d8",
+   "hp_dice_printed": "15d8 + 45",
+   "ac": 13,
+   "speed": "walk 30 ft.",
+   "str": 11,
+   "dex": 13,
+   "con": 16,
+   "int": 16,
+   "wis": 19,
+   "cha": 13,
+   "alignment": "any alignment",
+   "languages": "Common plus any four languages",
+   "resistances": "poison",
+   "immunities": "",
+   "vulnerabilities": "",
+   "condition_immunities": "poisoned",
+   "saves": {
+    "con": 6,
+    "int": 6,
+    "wis": 7,
+    "cha": 4
+   },
+   "skills": {
+    "arcana": 6,
+    "medicine": 7,
+    "nature": 6,
+    "survival": 7
+   },
+   "passive_perception": 14,
+   "description": "Essence Transfer (1/Day). The professor can cast the animate dead spell, using Wisdom as the spellcasting ability. Proficiency Bonus +3.",
+   "actions": [
+    {
+     "name": "Multiattack",
+     "desc": "The professor makes two Mortality Spear attacks. It can replace one of the attacks with a use of Spellcasting."
+    },
+    {
+     "name": "Mortality Spear",
+     "desc": "Melee or Ranged Spell Attack: +7 to hit, reach 5 ft. or range 120 ft., one target. Hit: 17 (3d8 + 4) necrotic damage, and the target cannot regain hit points until the start of the professor next turn."
+    },
+    {
+     "name": "Essence Pulse (Recharge 5-6)",
+     "desc": "The professor creates a life-draining vortex in a 30-foot-radius sphere centered on itself. Each creature of the professor's choice that it can see within that area must make a DC 15 Constitution saving throw, taking 23 (5d8) necrotic damage on a failed save, or half as much damage on a successful one. The professor then regains 10 hit points."
+    }
+   ],
+   "provenance": "Strixhaven: A Curriculum of Chaos, Chapter 7 'Friends and Foes' - PDF p. 225 = print p. 223 (offset -2 confirmed on the printed folio at PDF 222 = print 220)"
+  }
+ ]
+}
