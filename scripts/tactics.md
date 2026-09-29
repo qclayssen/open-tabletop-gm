@@ -184,13 +184,33 @@ There is no score, no clock of its own, and no mascot on the board. These are yo
 
 - **Keep the score.** First team to 3 mascots wins. Say the running score when it changes, not at the end.
 - **Call the clock.** Round 6 is half-time, round 12 is full time. `$T status` gives you the round; you announce the whistle.
-- **A mascot is an object, not a creature.** It has no HP and cannot be attacked. It is also not on the board, because the engine cannot place a token that is not a creature. So narrate its square, and the moment someone reaches it, narrate the grab and ask the room which square it is on.
+- **A mascot is a creature, and it is not on the board.** Each of the five has a statblock in the book (Spirit Statue, Art Elemental, Fractal, Inkling, Pest), but none is in the SRD dataset, so `--monster` cannot place one and the mascot has no engine token. Narrate its square, narrate the grab, and ask the room which square it is on.
 - **Carrying is a real cost.** A carried mascot is a grapple: the engine's grapple riders apply (escape DC, being released when the carrier moves out of reach). Do not discount the movement.
 - **The restore decks.** The planked deck in front of each tower is where a creature wearing a Mage Tower Ring spends an action to restore temporary hit points. It is a real square, so the engine will charge for walking onto it. The ring and the action are yours to confirm.
-- **A foul is a foul.** Harming a player is a foul. Call it when it happens, and let the table decide the penalty. Do not quietly let it stand, and do not invent a penalty the table did not agree to.
 
-### Before you start
+### Fouls, and the two penalties
 
-`--pc`, `--monster` and `--ally` all need a real creature. The two mascots in the map's `spawns` are suggestions for the display, not tokens the engine can place, so place your own creatures and narrate the mascots.
+The book separates these, and so should you. A **foul** is questionable use of magic, called by the referee. **Causing damage** to a player, a mascot, a spectator, or the field of play is not a foul at all: it is prohibited, and it results in expulsion from the game. A participant who accumulates **three fouls is ejected**, and a team **may not replace** them.
+
+- Call the foul when it happens. Do not let it stand unmentioned because the moment was busy.
+- Announce the count. Three is a hard stop with no substitute.
+- If someone damaged a player, that is an expulsion, not a warning. Say so.
+
+### Which ruleset are you using
+
+Two sets of rules exist and they disagree. The one above this section is the match structure in the map's `info` field: half-time at round 6, full time at 12, first team to 3 mascots. The adventure in `Strixhaven: A Curriculum of Chaos` (ch. 4) instead runs **three phases of 20 minutes each, most points wins**, with no cap on captures.
+
+Say which one you are playing before the first whistle, and keep the rest of the session on it. A table that changes structure halfway stops being able to argue about the game.
+
+### Open questions you will have to rule on
+
+These are not in the book, and every table answers them. Decide each one before the match, say it out loud, and hold to it:
+
+- **Does damage foul, or is it legal?** The book says damage is prohibited and grounds for expulsion. Most tables soften this, because a sport where nothing can land is a sport where nobody plays. Decide, then enforce yours.
+- **Can you cast while carrying a mascot?** Tables commonly say no, which makes the carrier a body to escort rather than a threat.
+- **How does a creature reach a tower?** Climbing is commonly an entire action with a DC 15 check, which makes flight and feather fall worth having.
+- **Are teleports, invisibility, or mental spells legal?** Tables almost always ban at least one, because a caster who ends the match in one action ends the match.
+- **How hard is a mascot to pick up?** Each college's mascot is awkward in a different way. A single DC for all five flattens them; a per-mascot DC makes them worth choosing.
+- **What keeps it non-lethal?** A per-player buff for temporary hit points is the common answer, scaled to how strong the spells are allowed to be.
 
 For the running state (score, clock, which mascot is in play, who has a ring) use `/gm advise referee`. It is read-only to the campaign and never sees the players.
