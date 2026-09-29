@@ -82,6 +82,8 @@ It prints the map as text (`.` floor, `#` wall, `,` difficult, `~` water, `^` ha
 
 `mage-tower.json` is the exception worth reading before you paint on it. Its terrain was derived from the Strixhaven Mage Stadium art rather than clicked out: the octagons, the two towers and the two halfway lines are the mapmaker's own, and the water and the planking are read off the picture. The ground inside the pitch is the four numbered sections of the game, so a square you repaint changes the section it is in. Only the moat is out of bounds in those rules, so the terrace, the lawns and the stands beyond it are left as ordinary ground and the map's own artwork carries them; paint them out if you want the match contained.
 
+**The map's rules live in its `info` field, and the engine does not read it.** `info` goes to the display, the catalog and `docs/CAMPUS.md`; nothing in `scripts/tactics/` reads it, so a GM driving this fight will not see the rules unless told to. The `## Mage Tower` section of `scripts/tactics.md` is that telling, and it names the advisor that keeps the score, the clock and the mascots. The terrain here is engine-owned and needs no narration; the match around it is not.
+
 ## Artwork
 
 A map may carry a background image under the terrain, plus the grid alignment that lines the picture up with the 5 ft squares:
