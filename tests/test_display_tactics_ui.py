@@ -150,9 +150,12 @@ class FrameGeometry(unittest.TestCase):
     def test_the_ally_frame_is_a_circle_of_the_same_radius(self):
         # The enemy frame and the ally frame are drawn at one radius, so the two
         # shapes are the same size on the board and only the outline differs.
+        # The geometry now lives in one `shape` object that is drawn twice --
+        # filled underneath, stroked over the top -- so that a portrait cannot
+        # change the silhouette. The radius is still C / 2 - 4 for both.
         js = JS.read_text(encoding="utf-8")
-        self.assertIn("svg('circle', { cx, cy, r: C / 2 - 4", js)
-        self.assertIn("svg('path', { d: octagon(cx, cy, C / 2 - 4)", js)
+        self.assertIn("{ tag: 'circle', geo: { cx, cy, r: C / 2 - 4 } }", js)
+        self.assertIn("{ tag: 'path', geo: { d: octagon(cx, cy, C / 2 - 4) } }", js)
 
     def test_every_side_has_its_own_frame_colour_and_word(self):
         out = _run("return {cls: Object.values(SIDES).map(s => s.cls), "
@@ -336,9 +339,35 @@ class ScriptAndStylesheetAgree(unittest.TestCase):
         self.assertIsNotNone(glyphs)
 
     def test_the_enemy_token_is_drawn_as_a_path_and_the_ally_as_a_circle(self):
+        # The shape is chosen once, from the side, and every element the token
+        # draws (fill, portrait clip, frame) is built from that one choice. That
+        # is what makes "side is shown by the outline, not the colour" true once
+        # portraits are in the middle: a portrait is clipped to the same octagon
+        # or circle the frame is stroked over.
         js = self.js()
-        self.assertRegex(js, r"t\.side === 'enemy'\)\s*\n?\s*svg\('path', \{ d: octagon\(")
-        self.assertRegex(js, r"else\s*\n?\s*svg\('circle', \{ cx, cy, r: C / 2 - 4")
+        self.assertRegex(js, r"const isEnemy = t\.side === 'enemy'")
+        self.assertRegex(js, r"\? \{ tag: 'path', geo: \{ d: octagon\(")
+        self.assertRegex(js, r": \{ tag: 'circle', geo: \{ cx, cy, r: C / 2 - 4 \} \}")
+        # One helper draws it, so the fill and the frame cannot drift apart.
+        self.assertIn("const shapeNode = (style, parent) =>", js)
+        self.assertIn("shapeNode('fill:none;stroke:var(--tx-panel);stroke-width:2', g);", js)
+
+    def test_the_frame_is_drawn_after_whatever_is_inside_it(self):
+        """The frame is the only thing that says which side a creature is, so it
+        is stroked last and nothing may land on top of it.
+
+        The portrait fallback is the case that breaks this by accident: it runs
+        from an `error` handler, after drawToken has finished, and an appended
+        fill goes to the end of the group -- over the frame. So the fallback
+        inserts the fill where the image was and removes the image, rather than
+        appending. MeasuredLayout's `frames` check cannot see this (it asks
+        which shape is present, not what covers what), so it is pinned here.
+        """
+        js = self.js()
+        self.assertIn("g.insertBefore(fill, img);", js)
+        self.assertIn("g.removeChild(img);", js)
+        # ...and only once, whatever the browser fires at us.
+        self.assertIn("if (fellBack || !g.isConnected || !img) return;", js)
 
     LEAD = re.compile(r"button\('(?P<name>[^']+)',\s*\(\)\s*=>\s*[\w.]+\([^)]*\),\s*\{(?P<opts>[^{}]*)\}",
                       re.S)

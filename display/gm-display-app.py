@@ -454,6 +454,12 @@ _ICONS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icons")
 # draws it under the terrain, so it has to be fetchable. Served by one route below,
 # which, like the icons route, is confined to this directory.
 _MAPS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "maps")
+# Token portraits. A token may carry a `portrait` in the combat snapshot (see
+# tactics/token_portraits.py), and the display draws it inside the token's shape.
+# Same one-route-one-directory arrangement as the maps, for the same reason: the
+# art is third-party and gitignored, so a clone without it still draws every
+# token correctly from its side colour alone.
+_TOKENS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tokens")
 
 app = Flask(__name__)
 # Flask derives its root from the module's __name__, which is only this file's
@@ -1277,6 +1283,22 @@ def map_image(filename):
     display/maps/, the same guarantee the icons route relies on.
     """
     return send_from_directory(_MAPS_DIR, filename)
+
+
+@app.route("/tokens/<path:filename>")
+def token_portrait(filename):
+    """Serve a token's portrait out of display/tokens/.
+
+    Every creature the engine can place may carry a `portrait` in the combat
+    snapshot, and the display fetches it to draw inside the token's shape. The
+    route is only reached when a token has one, so a token without a portrait is
+    unaffected -- which is most of them, and is a supported state rather than a
+    missing file.
+
+    Confined to display/tokens/ by send_from_directory, the same traversal
+    guarantee the icons and maps routes rely on.
+    """
+    return send_from_directory(_TOKENS_DIR, filename)
 
 
 # ─── Map editor ──────────────────────────────────────────────────────────────

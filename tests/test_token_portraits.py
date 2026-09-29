@@ -1,0 +1,212 @@
+"""token_portraits.py: portraits in the combat snapshot.
+
+The design constraint is the one BV1 set for map images and it is the same
+constraint here: **a portrait is display-only.** `compile_map` is untouched,
+`grid.rows` is byte-identical with or without one, and no rule reads it. If a
+test here ever needs the engine to behave differently, the feature has leaked.
+"""
+
+import pathlib
+import sys
+
+import pytest
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+
+from tactics import maps, sync, token_portraits  # noqa: E402
+
+TOKENS_DIR = ROOT / "display" / "tokens"
+
+
+def _token(name, side="enemy"):
+    """A real Token, not a stub. `snapshot` reads a dozen attributes off it, so
+    a hand-rolled fake would keep needing new fields every time the payload
+    grows -- and would hide the case where it does."""
+    from tactics.state import Token
+    return Token(id=name.lower().replace(" ", "-"), name=name, side=side,
+                 hp=10, max_hp=10, ac=12, x=0, y=0)
+
+
+# ─── the manifest ────────────────────────────────────────────────────────────
+
+def test_slugify_matches_the_filenames_on_disk():
+    """The manifest and the art have to agree on one rule, or a portrait is
+    named in the map and 404s at the table."""
+    for name, slug in token_portraits.PORTRAITS.items():
+        assert token_portraits.slugify(name) == slug, name
+
+
+def test_resolve_returns_a_filename_for_a_known_creature():
+    assert token_portraits.resolve("Daemogoth") == "daemogoth.png"
+    assert token_portraits.resolve("Quandrix Scholar 3") == "quandrix-scholar-3.png"
+    assert token_portraits.resolve("archaic") == "archaic.png"
+
+
+def test_resolve_is_case_and_spacing_insensitive():
+    assert token_portraits.resolve("DAEMOGOTH") == "daemogoth.png"
+    assert token_portraits.resolve("  daemogoth  ") == "daemogoth.png"
+
+
+def test_resolve_strips_a_numeric_suffix():
+    """A GM placing four of something types "Ghoul 1"; that is still Ghoul."""
+    assert token_portraits.resolve("Archaic 2") == "archaic.png"
+
+
+def test_resolve_returns_none_rather_than_guessing():
+    """The important one. A near-match is a wrong face on a creature, which is
+    a lie the table has no way to check."""
+    assert token_portraits.resolve("Goblin") is None
+    assert token_portraits.resolve("Daemogot") is None          # one letter off
+    assert token_portraits.resolve("") is None
+    assert token_portraits.resolve(None) is None
+
+
+def test_every_manifest_entry_has_a_file_when_the_art_is_installed():
+    """Skipped on a clone without the art, which is a supported state."""
+    if not TOKENS_DIR.is_dir() or not any(TOKENS_DIR.glob("*.png")):
+        pytest.skip("portrait art not installed")
+    for slug in token_portraits.PORTRAITS.values():
+        assert (TOKENS_DIR / f"{slug}.png").exists(), slug
+
+
+def test_no_portrait_file_is_missing_from_the_manifest():
+    """The other direction: art on disk that nothing can reach is a portrait
+    that silently never appears."""
+    if not TOKENS_DIR.is_dir():
+        pytest.skip("portrait art not installed")
+    known = {f"{v}.png" for v in token_portraits.PORTRAITS.values()}
+    for png in TOKENS_DIR.glob("*.png"):
+        assert png.name in known, png.name
+
+
+def test_the_manifest_names_the_artist():
+    """Free to download is not free of the artist's claim."""
+    assert token_portraits.CREDIT
+    assert "hearden" in token_portraits.SOURCE
+
+
+# ─── the opt-in ──────────────────────────────────────────────────────────────
+
+def test_a_map_without_the_flag_offers_no_portraits():
+    assert maps.compile_map({"name": "X", "width": 4, "height": 4})["meta"]["portraits"] is False
+
+
+def test_the_flag_is_carried_into_meta():
+    m = maps.compile_map({"name": "X", "width": 4, "height": 4, "portraits": True})
+    assert m["meta"]["portraits"] is True
+
+
+def test_portrait_for_is_a_pure_lookup():
+    t = _token("Daemogoth")
+    assert sync.portrait_for(t) == "daemogoth.png"
+    assert sync.portrait_for(_token("Goblin")) is None
+
+
+# ─── the design constraint ───────────────────────────────────────────────────
+
+def test_portraits_do_not_change_the_grid():
+    """The BV1 guarantee, restated for tokens. `compile_map` is untouched, so
+    this is the same rows string with the flag on and off."""
+    plain = maps.compile_map({"name": "X", "width": 8, "height": 6,
+                              "features": [{"type": "wall", "x": 2, "y": 1, "w": 3, "h": 2}]})
+    fancy = maps.compile_map({"name": "X", "width": 8, "height": 6, "portraits": True,
+                              "features": [{"type": "wall", "x": 2, "y": 1, "w": 3, "h": 2}]})
+    assert plain["grid"]["rows"] == fancy["grid"]["rows"]
+
+
+def test_every_shipped_map_still_loads_with_the_new_meta_key():
+    """`portraits` is a new key in meta; nothing downstream should trip on it."""
+    for name in maps.available():
+        m = maps.load(name)
+        assert "portraits" in m["meta"], name
+        assert isinstance(m["meta"]["portraits"], bool), name
+
+
+def test_the_token_payload_carries_a_portrait_key():
+    """The display reads `portrait` off every token, so the key must always be
+    present -- null for a token with no art, never missing."""
+    snap = sync.snapshot(_enc_with([_token("Daemogoth"), _token("Goblin")]),
+                         meta={"portraits": True})
+    by_name = {t["name"]: t for t in snap["tokens"]}
+    assert by_name["Daemogoth"]["portrait"] == "daemogoth.png"
+    assert by_name["Goblin"]["portrait"] is None
+
+
+def test_portraits_are_off_unless_the_map_asks():
+    snap = sync.snapshot(_enc_with([_token("Daemogoth")]), meta={})
+    assert snap["tokens"][0]["portrait"] is None
+
+
+def test_a_missing_portrait_key_from_an_older_snapshot_is_tolerated():
+    """A snapshot written before this feature has no `portrait` on its tokens.
+    The display must not care, so the key is optional in, present out."""
+    assert sync.portrait_for(_token("Daemogoth")) == "daemogoth.png"
+
+
+# ─── the Flask route ─────────────────────────────────────────────────────────
+#
+# Same shape as the /maps/images route in test_map_images.py: a real PNG written
+# by the test, because the route test needs a file that exists and committing a
+# fixture portrait would put a test artefact in the shipped token set.
+
+@pytest.fixture(scope="module")
+def art():
+    import struct
+    import zlib
+    tokens = ROOT / "display" / "tokens"
+    tokens.mkdir(parents=True, exist_ok=True)
+    path = tokens / "_portrait_test.png"
+
+    def chunk(tag: bytes, data: bytes) -> bytes:
+        body = tag + data
+        return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body) & 0xFFFFFFFF)
+
+    width = height = 4
+    raw = b"".join(b"\x00" + bytes([200, 120, 60] * width) for _ in range(height))
+    path.write_bytes(b"\x89PNG\r\n\x1a\n"
+                     + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+                     + chunk(b"IDAT", zlib.compress(raw))
+                     + chunk(b"IEND", b""))
+    yield path
+    path.unlink(missing_ok=True)
+
+
+@pytest.fixture(scope="module")
+def client():
+    sys.path.insert(0, str(ROOT / "display"))
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("gm_display_app", ROOT / "display" / "gm-display-app.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    mod.app.config["TESTING"] = True
+    return mod.app.test_client()
+
+
+def test_the_tokens_route_serves_a_portrait(client, art):
+    assert client.get(f"/tokens/{art.name}").status_code == 200
+
+
+def test_the_tokens_route_cannot_escape_its_directory(client):
+    """The same guarantee the icons and maps routes rely on: send_from_directory
+    confines it, so a crafted path cannot reach the rest of the disk."""
+    assert client.get("/tokens/../../etc/passwd").status_code in (400, 404)
+
+
+def test_a_missing_portrait_is_a_404_not_an_error(client):
+    """The normal state on a clone without the art, and the state the
+    JavaScript falls back from. It has to be unremarkable."""
+    assert client.get("/tokens/definitely-not-here.png").status_code == 404
+
+
+def _enc_with(tokens):
+    """A real Encounter, not a stub. `snapshot` reads a dozen attributes off it
+    (system, turn, order, grid), so a hand-rolled fake would pass here and break
+    the moment one of those changes -- which is the opposite of what a test is
+    for."""
+    from tactics.state import Encounter
+    enc = Encounter(campaign="test", grid={"rows": [".....", "....."], "name": "t", "diagonals": "5"})
+    enc.tokens = {t.id: t for t in tokens}
+    enc.order = list(enc.tokens)
+    enc.status = "ended"
+    return enc

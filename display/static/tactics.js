@@ -430,6 +430,11 @@
       t.textContent = l.text;
     }
     ui.overlay = svg('g', {}, s);
+    // Portrait clips live in defs, not in the token layer: they are referenced
+    // by url(#id) and never drawn themselves, and keeping them out of the layer
+    // means nothing can mistake one for content. Rebuilt with the board, so a
+    // clip cannot outlive the token that named it.
+    ui.defsLayer = svg('defs', {}, s);
     ui.tokenLayer = svg('g', {}, s);
     ui.markLayer = svg('g', { 'aria-hidden': 'true' }, s);
     ui.floatLayer = svg('g', {}, s);
@@ -535,13 +540,67 @@
     // The frame is what says whose turn-relevant creature this is: a notched
     // octagon for an enemy, a round frame for everyone else. Side stays
     // readable in greyscale, at a glance, and to a colour-blind player.
-    if (t.side === 'enemy')
-      svg('path', { d: octagon(cx, cy, C / 2 - 4), style: `fill:${side.colour};stroke:var(--tx-panel);stroke-width:2` }, g);
-    else
-      svg('circle', { cx, cy, r: C / 2 - 4, style: `fill:${side.colour};stroke:var(--tx-panel);stroke-width:2` }, g);
-    const initials = t.name.split(/\s+/).map(w => /^\d+$/.test(w) ? w : w[0]).join('').slice(0, 3);
-    const tx = svg('text', { x: cx, y: cy + 4, 'text-anchor': 'middle', style: 'fill:#fff;font:700 11px Figtree,sans-serif' }, g);
-    tx.textContent = initials;
+    //
+    // A portrait REPLACES the flat fill but not the frame. The frame is drawn
+    // after the art, as a stroke over it, because the shape -- not the colour,
+    // and not the face -- is what identifies an enemy in a crowded grid. Drop
+    // the stroke and a screen full of portraits becomes a screen where you hunt
+    // for the red one; that is the thing this shape exists to prevent.
+    //
+    // Everything the portrait does is inside the clip, so the silhouette the
+    // player reads is the same silhouette as before.
+    const art = t.portrait || '';
+    const isEnemy = t.side === 'enemy';
+    // The silhouette, as tag + geometry. One description, drawn twice: once as
+    // the fill underneath and once as the frame over the top, so the two can
+    // never drift apart.
+    const shape = isEnemy
+      ? { tag: 'path', geo: { d: octagon(cx, cy, C / 2 - 4) } }
+      : { tag: 'circle', geo: { cx, cy, r: C / 2 - 4 } };
+    // svg() takes (tag, attrs, parent) -- three. The style belongs in attrs, or
+    // it lands in the parent slot and the call throws.
+    const shapeNode = (style, parent) => svg(shape.tag, Object.assign({}, shape.geo, { style }), parent);
+    // The three initials, used when there is no portrait and again if a
+    // portrait fails to load. Outlined so they stay readable on light art.
+    function initialsInto(g, cx, cy) {
+      const initials = t.name.split(/\s+/).map(w => /^\d+$/.test(w) ? w : w[0]).join('').slice(0, 3);
+      const tx = svg('text', { x: cx, y: cy + 4, 'text-anchor': 'middle',
+        style: 'fill:#fff;font:700 11px Figtree,sans-serif;paint-order:stroke;stroke:rgba(0,0,0,.6);stroke-width:2.5' }, g);
+      tx.textContent = initials;
+    }
+    if (art) {
+      // A portrait that fails to load falls back to the coloured shape. The art
+      // is gitignored, so this is the normal state on a clone without it and it
+      // must not be a broken image or an empty hole.
+      //
+      // The fallback REPLACES the <image> in place rather than appending: the
+      // frame is stroked after everything else, and an appended fill would land
+      // on top of it and hide the one thing that says which side this is.
+      let fellBack = false, img = null;
+      const paint = () => {
+        if (fellBack || !g.isConnected || !img) return;
+        fellBack = true;
+        const fill = shapeNode(`fill:${side.colour}`, g);
+        g.insertBefore(fill, img);
+        g.removeChild(img);
+        img = null;
+        initialsInto(g, cx, cy);
+      };
+      const clipId = 'txclip-' + t.id.replace(/[^A-Za-z0-9_-]/g, '');
+      const clip = svg('clipPath', { id: clipId }, ui.defsLayer);
+      svg(shape.tag, shape.geo, clip);
+      img = svg('image', {
+        class: 'tx-art', x: cx - C / 2 + 2, y: cy - C / 2 + 2, width: C - 4, height: C - 4,
+        preserveAspectRatio: 'xMidYMid slice', 'clip-path': `url(#${clipId})`,
+        href: '/tokens/' + art.split('/').pop()
+      }, g);
+      img.addEventListener('error', paint);
+    } else {
+      shapeNode(`fill:${side.colour}`, g);
+      initialsInto(g, cx, cy);
+    }
+    // The frame, last, over whatever is inside it.
+    shapeNode('fill:none;stroke:var(--tx-panel);stroke-width:2', g);
     if (!t.dead) {
       const pct = Math.max(0, t.hp / Math.max(1, t.max_hp));
       svg('rect', { x: t.x * C + 4, y: t.y * C + C - 5, width: C - 8, height: 3, style: 'fill:var(--tx-line)' }, g);

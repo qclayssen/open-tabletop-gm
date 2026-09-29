@@ -84,6 +84,11 @@ def compile_map(spec: dict) -> dict:
     meta = {"name": spec.get("name", ""), "info": spec.get("info", ""),
             "labels": labels, "zones": spec.get("zones", []),
             "spawns": spec.get("spawns", []),
+            # Opt in to token portraits for a fight on this map. Off by default:
+            # a portrait is art the GM has to have chosen, and a map that did not
+            # ask should not start putting faces on its monsters. Display-only,
+            # and read by sync.portrait_for -- the engine never sees it.
+            "portraits": bool(spec.get("portraits", False)),
             "colors": {k: v.get("color", k) for k, v in custom.items()}}
     # A map may carry artwork under the terrain, with the grid aligned to it in the
     # image's own pixels. Both are display-only: the engine reads `rows` and never

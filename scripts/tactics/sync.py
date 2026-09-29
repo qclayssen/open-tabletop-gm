@@ -114,6 +114,19 @@ def _runs(visible) -> list:
     return out
 
 
+def portrait_for(t) -> str | None:
+    """The portrait filename for a token, or None if it has none.
+
+    Pure lookup -- the name in, a filename or None out. Whether a fight wants
+    portraits at all is decided by the map (`portraits: true` in its JSON, read
+    into meta), because that is the GM saying "put faces on this one". A wrong
+    face on a creature is a lie the table cannot check, so nothing here guesses
+    at a near-match, and most of the SRD's 334 monsters have no art anyway.
+    """
+    from . import token_portraits
+    return token_portraits.resolve(t.name)
+
+
 def snapshot(enc, meta: dict = None) -> dict:
     """Everything the grid view needs, as one JSON-able dict."""
     def effect_names(t) -> list:
@@ -138,6 +151,8 @@ def snapshot(enc, meta: dict = None) -> dict:
     def threat(t) -> int:
         """Opportunity-attack reach in feet right now (engine._provokers' test), else 0."""
         return R.reach(t) if t.active and R.can_react(t) and R.opportunity_attack(t) else 0
+
+    portraits = bool((meta or {}).get("portraits"))
 
     from . import sight
     visible = sight.fog(enc)
@@ -166,6 +181,11 @@ def snapshot(enc, meta: dict = None) -> dict:
                         "reactions": t.reactions,
                         "readied": (t.extra.get("readied") or {}).get("label") or None,
                         "hidden": t.has("hidden"), "threat": threat(t),
+                        # A filename for the display to draw inside the token's
+                        # shape, or None. Display-only, like a map's `image`: the
+                        # engine never reads it and every rule is unchanged, so a
+                        # token with no portrait looks exactly as it always did.
+                        "portrait": portrait_for(t) if portraits else None,
                         "slots": slots(t) if t.side == "pc" else {}}
                        # A hidden or unseen enemy is not drawn: players must not see where it is.
                        for t in enc.tokens.values() if sight.shown(enc, t, visible)],
