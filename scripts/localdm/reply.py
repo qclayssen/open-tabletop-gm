@@ -161,3 +161,28 @@ def is_dead_stop(narration: str) -> bool:
     if _HARD_STALL.search(text):
         return True
     return bool(_SOFT_STALL.search(text)) and not _FORWARD.search(text)
+
+
+# Guardrail: when a check is requested, the beat before the roll must not state
+# the outcome. 5e leaves this to the die, so narration that says "you find the
+# latch" or "you fail to spot it" has quietly adjudicated the roll the engine is
+# about to make, and the roll then contradicts the story the player was told.
+_CHECK_OUTCOME = re.compile(
+    r"\b(?:you\s+)?(?:find|found|finds|succeed|succeeds|fail|fails|"
+    r"(?:managed|manages|able)\s+to|unable\s+to|notice|notices|discover|discovers|"
+    r"realize|realises|spot|spots|detect|detects|uncover|uncovers|miss|misses|"
+    r"overlook|overlooks|it\s+works|it\s+doesn't\s+work)\b"
+    r"|\b(?:success|failure)\b[^.]{0,24}\b(?:on\s+the\s+)?(?:check|roll)\b"
+    r"|\b(?:check|roll)\b[^.]{0,24}\b(?:success|failure)\b",
+    re.I)
+
+
+def reveals_check_outcome(narration: str) -> bool:
+    """True when narration states the result of a check the player has not rolled.
+
+    Scoped to the beat *before* a roll, never the narration of a rolled outcome:
+    once the engine has resolved the check, "you find the latch" is the correct
+    sentence and must not be rewritten. A heuristic, not a proof — a false
+    positive costs one model call, the same bargain the other guardrails make.
+    """
+    return bool(_CHECK_OUTCOME.search(narration or ""))
