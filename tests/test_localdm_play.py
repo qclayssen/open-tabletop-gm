@@ -952,3 +952,69 @@ def test_outcome_words_in_a_pre_roll_beat_are_detected(leak):
 def test_a_pre_roll_beat_with_no_outcome_is_left_alone(clean):
     from localdm import reply
     assert not reply.reveals_check_outcome(clean)
+
+
+def test_a_cast_number_nothing_backed_is_rewritten_and_no_slot_is_invented(real_camp):
+    """D3, end to end: the exact shape the 2026-09-29 playtest hit.
+
+    The model narrates the cast and states an AC change, but omits the `cast`
+    field, so `_cast_spell` never runs and the engine applies nothing. The first
+    draft's number is a claim about a sheet that was not modified.
+
+    The guardrail rewrites the beat once. The sheet must be untouched either
+    way — the point is not that the number becomes true, it is that the DM stops
+    asserting a number it was never given.
+    """
+    replies = iter([
+        'Your AC climbs from 12 to 15 instantly, and a faint hum vibrates through '
+        'your bones where Hesper gifted this focus.' + NULLS,
+        'Silver light settles over your skin, layer on layer, and the cold finds '
+        'no purchase on you.' + NULLS,
+    ])
+    c = FakeClient(lambda m, msgs, role: next(replies))
+    s = Session("demo", c, MODELS, camp_dir=real_camp, bridge=FakeBridge())
+    out = s.handle("I cast Mage Armor on myself.")
+
+    assert "AC climbs from 12 to 15" not in " ".join(out)   # the unbacked number is gone
+    assert "Silver light settles" in " ".join(out)          # the retry was adopted
+    assert c.roles().count("dm") == 2                       # one corrective retry
+
+    sheet = (real_camp / "characters" / "Kairos.md").read_text(encoding="utf-8")
+    assert re.search(r"\|\s*1st\s*\|\s*2\s*\|\s*0\s*\|", sheet)   # nothing was spent
+    assert context.party_stats(real_camp)[0]["ac"] == 12          # AC unchanged
+
+
+def test_an_engine_resolved_cast_is_never_rewritten(real_camp):
+    """The other direction. When the model *does* emit `cast`, `_cast_spell`
+    runs and the numbers in the follow-up narration are real — they came from
+    the Engine section. Rewriting that would be a false positive on correct
+    behaviour, and it would also cost the slot the engine just spent."""
+    replies = iter([
+        'Kairos traces a ward of shimmering light around himself.'
+        '\n{"escalate": null, "command": null, "cast": "Mage Armor"}',
+        'Your AC climbs from 12 to 15 and the cold finds no purchase on you.' + NULLS,
+    ])
+    c = FakeClient(lambda m, msgs, role: next(replies))
+    s = Session("demo", c, MODELS, camp_dir=real_camp, bridge=FakeBridge())
+    out = s.handle("I cast Mage Armor on myself.")
+
+    assert "AC climbs from 12 to 15" in " ".join(out)   # backed by the engine: kept
+    assert c.roles().count("dm") == 2                   # the cast turn only, no retry
+
+    sheet = (real_camp / "characters" / "Kairos.md").read_text(encoding="utf-8")
+    assert re.search(r"\|\s*1st\s*\|\s*2\s*\|\s*1\s*\|", sheet)   # the slot was spent
+
+
+def test_a_clean_cast_with_no_number_costs_no_extra_call(real_camp):
+    """The common case must stay free: one call, no retry, no slot invented."""
+    replies = iter([
+        'Kairos traces a ward of shimmering light around himself.' + NULLS,
+    ])
+    c = FakeClient(lambda m, msgs, role: next(replies))
+    s = Session("demo", c, MODELS, camp_dir=real_camp, bridge=FakeBridge())
+    out = s.handle("I cast Mage Armor on myself.")
+
+    assert "ward of shimmering light" in " ".join(out)
+    assert c.roles().count("dm") == 1                   # no retry
+    sheet = (real_camp / "characters" / "Kairos.md").read_text(encoding="utf-8")
+    assert re.search(r"\|\s*1st\s*\|\s*2\s*\|\s*0\s*\|", sheet)   # no cast was resolved

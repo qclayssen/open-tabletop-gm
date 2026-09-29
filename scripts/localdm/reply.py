@@ -12,8 +12,8 @@ import re
 from dataclasses import dataclass
 
 _THINK = re.compile(r"<think>.*?</think>", re.S)
-_FENCED = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```\s*$", re.S)
-_BARE = re.compile(r"(\{[^{}]*\})\s*$", re.S)
+_FENCED = re.compile(r"```(?:json)?\s*(\{.*\})\s*```\s*$", re.S)
+_BARE = re.compile(r"(\{.*\})\s*$", re.S)
 
 
 _CUT_JSON = re.compile(r'\s*\{\s*"(?:escalate|command|check|cast)"[^{}]*\Z')
@@ -39,6 +39,39 @@ def _text_field(data: dict, key: str):
     return value.strip() if isinstance(value, str) and value.strip() else None
 
 
+def _cast_field(data: dict):
+    """The `cast` field, tolerating the object shape a small model prefers.
+
+    The prompt asks for a bare string — {"cast": "Mage Armor"} — because that is
+    what `_cast_spell` looks the spell up by. But models reliably answer with a
+    structured object instead:
+
+        {"cast": {"spell_name": "mage armor", "mechanics_applied_by_engine": true,
+                  "description_prose": "Silvery luminescence blooms..."}}
+
+    which `_text_field` drops on the floor because it is not a string. The cast
+    is then never resolved: no slot spent, no AC recorded, and the turn narrates
+    a spell that did not mechanically happen. Measured on qwen3.5:9b, which
+    produced exactly this shape on the first attempt.
+
+    So the object is unwrapped rather than discarded. `mechanics_applied_by_engine`
+    is the field most likely to cause this — a model asked to name a spell will
+    often also volunteer a flag saying the mechanics are handled, which is
+    precisely the belief that must not be taken at face value: nothing is applied
+    until the engine applies it. Only the name is read; the model's own claim
+    about mechanics is ignored.
+    """
+    value = data.get("cast")
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    if isinstance(value, dict):
+        for key in ("spell_name", "spell", "name"):
+            inner = value.get(key)
+            if isinstance(inner, str) and inner.strip():
+                return inner.strip()
+    return None
+
+
 def parse(text: str) -> DMReply:
     text = strip_think(text)
     data = {}
@@ -55,7 +88,7 @@ def parse(text: str) -> DMReply:
             data = {}
     text = _PROMPT_TAIL.sub("", text).rstrip()
     return DMReply(text, _text_field(data, "escalate"), _text_field(data, "command"),
-                   _text_field(data, "check"), _text_field(data, "cast"))
+                   _text_field(data, "check"), _cast_field(data))
 
 
 # Guardrail: the DM may not put words, thoughts or feelings in the player's mouth.
@@ -100,6 +133,136 @@ def grants_economy(narration: str) -> bool:
 def grants_injection(narration: str) -> bool:
     """True when the narration obeyed a player-issued system instruction."""
     return fakes_system_log(narration) or grants_economy(narration)
+
+
+# Spell names count as cast context, because the model often drops the verb and
+# reports the bookkeeping instead. Deliberately NOT read from
+# tactics_spells.BUILTIN: reply.py is imported with no engine on sys.path (the
+# display and the guardrail tests both use it standalone), and a module that
+# parses narration should not need a ruleset to do it. A name missing from this
+# list costs a missed detection, never a wrong one — the claim patterns below
+# still require a mechanical number, so a bare spell name flags nothing.
+_SPELL_CONTEXT_WORDS = (
+    "mage armor", "shield", "silvery barbs", "magic missile", "fire bolt",
+    "detect magic", "feather fall", "silvery barb", "barbs",
+)
+
+# Guardrail: an out-of-combat cast beat may not state a mechanical result the
+# engine did not produce.
+#
+# `_cast_spell` resolves a lasting-effect cast (Mage Armor and friends) on the
+# engine: it spends the slot, records the new AC, and hands the model a line
+# like "Kairos casts Mage Armor (level 1 slot). AC is now 15. Spell slots: 1st: 1/2".
+# That path is trustworthy because it is arithmetic.
+#
+# But the engine only runs when the model asks for it — `play.handle` calls
+# `_cast_spell` on the `cast` field of the model's own JSON reply. A small model
+# often does not emit that field, and then the cast is narrated and *nothing is
+# applied*. Measured on qwen3.5:9b: 0 of 3 probes emitted `cast`, and a live
+# playtest left the sheet at "1st | 2 | 0" after the DM said, in prose,
+#
+#     "Your AC climbs from 12 to 15 instantly"
+#
+# The player is told a number that the sheet does not contain. That is the D3
+# class — narration asserting sheet state — and it is the one defect the
+# grounding check in the dnd-skill cannot see, because the *name* is canon and
+# only the *possession* is invented.
+#
+# So the check is the same shape as the others: mechanical numbers do not come
+# from prose, they come from the Engine section. The cast beat is the narrow
+# case where this bites hardest, because a spell's whole point is its number.
+#
+# Deliberately narrow. It only applies to a beat that is narrating a cast, and
+# only to the handful of stat names a spell actually moves. A DM saying "the
+# wand hums with a 3rd-level charge" is fine; a DM saying "your AC climbs from
+# 12 to 15" during a cast is claiming an engine result.
+_CAST_CONTEXT = re.compile(
+    r"\b(?:cast|casts|casting|conjure(?:s|d)?|invoke(?:s|d)?|incant\w*|"
+    r"chant(?:s|ed|ing)?|utter(?:s|ed)?|speaks? the words|"
+    r"weave(?:s|d)?|shimmer\w*|protective (?:wards?|magic)|shield)\b"
+    # Naming the spell is context too, because the model frequently drops the
+    # verb and reports the bookkeeping instead: "Mage Armor settles. Two level 1
+    # slots spent, one left." Measured, not hypothetical.
+    r"|\b(?:" + "|".join(re.escape(n) for n in _SPELL_CONTEXT_WORDS) + r")\b",
+    re.I)
+
+# A mechanical claim. Deliberately anchored on the SHAPE (a stat name next to a
+# number) rather than on a list of verbs.
+#
+# The verb list was tried first and it kept losing. Measured phrasings from
+# qwen3.5:9b across two runs of the same cast:
+#
+#     "Your AC climbs from 12 to 15 instantly"
+#     "...hardening your skin as a suit of spectral armor and raising your AC to 15"
+#
+# and the second contains no verb from the list. Every verb added is another
+# verb to miss tomorrow; the shape is what actually holds. "AC" or "spell save
+# DC" adjacent to a digit *is* the claim — a DM describing a ward says
+# "armour class" or "a shell", not a number.
+#
+# A trailing number is still required, because "his armour class is higher now"
+# is prose and "his armour class is now 15" is a claim. And the gap is bounded
+# so a number three clauses away does not attach itself to the stat.
+_CAST_CLAIM = re.compile(
+    # "<stat> ... <number>"  or  "<number> ... <stat>", within one clause
+    r"\b(?:ac|armou?r\s+class|spell\s+save\s+dc|spell\s+attack|attack\s+bonus)\b"
+    r"[^.!?]{0,40}?\d+"
+    r"|\b\d+\b[^.!?]{0,20}?\b(?:ac|armou?r\s+class|spell\s+save\s+dc|spell\s+attack|"
+    r"attack\s+bonus)\b"
+    # "from N to N" — the same claim with the stat elided
+    r"|\bfrom\s+\d+\s*(?:to|up\s+to)\s*\d+\b"
+    # a slot count stated in either order. The gap is wide on purpose: "1 level 1
+    # slot remains" puts "level 1" between the count and the verb, and every
+    # verb carries its third-person -s because "slot remains" is the form that
+    # actually appears.
+    r"|\b\d+\b[^.!?]{0,24}?\bslots?\b[^.!?]{0,16}?\b(?:remains?|left|"
+    r"remaining|spent|used)\b"
+    r"|\bslots?\b[^.!?]{0,30}?\b(?:remains?|left|remaining|now)\b[^.!?]{0,10}?\b\d+\b",
+    re.I)
+
+
+def states_an_unbacked_cast_result(narration: str) -> bool:
+    """True when a cast beat states a mechanical number the engine did not give it.
+
+    Two ways to qualify, and the second is the load-bearing one.
+
+    A cast signal (a casting verb, or a spell name) plus a mechanical claim is
+    the obvious case. But the model frequently drops the verb and reports only
+    the bookkeeping — "Your AC climbs from 12 to 15 instantly" names no spell
+    and no casting verb at all. That is the exact sentence the 2026-09-29
+    playtest produced, so requiring a cast signal would miss the very defect
+    this exists for.
+
+    So a claim about the *player's own* AC, spell DC, or spell attack stands on
+    its own: those are the numbers a self-cast moves, the engine reports them in
+    that form, and a DM narrating a fight says "the blow lands", not "your AC is
+    12". A claim about someone else's DC is left alone, because that is ordinary
+    narration about a creature.
+
+    A heuristic, not a proof, and the caller only consults it when the engine did
+    not already resolve the cast. A false positive costs one rewrite; a miss
+    ships a number the sheet does not contain.
+    """
+    text = narration or ""
+    if not _CAST_CLAIM.search(text):
+        return False
+    if _CAST_CONTEXT.search(text):
+        return True
+    return bool(_SELF_STAT.search(text))
+
+
+# "your AC" — the *player's* own numbers, in the second person.
+#
+# Second person only, and that is a measured boundary rather than a stylistic
+# one. The playtest's real sentence is "Your AC climbs from 12 to 15", and the
+# engine writes "AC is now 15" for the character's sheet. Third-person possessives
+# are left out: "her spell save DC rises to 16" is equally likely to be a DM
+# describing someone else, and the guardrail cannot tell — so it does not guess.
+# A cast signal still covers that case (see states_an_unbacked_cast_result).
+_SELF_STAT = re.compile(
+    r"\b(?:your|yours)\s+"
+    r"(?:ac|armou?r\s+class|spell\s+save\s+dc|spell\s+attack|attack\s+bonus)\b",
+    re.I)
 
 
 # Guardrail: a failed check must change the world. Applied Standard 16.

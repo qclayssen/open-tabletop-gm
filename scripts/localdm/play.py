@@ -79,6 +79,21 @@ CHECK_BEAT = ("You are asking for a check, so this beat is what happens BEFORE t
 CAST_TASK = ("Narrate the casting in 1 to 3 sentences, using only the numbers the Engine "
              "section gives (never a different AC, duration or slot count). Then the JSON "
              "line with null for every field.")
+# D3: the rewrite task for a cast beat that stated a number nothing backed.
+#
+# The instruction has to be phrased so the model still casts. "Do not mention
+# numbers" alone reads as "do not resolve the spell", and the natural repair is
+# to narrate the character hesitating — which is the stall the fail-forward
+# guardrail exists to catch, traded for a different stall. So it says what to
+# do instead: put the cast in the JSON line and let the engine produce the
+# number, which is the path that actually spends the slot.
+CAST_BEAT = ("You are narrating a spell being cast, and you must not state its mechanical "
+             "result. A number in prose is a claim about the character sheet, and you have "
+             "not been given one: nothing in this exchange has changed the sheet, so any AC, "
+             "slot count or duration you write is invented. Narrate only the casting and its "
+             "sensory detail. If the spell has a lasting mechanical effect, put it in the "
+             "JSON line's cast field and let the engine resolve the number. Then the JSON "
+             "line with null for every other field.")
 # B4: the only mechanical effects the engine currently resolves out of combat are ones
 # tactics_spells.py's BUILTIN table marks with an "effect" key (today: Mage Armor); every
 # one of those lasts until a long rest, so 8 hours is the correct duration for all of them.
@@ -250,6 +265,13 @@ class Session:
                    "it: narrate only the character starting the attempt and what the world "
                    "does in response. Never say they found, spotted, succeeded or failed at "
                    "anything the check decides, and keep the check field in the JSON line.")
+    # D3. Names the rule the draft broke; CAST_BEAT says how to write the beat.
+    CAST_FIX = ("Your last draft stated a mechanical result for a spell — an AC, a slot "
+                "count, a duration — that nothing in this exchange produced. That number "
+                "is not on the character sheet, because no engine result was given to "
+                "you. Rewrite it so the prose contains no number and no stat change: "
+                "narrate the casting and its sensory detail only, and put the spell in the "
+                "JSON line's cast field so the engine resolves it for real.")
 
     def _canon(self, player: str) -> list:
         """Canon worth replaying for this beat: the player's own line, falling
@@ -832,6 +854,19 @@ class Session:
             retry = self._dm(player=line, engine=engine, notes=notes,
                              task=f"{CHECK_BEAT}\n{self.OUTCOME_FIX}".strip())
             if retry.check and not reply.reveals_check_outcome(retry.narration):
+                r = retry
+        # D3: an out-of-combat cast that the engine did NOT resolve must not state
+        # a mechanical result. `_cast_spell` below only runs when the model asked
+        # for it via the `cast` field; a small model often does not, and then the
+        # cast is narrated while the sheet is untouched — the player is told their
+        # AC moved and it did not. Gated on `not r.cast` so the engine-resolved
+        # case, where the numbers ARE real and come from the Engine section, is
+        # left alone. Same shape and same reasoning as the N5 check above.
+        if (r.narration and not r.cast
+                and reply.states_an_unbacked_cast_result(r.narration)):
+            retry = self._dm(player=line, engine=engine, notes=notes,
+                             task=f"{CAST_BEAT}\n{self.CAST_FIX}".strip())
+            if not reply.states_an_unbacked_cast_result(retry.narration):
                 r = retry
         if r.narration:
             self._say(r.narration)
