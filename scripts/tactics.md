@@ -157,3 +157,40 @@ $T rate --monsters "goblin x4, hobgoblin"
 - `$T sight kairos`: who Kairos sees and with what cover (the display's Cover shading, as text). Use it when a player asks "can I see it?" or "is it behind cover?"; never work cover out yourself.
 - `$T fog hide|dim|off`: fog of war on the display. `hide` (default) dims squares no PC sees and leaves out the creatures there; `dim` only dims; `off` shows everything. It never changes a rule or what you read here.
 - Rolls follow `roll_mode` in state.md: `players` (default) asks the player for their dice; `auto` rolls everything. Enemy dice are always rolled by the engine.
+
+## Mage Tower (`mage-tower`)
+
+A match, not a fight to the death. Read the map's own rules before the first roll. They are in the map file, not here:
+
+```bash
+cat <skill-base>/display/maps/mage-tower.json
+```
+
+The `info` field is the whole rulebook for this map. **Nothing in the engine knows any of it**, so this section and that field are the only places it exists. The line that matters most: *the inner octagon is in bounds, the water ring around it is the moat and a creature in the moat is out of bounds.*
+
+### What the engine already does, so never do it yourself
+
+The map's terrain is real terrain, and the engine charges you for it. On this map that means:
+
+- **Section 1 is difficult terrain.** Movement into it costs 10 ft. You do not adjudicate mud.
+- **The pond and the moat are water.** Entering costs 10 ft, or 5 ft with a swim speed. You do not adjudicate swimming or drowning.
+- **The planking is cover.** `$T sight <token>` gives the cover numbers; the terrain is what makes them.
+- **The moat is not a wall.** It is water, so a creature can be pushed in, dragged in, or choose to enter. Out of bounds is a *ruling you announce*, not a barrier the engine enforces.
+- **Rounds count.** `$T status` is the clock. The engine increments it and nothing else touches it.
+
+### What only you can do, and must do out loud
+
+There is no score, no clock of its own, and no mascot on the board. These are yours to track and to say:
+
+- **Keep the score.** First team to 3 mascots wins. Say the running score when it changes, not at the end.
+- **Call the clock.** Round 6 is half-time, round 12 is full time. `$T status` gives you the round; you announce the whistle.
+- **A mascot is an object, not a creature.** It has no HP and cannot be attacked. It is also not on the board, because the engine cannot place a token that is not a creature. So narrate its square, and the moment someone reaches it, narrate the grab and ask the room which square it is on.
+- **Carrying is a real cost.** A carried mascot is a grapple: the engine's grapple riders apply (escape DC, being released when the carrier moves out of reach). Do not discount the movement.
+- **The restore decks.** The planked deck in front of each tower is where a creature wearing a Mage Tower Ring spends an action to restore temporary hit points. It is a real square, so the engine will charge for walking onto it. The ring and the action are yours to confirm.
+- **A foul is a foul.** Harming a player is a foul. Call it when it happens, and let the table decide the penalty. Do not quietly let it stand, and do not invent a penalty the table did not agree to.
+
+### Before you start
+
+`--pc`, `--monster` and `--ally` all need a real creature. The two mascots in the map's `spawns` are suggestions for the display, not tokens the engine can place, so place your own creatures and narrate the mascots.
+
+For the running state (score, clock, which mascot is in play, who has a ring) use `/gm advise referee`. It is read-only to the campaign and never sees the players.
