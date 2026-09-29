@@ -462,20 +462,54 @@ def test_one_bad_map_does_not_stop_the_others(env, capsys):
 
 # ─── the real maps ───────────────────────────────────────────────────────────
 
+def _shipped_specs():
+    """Every real map that carries artwork, as `(id, spec)` pairs.
+
+    The artwork itself is gitignored (`display/maps/images/`), so a test that
+    exports the real files passes only in a developer's primary checkout and
+    fails in a fresh worktree or a CI clone -- which is where it was found. The
+    map *specs* are tracked and are the part this script reads, so those are what
+    is staged.
+    """
+    maps_dir = ROOT / "display" / "maps"
+    specs = []
+    for path in sorted(maps_dir.glob("*.json")):
+        spec = json.loads(path.read_text(encoding="utf-8"))
+        if spec.get("image"):
+            specs.append((path.stem, spec))
+    return specs
+
+
+def _staged_maps(tmp_path, specs):
+    """Stage the specs in a temp maps dir, each beside a placeholder image.
+
+    Returns the maps dir and the specs with `image` repointed at that image, so
+    the caller exports exactly what was written.
+    """
+    maps = tmp_path / "maps"
+    (maps / "images").mkdir(parents=True)
+    staged = []
+    for map_id, spec in specs:
+        spec = {**spec, "image": f"images/{map_id}.png"}
+        (maps / "images" / f"{map_id}.png").write_bytes(_png_bytes())
+        (maps / f"{map_id}.json").write_text(json.dumps(spec), encoding="utf-8")
+        staged.append((map_id, spec))
+    return maps, staged
+
+
 def test_every_shipped_map_with_artwork_exports(tmp_path):
     """The point of the script. A map that ships and cannot be pushed is a gap
     nobody finds until the night it is needed."""
-    maps_dir = ROOT / "display" / "maps"
-    shipped = [p for p in sorted(maps_dir.glob("*.json"))
-               if json.loads(p.read_text(encoding="utf-8")).get("image")]
-    assert shipped, "expected at least one map with artwork"
+    specs = _shipped_specs()
+    assert specs, "expected at least one shipped map with artwork"
+    maps, staged = _staged_maps(tmp_path, specs)
     vault = tmp_path / "vault"
     vault.mkdir()
-    for path in shipped:
-        spec = json.loads(path.read_text(encoding="utf-8"))
-        report = mta.export(spec, path.stem, vault, COLL, maps_dir)
+    for map_id, spec in staged:
+        report = mta.export(spec, map_id, vault, COLL, maps)
         assert report["tokens"] == len(spec.get("spawns") or [])
         assert (vault / report["scene"]).exists()
+        assert (vault / report["sidecar"]).exists()
 
 
 # ─── real token art ──────────────────────────────────────────────────────────
@@ -565,17 +599,22 @@ def test_a_declared_but_missing_path_falls_back_and_is_reported(env):
     assert report["art_discs"] == 1 and report["art"]["K"].startswith("disc ")
 
 
-def test_shipped_maps_still_export_with_the_art_lookup_on(env):
+def test_shipped_maps_still_export_with_the_art_lookup_on(tmp_path):
     """The default path must be unchanged: no art configured means discs, which
     is every map that ships today."""
-    maps_dir = ROOT / "display" / "maps"
-    vault = env[1]
-    shipped = [p for p in sorted(maps_dir.glob("*.json"))
-               if json.loads(p.read_text(encoding="utf-8")).get("image")]
-    assert shipped
-    for path in shipped:
-        report = mta.export(json.loads(path.read_text(encoding="utf-8")), path.stem,
-                            vault, COLL, maps_dir)
+    specs = _shipped_specs()
+    assert specs
+    maps, staged = _staged_maps(tmp_path, specs)
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    for map_id, spec in staged:
+        # Asserted here rather than about the shipped data: whether any map
+        # configures `token_art` is campaign content that may legitimately change,
+        # and a code test must not fail because someone gave a map real art. The
+        # staged copy drops the key so the precondition is the test's own.
+        spec.pop("token_art", None)
+        report = mta.export(spec, map_id, vault, COLL, maps)
+        assert report["art_matched"] == 0
         assert report["art_discs"] == report["tokens"]
 
 
