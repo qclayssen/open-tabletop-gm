@@ -7,6 +7,7 @@ Modules:
     llm         one chat call to an OpenAI-compatible endpoint, usage log
     reply       narration plus a trailing JSON block
     memory      transcript, rolling summary, flags (<campaign>/localdm/)
+    notes       the advisor council's notes, kept verbatim (<campaign>/localdm/)
     context     the messages for one call, under a size budget
     bridge      tactics commands in-process, combat snapshot
     triggers    deterministic "ask the advisor now" moments

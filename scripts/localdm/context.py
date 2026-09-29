@@ -81,6 +81,30 @@ def sheet_digest(camp_dir, sections=SHEET_SECTIONS, limit: int = 3000) -> str:
 NOTE_FILES = ("world.md", "npcs.md")
 _HEAD_LINE = re.compile(r"^#{1,6} ")
 _TEMPLATE_DEFAULT = re.compile(r"Attitude toward party:\*\*\s*neutral|Current stage:\*\*\s*1\b", re.I)
+_PLACEHOLDER = re.compile(r"<[^>\n]+>")
+_EMPTY_FIELD = re.compile(r"\s*(?:[-*]\s+)?\*\*[^*]+:\*\*[\s|]*(?:\*\*[^*]+:\*\*[\s|]*)*")
+
+
+def is_template_line(line: str) -> str:
+    """Why this line is still blank template, or "" if it carries real content.
+
+    Shared with campaign_lint.py on purpose. The digest used to drop these lines
+    silently, which made a half-filled world.md and a finished one
+    indistinguishable; a GM had no way to see what the DM was not being told.
+    Naming the reason here means the prompt and the linter cannot disagree about
+    what counts as unfilled.
+    """
+    if _is_helper(line):
+        return "helper text (italic instructions to the GM)"
+    if _PLACEHOLDER.search(line):
+        return "unfilled <placeholder>"
+    if _TEMPLATE_DEFAULT.search(line):
+        return "template default"
+    if _EMPTY_FIELD.fullmatch(line):
+        return "empty **Field:**"
+    if re.fullmatch(r"[|\s:-]*", line):
+        return "empty table"
+    return ""
 
 
 def notes_digest(camp_dir, files=NOTE_FILES, limit: int = 2500) -> str:
@@ -96,11 +120,7 @@ def notes_digest(camp_dir, files=NOTE_FILES, limit: int = 2500) -> str:
             text = (pathlib.Path(camp_dir) / name).read_text(encoding="utf-8")
         except OSError:
             continue
-        keep = [ln for ln in text.splitlines()
-                if ln.strip() and not _is_helper(ln) and not re.search(r"<[^>\n]+>", ln)
-                and not re.fullmatch(r"[|\s:-]*", ln)
-                and not _TEMPLATE_DEFAULT.search(ln)
-                and not re.fullmatch(r"\s*(?:[-*]\s+)?\*\*[^*]+:\*\*[\s|]*(?:\*\*[^*]+:\*\*[\s|]*)*", ln)]
+        keep = [ln for ln in text.splitlines() if ln.strip() and not is_template_line(ln)]
         rows = [i for i, ln in enumerate(keep) if ln.lstrip().startswith("|")]
         if len(rows) == 1:                         # a table header and no data rows
             keep.pop(rows[0])

@@ -78,7 +78,7 @@ def campaign_dir(name: str) -> pathlib.Path:
     return campaigns_dir() / name
 
 
-def find_campaign(name: str) -> pathlib.Path:
+def find_campaign(name: str, migrate: bool = True) -> pathlib.Path:
     """Locate a campaign directory, with legacy fallback and optional migration.
 
     Resolution order:
@@ -89,6 +89,9 @@ def find_campaign(name: str) -> pathlib.Path:
     When a campaign is found at the legacy path and the configured root is custom,
     the campaign is copied to the configured root so subsequent sessions use the
     new location. The original is left in place (no files are deleted).
+
+    With migrate=False the lookup is read-only: a legacy campaign is returned
+    in place and nothing is copied (used by read-only tools such as the linter).
 
     Returns the path to the campaign directory (may not exist if not found anywhere).
     """
@@ -103,6 +106,8 @@ def find_campaign(name: str) -> pathlib.Path:
     legacy = _default_root() / "campaigns" / name
     if not legacy.exists():
         return configured
+    if not migrate:
+        return legacy
 
     configured.parent.mkdir(parents=True, exist_ok=True)
     print(

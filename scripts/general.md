@@ -6,6 +6,40 @@ Read this file before: `/gm roll`, calendar advancement, or searching campaign h
 
 ---
 
+## Campaign lint, `scripts/campaign_lint.py`
+
+Checks a campaign's markdown files. Run it at `/gm load` and before `/gm save`,
+so a section the code greps for has not quietly gone missing.
+
+```bash
+CAMP=<campaign-name>
+
+python3 $SKILL/scripts/campaign_lint.py $CAMP            # human-readable
+python3 $SKILL/scripts/campaign_lint.py $CAMP --strict   # warnings fail too
+python3 $SKILL/scripts/campaign_lint.py --all            # every campaign
+python3 $SKILL/scripts/campaign_lint.py $CAMP --json     # machine-readable (CI)
+```
+
+Exit: `0` clean (or warnings only), `1` problems found, `2` no such campaign.
+
+**What an `error` means**, something is missing or broken, and it matters at the
+table: a `state.md` section that was renamed or deleted (each heading is spelled
+exactly because the code greps for it), a header field that lost its `**Label:**`
+wrapper, a `Session count` that is not a number, an arc block that does not parse,
+HP over max on a sheet.
+
+**What a `warn` means**, present, but still blank template: an unfilled
+`<placeholder>`, an empty `**Field:**`, a `world.md` or `npcs.md` line the GM
+wrote the heading for and never filled. These are the lines
+`context.notes_digest` drops before the DM ever sees them, so a half-filled
+world.md looks identical to a finished one, this reports them with a line number
+and a reason instead.
+
+**Do not** "fix" a lint warning by deleting the heading. The heading is what the
+prompt looks for; fill the field or delete the line, never the `## `.
+
+---
+
 ## Dice — `scripts/dice.py`
 
 ```bash
