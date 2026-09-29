@@ -8,10 +8,16 @@ to a GM running with the display off.
 from __future__ import annotations
 
 import json
+import pathlib
+import re
+import shutil
+import subprocess
 
-from tests.tactics_fixtures import encounter, goblin, kairos, start
+import pytest
+
+from tests.tactics_fixtures import ScriptedDice, encounter, goblin, kairos, start
 from tests.test_tactics_cli import begin, camp, run  # noqa: F401  (camp is a fixture)
-from tactics import grid, maps, sight, state, sync
+from tactics import engine, grid, maps, roller, rules, sight, state, sync
 
 # A wall down column C with a gap in the bottom row; a table (o) at E4.
 ROWS = ["..#...",
@@ -256,17 +262,18 @@ def test_the_odds_of_a_creature_the_players_can_see_are_kept():
 # no line of sight to Goblin"), so nothing is ever logged to redact. A hidden
 # creature does, but ATTACKING reveals it -- the scimitar entry ends "Goblin is
 # no longer hidden", so by the time the snapshot is taken the creature is
-# visible and correctly not redacted. The window is the turn itself: a hidden
-# creature acting while unseen_turn is set, before it has given itself away.
+# visible again and correctly not redacted.
 #
-# That last part is the trap for anyone extending this. The obvious test --
-# have the hidden goblin attack -- passes while testing nothing, because the
-# attack reveals the goblin and the redaction never engages.
+# That is the trap for anyone extending this, and it is why the helper below
+# stops at "it is the hidden creature's turn" rather than playing the turn out.
+# The obvious test -- have the hidden goblin attack -- passes while testing
+# nothing, because the attack reveals the goblin and the redaction never
+# engages. The window is the turn itself: unseen_turn set, before the creature
+# has given itself away.
 
 def _hidden_creature_acting():
-    """A goblin with `hidden`, whose turn it is, and the snapshot for it."""
-    from tests.tactics_fixtures import ScriptedDice
-    from tactics import engine, roller
+    """A goblin with `hidden`, on its own turn, with the PC the only token a
+    player can see."""
     k, g = kairos(pos=(0, 0)), goblin("goblin-1", (1, 0))
     enc = start(encounter([k, g], rows=ROWS), ["kairos", "goblin-1"])
     enc.meta["fog"] = "hide"
@@ -275,75 +282,67 @@ def _hidden_creature_acting():
     return enc
 
 
-def test_a_hidden_creature_acting_is_an_unseen_turn_with_nothing_drawn():
-    enc = _hidden_creature_acting()
-    snap = sync.snapshot(enc)
-    assert snap["unseen_turn"] is True
-    assert "goblin-1" not in [t["id"] for t in snap["tokens"]]
-    assert "goblin-1" not in [t.get("actor") for t in snap["log"]]
+def _redacted_entry_for_a_real_save():
+    """The whole path, for real: the rules fill Roll.odds in, the engine logs
+    the roll, and sync.snapshot decides what the display is allowed to see.
 
-
-def test_a_roll_the_engine_made_for_a_hidden_creature_is_redacted_whole():
-    """The real path: rules.saving_throw() fills Roll.odds in, the engine logs
-    it, and the display must receive none of it -- not the faces, and not the
-    chance, which is a function of a DC the players were never told."""
-    from tactics import rules as rules_mod
+    Returns the snapshot entry the display receives. Asserting on the entry (and
+    not on redact_log's output) is the point -- redact_log is the unit under
+    test elsewhere, and this checks the bytes that actually cross the wire.
+    """
     enc = _hidden_creature_acting()
-    R = rules_mod.load("dnd5e")
-    from tests.tactics_fixtures import ScriptedDice
-    from tactics import roller
     r = roller.Roller(rng=ScriptedDice(9))
-    R.saving_throw(enc.tokens["kairos"], "dex", 15, r, False)
-    # The engine DID compute a chance, and it is a real one.
+    rules.load("dnd5e").saving_throw(enc.tokens["kairos"], "dex", 15, r, False)
+    # The engine DID compute a chance, and a real one. Without this the test
+    # would also pass if the odds were simply never computed.
     assert r.log[0].odds == {"percent": 60, "label": "to fail the save",
                              "about": "kairos", "advantage": "normal"}
     enc.log.append({"round": enc.round, "actor": "goblin-1", "kind": "save",
                     "text": "Goblin's burning hands: Kairos DEX save DC 15.",
                     "rolls": [x.to_dict() for x in r.log]})
+    return sync.snapshot(enc)["log"][-1]
 
-    entry = sync.snapshot(enc)["log"][-1]
+
+def test_a_hidden_creature_acting_is_an_unseen_turn_with_nothing_drawn():
+    enc = _hidden_creature_acting()
+    snap = sync.snapshot(enc)
+    assert snap["unseen_turn"] is True
+    assert "goblin-1" not in [t["id"] for t in snap["tokens"]]
+
+
+def test_a_roll_the_engine_made_for_a_hidden_creature_is_redacted_whole():
+    """The display must receive neither the faces nor the chance. The chance is
+    a function of a DC the entry has just described, so an odds dict surviving
+    here would hand that DC over."""
+    entry = _redacted_entry_for_a_real_save()
     assert entry["text"].startswith("An unseen creature"), entry["text"]
-    # Everything about the roll is gone, which is the whole point: an odds dict
-    # surviving here would hand over the DC the entry just described.
     assert entry["rolls"] == [], f"the display was sent {entry['rolls']}"
-    assert "odds" not in str(entry)
+    assert "odds" not in json.dumps(entry)
 
 
 def test_the_odds_display_shows_nothing_for_a_redacted_entry():
-    """The last hop, and the one this file cannot see: the display's own
-    formatter, run over the real snapshot entry. Empty rolls in, no line out --
-    so a redacted entry is silent in the log and the toast rather than showing
-    a bare percent.
-
-    Skipped without node, like the other pure-helper tests."""
-    import json as _json
-    import pathlib as _pathlib
-    import re as _re
-    import shutil as _shutil
-    import subprocess as _subprocess
-    node = _shutil.which("node")
+    """The last hop, and the one this file cannot otherwise see: the display's
+    own formatter, run over the entry the engine really produced. Empty rolls
+    in, no line out, so a redacted entry is silent in the log and the toast
+    rather than showing a bare percent.
+    """
+    node = shutil.which("node")
     if not node:
-        return
-    enc = _hidden_creature_acting()
-    from tactics import roller, rules as rules_mod
-    from tests.tactics_fixtures import ScriptedDice
-    R = rules_mod.load("dnd5e")
-    r = roller.Roller(rng=ScriptedDice(9))
-    R.saving_throw(enc.tokens["kairos"], "dex", 15, r, False)
-    enc.log.append({"round": enc.round, "actor": "goblin-1", "kind": "save",
-                    "text": "Goblin's burning hands: Kairos DEX save DC 15.",
-                    "rolls": [x.to_dict() for x in r.log]})
-    entry = sync.snapshot(enc)["log"][-1]
+        pytest.skip("node is not installed")
+    entry = _redacted_entry_for_a_real_save()
 
-    js = (_pathlib.Path(__file__).resolve().parent.parent
+    js = (pathlib.Path(__file__).resolve().parent.parent
           / "display" / "static" / "tactics.js").read_text(encoding="utf-8")
-    pure = _re.search(r"/\* Pure helpers:.*?\*/(.*?)/\* end pure helpers \*/", js, _re.S)
+    pure = re.search(r"/\* Pure helpers:.*?\*/(.*?)/\* end pure helpers \*/", js, re.S)
     assert pure, "tactics.js no longer has its marked pure-helper block"
+    # The program goes in over stdin, not argv: the pure-helper block holds
+    # non-ASCII source, and an argument is encoded with the filesystem encoding,
+    # which is a UnicodeEncodeError under a non-UTF-8 locale.
     program = ("const out=(()=>{" + pure.group(1) +
-               "\nreturn {line: entryOdds(" + _json.dumps(entry) + ")};})();"
+               "\nreturn {line: entryOdds(" + json.dumps(entry) + ")};})();"
                "process.stdout.write(JSON.stringify(out));")
-    res = _subprocess.run([node, "-"], input=program.encode("utf-8"),
-                          capture_output=True, timeout=30)
+    res = subprocess.run([node, "-"], input=program.encode("utf-8"),
+                         capture_output=True, timeout=30)
     assert res.returncode == 0, res.stderr.decode("utf-8", "replace")
-    assert _json.loads(res.stdout.decode("utf-8"))["line"] == "", \
+    assert json.loads(res.stdout.decode("utf-8"))["line"] == "", \
         "a redacted entry still produced an odds line"
