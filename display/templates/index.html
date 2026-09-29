@@ -2152,6 +2152,31 @@
   body.input-only #input-body[data-active-tab="move"] #dice-pad {
     display: none;
   }
+  /* N2: the pad normally only exists inside the Party Input panel, which on the
+     main (TV) view is collapsed. A player watching the big screen has no way to
+     roll, so opening the pad is allowed to lift it out of the panel — see
+     body.dice-pad-open below. */
+  body.dice-pad-open #dice-pad {
+    display: flex;
+    position: fixed;
+    right: 24px;
+    bottom: 24px;
+    z-index: 120;
+    width: min(320px, calc(100vw - 48px));
+    border: 1px solid rgba(180,140,60,0.45);
+    border-radius: 14px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.6);
+  }
+  /* The panel ships collapsed, so #input-body — the pad's ancestor — is
+     display:none and a position:fixed child would render nothing. Un-hide the
+     body for as long as the pad is floated; the collapsed height is zero, so it
+     still takes no room in the layout. */
+  body.dice-pad-open #input-panel.collapsed #input-body {
+    display: flex;
+  }
+  body.dice-pad-open #input-panel.collapsed #input-body > *:not(#dice-pad) {
+    display: none !important;
+  }
   #dice-pad .dp-row {
     display: flex;
     gap: 6px;
@@ -2333,6 +2358,12 @@
     max-width: min(420px, max(240px, calc(100vw - 460px)));
   }
   #dice-pending-badge.visible { display: block; }
+  /* N2: on the main view the badge is the only route to the roll pad, so it has
+     to be clickable there. In input-only view it is display:none anyway. */
+  body:not(.input-only) #dice-pending-badge.visible {
+    pointer-events: auto;
+    cursor: pointer;
+  }
   body:has(#dice-pending-badge.visible) #text-scroll { padding-top: 124px; }
   #dice-pending-badge .dpb-label {
     display: block;
@@ -6953,6 +6984,9 @@ connect();
     _initInputTabs();
     _initDicePad();
   }
+  // N2: bound in both views — on the main view the badge is how a player reaches
+  // the pad at all. _initDiceBadgeClick is idempotent and guards on a dataset flag.
+  _initDiceBadgeClick();
   _initModeSwitcher(_inputMode);
 }
 
@@ -7221,6 +7255,35 @@ function _updateDicePendingBadge(snapshot) {
   }).join('<hr style="border:none;border-top:1px solid rgba(180,140,60,0.25);margin:6px 0">');
   badge.innerHTML = lines;
   badge.classList.add('visible');
+  // N2: make it obvious the badge is the way to the pad on the main view. The
+  // hint is omitted in input-only, where the pad is already a tab.
+  if (!document.body.classList.contains('input-only')) {
+    badge.innerHTML += '<span class="dpb-label">Tap to roll</span>';
+  }
+}
+
+/* N2: the dice pad lives inside the Party Input panel, which is collapsed on the
+   main (TV) view — so a player watching the big screen had no way to roll at all.
+   Clicking the "Waiting on" badge floats the pad out as a small panel; Escape or
+   a second click closes it. */
+function _initDiceBadgeClick() {
+  const badge = document.getElementById('dice-pending-badge');
+  if (!badge || badge.dataset.padBound) return;
+  badge.dataset.padBound = '1';
+  badge.addEventListener('click', () => {
+    document.body.classList.toggle('dice-pad-open');
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') document.body.classList.remove('dice-pad-open');
+  });
+  // A finished roll means nothing is waiting: drop the pad too, or it covers the
+  // narration with a roll nobody is asked for any more.
+  const obs = new MutationObserver(() => {
+    if (!badge.classList.contains('visible')) {
+      document.body.classList.remove('dice-pad-open');
+    }
+  });
+  obs.observe(badge, { attributes: true, attributeFilter: ['class'] });
 }
 
 // ── Phone dice pad: server-side roll + slot-machine reveal ───────────────
