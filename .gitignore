@@ -17,6 +17,11 @@ display/narration_target
 display/roll_prefs.json
 display/input_log.json
 display/player_input.json
+# GM-watcher runtime artefacts (B12: these were untracked and accumulating)
+display/.gm-watch.log
+display/.gm-watch.pid
+display/app-5001.pid
+display/.input_queue.taken
 
 # SRD dataset (generated — run build_srd.py)
 systems/dnd5e/data/dnd5e_srd.json
