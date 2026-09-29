@@ -81,6 +81,23 @@ class Roll:
     total: int
     source: str
     advantage: str = "normal"
+    # The odds this roll was made under, in the system's own words. A player
+    # doubts a roll after seeing it, not before choosing it, so the number the
+    # system already computed for the preview is carried onto the resolved roll
+    # here, where the display can put it next to the total.
+    #
+    # The system fills this in at the moment it rolls (dnd5e puts hit_chance's
+    # and save_chance's answer on the roll); the engine and the display only
+    # read it. Expected keys: `percent` (int), `label` (what the number is
+    # about, e.g. "to hit"), `about` (the id of the token it is about, for
+    # drawing it) and `advantage`. None means the system has no odds for this
+    # kind of roll, which is a normal answer, not an error.
+    #
+    # It lives ON the roll rather than beside it in the log entry on purpose:
+    # sight.redact_log drops `rolls` wholesale for an entry that names a
+    # creature the players cannot see, and a field alongside would survive the
+    # redaction and give that creature's AC away. See sight.py.
+    odds: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return dict(self.__dict__)
@@ -95,6 +112,22 @@ class Roller:
     supplied_source: str = "verbal"
     for_me: bool = False      # "Roll for me": the engine rolls whatever the player has not supplied
     log: list = field(default_factory=list)
+    # state_fn: optional callable returning a fingerprint of the fight as it
+    # stands. Set by the CLI, which has the encounter loaded before the dice
+    # are rolled, so receipts.py can say which state each roll was rolled
+    # against. `states` collects one entry per entry of `log`, in order.
+    state_fn: object = None
+    states: list = field(default_factory=list)
+
+    def _fingerprint(self) -> str:
+        """state_fn's answer, or "" when there is nothing to hash. Never raises:
+        a receipt is a witness, not a precondition for a fight."""
+        if self.state_fn is None:
+            return ""
+        try:
+            return str(self.state_fn() or "")
+        except Exception:                               # noqa: BLE001
+            return ""
 
     def roll(self, notation: str, who: str, label: str, player: bool = False,
              advantage: str = "normal", crit: bool = False) -> Roll:
@@ -129,4 +162,5 @@ class Roller:
                 natural = max(faces) if advantage == "advantage" else min(faces)
             rec = Roll(who, label, shown, faces, natural, natural + mod, "engine", advantage)
         self.log.append(rec)
+        self.states.append(self._fingerprint())
         return rec

@@ -70,8 +70,8 @@ import sys
 
 from paths import find_campaign            # scripts/paths.py (on sys.path via tactics/__init__)
 
-from . import (actions, ai, effects, encounter, engine, maps, policy, rest, roller, sight,
-                 spells, slots, state, sync)
+from . import (actions, ai, effects, encounter, engine, maps, policy, receipts, rest, roller,
+                 sight, spells, slots, state, sync)
 from .core import rules_for
 from .grid import label, parse_square
 from .roller import PendingRoll, Roller
@@ -85,7 +85,7 @@ _DISPLAY_CAMPAIGN = _SCRIPTS.parent / "display" / ".campaign"
 # is an encounter to save, so they must work with nothing running and must not
 # touch combat/pending.json.
 READ_ONLY = ("status", "options", "preview", "reachable", "targets", "log", "spells",
-             "preview-area", "sight", "budget", "rate")
+             "preview-area", "sight", "budget", "rate", "receipts")
 # Flags that do not change what a command means: a re-run with them added is
 # the same command, so it replays the same engine dice (see _pending).
 OLD_FORM = "*"     # decision key for a --react given up front (opportunity attacks)
@@ -284,7 +284,7 @@ def _auto_placements(camp_dir, enc) -> list:
 
 # ─── commands ─────────────────────────────────────────────────────────────────
 
-def cmd_start(args, camp_dir):
+def cmd_start(args, camp_dir, roller=None):
     path = state.encounter_path(camp_dir)
     if path.exists() and not args.force and state.load(path).status == "active":
         raise Stop("A grid combat is already running. Run end first, or start --force.")
@@ -294,6 +294,11 @@ def cmd_start(args, camp_dir):
         raise Stop(str(e)) from None
     enc = Encounter(campaign=_campaign(args), grid=m["grid"], meta=m["meta"],
                     roll_mode=args.roll_mode or _roll_mode(camp_dir))
+    # The fight exists from here, so it can stamp where its receipts go and
+    # fingerprint itself before the initiative dice are rolled (see run()).
+    enc.campaign_dir = camp_dir
+    if roller is not None:
+        roller.state_fn = lambda: receipts.state_hash(enc)
     R = engine.rules_for(enc)
     pc_specs = list(args.pc or [])
     placed_by_hand = bool(pc_specs)
@@ -340,7 +345,7 @@ def cmd_start(args, camp_dir):
     problems = state.validate(enc)
     if problems:
         raise Stop("Cannot start: " + "; ".join(problems))
-    res = engine.begin(enc, _roller(args))
+    res = engine.begin(enc, roller or _roller(args))
     sync.set_active_combat(camp_dir, f"Grid combat in progress on {m['meta']['name']}: read "
                                      "`scripts/tactics.md`, then run `combat.py status`. "
                                      "`combat/encounter.json` holds HP, positions and turn order.")
@@ -498,7 +503,9 @@ def run(args) -> int:
     data = {}
     enc = None
     if args.cmd == "start":
-        enc, text = cmd_start(args, camp_dir)
+        enc, text = cmd_start(args, camp_dir, roller)
+    elif args.cmd == "receipts":
+        return receipts.main(["--dir", str(camp_dir)] + (["--rolls", "6"] if args.rolls else []))
     elif args.cmd in ("budget", "rate"):
         if args.cmd == "budget":
             text, data = encounter.cmd_budget(args, camp_dir, _campaign(args))
@@ -506,6 +513,11 @@ def run(args) -> int:
             text, data = encounter.cmd_rate(args, camp_dir, _campaign(args))
     else:
         enc = _load(camp_dir)
+        # Two things the engine cannot know by itself: where this fight's
+        # receipts belong (core.log hands them to receipts.py), and what the
+        # fight looked like before each roll (Roller.state_fn).
+        enc.campaign_dir = camp_dir
+        roller.state_fn = lambda: receipts.state_hash(enc)
         cmd = args.cmd
         if cmd == "status":
             text = cmd_status(enc)
@@ -821,6 +833,10 @@ def parser() -> argparse.ArgumentParser:
     s.add_argument("changes", nargs="+")
     s = sub.add_parser("log", parents=c)
     s.add_argument("n", nargs="?", type=int, default=6)
+    s = sub.add_parser("receipts", parents=c,
+                       help="check every roll receipt against its hash chain")
+    s.add_argument("--rolls", type=int, default=0, metavar="N",
+                   help="also print the last N receipts")
     return top
 
 

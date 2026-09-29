@@ -146,13 +146,25 @@ The engine measures geometry and hands it over as an `AttackContext` (`distance`
 
 `explicit` on `attack`, `hit_chance`, `saving_throw`, `save_chance` and `ability_check` is the GM's own ruling for that one roll (`"advantage"` / `"disadvantage"`), passed through from the command line's `--adv` / `--dis`. It outranks every condition, in both directions, and the reason list should say so — a ruling nobody can see in the output is a ruling the next person will think the engine ignored.
 
+**Attach the odds to the roll you just made.** `hit_chance` and `save_chance` are the previews, and a preview is the wrong moment: a player doubts a roll *after* seeing it, not before choosing it. So when `attack` or `saving_throw` rolls a check, set `roll.odds` on the `Roll` that came back (the engine, the log and the display all carry it from there; nothing else has to change, and the display prints whatever you put in it):
+
+```python
+r = roller.roll(f"1d20{bonus:+d}", attacker.name, f"{attack['name']} vs {target.name}",
+                player=player, advantage=mode)
+chance = self.hit_chance(attacker, target, attack, ctx, explicit)
+r.odds = {"percent": chance["percent"], "label": "to hit",
+          "about": target.id, "advantage": mode}
+```
+
+`percent` is the number the display shows, `label` is what it is about in your system's words, `about` is the id of the token the number belongs to (the display floats it over that square), and `advantage` is for your own use. Call `hit_chance`/`save_chance` for this rather than recomputing: one function means the badge the player chose on and the number printed beside the result cannot disagree. Leave `odds` unset on rolls nobody can doubt (damage dice) and on anything your system has no odds for; the total shows either way. Note the redaction rule below before adding anything else to it.
+
 | Area | Method | Returns |
 |------|--------|---------|
 | Attack | `attack(attacker, target, attack, ctx, roller, player, explicit="normal")` | `{hit, crit, natural, total, ac, advantage, reasons, damage, text}`; applies damage on a hit |
-| | `hit_chance(attacker, target, attack, ctx, explicit="normal")` | `{percent, chance, advantage, reasons}`, no roll (shown on previews) |
+| | `hit_chance(attacker, target, attack, ctx, explicit="normal")` | `{percent, chance, advantage, reasons}`, no roll (shown on previews, and the source of the `odds` you put on a resolved roll) |
 | | `ac(token)` | AC including effects (Shield's +5) |
 | Save | `saving_throw(token, ability, dc, roller, player, cover=0, explicit="normal")` | `{success, auto_fail, natural, total, dc, text}`; spends one-shot effects (a save penalty, advantage) |
-| | `save_chance(token, ability, dc, cover=0, explicit="normal")` | `{fail, percent_fail, advantage}`, no roll (area previews, enemy options) |
+| | `save_chance(token, ability, dc, cover=0, explicit="normal")` | `{fail, percent_fail, advantage}`, no roll (area previews, enemy options, and the source of the `odds` you put on a resolved roll) |
 | | `ability_check(token, name, dc, roller, player, explicit="normal", sense="", other=None, source_in_sight=True)` | `{total, success, auto_fail, dc, advantage, reasons, text}`; `name` is a skill or an ability, `sense` is what it depends on (blind, deaf), `other` the creature it is about (a charm) |
 | Spells | `spell(caster, name, level)` | a spec the engine runs: `mode` attack\|save\|darts\|heal\|effect\|narrate\|reaction, `casting`, `range`, `origin` self\|touch\|point, `area`, `save`, `damage`, `concentration`, `fail_conditions`, `on_fail`; raise `ValueError` with a message to refuse |
 | | `known_spells(caster)`, `damage_multiplier(token, type)` | the caster's spells; 0 / 0.5 / 1 / 2 for previews |

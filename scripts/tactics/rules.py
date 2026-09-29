@@ -28,6 +28,17 @@ The contract, grouped the way SYSTEM-PORTING.md documents it:
 
 Result dicts carry a short `text` the CLI prints as-is. Rolls go through the
 Roller, so their source (engine, player, verbal) is always recorded.
+
+Odds travel with the roll, not beside it. A preview is the wrong moment to
+show a chance: a player doubts a roll after seeing it. So a system that has a
+number for a check sets `roll.odds` on the `Roll` its attack() or
+saving_throw() just made, reusing hit_chance()/save_chance() rather than
+recomputing (one function, so the pre-action badge and the number printed next
+to the result cannot disagree). `Roll.odds` is system-neutral and optional: the
+engine and the display only read it. It lives on the roll rather than on the
+log entry beside it because sight.redact_log drops `rolls` wholesale for a
+creature the players cannot see, and a field alongside would have survived that
+and given its armor class away.
 """
 
 from __future__ import annotations
@@ -135,7 +146,8 @@ class Rules:
     def hit_chance(self, attacker, target, attack: dict, ctx: AttackContext,
                    explicit: str = "normal") -> dict:
         """{"percent": int, "advantage": str, "reasons": [...]} without rolling.
-        Shown on every option and target before the player commits."""
+        Shown on every option and target before the player commits, and the
+        source of the odds attack() puts on the roll it makes."""
         raise NotImplementedError
 
     def saving_throw(self, token, ability: str, dc: int, roller, player: bool,
@@ -144,7 +156,8 @@ class Rules:
 
     def save_chance(self, token, ability: str, dc: int, cover: int = 0,
                     explicit: str = "normal") -> dict:
-        """{"fail": 0..1, "percent_fail": int, "advantage": str} without rolling."""
+        """{"fail": 0..1, "percent_fail": int, "advantage": str} without rolling.
+        The source of the odds saving_throw() puts on the roll it makes."""
         raise NotImplementedError
 
     def ability_check(self, token, name: str, dc: int, roller, player: bool,
