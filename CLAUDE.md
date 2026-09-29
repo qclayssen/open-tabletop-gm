@@ -58,6 +58,13 @@ scripts/tactics/             grid combat engine (stdlib only)
   cli.py                     the GM commands; run via scripts/tactics/combat.py
   demo.py                    scripted Kairos vs 2 giant frogs, in a temp campaign
   play.py                    playable terminal game + tutorial (docs/TUTORIAL.md)
+  art_import.py              creator battle-map JPGs -> map + artwork; strict about
+                             the grid, never guesses terrain
+  art_triage.py              what a folder of 150 creator JPGs actually is, before
+                             importing any of it (import/variant/refuse/duplicate)
+  map_catalog.py             every installed map as one browsable HTML contact sheet
+  campus_extract.py          the reference page's campus -> docs/CAMPUS.md (local
+                             read only, never the network)
 scripts/tactics.md           the GM loop (loaded only at /gm combat grid)
 scripts/localdm/             local DM loop: one small-model call per turn, advisors on a
                              smarter model (play.py REPL; see docs/milestones/06-local-dm.md)
@@ -72,6 +79,9 @@ display/                     Flask companion: gm-display-app.py (SSE /stream, JS
                              messages keyed by type), send.py, push_stats.py,
                              check_input.py, templates/index.html (single file)
 display/static/reference/    strixhaven_map_table.html: visual reference for the grid
+display/maps/images/        map artwork (gitignored: third-party, large). Install
+                             with scripts/art_import.py
+docs/CAMPUS.md              that page's campus, extracted by scripts/campus_extract.py
 ```
 
 Campaign data root: `~/open-tabletop-gm/campaigns/<name>/` (override with
@@ -147,4 +157,6 @@ tick it here, and keep this file under 150 lines.
   files from `display/` afterwards.
 - `display/static/reference/strixhaven_map_table.html` is a player-facing copy (DM-only
   maps and undiscovered places removed). Never add content from the user's own copy or
-  any DM folder.
+  any DM folder. `scripts/campus_extract.py` reads that local page (never the network)
+  and regenerates `docs/CAMPUS.md`; `--check` fails when the page and `display/maps/`
+  disagree.

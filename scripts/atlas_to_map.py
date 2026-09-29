@@ -127,6 +127,12 @@ def image_size(path: pathlib.Path) -> tuple[int, int]:
 
     Pillow is not a dependency of the engine, and the display is a browser, so
     the only thing needed here is the header, which both formats put first.
+
+    The segment walk requires forward progress at every step. A JPEG that ends
+    before its frame header used to spin here forever: a zero segment length
+    made `seek(-2, 1)` run backwards, and at EOF a seek is a no-op, so the
+    cursor never moved. Markers that are not length-prefixed segments (EOI, SOS,
+    RSTn) also end the walk, since there is no length to read after them.
     """
     with open(path, "rb") as fh:
         head = fh.read(32)
@@ -143,7 +149,14 @@ def image_size(path: pathlib.Path) -> tuple[int, int]:
                     h = int.from_bytes(fh.read(2), "big")
                     w = int.from_bytes(fh.read(2), "big")
                     return w, h
-                length = int.from_bytes(fh.read(2), "big")
+                if marker[1] in (0xD8, 0xD9, 0xDA) or 0xD0 <= marker[1] <= 0xD7:
+                    break                               # not a length-prefixed segment
+                raw = fh.read(2)
+                if len(raw) < 2:
+                    break
+                length = int.from_bytes(raw, "big")
+                if length < 2:                           # would seek backwards
+                    break
                 fh.seek(length - 2, 1)
     raise ValueError(f"{path.name}: not a PNG or JPEG, or its header is unreadable")
 

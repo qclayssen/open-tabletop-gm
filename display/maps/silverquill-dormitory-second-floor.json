@@ -1,0 +1,18 @@
+{
+ "name": "Silverquill Dormitory - Second Floor",
+ "width": 30,
+ "height": 40,
+ "diagonals": "5",
+ "info": "150 by 200 feet (30x40 squares of 5 ft). Artwork by Ekrahir. Terrain is unpainted: open /maps/silverquill-dormitory-second-floor/edit and paint walls, water and cover before running a fight here.",
+ "image": "images/silverquill-dormitory-second-floor.jpg",
+ "grid": {
+  "cell_px": 100,
+  "offset_x": 0,
+  "offset_y": 0
+ },
+ "credit": "Ekrahir",
+ "source": "Free - Silverquill Dormitory - Second Floor - 3000x4000 - 30x40 - 100px - gridless.jpg",
+ "base": "floor",
+ "features": [],
+ "spawns": []
+}

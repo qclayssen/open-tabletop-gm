@@ -79,3 +79,43 @@ python3 -c "import sys; sys.path.insert(0, 'scripts'); from tactics import maps;
 It prints the map as text (`.` floor, `#` wall, `,` difficult, `~` water, `^` hazard, `o` feature, `_` void), or a clear error naming the rectangle that is wrong. `python3 -m pytest tests/test_tactics_cli.py` also checks that every map in this folder loads.
 
 `training-yard.json` is the tutorial map (`scripts/tactics/play.py tutorial`, see `docs/TUTORIAL.md`). The other five maps are ported from the player-facing tabs of `display/static/reference/strixhaven_map_table.html`.
+
+## Artwork
+
+A map may carry a background image under the terrain, plus the grid alignment that lines the picture up with the 5 ft squares:
+
+```json
+"image": "images/bows-end-tavern.jpg",
+"grid": {"cell_px": 100, "offset_x": 0, "offset_y": 0}
+```
+
+`width`/`height` are the image's pixels divided by `cell_px`, so the board and the picture are the same size and `preserveAspectRatio=none` stretches one to the other. The display draws art → a translucent terrain wash → its own grid lines, so **use the gridless artwork**: a baked-in grid would show a second set of lines under the wash. The engine never reads `image` or `grid`; `grid.rows` and every rule are unchanged, and a map with no image behaves exactly as before.
+
+### Importing creator JPGs
+
+Battle-map JPGs carry their whole spec in the filename:
+
+```bash
+python3 scripts/art_import.py ~/Downloads/my-maps --credit "Artist Name" --dry-run
+python3 scripts/art_import.py ~/Downloads/my-maps --credit "Artist Name"
+```
+
+It writes `images/<slug>.jpg` and a map file with the grid filled in and **`features` left empty** — a picture does not say which squares are wall, so terrain is painted afterwards in the browser (`/maps/<slug>/edit`). It refuses, rather than guesses, when the pixels are not a multiple of the cell size or the filename's square count disagrees with them: every distance at the table comes from the grid, not the picture, so a grid one square out plays wrong while looking fine.
+
+Artwork is third-party and 5–13 MB a file, so `images/` is in `.gitignore`. The map JSONs are committed and list normally; on a clone without the images the maps still load, as bare terrain grids. Keep the `credit` and `source` fields — free to download is not free of the artist's claim.
+
+### A large collection
+
+One map is a folder. A hundred is a filing problem, and two tools exist for that:
+
+```bash
+python3 scripts/art_triage.py ~/Downloads/big-folder        # decide, write nothing
+python3 scripts/art_triage.py ~/Downloads/big-folder --import-ok --credit "Artist"
+python3 scripts/map_catalog.py --open                      # browse what you have
+```
+
+`art_triage.py` groups a folder before importing any of it, because a collection is not a list of maps: every scene arrives as a grid/gridless pair, some files are token sheets or Patreon promos, some are re-uploads under a second name, and a few filenames do not describe their own grid. It reports five buckets — `import`, `variant`, `refuse`, `not a map`, `duplicate` — and writes nothing without `--import-ok`. Refusals carry the reason, because a grid one square out looks correct on screen and plays wrong at the table.
+
+`map_catalog.py` renders every map that loads into one static HTML page with a thumbnail, its size in feet, and its terrain. Thumbnails are inlined as data URIs, so it works from a USB stick and survives being emailed; a map with no artwork installed says so rather than drawing a blank tile that would be indistinguishable from an empty map.
+
+Thumbnails need an image resizer, and none is a dependency of the engine. It looks for `magick`, `convert`, `ffmpeg` and `sips` (macOS only) in that order. With none of them installed the page is still written and every map still listed -- the artwork is simply not shown, and both the page and stdout say so, rather than passing off a missing resizer as missing artwork.
