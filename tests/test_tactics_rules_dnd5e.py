@@ -100,6 +100,81 @@ def test_hit_chance_matches_the_dice():
     assert RULES.hit_chance(k, f, dict(bolt, bonus=-50), RANGED)["percent"] == 10
 
 
+# ─── the odds ride on the resolved roll (roadmap RI2) ──────────────────────────
+#
+# A player doubts a roll after seeing it, not before choosing it, so the chance
+# the preview already computed has to travel with the roll. The engine computes
+# no odds of its own: the system fills Roll.odds in, which is what keeps another
+# system free to label its own numbers its own way.
+
+def test_a_resolved_attack_carries_the_chance_it_was_rolled_at():
+    # Fire Bolt +5 vs frog AC 11: need a 6, so 75%. The roll is a 3, a miss.
+    r = roller(3)
+    k, f = kairos(), frog()
+    res = RULES.attack(k, f, k.attacks[0], RANGED, r, player=False)
+    assert not res["hit"]
+    assert r.log[0].odds == {"percent": 75, "label": "to hit",
+                             "about": "frog-1", "advantage": "normal"}
+    assert res["odds"] == r.log[0].odds
+
+
+def test_the_odds_on_the_roll_are_the_ones_the_preview_showed():
+    """One function, so the badge a player chose on and the number printed
+    beside the resolved roll cannot disagree."""
+    r = roller(3)
+    k, f = kairos(), frog()
+    preview = RULES.hit_chance(k, f, k.attacks[0], RANGED)
+    RULES.attack(k, f, k.attacks[0], RANGED, r, player=False)
+    assert r.log[0].odds["percent"] == preview["percent"]
+
+
+def test_the_odds_follow_the_cover_and_the_mode_the_roll_was_actually_made_at():
+    # Half cover: frog AC 11 + 2 = 13, +5 bolt needs an 8 -> 13/20 = 65%.
+    k, f = kairos(), frog()
+    r = roller(7)
+    RULES.attack(k, f, k.attacks[0], AttackContext(distance=30, melee=False, cover=2), r, player=False)
+    assert r.log[0].odds["percent"] == 65
+    # Prone from range is disadvantage: 75% to hit -> 0.75^2 = 56.25% -> 56.
+    f2 = frog()
+    f2.add_condition("prone")
+    r2 = roller(9, 2)
+    RULES.attack(kairos(), f2, kairos().attacks[0], RANGED, r2, player=False)
+    assert r2.log[0].odds["percent"] == 56
+    assert r2.log[0].odds["advantage"] == "disadvantage"
+
+
+def test_a_damage_roll_has_no_odds_because_there_is_no_question_about_it():
+    r = roller(8, 3)
+    RULES.attack(goblin(), kairos(), scimitar(goblin()), MELEE, r, player=False)
+    assert r.log[0].odds["label"] == "to hit"
+    assert r.log[1].odds == {}          # the damage dice
+
+
+def test_a_resolved_save_carries_the_chance_it_was_rolled_at():
+    # Giant frog DEX +1 against DC 15 needs a 14, so 7/20 to pass and 65% to fail.
+    r = roller(4)
+    res = RULES.saving_throw(frog(), "dex", 15, r, player=False)
+    assert not res["success"] and res["total"] == 5
+    assert r.log[0].odds == {"percent": 65, "label": "to fail the save",
+                             "about": "frog-1", "advantage": "normal"}
+
+
+def test_an_auto_failed_save_rolls_nothing_and_so_carries_no_odds():
+    """Nothing was rolled, so there is no number to sit beside a total."""
+    f = frog()
+    f.add_condition("paralyzed")
+    r = roller()
+    res = RULES.saving_throw(f, "dex", 5, r, player=False)
+    assert res["auto_fail"] and r.log == []
+
+
+def test_a_roll_with_no_odds_is_ordinary_not_an_error():
+    """A system that has no odds for a roll says nothing; the display shows the
+    total either way, because the number does not depend on the percentage."""
+    from tactics.roller import Roll
+    assert Roll("k", "longsword", "1d20+3", [11], 11, 14, "engine").odds == {}
+
+
 # ─── rolls under roll_mode "players" ──────────────────────────────────────────
 
 def test_player_roll_is_requested_not_invented():

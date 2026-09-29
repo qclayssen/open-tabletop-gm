@@ -207,3 +207,37 @@ def test_redaction_matches_whole_names_only():
                            sight.fog(enc))
     assert [e["text"] for e in out] == ["Giant Frog 12 waits.", "An unseen creature hops."]
     assert out[0]["rolls"] == [1] and out[1]["rolls"] == []
+
+
+def test_a_rolls_odds_do_not_survive_the_redaction_of_an_unseen_creature():
+    """A roll carries the chance it was made under (Roll.odds), and that number
+    is about the creature: 60% to hit plus a damage die is a way to read back an
+    AC. It has to go when the name does, which is why it lives inside the roll
+    and not beside it on the log entry."""
+    enc = fight(fog="hide", gob=(9, 0))                    # the goblin is out of sight
+    assert not sight.shown(enc, enc.tokens["goblin-1"], sight.fog(enc))
+    enc.log.append({"round": enc.round, "actor": "kairos", "kind": "attack",
+                    "text": "Kairos Longsword -> Goblin: 4 vs AC 15, miss.",
+                    "rolls": [{"who": "Kairos", "label": "Longsword vs Goblin",
+                               "notation": "1d20+5", "dice": [4], "natural": 4, "total": 9,
+                               "source": "engine", "advantage": "normal",
+                               "odds": {"percent": 60, "label": "to hit",
+                                        "about": "goblin-1", "advantage": "normal"}}]})
+    out = sight.redact_log(enc, enc.log, sight.fog(enc))
+    assert "Goblin" not in out[0]["text"]
+    assert out[0]["rolls"] == [], "the odds rode through the redaction"
+    assert "odds" not in out[0] and "percent" not in out[0]
+
+
+def test_the_odds_of_a_creature_the_players_can_see_are_kept():
+    enc = fight(fog="hide", gob=(3, 3))                     # the goblin is in sight
+    assert sight.shown(enc, enc.tokens["goblin-1"], sight.fog(enc))
+    enc.log.append({"round": enc.round, "actor": "kairos", "kind": "attack",
+                    "text": "Kairos Longsword -> Goblin: 14 vs AC 15, hit.",
+                    "rolls": [{"who": "Kairos", "label": "Longsword vs Goblin",
+                               "notation": "1d20+5", "dice": [9], "natural": 9, "total": 14,
+                               "source": "engine", "advantage": "normal",
+                               "odds": {"percent": 60, "label": "to hit",
+                                        "about": "goblin-1", "advantage": "normal"}}]})
+    out = sight.redact_log(enc, enc.log, sight.fog(enc))
+    assert out[0]["rolls"][0]["odds"]["percent"] == 60

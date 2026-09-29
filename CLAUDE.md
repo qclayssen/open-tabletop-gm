@@ -22,7 +22,7 @@ turn-based mode. Branch: `tactical-combat`.
 - 5e-specific rules live in `systems/dnd5e/`, behind `scripts/tactics/rules.py`, and are 2014 only; the SRD build reads the 2014 packs (asserted in `tests/test_srd_sources.py`).
 - No em dashes in docs, comments or UI text written for this fork.
 - Small focused commits. Keep every existing test passing.
-- Never write to the user's source folder (`~/Claude/Projects/dnd/...`); only the installed campaign copy is written to.
+- Never write to the user's source folder (`~/Claude/Projects/dnd/...`); only the installed campaign copy is written to, never a source tree.
 
 ## Architecture
 
@@ -43,6 +43,7 @@ scripts/tactics/             grid combat engine (stdlib only)
                              engine | player | verbal; PendingRoll for player rolls
   rules.py                   thin system interface + loader (see SYSTEM-PORTING.md)
   core.py                    CombatError, DecisionNeeded, rules_for, hostile, decide()
+  receipts.py                hash-chained roll receipts; `combat.py receipts` verifies
   engine.py                  initiative, turns, move + opportunity attacks, undo,
                              attack (+ reactions, riders), Dash/Disengage/Dodge, previews
   effects.py                 Token.effects lifecycle, concentration, grapples, Shield,
@@ -52,8 +53,8 @@ scripts/tactics/             grid combat engine (stdlib only)
   ai.py                      numbered enemy options (deterministic) + choose
   sight.py                   fog of war (squares a PC sees) and cover from one creature
   maps.py                    display/maps/*.json (rectangles) -> engine grid
-  sync.py                    tracker.json, display /stats + /combat, state.md,
-                             sheets (.bak) and session-log.md on end
+  sync.py                    tracker.json, display /stats + /combat, state.md, sheets
+                             (.bak) and session-log.md on end
   cli.py                     the GM commands; run via scripts/tactics/combat.py
   demo.py                    scripted Kairos vs 2 giant frogs, in a temp campaign
   play.py                    playable terminal game + tutorial (docs/TUTORIAL.md)
