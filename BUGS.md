@@ -105,7 +105,15 @@ rm -f open-tabletop-gm/display/{.gm-watch.pid,app-5001.pid}
 ```
 Stopping the server first re-creates the B5 hazard for anything still polling.
 
-### B10 — `trap` cannot kill the in-flight `opencode run` — **OPEN**
+### B10 — `trap` cannot kill the in-flight `opencode run` — **PARTLY FIXED**
+
+> The turn is now bounded on every platform: `timeout`/`gtimeout` when coreutils is
+> present, and a pure-bash watchdog (TERM, then KILL after 30s) when it is not — which
+> is every macOS box without brew. Calling coreutils `timeout` unconditionally made
+> every turn exit 127 -> FAILED -> restore -> retry, forever. Exercised against a real
+> hang: terminated in 2s and reported as RC=124, which the handler treats as a timeout.
+> Still open: the watcher holds the turn in the foreground, so Ctrl-C fires `trap` while
+> `opencode run` is still a child; that child is not signalled by the trap.
 bash defers trap execution until the foreground child returns. `kill` on the watcher ends the loop; the in-flight turn re-parents to init and keeps writing. A ~4-minute window per turn where shutdown leaks an orphan.
 
 ### B11 — pidfile double-start guard is TOCTOU — **OPEN**
