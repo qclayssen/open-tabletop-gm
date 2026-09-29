@@ -1,13 +1,14 @@
 """Milestone 6: the local DM session loop, with a fake model and fake engine."""
 from __future__ import annotations
 
+import re
 import sys
 
 import pytest
 
 from tests.localdm_fakes import FakeBridge, FakeClient
 from tests.tactics_fixtures import ROOT, _build, _RAW, RULES
-from localdm import llm
+from localdm import context, llm
 from localdm.bridge import Result
 from localdm.play import Session
 
@@ -82,6 +83,33 @@ def test_declared_attacks_are_all_caught(line):
 def test_ordinary_turns_are_not_mistaken_for_attacks(line):
     from localdm import autopilot
     assert not autopilot.declares_attack(line)
+
+
+@pytest.mark.parametrize("line", [
+    "I cast Mage Armor on myself.",
+    "I cast Shield of Faith on myself",
+    "I cast bless on us",
+    "I cast a ward around my own shield",
+])
+def test_a_self_targeted_cast_is_not_declared_an_attack(line):
+    """A cast with no target is a buff, not an attack (B4).
+
+    The no-fight guard used to answer these with NO_FIGHT, which refused the
+    cast before the model was ever asked and made an out-of-combat Mage Armor
+    impossible to play.
+    """
+    from localdm import autopilot
+    assert not autopilot.declares_attack(line)
+
+
+@pytest.mark.parametrize("line", [
+    "I cast a healing word on my ally",
+    "I cast burning hands at the bench.",
+    "I cast magic missile toward the door",
+])
+def test_a_cast_aimed_at_others_is_still_an_attack(line):
+    from localdm import autopilot
+    assert autopilot.declares_attack(line)
 
 
 def test_a_started_fight_still_reaches_the_engine(tmp_path):
@@ -649,3 +677,52 @@ def test_a_failed_summary_still_returns_the_end_text(tmp_path):
     s.local = s.client = FakeClient(boom)
     out = s._engine(["attack", "kairos", "frog-1"])
     assert out[-1] == "Combat ended after round 1." and s.fight_log == []
+
+
+# ── B4: casting a lasting-effect spell (Mage Armor) outside a fight ─────────────
+
+def test_casting_mage_armor_out_of_combat_spends_a_slot_and_sets_ac(real_camp):
+    replies = iter([
+        'Kairos traces a ward of shimmering light around himself.'
+        '\n{"escalate": null, "command": null, "cast": "Mage Armor"}',
+        "The ward settles, humming faintly against his skin." + NULLS,
+    ])
+    c = FakeClient(lambda m, msgs, role: next(replies))
+    s = Session("demo", c, MODELS, camp_dir=real_camp, bridge=FakeBridge())
+    out = s.handle("I cast Mage Armor on myself.")
+    assert "AC is now 15" in " ".join(out)                # the real number, not a guess
+    assert "humming faintly" in out[-1]
+    assert c.roles().count("dm") == 2                     # the first beat, then the real outcome
+
+    sheet = (real_camp / "characters" / "Kairos.md").read_text(encoding="utf-8")
+    assert re.search(r"\|\s*1st\s*\|\s*2\s*\|\s*1\s*\|", sheet)   # one level 1 slot spent
+    assert "**AC:** 12" in sheet                          # the sheet's AC text is left alone
+
+    # P4/B4: the display sidebar reflects the new AC immediately, without a fight.
+    assert context.party_stats(real_camp)[0]["ac"] == 15
+
+
+def test_casting_mage_armor_with_no_slots_left_is_reported_not_invented(real_camp):
+    sheet_path = real_camp / "characters" / "Kairos.md"
+    sheet_path.write_text(
+        sheet_path.read_text(encoding="utf-8").replace("| 1st | 2 | 0 |", "| 1st | 2 | 2 |"),
+        encoding="utf-8")
+    replies = iter([
+        'Kairos reaches for the weave, but something is missing.'
+        '\n{"escalate": null, "command": null, "cast": "Mage Armor"}',
+        "He fumbles; nothing happens." + NULLS,
+    ])
+    c = FakeClient(lambda m, msgs, role: next(replies))
+    s = Session("demo", c, MODELS, camp_dir=real_camp, bridge=FakeBridge())
+    out = s.handle("I cast Mage Armor on myself.")
+    assert "cannot cast" in " ".join(out) and "no level 1 slot left" in " ".join(out)
+    assert context.party_stats(real_camp)[0]["ac"] == 12   # unchanged: nothing was applied
+
+
+def test_casting_a_spell_not_on_the_sheet_is_a_no_op(real_camp):
+    c = FakeClient(lambda m, msgs, role:
+                   'Nothing happens.\n{"escalate": null, "command": null, "cast": "Fireball"}')
+    s = Session("demo", c, MODELS, camp_dir=real_camp, bridge=FakeBridge())
+    out = s.handle("I cast Fireball.")
+    assert out == ["Nothing happens."]                     # no second (engine) call, no crash
+    assert c.roles().count("dm") == 1

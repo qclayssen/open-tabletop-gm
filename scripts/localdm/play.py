@@ -29,6 +29,8 @@ grid combat updates follow the same display.
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import os
 import pathlib
 import random
@@ -70,6 +72,13 @@ CHECK_FAIL = ("Narrate this failure in 1 to 4 sentences, and make the world move
               "player must deal with. Never say the attempt simply failed or that nothing "
               "happens. Do not decide what the character does about it. Do not mention the "
               "number or the DC. Then the JSON line with null for every field.")
+CAST_TASK = ("Narrate the casting in 1 to 3 sentences, using only the numbers the Engine "
+             "section gives (never a different AC, duration or slot count). Then the JSON "
+             "line with null for every field.")
+# B4: the only mechanical effects the engine currently resolves out of combat are ones
+# tactics_spells.py's BUILTIN table marks with an "effect" key (today: Mage Armor); every
+# one of those lasts until a long rest, so 8 hours is the correct duration for all of them.
+CAST_EFFECT_DURATION = "8h"
 MAX_ENEMY_TURNS = 20
 LOG_CAP = 6000                # characters of fight log handed to the end-of-fight summary
 SHADOW = ("Review the latest exchange against the campaign notes. In at most 3 short "
@@ -604,6 +613,51 @@ class Session:
                 return retry
         return r
 
+    def _cast_spell(self, spell_name: str) -> list:
+        """B4: the DM said the player cast a spell with a lasting mechanical effect
+        (e.g. Mage Armor) outside a fight. Resolve it on the engine (spend the slot,
+        apply the effect, write the sheet and tracker.json) instead of letting the DM
+        narrate numbers that never actually happen, mirroring _ability_check."""
+        import tracker
+        from tactics import rules as rules_mod
+        from tactics import spells as spells_mod
+        from tactics.core import CombatError
+        sheet = context.first_sheet_path(self.camp_dir)
+        if sheet is None:
+            return []
+        R = rules_mod.load("dnd5e")
+        caster = R.token_from_sheet(sheet, "pc", (0, 0))
+        try:
+            spec = R.spell(caster, spell_name)
+        except ValueError:
+            return []                       # not a spell on the sheet: nothing to apply
+        if spec.get("mode") != "effect":
+            return []                       # attacks/saves/heals need a target: out of scope here
+        try:
+            lv = spells_mod._check_slot(caster, spec)
+            result = spells_mod._effect(caster, caster, spec)
+        except CombatError as e:
+            result = f"{caster.name} cannot cast {spec['name']}: {e}"
+        else:
+            if lv:
+                caster.extra["slots"][lv]["used"] += 1
+            sheet.write_text(R.write_back(sheet.read_text(encoding="utf-8"), caster),
+                             encoding="utf-8")
+            # The sheet's AC field is left as-is (write_back never touches it: see
+            # tactics_sheet.py), so the new AC is recorded here instead, for the
+            # sidebar to pick up (context.party_stats) until the effect expires.
+            with contextlib.redirect_stdout(io.StringIO()):
+                tracker.cmd_effect(self.campaign, "start", caster.name, spec["name"],
+                                   CAST_EFFECT_DURATION, stat={"ac": caster.ac})
+            if self.display is not None and self.display.registered:
+                self.display.push_party(context.party_stats(self.camp_dir))
+        self.memory.add("engine", result)
+        r = self._dm(engine=result, task=CAST_TASK)
+        if r.narration:
+            self._say(r.narration)
+            return [f"({result})", r.narration]
+        return [f"({result})"]
+
     @staticmethod
     def _directive(text: str) -> str:
         """A display setting as an instruction. The narration-length slider defaults to
@@ -705,6 +759,8 @@ class Session:
             out.append(r.narration)
         if r.check and not self._players_turn():
             out += self._ability_check(r.check, line)
+        if r.cast and not self._players_turn():
+            out += self._cast_spell(r.cast)
         args = parse_player_command(r.command) if r.command else None
         if args and self._players_turn():
             snap = self.bridge.snapshot()

@@ -16,7 +16,7 @@ _FENCED = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```\s*$", re.S)
 _BARE = re.compile(r"(\{[^{}]*\})\s*$", re.S)
 
 
-_CUT_JSON = re.compile(r'\s*\{\s*"(?:escalate|command|check)"[^{}]*\Z')
+_CUT_JSON = re.compile(r'\s*\{\s*"(?:escalate|command|check|cast)"[^{}]*\Z')
 _PROMPT_TAIL = re.compile(r"\s*(?:\n|^)\s*What (?:do|would) you (?:do|like to do)(?: next)?\?\s*\Z", re.I)
 
 
@@ -26,6 +26,8 @@ class DMReply:
     escalate: str | None = None
     command: str | None = None
     check: str | None = None        # "Investigation 13": skill and DC for an ability check
+    cast: str | None = None         # "Mage Armor": a spell with a lasting stat effect, cast
+                                     # outside a fight (B4: resolved on the engine, not guessed)
 
 
 def strip_think(text: str) -> str:
@@ -53,7 +55,7 @@ def parse(text: str) -> DMReply:
             data = {}
     text = _PROMPT_TAIL.sub("", text).rstrip()
     return DMReply(text, _text_field(data, "escalate"), _text_field(data, "command"),
-                   _text_field(data, "check"))
+                   _text_field(data, "check"), _text_field(data, "cast"))
 
 
 # Guardrail: the DM may not put words, thoughts or feelings in the player's mouth.

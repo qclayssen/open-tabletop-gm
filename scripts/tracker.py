@@ -187,7 +187,11 @@ def _send_announce(msg: str) -> None:
 # ─── Commands ────────────────────────────────────────────────────────────────
 
 def cmd_effect(campaign: str, action: str, entity_name: str,
-               spell: str = "", duration: str = "", is_conc: bool = False) -> None:
+               spell: str = "", duration: str = "", is_conc: bool = False,
+               stat: dict | None = None) -> None:
+    """stat: extra numeric fields (e.g. {"ac": 15}) a caller can attach to a "start"
+    effect, so a system-agnostic reader (the display sidebar) can show the new value
+    without knowing any rule; it expires with the effect like everything else here."""
     state = _load(campaign)
     ent   = _entity(state, entity_name)
 
@@ -200,7 +204,7 @@ def cmd_effect(campaign: str, action: str, entity_name: str,
             print(f"  error: bad duration '{duration}' — use 10r / 60m / 8h / indef")
             return
 
-        effect = {"name": spell, "concentration": is_conc, **dur}
+        effect = {"name": spell, "concentration": is_conc, **dur, **(stat or {})}
 
         # Replace any existing effect with same name
         ent["effects"] = [e for e in ent["effects"] if e["name"].lower() != spell.lower()]

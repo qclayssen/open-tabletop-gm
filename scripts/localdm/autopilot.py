@@ -26,6 +26,14 @@ from tactics.grid import parse_square
 
 ATTACK = ("attack", "hit", "strike", "stab", "slash", "smack", "punch", "kick", "shoot", "fire",
           "hurl", "throw", "cast", "blast", "zap", "burn", "bolt", "swing", "kill")
+# The subset of ATTACK that only means an attack when something is aimed at: a
+# self-targeted cast ("Mage Armor on myself") is a buff, not an attack (B4).
+CAST = ("cast", "blast", "zap", "bolt", "burn", "fire")
+_AIM = re.compile(r"\b(?:at|on|onto|to|toward|towards|into)\b")
+_SELF = re.compile(r"\b(?:myself|me|my|us|our|himself|herself|themselves)\b")
+# The reflexives that can only ever be the caster. "my"/"our" are excluded: as a
+# determiner ("on my ally") they name someone else.
+_BARE_SELF = re.compile(r"\b(?:myself|me|us|himself|herself|themselves)\b")
 MOVE = ("move", "step", "walk", "run", "go", "head", "advance", "charge", "approach")
 RETREAT = ("back away", "back off", "retreat", "fall back", "flee", "run away", "get away",
            "withdraw", "step back")
@@ -52,9 +60,47 @@ def declares_attack(line: str) -> bool:
     A grid fight must be started with the engine, so an attack outside one is not a
     turn the model may adjudicate: it is either narration ("I shove the guard") or a
     fight that was never started. play.py answers the second case itself.
+
+    "cast" and its kin are the ambiguous verbs: "I cast burning hands at the bench"
+    is an attack, but "I cast Mage Armor on myself" is a buff with no target, and
+    answering that with NO_FIGHT refused a legitimate out-of-combat cast (B4). So a
+    cast verb only counts as an attack when it is aimed at something other than the
+    caster.
     """
     text = " " + re.sub(r"[^a-z0-9' -]+", " ", (line or "").lower()) + " "
-    return _has(text, ATTACK)
+    if not _has(text, ATTACK):
+        return False
+    if not _has(text, CAST):
+        return True
+    return _aimed_at_someone(text)
+
+
+def _aimed_at_someone(text: str) -> bool:
+    """True when a cast verb in `text` is followed by a preposition and a target
+    that is not the caster.
+
+    "cast burning hands at the bench" aims at the bench; "cast Mage Armor on
+    myself" does not aim at anything, so it is a buff and must reach the model.
+    """
+    verb = re.search(r"\b(?:" + "|".join(CAST) + r")\b", text)
+    if verb is None:
+        return False
+    for aim in _AIM.finditer(text, verb.end()):
+        rest = text[aim.end():]
+        # The target is the first word(s) after the preposition. A reflexive
+        # there means the caster aimed at themselves, which is not an attack.
+        words = rest.split()
+        if not words:
+            return False
+        target = words[0]
+        if _BARE_SELF.match(target):
+            continue                      # "on myself": keep looking, else not an attack
+        if target in ("my", "our") and len(words) > 1:
+            return True                   # "on my ally": a determiner, so someone else
+        if _SELF.match(target):
+            continue
+        return True
+    return False
 
 
 def _has(text, words) -> bool:
