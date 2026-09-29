@@ -54,11 +54,9 @@ def _png(width: int, height: int) -> bytes:
 
 
 @pytest.fixture
-def scene(tmp_path):
-    """A realistic Atlas scene: 1400x980 art, 70px grid, a wall, a token, fog."""
-    (tmp_path / "dungeon.png").write_bytes(_png(1400, 980))
-    (tmp_path / "scenes").mkdir()
-    scene = {
+def scene_body():
+    """The MapFile itself: 1400x980 art, 70px grid, a wall, a token, fog."""
+    return {
         "schema": "atlas-vtt", "version": 4, "name": "Sunken Crypt",
         "background": "dungeon.png",
         "grid": {"enabled": True, "type": "square", "size": 70, "offsetX": 0,
@@ -72,8 +70,30 @@ def scene(tmp_path):
         },
         "camera": {"x": 0, "y": 0, "scale": 1},
     }
+
+
+@pytest.fixture
+def scene(tmp_path, scene_body):
+    """A scene as Atlas actually writes one: the zustand persist envelope.
+
+    The fixture is the envelope deliberately. Atlas stores
+    `{state: <MapFile>, version: N}` (`MapPersistence.ts` setItem,
+    `MapLoader.ts:36-37` unwraps it), so a fixture holding a bare MapFile
+    tested a shape Atlas never writes, and the script rejected every real scene
+    while its own suite passed.
+    """
+    (tmp_path / "dungeon.png").write_bytes(_png(1400, 980))
+    (tmp_path / "scenes").mkdir()
     path = tmp_path / "scenes" / "dungeon.atlasmap"
-    path.write_text(json.dumps(scene), encoding="utf-8")
+    path.write_text(json.dumps({"state": scene_body, "version": 4}), encoding="utf-8")
+    return path
+
+
+def _write(tmp_path, payload, name="dungeon.atlasmap"):
+    (tmp_path / "dungeon.png").write_bytes(_png(1400, 980))
+    (tmp_path / "scenes").mkdir(exist_ok=True)
+    path = tmp_path / "scenes" / name
+    path.write_text(json.dumps(payload), encoding="utf-8")
     return path
 
 
@@ -189,6 +209,80 @@ def test_a_foreign_schema_is_refused(tmp_path):
                    encoding="utf-8")
     with pytest.raises(ValueError, match="expected schema"):
         atm.load_scene(path)
+
+
+# ── the file Atlas actually writes ─────────────────────────────────────────
+
+def test_the_persist_envelope_is_unwrapped(scene, scene_body):
+    """The regression that mattered: Atlas writes `{state: MapFile, version: N}`,
+    so reading `schema` off the top level found nothing and refused every real
+    scene file while a bare-MapFile fixture kept the suite green."""
+    assert atm.load_scene(scene) == scene_body
+
+
+def test_a_bare_mapfile_is_still_accepted(tmp_path, scene_body):
+    """`migrateMapFile` produces the unwrapped shape, and a hand-made or older
+    file may hold one. Both shapes are real, so both must load."""
+    path = _write(tmp_path, scene_body)
+    assert atm.load_scene(path)["background"] == "dungeon.png"
+
+
+def test_an_enveloped_scene_converts_end_to_end(tmp_path):
+    """Not just parsed: the whole pipeline, on the shape Atlas writes."""
+    body = {
+        "schema": "atlas-vtt", "version": 4, "background": "dungeon.png",
+        "grid": {"enabled": True, "type": "square", "size": 70, "offsetX": 0,
+                 "offsetY": 0, "unitType": "feet", "unitDistance": 5},
+        "objects": {}, "camera": {},
+    }
+    path = _write(tmp_path, {"state": body, "version": 4})
+    out = tmp_path / "maps"
+    assert atm.main([str(path), "--name", "crypt", "--out-dir", str(out)]) == 0
+    spec = json.loads((out / "crypt.json").read_text(encoding="utf-8"))
+    assert (spec["width"], spec["height"]) == (20, 14)
+    assert spec["image"] == "images/crypt.png"
+
+
+def test_an_envelope_holding_a_foreign_schema_is_refused(tmp_path):
+    """Unwrapping must not become a way in: the schema check still applies to
+    whatever the envelope holds, or any JSON with a `state` object would pass."""
+    path = _write(tmp_path, {"state": {"schema": "something-else"}, "version": 4})
+    with pytest.raises(ValueError, match="expected schema"):
+        atm.load_scene(path)
+
+
+def test_a_non_dict_envelope_is_not_treated_as_the_map(tmp_path):
+    """A `state` that is not an object is malformed, not a MapFile. Falling back
+    to the envelope itself would read `background`/`grid` as absent and fail
+    later with a confusing message instead of a schema error."""
+    path = _write(tmp_path, {"state": ["not", "a", "map"], "version": 4})
+    with pytest.raises(ValueError, match="expected schema"):
+        atm.load_scene(path)
+
+
+# ── units: feet is the only one that converts ─────────────────────────────
+
+@pytest.mark.parametrize("units", ["yards", "meters", "units"])
+def test_a_non_foot_grid_is_refused(tmp_path, scene_body, units):
+    """Atlas offers yards, metres and bare units. Only feet is ours, and the
+    difference is not cosmetic: a 5 m cell read as 5 ft puts every range, reach
+    and speed out by ~1.6x, which is exactly the plausible-but-wrong map KC4
+    exists to refuse."""
+    body = json.loads(json.dumps(scene_body))
+    body["grid"]["unitType"] = units
+    body["grid"]["unitDistance"] = 5
+    path = _write(tmp_path, {"state": body, "version": 4})
+    with pytest.raises(ValueError, match="measured in"):
+        atm.build_map(atm.load_scene(path), "crypt", path)
+
+
+def test_an_unset_unit_type_is_feet(tmp_path, scene_body):
+    """Atlas's own default is feet and a fresh scene omits the key, so an unset
+    unitType must not be read as 'unknown' and refused."""
+    body = json.loads(json.dumps(scene_body))
+    del body["grid"]["unitType"]
+    path = _write(tmp_path, {"state": body, "version": 4})
+    assert atm.build_map(atm.load_scene(path), "crypt", path)["width"] == 20
 
 
 def test_a_remote_background_is_refused_rather_than_fetched(tmp_path):
