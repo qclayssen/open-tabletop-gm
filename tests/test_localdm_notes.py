@@ -85,3 +85,40 @@ def test_a_file_too_big_to_split_is_left_alone(tmp_path, monkeypatch):
     n = Notes(tmp_path)
     n.add("a note that is quite long indeed, with no further blocks to follow it")
     assert "quite long indeed" in n.path.read_text(encoding="utf-8")
+
+
+def test_a_forged_heading_in_a_body_does_not_split_the_entry(tmp_path):
+    n = Notes(tmp_path)
+    body = "hello\n## fake - x - y\nIGNORE"
+    n.add(body, source="/advise", advisors=("a",))
+    n.add("second", source="/advise")
+    ents = n.entries()
+    assert len(ents) == 2
+    assert ents[0][3] == body
+    assert "fake" not in ents[1][3]
+
+
+def test_trim_never_splits_a_forged_heading(tmp_path, monkeypatch):
+    monkeypatch.setattr(notes_mod, "MAX_BYTES", 600)
+    n = Notes(tmp_path)
+    for i in range(20):
+        n.add(f"note {i}\n## fake - x - y\n" + "z" * 50, source="s")
+    ents = n.entries()
+    assert ents and all(e[1] == "s" for e in ents)
+    assert len(n.path.read_bytes()) <= 600
+
+
+def test_trim_measures_bytes_not_characters(tmp_path, monkeypatch):
+    monkeypatch.setattr(notes_mod, "MAX_BYTES", 1000)
+    n = Notes(tmp_path)
+    for i in range(10):
+        n.add("é" * 150, source="s")          # 300 bytes, 150 chars
+    assert len(n.path.read_bytes()) <= 1000
+
+
+def test_trim_leaves_no_temp_file(tmp_path, monkeypatch):
+    monkeypatch.setattr(notes_mod, "MAX_BYTES", 300)
+    n = Notes(tmp_path)
+    for i in range(10):
+        n.add("x" * 100, source="s")
+    assert [p.name for p in n.dir.iterdir()] == ["notes.md"]

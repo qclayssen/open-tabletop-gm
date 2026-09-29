@@ -141,7 +141,7 @@ def lint_state(rep: Report, text: str) -> None:
         if label not in fields:
             rep.add("error", "state.md", f"header field '**{label}:**' is missing or unlabelled",
                     line=2,
-                    hint="the header is one line: **Created:** …  **Session count:** N  …")
+                    hint="the header is one line: **Created:** ...  **Session count:** N  ...")
     count = fields.get("Session count", "")
     if count and not re.fullmatch(r"\d+", count):
         rep.add("error", "state.md", f"session count {count!r} is not a number", line=2,
@@ -176,7 +176,7 @@ def lint_arc(rep: Report, body: str, line: int) -> None:
     try:
         import yaml
     except ImportError:
-        rep.add("warn", "state.md", "Campaign Arc not checked: PyYAML not installed",
+        rep.add("warn", "state.md", "Campaign Arc YAML check SKIPPED: PyYAML not installed",
                 line=line, hint="pip3 install pyyaml")
         return
     try:
@@ -271,7 +271,7 @@ def lint_sheet(rep: Report, path: pathlib.Path, text: str) -> None:
 
 
 def lint_campaign(name: str, path: pathlib.Path | None = None) -> Report:
-    path = pathlib.Path(path) if path else find_campaign(name)
+    path = pathlib.Path(path) if path else find_campaign(name, migrate=False)
     rep = Report(name, path)
     if not path.is_dir():
         rep.add("error", str(path), "campaign folder not found")
@@ -317,7 +317,7 @@ def _print(rep: Report, strict: bool) -> None:
         where = f"{f['file']}:{f['line']}" if f["line"] else f["file"]
         print(f"  [{f['level']:5s}] {where}  {f['message']}")
         if f["hint"]:
-            print(f"            → {f['hint']}")
+            print(f"            -> {f['hint']}")
 
 
 def main(argv: list) -> int:
@@ -334,8 +334,20 @@ def main(argv: list) -> int:
     if not args.campaign and not args.all:
         ap.error("give a campaign name, or --all")
 
-    names = ([args.campaign] if args.campaign
-             else sorted(p.name for p in campaigns_dir().iterdir() if p.is_dir()))
+    if args.campaign and args.all:
+        ap.error("give a campaign name or --all, not both")
+    if args.campaign and (".." in args.campaign or "/" in args.campaign
+                          or "\\" in args.campaign):
+        ap.error("campaign name must not contain path separators or '..'")
+
+    if args.campaign:
+        names = [args.campaign]
+    else:
+        root = campaigns_dir()
+        if not root.is_dir():
+            print(f"campaigns directory not found: {root}", file=sys.stderr)
+            return 2
+        names = sorted(p.name for p in root.iterdir() if p.is_dir())
     reports = [lint_campaign(n) for n in names]
     missing = [r for r in reports if not r.path.is_dir()]
 

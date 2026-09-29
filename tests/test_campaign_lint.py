@@ -369,3 +369,60 @@ def pytest_skip():
     except ImportError:
         import pytest
         pytest.skip("PyYAML not installed", allow_module_level=False)
+
+
+# --- review fixes: ASCII output, read-only lookup, CLI guards, skipped yaml ---
+
+def _run(*args, env_extra=None):
+    env = dict(os.environ)
+    env["PYTHONIOENCODING"] = "cp1252"
+    env.update(env_extra or {})
+    return subprocess.run([sys.executable, str(LINT), *args], capture_output=True,
+                          env=env, cwd=str(ROOT))
+
+
+def test_output_is_ascii_so_cp1252_consoles_do_not_crash(tmp_path):
+    camp = tmp_path / "campaigns" / "demo"
+    camp.mkdir(parents=True)
+    (camp / "state.md").write_text("# x\n", encoding="utf-8")
+    r = _run("demo", env_extra={"GM_CAMPAIGN_ROOT": str(tmp_path)})
+    assert r.returncode == 1, r.stderr
+    assert b"Traceback" not in r.stderr
+    r.stdout.decode("ascii")
+
+
+def test_lint_does_not_migrate_a_legacy_campaign(tmp_path, monkeypatch):
+    import paths
+    home = tmp_path / "home"
+    (home / "open-tabletop-gm" / "campaigns" / "old").mkdir(parents=True)
+    new_root = tmp_path / "new"
+    new_root.mkdir()
+    monkeypatch.setattr(paths, "_default_root", lambda: home / "open-tabletop-gm")
+    monkeypatch.setenv("GM_CAMPAIGN_ROOT", str(new_root))
+    rep = campaign_lint.lint_campaign("old")
+    assert rep.path == home / "open-tabletop-gm" / "campaigns" / "old"
+    assert not (new_root / "campaigns" / "old").exists()
+
+
+def test_all_with_missing_campaigns_dir_exits_2(tmp_path):
+    r = _run("--all", env_extra={"GM_CAMPAIGN_ROOT": str(tmp_path / "nope")})
+    assert r.returncode == 2
+    assert b"Traceback" not in r.stderr
+
+
+def test_campaign_and_all_together_is_a_usage_error(tmp_path):
+    r = _run("demo", "--all", env_extra={"GM_CAMPAIGN_ROOT": str(tmp_path)})
+    assert r.returncode == 2 and b"not both" in r.stderr
+
+
+def test_campaign_name_with_separators_is_rejected(tmp_path):
+    for bad in ("../x", "a/b", "a\\b", ".."):
+        r = _run(bad, env_extra={"GM_CAMPAIGN_ROOT": str(tmp_path)})
+        assert r.returncode == 2, bad
+
+
+def test_skipped_yaml_check_is_stated_not_clean(monkeypatch):
+    monkeypatch.setitem(sys.modules, "yaml", None)   # import yaml -> ImportError
+    rep = campaign_lint.Report("demo", pathlib.Path("."))
+    campaign_lint.lint_arc(rep, "type: sandbox\n", 1)
+    assert any("SKIPPED" in f["message"] for f in rep.findings)

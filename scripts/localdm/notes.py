@@ -22,12 +22,28 @@ able to read them afterwards, not about changing what the model is told.
 from __future__ import annotations
 
 import datetime
+import os
 import pathlib
 import re
 import threading
 
 NAME = "notes.md"
 MAX_BYTES = 256 * 1024        # a long campaign's notes stay readable in an editor
+
+
+# A body line that looks like an entry heading would forge an entry, so such
+# lines are stored with one leading backslash and unescaped on read. Files
+# written before this existed have no escaped lines and read exactly as before.
+_ESC = re.compile(r"^(\\*)## ", re.MULTILINE)
+_UNESC = re.compile(r"^\\(\\*## )", re.MULTILINE)
+
+
+def _escape(body: str) -> str:
+    return _ESC.sub(lambda m: "\\" + m.group(0), body)
+
+
+def _unescape(body: str) -> str:
+    return _UNESC.sub(r"\1", body)
 
 
 class Notes:
@@ -59,7 +75,7 @@ class Notes:
         with self._lock:
             self.dir.mkdir(parents=True, exist_ok=True)
             with open(self.path, "a", encoding="utf-8") as f:
-                f.write(f"\n{head}\n\n{body}\n")
+                f.write(f"\n{head}\n\n{_escape(body)}\n")
             self._trim()
         return True
 
@@ -70,9 +86,9 @@ class Notes:
         as advice is worse than no note.
         """
         try:
-            if self.path.stat().st_size <= MAX_BYTES:
-                return
             text = self.path.read_text(encoding="utf-8")
+            if len(text.encode("utf-8")) <= MAX_BYTES:
+                return
         except OSError:
             return
         blocks = text.split("\n## ")
@@ -80,11 +96,16 @@ class Notes:
             return
         kept = blocks[-1:]
         for block in reversed(blocks[:-1]):        # newest blocks that fit
-            if sum(len(b) for b in kept) + len(block) > MAX_BYTES:
+            if sum(len(b.encode("utf-8")) + 4 for b in kept) + len(block.encode("utf-8")) + 4 > MAX_BYTES:
                 break
             kept.insert(0, block)
         with self._lock:
-            self.path.write_text("## " + "## ".join(kept), encoding="utf-8")
+            tmp = self.path.with_name(NAME + ".tmp")
+            try:
+                tmp.write_text("## " + "\n## ".join(kept), encoding="utf-8")
+                os.replace(tmp, self.path)
+            except OSError:
+                tmp.unlink(missing_ok=True)
 
     def entries(self, limit: int | None = None) -> list:
         """`(stamp, source, advisors, body)` per consult, oldest first.
@@ -105,7 +126,7 @@ class Notes:
             source = parts[1] if len(parts) > 1 else ""
             advisors = [a.strip() for a in parts[2].split(",") if a.strip()] \
                 if len(parts) > 2 else []
-            out.append((stamp, source, advisors, body.strip()))
+            out.append((stamp, source, advisors, _unescape(body).strip()))
         return out[-limit:] if limit and limit > 0 else out
 
     def recent(self, limit: int = 5) -> str:
