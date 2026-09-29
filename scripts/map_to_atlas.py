@@ -488,9 +488,14 @@ def export(spec: dict, map_id: str, vault: Path, collection: str,
             continue
         # Art already inside the vault is referenced where it lies; anything else
         # is copied in beside the discs, so the collection owns its token art.
+        # `as_posix` because this string goes into the scene document and Atlas
+        # is not a Windows program: `str(relative)` writes `atlas-vtt\assets\...`
+        # there, and the same scene exported on another machine no longer matches
+        # the file it names. Every other path in this module is built with "/"
+        # for the same reason.
         try:
             relative = found.resolve().relative_to(vault.resolve())
-            vault_path = str(relative)
+            vault_path = relative.as_posix()
         except ValueError:
             art_dir_out = tokens_dir / "art"
             art_dir_out.mkdir(parents=True, exist_ok=True)
