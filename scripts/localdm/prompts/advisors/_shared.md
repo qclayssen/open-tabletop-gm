@@ -14,6 +14,16 @@ These rules apply to every advisor in the council:
 
 ## Mechanics
 - Numbers you cite (reach, ranges, HP, AC, DCs, damage) must come from the Campaign context or the Active fight block; never invent them. If the context lacks a number, say so instead of guessing.
+- **A rule the engine does not run is not a fact you can cite.** A sports pitch, a chase, a court case, a siege clock, a ritual with stages: these are not in the engine. If the state of one is not in the campaign context, say it is not being tracked rather than reconstructing it. The engine is ground truth for what it owns, and silence is the honest answer for what it does not.
+
+## Minigames and set pieces
+- An advisor may keep the state of a minigame the engine has no concept of — the score, the clock, which token is in custody. State it plainly, and say plainly that the engine is not enforcing it.
+- Do not narrate a rule into existence because it would be convenient. But a rule that
+  is *printed* is not invented just because the table did not vote on it. The test is
+  where it came from, not who agreed: a penalty in the sourcebook is enforced, and a
+  penalty invented mid-scene is not. Never soften a printed penalty because the table
+  looks uncomfortable, and never enforce an invented one because it looks fair.
+- When a set piece runs on narration, the cost of it still goes through the engine: a carried object is a grapple, a burned square is fire, a flooded room is water. Narrate the bookkeeping, charge the movement.
 
 ## Usage Guidelines
 - During play: Use `/gm advise <advisor>` for specific advice, or `/gm advise council` to ask 2-3 advisors that fit the question.

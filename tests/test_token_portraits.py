@@ -81,9 +81,16 @@ def test_no_portrait_file_is_missing_from_the_manifest():
 
 
 def test_the_manifest_names_the_artist():
-    """Free to download is not free of the artist's claim."""
-    assert token_portraits.CREDIT
-    assert "hearden" in token_portraits.SOURCE
+    """Free to download is not free of the artist's claim.
+
+    CREDIT is who made it and SOURCE is where it came from, so the name the GM
+    is owed is the one in CREDIT. Checking SOURCE for the artist instead is the
+    mistake this test was written against: the two used to be the same string
+    with the name doubled, and deduplicating it broke the assertion without
+    breaking the attribution.
+    """
+    assert token_portraits.CREDIT.strip() == "hearden"
+    assert token_portraits.SOURCE.strip()
 
 
 # ─── the opt-in ──────────────────────────────────────────────────────────────
@@ -210,3 +217,36 @@ def _enc_with(tokens):
     enc.order = list(enc.tokens)
     enc.status = "ended"
     return enc
+
+
+# ─── the installer ───────────────────────────────────────────────────────────
+#
+# The art is gitignored, so `install_tokens.py` is the step every machine runs
+# once. A bug in it is a silent absence: no portrait, no error, no log line.
+
+def test_the_installer_refuses_a_path_that_is_not_there():
+    from install_tokens import main
+    with pytest.raises(SystemExit) as e:
+        main(["/nonexistent/tokens.zip"])
+    assert "No zip at" in str(e.value)
+
+
+def test_the_installer_reports_a_clean_install():
+    """--check is what a person runs to find out whether the art is there, so on
+    a machine with the art it must say so and succeed."""
+    from install_tokens import main
+    if not TOKENS_DIR.is_dir() or not any(TOKENS_DIR.glob("*.png")):
+        pytest.skip("portrait art not installed")
+    assert main(["--check"]) == 0
+
+
+def test_the_installer_says_so_when_the_art_is_absent(tmp_path, monkeypatch, capsys):
+    """The fresh-clone case, which is the one that matters: the art is missing
+    on every clone, it is not an error, and nothing else in the system will
+    mention it. So the check has to name the state rather than pass quietly."""
+    from install_tokens import main
+    import install_tokens
+    monkeypatch.setattr(install_tokens, "TOKENS_DIR", tmp_path / "tokens")
+    assert install_tokens.main(["--check"]) == 1
+    out = capsys.readouterr().out
+    assert "manifest entries have no file" in out

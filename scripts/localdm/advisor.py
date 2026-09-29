@@ -15,7 +15,7 @@ from .reply import strip_think
 
 BRIEFS = pathlib.Path(__file__).resolve().parent / "prompts" / "advisors"
 ADVISORS = ("historian", "continuity", "director", "tactician", "designer", "arbiter",
-            "interface")
+            "interface", "referee", "mascot-handler")
 MAX_WORDS = 150
 FALLBACK = ["continuity", "director"]
 KEYWORDS = {
@@ -33,6 +33,20 @@ KEYWORDS = {
                 "arbitrate", "ruling", "d20", "advantage", "disadvantage", "hit or miss"),
     "interface": ("display", "readab", "layout", "turn order", "sidebar", "visual",
                   "readability", "on screen", "dice pad", "what the player sees"),
+    # The two Mage Tower advisors are set-piece lenses, not general-purpose ones.
+    # They only win a ranking when the question is actually about the match, so
+    # they cannot displace the general council on ordinary play questions.
+    "referee": ("mage tower", "the match", "the score", "the clock", "half-time",
+                "halftime", "full time", "foul", "ejected", "expelled", "expulsion",
+                "out of bounds", "off the pitch", "the pitch", "whistle",
+                "which ruleset", "in play", "custody"),
+    "mascot-handler": ("mascot", "fractal mascot", "inkling", "pest mascot",
+                       "spirit statue mascot", "art elemental mascot", "tower a",
+                       "tower b", "capture the mascot", "who has the mascot",
+                       # College names: a question about "what does Blot do" or
+                       # "is Silverquill's tower Ethereal" never says "mascot".
+                       "quandrix", "prismari", "lorehold", "silverquill",
+                       "witherbloom", "relative density"),
 }
 
 
