@@ -140,6 +140,49 @@ class WaitForUnknownRequest(unittest.TestCase):
         self.assertIn("timeout", combined)
 
 
+class DiagnosticsSurviveACp1252Console(unittest.TestCase):
+    """Every diagnostic --wait prints goes to stderr, so stderr needs the UTF-8
+    reconfigure as much as stdout does.
+
+    On a Windows console (or any cp1252 parent) a message carrying an em dash
+    raised UnicodeEncodeError, the call died before it could report anything,
+    and the GM was left with a traceback instead of the line explaining that
+    the request was unknown. Caught by the Windows CI jobs.
+    """
+
+    def test_send_reconfigures_both_streams(self):
+        src = SEND.read_text(encoding="utf-8")
+        self.assertRegex(src, r"(?s)def utf8_stdout\(\).*?\(sys\.stdout, sys\.stderr\)")
+
+    def test_a_non_ascii_diagnostic_reaches_a_cp1252_parent_intact(self):
+        """The behaviour, not the source text: run send.py under a cp1252
+        PYTHONIOENCODING and confirm the em dash in the unknown-request
+        message arrives as UTF-8 rather than killing the process."""
+        port = _free_port()
+        server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            STATUS.clear()
+            STATUS["response"] = (404, {"known": False, "complete": False,
+                                        "pending": [], "results": []})
+            with tempfile.TemporaryDirectory() as tmp:
+                env = os.environ.copy()
+                env["GM_DISPLAY_PORT"] = str(port)
+                env["PYTHONIOENCODING"] = "cp1252"
+                proc = subprocess.run(
+                    [sys.executable, str(SEND), "--dice-request", "--character", "Kairos",
+                     "--wait", "--wait-timeout", "5"],
+                    capture_output=True, text=True, encoding="utf-8", timeout=60,
+                    env=env, cwd=tmp,
+                )
+        finally:
+            server.shutdown()
+            server.server_close()
+        self.assertNotIn("UnicodeEncodeError", proc.stderr, proc.stderr)
+        self.assertIn("never issued", proc.stderr, proc.stderr)
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+
+
 class SendImportsUrlerror(unittest.TestCase):
     def test_urllib_error_is_imported(self):
         """The 404 branch catches urllib.error.HTTPError, which is a NameError

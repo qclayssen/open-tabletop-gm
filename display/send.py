@@ -379,11 +379,20 @@ def _build_stats_payload(args) -> "dict | None":
 
 def utf8_stdout() -> None:
     """Print UTF-8 whatever the console codepage. On Windows the GM's shell reads
-    stdout through a cp1252 pipe, where "→" in a roll would raise."""
-    try:
-        sys.stdout.reconfigure(encoding="utf-8")
-    except (AttributeError, ValueError):
-        pass
+    stdout through a cp1252 pipe, where "→" in a roll would raise.
+
+    stderr is reconfigured too, and for the same reason: every diagnostic this
+    script emits — "all rolls received", the timeout line, the unknown-request
+    refusal — goes to stderr, so a message carrying an em dash raised
+    UnicodeEncodeError on a cp1252 console and took the whole call down. The
+    GM reads these lines to decide what happens next, so they must not be the
+    ones that crash.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8")
+        except (AttributeError, ValueError):
+            pass
 
 
 def main() -> None:
