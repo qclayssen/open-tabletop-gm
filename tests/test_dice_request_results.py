@@ -58,16 +58,47 @@ class DiceRequestResults(unittest.TestCase):
         self.assertTrue(st["complete"])
         self.assertEqual(st["results"], [first, second])
 
-    def test_an_unknown_request_is_complete_with_no_results(self):
-        st = self.status("nope")
-        self.assertTrue(st["complete"])
+    def test_an_unknown_request_is_not_reported_as_complete(self):
+        """A request that was never issued must not read as a finished one.
+
+        Both used to answer complete=True, so send.py --wait printed "all rolls
+        received" for an id no one ever issued and the GM moved on having rolled
+        nothing. It now 404s, and `known` is False for a server that still
+        answers 200.
+        """
+        r = self.client.get("/dice-request/nope")
+        self.assertEqual(r.status_code, 404)
+        st = r.get_json()
+        self.assertFalse(st["complete"])
+        self.assertFalse(st["known"])
         self.assertEqual(st.get("results", []), [])
 
+    def test_a_known_request_reports_known_true(self):
+        """The finished case is unchanged: known and complete are both true, so
+        a caller can still tell a real completion from a miss."""
+        rid = self.request(["Kairos"])
+        self.roll(rid, "Kairos")
+        st = self.status(rid)
+        self.assertTrue(st["known"])
+        self.assertTrue(st["complete"])
+
+    def test_a_pending_request_is_known_but_not_complete(self):
+        rid = self.request(["Kairos", "Mira"])
+        st = self.status(rid)
+        self.assertTrue(st["known"])
+        self.assertFalse(st["complete"])
+        self.assertEqual(st["pending"], ["Kairos", "Mira"])
+
     def test_old_finished_requests_are_forgotten(self):
+        """The keep-ring evicts old ids. An evicted id is now a 404 like any other
+        unknown one — it is genuinely no longer known — so the results are gone
+        and it does not claim to be a completed request either."""
         rids = [self.request(["Kairos"]) for _ in range(self.mod._DICE_DONE_KEEP + 1)]
         for rid in rids:
             self.roll(rid, "Kairos")
-        self.assertEqual(self.status(rids[0]).get("results", []), [])
+        evicted = self.client.get(f"/dice-request/{rids[0]}")
+        self.assertEqual(evicted.status_code, 404)
+        self.assertEqual(evicted.get_json().get("results", []), [])
         self.assertEqual(len(self.status(rids[-1])["results"]), 1)
 
     def test_a_cancelled_request_says_so_and_keeps_its_rolls(self):

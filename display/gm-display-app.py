@@ -2303,20 +2303,35 @@ def dice_request():
 def dice_request_status(request_id):
     """Poll a dice request's completion state.
 
-    Returns 200 with {complete, pending, results, label, started_at}, plus
-    cancelled once the GM cancelled it. results holds each roll's text so far. A finished request keeps its results (the
-    last _DICE_DONE_KEEP of them); one that never existed reports complete=True
-    with empty pending and results.
+    Returns 200 with {known, complete, pending, results, label, started_at}, plus
+    cancelled once the GM cancelled it. results holds each roll's text so far. A
+    finished request keeps its results (the last _DICE_DONE_KEEP of them).
+
+    `known` separates "this request finished" from "this id was never issued".
+    Both used to answer complete=True, so send.py --wait printed "all rolls
+    received" for a request that never existed and the GM moved on having rolled
+    nothing. An unknown id is not a finished request; it is reported 404 so the
+    caller fails loudly instead of proceeding on a fiction.
     """
     if not _token_ok():
         return "Forbidden", 403
     with _dice_pending_lock:
         entry = _dice_pending.get(request_id)
-        if entry is None or not entry["chars"]:
-            return jsonify({"complete": True, "pending": [],
+        if entry is None:
+            if request_id not in _dice_done:
+                # Never issued, or aged out of the _DICE_DONE_KEEP ring. Either
+                # way there is no request to be complete: say so.
+                return jsonify({"known": False, "complete": False, "pending": [],
+                                "cancelled": False, "results": []}), 404
+            return jsonify({"known": True, "complete": True, "pending": [],
+                            "cancelled": request_id in _dice_cancelled,
+                            "results": list(_dice_done.get(request_id, []))}), 200
+        if not entry["chars"]:
+            return jsonify({"known": True, "complete": True, "pending": [],
                             "cancelled": request_id in _dice_cancelled,
                             "results": list(_dice_done.get(request_id, []))}), 200
         return jsonify({
+            "known": True,
             "complete": False,
             "pending": sorted(entry["chars"]),
             "results": list(entry.get("results", [])),
