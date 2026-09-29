@@ -228,3 +228,34 @@ def test_safe_name_strips_path_and_markup_characters():
     assert eb.safe_name("Goblin (Boss)") == "Goblin Boss"
     assert eb.safe_name("A/B\\C") == "ABC"
     assert eb.safe_name("***") == "unnamed"
+
+
+# ── --data: non-SRD content stays out of dnd5e_srd.json ──────────────────────
+
+def test_note_names_the_file_it_came_from(by_name):
+    """A note derived from a licensed book must not claim to be SRD-derived. The
+    provenance line is what a reader trusts to know where a statblock came from."""
+    srd_note = eb.note_for(by_name["Goblin"], "dnd5e_srd.json")
+    other_note = eb.note_for(by_name["Goblin"], "dnd5e_strixhaven_students.json")
+    assert "Derived from `dnd5e_srd.json`" in srd_note
+    assert "Derived from `dnd5e_strixhaven_students.json`" in other_note
+    assert "dnd5e_srd.json" not in other_note
+
+
+def test_default_provenance_is_the_srd(by_name):
+    assert "`dnd5e_srd.json`" in eb.note_for(by_name["Goblin"])
+
+
+def test_load_monsters_reads_an_alternate_file(tmp_path, by_name):
+    """The whole point of --data: a second file shaped {"monsters": [...]}, with
+    dnd5e_srd.json left exactly as the SRD published it."""
+    import json
+    alt = tmp_path / "alt.json"
+    alt.write_text(json.dumps({"monsters": [by_name["Goblin"]]}), encoding="utf-8")
+    assert [m["name"] for m in eb.load_monsters(alt)] == ["Goblin"]
+
+
+def test_load_monsters_reports_a_missing_file_clearly(tmp_path):
+    with pytest.raises(SystemExit) as exc:
+        eb.load_monsters(tmp_path / "nope.json")
+    assert "not found" in str(exc.value)

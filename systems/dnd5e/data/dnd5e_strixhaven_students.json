@@ -1,0 +1,801 @@
+{
+ "monsters": [
+  {
+   "name": "Aurora Luna Wynterstarr",
+   "index": "aurora-luna-wynterstarr",
+   "cr": 0.25,
+   "xp": 50,
+   "size": "Medium",
+   "type": "humanoid",
+   "lineage_class": "Medium Humanoid (Dhampir Bard), Neutral",
+   "hp": 33,
+   "hp_dice": "6d8",
+   "ac": 11,
+   "speed": "walk 35 ft., climb 35 ft.",
+   "str": 8,
+   "dex": 12,
+   "con": 13,
+   "int": 10,
+   "wis": 11,
+   "cha": 12,
+   "alignment": "Neutral",
+   "languages": "Common, Bullywug, Sylvan",
+   "skills": {
+    "performance": 3,
+    "sleight_of_hand": 3
+   },
+   "passive_perception": 10,
+   "description": "Excited to Be Here: Aurora has advantage on initiative rolls.\n\nDeathless Nature: Aurora doesn't need to breathe.\n\nSpider Climb: Aurora can climb difficult surfaces, including upside down on ceilings, without needing to make an ability check.\n\nSpellcasting: Aurora casts one of the following spells, using Charisma as the spellcasting ability: At will: mage hand, prestidigitation. 1/day: detect magic.\n\nReaction — Beginner's Luck (2/Day): When Aurora fails a saving throw, she can reroll the d20. She must use the new roll.\n\nBond Boon (Quick Notes): Out of respect for Aurora, fellow campus musicians will cover your expenses for one night per week at places where live music is common.\n\nBond Bane (Quick Notes): When there's live music on campus, the lyrics always include rude sentiments directed toward you.",
+   "actions": [
+    {
+     "name": "Magic Flare",
+     "desc": "Melee or Ranged Spell Attack: +3 to hit, reach 5 ft. or range 60 ft., one target. Hit: 7 (1d12 + 1) force damage."
+    },
+    {
+     "name": "Vampiric Bite",
+     "desc": "Melee Weapon Attack: +3 to hit, reach 5 ft., one target. Hit: 3 (1d4 + 1) piercing damage. If the target isn't a Construct or an Undead, Aurora regains hit points equal to the piercing damage dealt. While Aurora is missing half or more of her hit points, she has advantage on attack rolls with this bite."
+    }
+   ],
+   "hp_dice_printed": "6d8 + 6"
+  },
+  {
+   "name": "Bhedum \"Rampart\" Sooviij",
+   "index": "bhedum-rampart-sooviij",
+   "cr": 0.25,
+   "xp": 50,
+   "size": "Medium",
+   "type": "humanoid",
+   "lineage_class": "Medium Humanoid (Loxodon Wizard), Lawful Neutral",
+   "hp": 33,
+   "hp_dice": "6d8",
+   "ac": 13,
+   "speed": "walk 30 ft.",
+   "str": 12,
+   "dex": 8,
+   "con": 13,
+   "int": 12,
+   "wis": 10,
+   "cha": 11,
+   "alignment": "Lawful Neutral",
+   "languages": "Common, Draconic, Loxodon",
+   "skills": {
+    "arcana": 2,
+    "deception": 2,
+    "history": 3,
+    "investigation": 3
+   },
+   "passive_perception": 10,
+   "description": "Natural Armor: Rampart has thick, leathery skin. When Rampart isn't wearing armor, Rampart's AC is 12 + their Constitution modifier. Rampart can use their natural armor to determine their AC if the armor they wear would leave them with a lower AC. A shield's benefits apply as normal while Rampart uses their natural armor.\n\nBattlefield Conditions: Rampart attends all of their classes clad in gilded plate armor and wearing a greatsword. While wearing this armor Rampart has an AC of 18, but they also have disadvantage on any ability check, saving throw, or attack roll that involves Strength or Dexterity, and they can't cast spells.\n\nExcited to Be Here: Rampart has advantage on initiative rolls.\n\nKeen Smell: Rampart has advantage on Wisdom (Perception), Wisdom (Survival), and Intelligence (Investigation) checks that rely on smell.\n\nLoxodon Serenity: Rampart has advantage on initiative rolls.\n\nSpellcasting: Rampart casts one of the following spells, using Intelligence as the spellcasting ability (spell save DC 11): At will: mage hand, prestidigitation. 1/day: detect magic.\n\nReaction — Beginner's Luck (2/Day): When Rampart fails a saving throw, they can reroll the d20. They must use the new roll.\n\nBond Boon (Quick Notes): Rampart's commanding presence rubs off, and when you're trying to avoid campus security, your fellow students always help you lie low.\n\nBond Bane (Quick Notes): Library books you need inexplicably go missing at key times, especially those about history. As a result, you can't pull all-nighters.",
+   "ocr_uncertain": [
+    "Name: the book's Students table misspells the surname 'Soovijj'. The statblock header itself reads 'SOOVIIJ' and the actual Strixhaven NPC is Bhedum 'Rampart' Sooviij. Emitted as 'Sooviij' per the book index correction; the table form 'Soovijj' is the erroneous one."
+   ],
+   "actions": [
+    {
+     "name": "Magic Flare",
+     "desc": "Melee or Ranged Spell Attack: +3 to hit, reach 5 ft. or range 60 ft., one target. Hit: 7 (1d12 + 1) force damage."
+    },
+    {
+     "name": "Greatsword (Battlefield Conditions only)",
+     "desc": "Melee Weapon Attack: +1 to hit, reach 5 ft., one target. Hit: 8 (2d6 + 1) slashing damage."
+    }
+   ],
+   "hp_dice_printed": "6d8 + 6"
+  },
+  {
+   "name": "Cadoras Damellawar",
+   "index": "cadoras-damellawar",
+   "cr": 0.25,
+   "xp": 50,
+   "size": "Medium",
+   "type": "humanoid",
+   "lineage_class": "Medium Humanoid (Elf Druid), Chaotic Good",
+   "hp": 33,
+   "hp_dice": "6d8",
+   "ac": 11,
+   "speed": "walk 30 ft.",
+   "str": 8,
+   "dex": 13,
+   "con": 12,
+   "int": 10,
+   "wis": 12,
+   "cha": 11,
+   "alignment": "Chaotic Good",
+   "languages": "Common, Elvish, Gnomish",
+   "skills": {
+    "animal_handling": 3,
+    "perception": 3,
+    "performance": 4,
+    "sleight_of_hand": 3
+   },
+   "passive_perception": 13,
+   "incomplete": true,
+   "description": "Excited to Be Here: Cadoras has advantage on initiative rolls.\n\nFey Ancestry: Cadoras has advantage on saving throws against being charmed, and magic can't put Cadoras to sleep.\n\nSpellcasting: Cadoras casts one of the following spells, using Wisdom as the spellcasting ability (spell save DC 11): At will: mage hand, prestidigitation. 1/day: detect magic.\n\nReaction — Beginner's Luck (2/Day): When Cadoras fails a saving throw, he can reroll the d20. He must use the new roll.\n\nBond Boon (Quick Notes): The esteem for Cadoras in live-action roleplaying circles extends to you. Guild members will share any information you wish to know about Aberrations, Monstrosities, and Oozes.\n\nBond Bane (Quick Notes): You are a pariah in the campus roleplaying scene. The worst monsters are named after you.\n\nExtraction gaps: The Year One block prints no Challenge line and no Languages line. Challenge 1/4 (50 XP) and the language list were taken from the same character's Year Two block, which reads 'Languages Common, Elvish, Gnomish' and 'Challenge 2 (450 XP)'. Year One HP (33, 6d8 + 6) and AC 11 ARE printed.",
+   "actions": [
+    {
+     "name": "Magic Flare",
+     "desc": "Melee or Ranged Spell Attack: +3 to hit, reach 5 ft. or range 60 ft., one target. Hit: 7 (1d12 + 1) force damage."
+    }
+   ],
+   "hp_dice_printed": "6d8 + 6"
+  },
+  {
+   "name": "Drazhomir Yarnask",
+   "index": "drazhomir-yarnask",
+   "cr": 2,
+   "xp": 450,
+   "size": "Medium",
+   "type": "humanoid",
+   "lineage_class": "Medium Humanoid (Minotaur Wizard), Neutral Good",
+   "hp": 44,
+   "hp_dice": "8d8",
+   "ac": 9,
+   "speed": "walk 30 ft.",
+   "str": 15,
+   "dex": 8,
+   "con": 12,
+   "int": 15,
+   "wis": 11,
+   "cha": 14,
+   "alignment": "Neutral Good",
+   "languages": "Common, Halfling, Minotaur",
+   "saves": {
+    "int": 4,
+    "cha": 4
+   },
+   "skills": {
+    "athletics": 4,
+    "arcana": 6,
+    "history": 4,
+    "investigation": 6,
+    "nature": 4,
+    "persuasion": 4
+   },
+   "passive_perception": 10,
+   "description": "Spellcasting: Drazhomir casts one of the following spells, using Intelligence as the spellcasting ability (spell save DC 12): At will: guidance, mage hand. 1/day each: enlarge/reduce, mage armor.\n\nBonus Action — Hammering Horns: Immediately after Drazhomir hits a creature with a melee attack as part of the Attack action on his turn, he can use a bonus action to attempt to shove that target with his horns. The target must be Larger or smaller and within 5 feet of Drazhomir. Unless it succeeds on a DC 12 Strength saving throw, Drazhomir pushes the target up to 10 feet away from himself.\n\nBonus Action — Goring Rush: Immediately after Drazhomir uses the Dash action on his turn and moves at least 20 feet, he can make one melee attack with his horns as a bonus action.\n\nReaction — Bond Boon: Square Up (1/Day): Drazhomir chooses another creature within 60 feet who can hear him and with whom he shares a bond boon. Until the end of Drazhomir's next turn, the target has advantage on all Strength, Dexterity, and Constitution-based saving throws.\n\nBond Boon (Quick Notes): Drazhomir writes you poetry, and the smile it puts on your face makes you likable to everyone on campus except the most stone-hearted.\n\nBond Bane (Quick Notes): Other students who work in the Biblioplex refuse to help you find any of the tomes you seek. Even the reference librarians are more cryptic.",
+   "actions": [
+    {
+     "name": "Multiattack",
+     "desc": "Drazhomir makes two Exponential Lash attacks."
+    },
+    {
+     "name": "Exponential Lash",
+     "desc": "Melee or Ranged Spell Attack: +4 to hit, reach 5 ft. or range 60 ft., one target. Hit: 5 (1d6 + 2) force damage, and Drazhomir can cause one creature he can see within 30 feet of the target to take 9 (2d6 + 2) force damage."
+    },
+    {
+     "name": "Horns",
+     "desc": "Melee Weapon Attack: +4 to hit, reach 5 ft., one target. Hit: 5 (1d6 + 2) piercing damage."
+    }
+   ],
+   "hp_dice_printed": "8d8 + 8"
+  },
+  {
+   "name": "Ehsan",
+   "index": "ehsan",
+   "cr": 0.25,
+   "xp": 50,
+   "size": "Medium",
+   "type": "humanoid",
+   "lineage_class": "Medium Humanoid (Leonin Ranger), Chaotic Good",
+   "hp": 21,
+   "hp_dice": "6d8",
+   "ac": 11,
+   "speed": "walk 30 ft.",
+   "str": 12,
+   "dex": 13,
+   "con": 8,
+   "int": 11,
+   "wis": 12,
+   "cha": 10,
+   "alignment": "Chaotic Good",
+   "languages": "Common, Giant, Leonin",
+   "skills": {
+    "athletics": 3,
+    "medicine": 3
+   },
+   "passive_perception": 10,
+   "incomplete": true,
+   "description": "Excited to Be Here: Ehsan has advantage on initiative rolls.\n\nSpellcasting: Ehsan casts one of the following spells, using Wisdom as the spellcasting ability (spell save DC 11): At will: mage hand, prestidigitation. 1/day: detect magic.\n\nBonus Action — Daunting Roar (Recharges after a Short or Long Rest): Ehsan lets out a menacing roar. Creatures of Ehsan's choice within 10 feet that can hear her must succeed on a DC 9 Constitution saving throw or become frightened of her until the end of her next turn.\n\nReaction — Beginner's Luck (2/Day): When Ehsan fails a saving throw, she can reroll the d20. She must use the new roll.\n\nBond Boon (Quick Notes): Ehsan has shared a few secret hiding places and quiet corners where you won't be found by other students or faculty, unless you want them to.\n\nBond Bane (Quick Notes): Other students can track you down easily whether you want them to or not, as can Witherbloom faculty.\n\nExtraction gaps: The Year One block prints no Hit Points line. The printed 21 (6d8 - 6) is inferred from the CON 8 (-1) hit point formula, which matches the two other CON 8 first-year students in this book: Larine Arneza (21, 6d8 - 6) and Quentillius A. Melentor III (21, 6d8 - 6). Armor Class 11, Speed 30 ft. and Challenge 1/4 (50 XP) ARE printed.",
+   "ocr_uncertain": [
+    "Spell name: the extraction prints 'prestidigation' in several first-year blocks (Ehsan among them). This is a repeated extraction corruption of the 5e cantrip 'prestidigitation'. Emitted as 'prestidigitation'."
+   ],
+   "actions": [
+    {
+     "name": "Magic Flare",
+     "desc": "Melee or Ranged Spell Attack: +3 to hit, reach 5 ft. or range 60 ft., one target. Hit: 7 (1d12 + 1) force damage."
+    },
+    {
+     "name": "Claws",
+     "desc": "Melee Weapon Attack: +3 to hit, reach 5 ft., one target. Hit: 3 (1d4 + 1) slashing damage."
+    }
+   ],
+   "hp_dice_printed": "6d8 - 6"
+  },
+  {
+   "name": "Grayson Wildemere",
+   "index": "grayson-wildemere",
+   "cr": 0.25,
+   "xp": 50,
+   "size": "Medium",
+   "type": "humanoid",
+   "lineage_class": "Medium Humanoid (Human Bard), Neutral",
+   "hp": 33,
+   "hp_dice": "6d8",
+   "ac": 11,
+   "speed": "walk 30 ft.",
+   "str": 8,
+   "dex": 13,
+   "con": 12,
+   "int": 11,
+   "wis": 10,
+   "cha": 12,
+   "alignment": "Neutral",
+   "languages": "Common, Dwarvish, Elvish",
+   "skills": {
+    "insight": 4,
+    "investigation": 2,
+    "persuasion": 3
+   },
+   "passive_perception": 10,
+   "incomplete": true,
+   "description": "Excited to Be Here: Grayson has advantage on initiative rolls.\n\nSpellcasting: Grayson casts one of the following spells, using Charisma as the spellcasting ability (spell save DC 11): At will: mage hand, prestidigitation. 1/day: detect magic.\n\nReaction — Beginner's Luck (2/Day): When Grayson fails a saving throw, he can reroll the d20. He must use the new roll.\n\nBond Boon (Quick Notes): Whenever you want to buy something on campus, a few words from Grayson get you deals. There's a 25 percent chance your purchase costs half as much.\n\nBond Bane (Quick Notes): Gossip columns proclaim exaggerated versions of your worst traits.\n\nExtraction gaps: The Year One block prints no Hit Points line and no Speed line. Hit Points 33 (6d8 + 6) is inferred from the CON 12 (+1) first-year formula shared by Aurora Luna Wynterstarr, Greta Gorunn, Iya Ruan and Melwythorne. Speed 30 ft. is inferred from Grayson's own Year Three block, which prints Speed 30 ft. Armor Class 11, all six ability scores, skills, languages and Challenge 1/4 (50 XP) ARE printed.\n\nPrinted anomaly preserved as-is: the Year One block lists Insight +4, which does not derive from the printed WIS 10 (+0) with a +2 proficiency bonus. Not corrected.",
+   "ocr_uncertain": [
+    "Spell name: the extraction prints 'prestidigation' here. Emitted as 'prestidigitation'."
+   ],
+   "actions": [
+    {
+     "name": "Magic Flare",
+     "desc": "Melee or Ranged Spell Attack: +3 to hit, reach 5 ft. or range 60 ft., one target. Hit: 7 (1d12 + 1) force damage."
+    }
+   ],
+   "hp_dice_printed": "6d8 + 6"
+  },
+  {
+   "name": "Greta Gorunn",
+   "index": "greta-gorunn",
+   "cr": 0.25,
+   "xp": 50,
+   "size": "Medium",
+   "type": "humanoid",
+   "lineage_class": "Medium Humanoid (Dwarf Cleric), Chaotic Good",
+   "hp": 33,
+   "hp_dice": "6d8",
+   "ac": 9,
+   "speed": "walk 25 ft.",
+   "str": 13,
+   "dex": 8,
+   "con": 12,
+   "int": 10,
+   "wis": 12,
+   "cha": 11,
+   "alignment": "Chaotic Good",
+   "languages": "Common, Dwarvish, Orc",
+   "immunities": "poison",
+   "skills": {
+    "athletics": 3,
+    "medicine": 3
+   },
+   "passive_perception": 11,
+   "description": "Dwarven Resilience: Greta has advantage on saving throws against poison.\n\nExcited to Be Here: Greta has advantage on initiative rolls.\n\nSpellcasting: Greta casts one of the following spells, using Wisdom as the spellcasting ability (spell save DC 11): At will: mage hand, prestidigitation. 1/day: detect magic.\n\nReaction — Beginner's Luck (2/Day): When Greta fails a saving throw, she can reroll the d20. She must use the new roll.\n\nBond Boon (Quick Notes): Whenever you need anything heavy moved, members of the Iron-Lifters Society show up to help you.\n\nBond Bane (Quick Notes): Heavy things show up in inconvenient places, such as in front of your dorm door.",
+   "actions": [
+    {
+     "name": "Magic Flare",
+     "desc": "Melee or Ranged Spell Attack: +3 to hit, reach 5 ft. or range 60 ft., one target. Hit: 7 (1d12 + 1) force damage."
+    }
+   ],
+   "hp_dice_printed": "6d8 + 6"
+  },
+  {
+   "name": "Iya Ruan",
+   "index": "iya-ruan",
+   "cr": 0.25,
+   "xp": 50,
+   "size": "Medium",
+   "type": "humanoid",
+   "lineage_class": "Medium Humanoid (Merfolk Wizard), Neutral Good",
+   "hp": 33,
+   "hp_dice": "6d8",
+   "ac": 11,
+   "speed": "walk 30 ft., swim 30 ft.",
+   "str": 8,
+   "dex": 12,
+   "con": 13,
+   "int": 12,
+   "wis": 10,
+   "cha": 11,
+   "alignment": "Neutral Good",
+   "languages": "Common, Elvish, Merfolk",
+   "skills": {
+    "athletics": 1,
+    "performance": 2
+   },
+   "passive_perception": 10,
+   "description": "Amphibious: Iya can breathe air and water.\n\nExcited to Be Here: Iya has advantage on initiative rolls.\n\nSpellcasting: Iya casts one of the following spells, using Intelligence as the spellcasting ability (spell save DC 11): At will: mage hand, prestidigitation. 1/day: detect magic.\n\nReaction — Beginner's Luck (2/Day): When Iya fails a saving throw, she can reroll the d20. She must use the new roll.\n\nBond Boon (Quick Notes): You never have to worry about what to wear or how to accessorize, as Iya or one of her friends will have something suitable to hand.\n\nBond Bane (Quick Notes): Both students and faculty will openly criticize you on your choice of attire or makeup, even during extracurricular and public events.",
+   "ocr_uncertain": [
+    "Spell name: the extraction prints 'prestidigation' here. Emitted as 'prestidigitation'."
+   ],
+   "actions": [
+    {
+     "name": "Magic Flare",
+     "desc": "Melee or Ranged Spell Attack: +3 to hit, reach 5 ft. or range 60 ft., one target. Hit: 7 (1d12 + 1) force damage."
+    }
+   ],
+   "hp_dice_printed": "6d8 + 6"
+  },
+  {
+   "name": "Javenesh Stoutclaw",
+   "index": "javenesh-stoutclaw",
+   "cr": 1,
+   "xp": 200,
+   "size": "Medium",
+   "type": "humanoid",
+   "lineage_class": "Medium Humanoid (Owlin Cleric), Neutral Good",
+   "hp": 33,
+   "hp_dice": "6d8",
+   "ac": 10,
+   "speed": "walk 30 ft., fly 30 ft.",
+   "str": 14,
+   "dex": 10,
+   "con": 13,
+   "int": 11,
+   "wis": 15,
+   "cha": 12,
+   "alignment": "Neutral Good",
+   "languages": "Common, Draconic, Infernal",
+   "saves": {
+    "con": 3,
+    "wis": 4
+   },
+   "skills": {
+    "athletics": 4,
+    "history": 2,
+    "insight": 4,
+    "intimidation": 3,
+    "investigation": 2,
+    "stealth": 2
+   },
+   "passive_perception": 12,
+   "description": "Bond Boon: Tough Guy. Javenesh has advantage on saving throws against being frightened. While a creature with whom Javenesh shares a bond boon can see Javenesh, it ignores the effects of being frightened.\n\nSpellcasting: Javenesh casts one of the following spells, using Wisdom as the spellcasting ability (spell save DC 12): At will: guidance, light. 1/day each: comprehend languages, locate object, mage armor.\n\nReaction — Learn from the Past (2/Day): When another creature within 60 feet of Javenesh misses a target with an attack roll, Javenesh magically enables the attacker to reroll the attack roll. It must use the new roll.\n\nBond Boon (Quick Notes): Javenesh's reputation as a tough guy follows you. If peers would be aggressive toward you, they quickly back down.\n\nBond Bane (Quick Notes): The servers at Bow's End Tavern know you are no friend to Javenesh. At the slightest sign of trouble, they blame you and ask you to leave.",
+   "actions": [
+    {
+     "name": "Scroll Bash",
+     "desc": "Melee Spell Attack: +4 to hit, reach 30 ft., one target. Hit: 7 (1d10 + 2) bludgeoning damage plus 9 (2d8) thunder damage."
+    },
+    {
+     "name": "Reduce to Memory (Recharge 6)",
+     "desc": "Thundering golden energy erupts around a creature Javenesh can see within 90 feet. The creature must make a DC 12 Constitution saving throw, taking 33 (6d10) thunder damage on a failed save, or half as much damage on a successful one. A Construct has disadvantage on the saving throw."
+    }
+   ],
+   "hp_dice_printed": "6d8 + 6"
+  },
+  {
+   "name": "Larine Arneza",
+   "index": "larine-arneza",
+   "cr": 0.25,
+   "xp": 50,
+   "size": "Medium",
+   "type": "humanoid",
+   "lineage_class": "Medium Humanoid (Human Druid), Neutral Good",
+   "hp": 21,
+   "hp_dice": "6d8",
+   "ac": 11,
+   "speed": "walk 30 ft., swim 20 ft.",
+   "str": 12,
+   "dex": 13,
+   "con": 8,
+   "int": 10,
+   "wis": 12,
+   "cha": 11,
+   "alignment": "Neutral Good",
+   "languages": "Common, Primordial, Sylvan",
+   "skills": {
+    "athletics": 3,
+    "performance": 2
+   },
+   "passive_perception": 10,
+   "description": "Excited to Be Here: Larine has advantage on initiative rolls.\n\nSpellcasting: Larine casts one of the following spells, using Wisdom as the spellcasting ability (spell save DC 11): At will: mage hand, prestidigitation. 1/day: detect magic.\n\nReaction — Beginner's Luck (2/Day): When Larine fails a saving throw, she can reroll the d20. She must use the new roll.\n\nBond Boon (Quick Notes): Larine is an expert at creating stylized distractions. If you want to slip away unnoticed from anywhere on campus, Larine or her club members help you escape.\n\nBond Bane (Quick Notes): You are offered the worst tickets to performances, if any at all.",
+   "ocr_uncertain": [
+    "Spell name: the extraction prints 'prestidigation' here. Emitted as 'prestidigitation'."
+   ],
+   "actions": [
+    {
+     "name": "Magic Flare",
+     "desc": "Melee or Ranged Spell Attack: +3 to hit, reach 5 ft. or range 60 ft., one target. Hit: 7 (1d12 + 1) force damage."
+    }
+   ],
+   "hp_dice_printed": "6d8 - 6"
+  },
+  {
+   "name": "Melwythorne",
+   "index": "melwythorne",
+   "cr": 0.25,
+   "xp": 50,
+   "size": "Medium",
+   "type": "fey",
+   "lineage_class": "Medium Fey (Dryad Druid), Neutral Good",
+   "hp": 33,
+   "hp_dice": "6d8",
+   "ac": 9,
+   "speed": "walk 30 ft.",
+   "str": 12,
+   "dex": 8,
+   "con": 13,
+   "int": 10,
+   "wis": 12,
+   "cha": 11,
+   "alignment": "Neutral Good",
+   "languages": "Celestial, Common, Sylvan",
+   "skills": {
+    "athletics": 3,
+    "insight": 3,
+    "intimidation": 2,
+    "religion": 2
+   },
+   "passive_perception": 11,
+   "description": "Excited to Be Here: Melwythorne has advantage on initiative rolls.\n\nMagic Resistance: Melwythorne has advantage on saving throws against spells and other magical effects.\n\nSpeak with Beasts and Plants: Melwythorne can communicate with beasts and plants as if they and Melwythorne shared a language.\n\nSpellcasting: Melwythorne casts one of the following spells, using Wisdom as the spellcasting ability (spell save DC 11): At will: druidcraft, mage hand, prestidigitation. 1/day each: detect magic, entangle, shillelagh.\n\nReaction — Beginner's Luck (2/Day): When Melwythorne fails a saving throw, it can reroll the d20. It must use the new roll.\n\nBond Boon (Quick Notes): Melwythorne's spirituality centers you. You can calm even the most frazzled of your peers and, if necessary, extract information as needed.\n\nBond Bane (Quick Notes): Members of the silkball club and the Student-Mages of Faith refuse to acknowledge your presence.",
+   "actions": [
+    {
+     "name": "Magic Flare",
+     "desc": "Melee or Ranged Spell Attack: +3 to hit, reach 5 ft. or range 60 ft., one target. Hit: 7 (1d12 + 1) force damage."
+    }
+   ],
+   "hp_dice_printed": "6d8 + 6"
+  },
+  {
+   "name": "Mina Lee",
+   "index": "mina-lee",
+   "cr": 1,
+   "xp": 200,
+   "size": "Medium",
+   "type": "humanoid",
+   "lineage_class": "Medium Humanoid (Human Wizard), Lawful Good",
+   "hp": 33,
+   "hp_dice": "6d8",
+   "ac": 12,
+   "speed": "walk 30 ft.",
+   "str": 10,
+   "dex": 15,
+   "con": 12,
+   "int": 15,
+   "wis": 11,
+   "cha": 12,
+   "alignment": "Lawful Good",
+   "languages": "Common, Infernal, Undercommon",
+   "saves": {
+    "int": 4,
+    "wis": 2
+   },
+   "skills": {
+    "deception": 3,
+    "investigation": 4,
+    "insight": 2,
+    "performance": 3,
+    "persuasion": 5
+   },
+   "passive_perception": 10,
+   "incomplete": true,
+   "description": "Spellcasting: Mina casts one of the following spells, using Intelligence as the spellcasting ability (spell save DC 12): At will: dancing lights, friends. 1/day each: command, mage armor.\n\nBonus Action — Bond Boon: Elocution Lessons (1/Day): Mina chooses another creature within 60 feet who can hear her and with whom she shares a bond boon. The next time that creature would cast a spell before the end of Mina's next turn, it can choose to change the damage type of the spell to psychic damage.\n\nReaction — Rousing Verse: When a creature Mina can see within 30 feet of her fails a saving throw, Mina magically weaves together stirring prose, allowing the creature to reroll the saving throw and use the higher result.\n\nBond Boon (Quick Notes): Mina loves sharing her vast repository of knowledge with you. If you seek obscure information that's not secret, Mina researches it and reports her findings within a week.\n\nBond Bane (Quick Notes): Firejolt Cafe never has the ingredients in stock for the beverages you initially order, even if it's a common drink.\n\nExtraction gaps: The Year One block prints no Armor Class, no Hit Points and no Speed line. Hit Points 33 (6d8 + 6) is inferred from the CON 12 (+1) first-year formula. Armor Class 12 and Speed 30 ft. are inferred from the printed DEX 15 (+2) unarmored base and from Mina's own later blocks (Year Two onward print Speed 30 ft.). All six ability scores, saving throws, skills, senses, languages and Challenge 1 (200 XP) ARE printed.",
+   "actions": [
+    {
+     "name": "Ink Blade",
+     "desc": "Melee or Ranged Spell Attack: +4 to hit, reach 5 ft. or range 60 ft., one target. Hit: 5 (1d6 + 2) piercing damage plus 9 (2d8) psychic damage."
+    }
+   ],
+   "hp_dice_printed": "6d8 + 6"
+  },
+  {
+   "name": "Nora Ann Wu",
+   "index": "nora-ann-wu",
+   "cr": 0.5,
+   "xp": 100,
+   "size": "Medium",
+   "type": "humanoid",
+   "lineage_class": "Medium Humanoid (Human Bard), Neutral Good",
+   "hp": 44,
+   "hp_dice": "8d8",
+   "ac": 12,
+   "speed": "walk 35 ft.",
+   "str": 10,
+   "dex": 15,
+   "con": 12,
+   "int": 11,
+   "wis": 12,
+   "cha": 15,
+   "alignment": "Neutral Good",
+   "languages": "Common, Gnomish, Halfling",
+   "saves": {
+    "dex": 4,
+    "cha": 4
+   },
+   "skills": {
+    "acrobatics": 4,
+    "athletics": 2,
+    "performance": 6,
+    "sleight_of_hand": 4
+   },
+   "passive_perception": 11,
+   "description": "Spellcasting: Nora casts one of the following spells, using Charisma as the spellcasting ability (spell save DC 12): At will: minor illusion. 1/day each: gust of wind, mage armor, silent image.\n\nBonus Action — Bond Boon: Supportive Words (1/Day): Nora chooses another creature within 60 feet who can hear her and with whom she shares a bond boon. That creature gains 1d6 temporary hit points and can immediately move up to 15 feet without provoking opportunity attacks.\n\nBonus Action — Surge of Artistry (Recharge 4-6): Nora moves up to her speed, surrounding herself with elemental magic as she moves. Until the end of her turn, Nora can move through the space of other creatures. The first time Nora enters a creature's space on a turn, that creature must succeed on a DC 12 Dexterity saving throw or be knocked prone. If Nora ends her turn in another creature's space, Nora takes 5 (1d10) force damage and is pushed into the nearest unoccupied space.\n\nBond Boon (Quick Notes): The faculty's respect for Nora extends to you. You can expect straightforward answers when you ask a faculty member for basic information.\n\nBond Bane (Quick Notes): Few faculty care to help you with basic requests.",
+   "actions": [
+    {
+     "name": "Elemental Strike",
+     "desc": "Melee or Ranged Spell Attack: +4 to hit, reach 5 ft. or range 60 ft., one target. Hit: 10 (3d6) fire or cold damage (Nora's choice)."
+    }
+   ],
+   "hp_dice_printed": "8d8 + 8"
+  },
+  {
+   "name": "Quentillius Antiphius Melentor III",
+   "index": "quentillius-antiphius-melentor-iii",
+   "cr": 0.25,
+   "xp": 50,
+   "size": "Medium",
+   "type": "humanoid",
+   "lineage_class": "Medium Humanoid (Human Bard), Neutral",
+   "hp": 21,
+   "hp_dice": "6d8",
+   "ac": 11,
+   "speed": "walk 30 ft.",
+   "str": 12,
+   "dex": 13,
+   "con": 8,
+   "int": 11,
+   "wis": 10,
+   "cha": 12,
+   "alignment": "Neutral",
+   "languages": "Common, Draconic, Elvish, Loross",
+   "skills": {
+    "arcana": 2,
+    "athletics": 3,
+    "deception": 3,
+    "history": 2
+   },
+   "passive_perception": 10,
+   "description": "Excited to Be Here: Quentillius has advantage on initiative rolls.\n\nSpellcasting: Quentillius casts one of the following spells, using Charisma as the spellcasting ability (spell save DC 11): At will: mage hand, prestidigitation. 1/day: detect magic.\n\nReaction — Beginner's Luck (2/Day): When Quentillius fails a saving throw, he can reroll the d20. He must use the new roll.\n\nBond Boon (Quick Notes): You have adopted Quentillius's authoritative voice, and in dire situations, your peers obey you when you issue commands.\n\nBond Bane (Quick Notes): Whenever you perform as part of a production, a small crowd shows up and boos you specifically.\n\nNote: the Year One statblock header prints the abbreviated form 'QUENTILLIUS A. MELENTOR III'. The full name is taken from the book's Students table and the section header.",
+   "ocr_uncertain": [
+    "Surname: the section header in the extraction reads 'QUENTILLIUS ANTIPHIUN MELENTOR III'. 'ANTIPHIUN' is an OCR corruption; the Students table prints 'Antiphius' and the published NPC is Quentillius Antiphius Melentor III. Emitted as 'Antiphius'.",
+    "Students table given name field also renders the numeral as 'MELENTOR Ill' with capital I's; the statblock headers all read 'MELENTOR III'. Emitted as 'III'.",
+    "Spell name: the extraction prints 'prestidigation' here. Emitted as 'prestidigitation'."
+   ],
+   "actions": [
+    {
+     "name": "Magic Flare",
+     "desc": "Melee or Ranged Spell Attack: +3 to hit, reach 5 ft. or range 60 ft., one target. Hit: 7 (1d12 + 1) force damage."
+    }
+   ],
+   "hp_dice_printed": "6d8 - 6"
+  },
+  {
+   "name": "Rosimyffenbip \"Rosie\" Wuzfeddlims",
+   "index": "rosimyffenbip-rosie-wuzfeddlims",
+   "cr": 0.25,
+   "xp": 50,
+   "size": "Small",
+   "type": "humanoid",
+   "lineage_class": "Small Humanoid (Gnome Sorcerer), Chaotic Good",
+   "hp": 31,
+   "hp_dice": "7d6",
+   "ac": 11,
+   "speed": "walk 35 ft.",
+   "str": 8,
+   "dex": 13,
+   "con": 12,
+   "int": 11,
+   "wis": 10,
+   "cha": 12,
+   "alignment": "Chaotic Good",
+   "languages": "Common, Giant, Gnomish",
+   "skills": {
+    "animal_handling": 2,
+    "performance": 3
+   },
+   "passive_perception": 10,
+   "description": "Excited to Be Here: Rosie has advantage on initiative rolls.\n\nGnomish Cunning: Rosie has advantage on Intelligence, Wisdom, and Charisma saving throws against spells and other magical effects.\n\nSpellcasting: Rosie casts one of the following spells, using Charisma as the spellcasting ability (spell save DC 11): At will: mage hand, prestidigitation. 1/day: detect magic.\n\nReaction — Beginner's Luck (2/Day): When Rosie fails a saving throw, she can reroll the d20. She must use the new roll.\n\nBond Boon (Quick Notes): Rosie's energy is contagious. Whenever you travel any significant distance, you can reach your destination in half the normal time.\n\nBond Bane (Quick Notes): Whenever you participate in sports on campus (except for big events, such as the Battle of Strixhaven), fouls are constantly called on you.\n\nNote: the statblock header prints only '\"ROSIE\" WUZFEDDLIMS'; the full given name Rosimyffenbip is taken from the book's Students table and the section header.",
+   "actions": [
+    {
+     "name": "Magic Flare",
+     "desc": "Melee or Ranged Spell Attack: +3 to hit, reach 5 ft. or range 60 ft., one target. Hit: 7 (1d12 + 1) force damage."
+    }
+   ],
+   "hp_dice_printed": "7d6 + 7"
+  },
+  {
+   "name": "Rubina Larkingdale",
+   "index": "rubina-larkingdale",
+   "cr": 0.25,
+   "xp": 50,
+   "size": "Medium",
+   "type": "humanoid",
+   "lineage_class": "Medium Humanoid (Human Cleric), Lawful Neutral",
+   "hp": 21,
+   "hp_dice": "6d8",
+   "ac": 11,
+   "speed": "walk 30 ft.",
+   "str": 12,
+   "dex": 13,
+   "con": 8,
+   "int": 10,
+   "wis": 11,
+   "cha": 12,
+   "alignment": "Lawful Neutral",
+   "languages": "Common, Dwarvish, Goblin",
+   "skills": {
+    "arcana": 2,
+    "deception": 3,
+    "performance": 3,
+    "sleight_of_hand": 3
+   },
+   "passive_perception": 10,
+   "incomplete": true,
+   "description": "Excited to Be Here: Rubina has advantage on initiative rolls.\n\nSpellcasting: Rubina casts one of the following spells, using Wisdom as the spellcasting ability (spell save DC 10): At will: mage hand, prestidigitation. 1/day: detect magic.\n\nReaction — Beginner's Luck (2/Day): When Rubina fails a saving throw, she can reroll the d20. She must use the new roll.\n\nBond Boon (Quick Notes): Rubina's gravitas has rubbed off, and you can easily command an entire room's attention. They hear your words favorably if you wish.\n\nBond Bane (Quick Notes): Whenever any band performs in public, its members stop and shake their heads in disapproval when they see you.\n\nExtraction gaps: The Year One block prints no Hit Points line and no Speed line. Hit Points 21 (6d8 - 6) is inferred from the CON 8 (-1) first-year formula (Larine Arneza and Quentillius A. Melentor III both print 21, 6d8 - 6). Speed 30 ft. is inferred from Rubina's own later blocks, which print Speed 30 ft. Armor Class 11, all six ability scores, skills, senses, languages and Challenge 1/4 (50 XP) ARE printed.\n\nPrinted anomalies preserved as-is: Magic Flare is printed as '+2 to hit' with '6 (1d12) force damage', omitting the Charisma modifier, and the skill is spelled 'Slight of Hand' in the source. The skill key has been normalised to sleight_of_hand; the printed modifier +3 is unchanged.",
+   "ocr_uncertain": [
+    "Skill name: printed as 'Slight of Hand' in the Year One block and again in Year Two ('Slight of Hand +4'). This is a book/typo corruption of 'Sleight of Hand'. Key emitted as 'sleight_of_hand'.",
+    "Spell name: the extraction prints 'prestidigation' here. Emitted as 'prestidigitation'."
+   ],
+   "actions": [
+    {
+     "name": "Magic Flare",
+     "desc": "Melee or Ranged Spell Attack: +2 to hit, reach 5 ft. or range 60 ft., one target. Hit: 6 (1d12) force damage."
+    }
+   ],
+   "hp_dice_printed": "6d8 - 6"
+  },
+  {
+   "name": "Shuvadri Glintmantle",
+   "index": "shuvadri-glintmantle",
+   "cr": 0.25,
+   "xp": 50,
+   "size": "Medium",
+   "type": "humanoid",
+   "lineage_class": "Medium Humanoid (Owlin Cleric), Lawful Good",
+   "hp": 33,
+   "hp_dice": "6d8",
+   "ac": 9,
+   "speed": "walk 30 ft., fly 30 ft.",
+   "str": 12,
+   "dex": 8,
+   "con": 13,
+   "int": 11,
+   "wis": 12,
+   "cha": 10,
+   "alignment": "Lawful Good",
+   "languages": "Aarakocra, Celestial, Common",
+   "skills": {
+    "insight": 3,
+    "religion": 2,
+    "stealth": 1
+   },
+   "passive_perception": 11,
+   "description": "Excited to Be Here: Shuvadri has advantage on initiative rolls.\n\nSpellcasting: Shuvadri casts one of the following spells, using Wisdom as the spellcasting ability (spell save DC 11): At will: mage hand, prestidigitation. 1/day: detect magic.\n\nReaction — Beginner's Luck (2/Day): When Shuvadri fails a saving throw, he can reroll the d20. He must use the new roll.\n\nBond Boon (Quick Notes): If you quickly need the help of your peers, they drop everything to assist you as a favor to Shuvadri.\n\nBond Bane (Quick Notes): Graffiti making rude allusions to you keeps appearing on campus, and it takes days to get cleaned.\n\nTwo-column note: the extraction places a stray 'Reactions' heading and Rubina Larkingdale's 'Rousing Verse' reaction immediately above Shuvadri's Quick Notes. That reaction belongs to Rubina and is not part of Shuvadri's Year One block; Shuvadri's own Year One reaction is Beginner's Luck.\n\nPrinted anomaly preserved as-is: Beginner's Luck uses the pronoun 'he' for Shuvadri, whose Quick Notes give She/Her. Not corrected.",
+   "ocr_uncertain": [
+    "Spell name: the extraction prints 'prestidigation' here. Emitted as 'prestidigitation'."
+   ],
+   "actions": [
+    {
+     "name": "Magic Flare",
+     "desc": "Melee or Ranged Spell Attack: +3 to hit, reach 5 ft. or range 60 ft., one target. Hit: 7 (1d12 + 1) force damage."
+    }
+   ],
+   "hp_dice_printed": "6d8 + 6"
+  },
+  {
+   "name": "Tilana Kapule",
+   "index": "tilana-kapule",
+   "cr": 0.25,
+   "xp": 50,
+   "size": "Medium",
+   "type": "humanoid",
+   "lineage_class": "Medium Humanoid (Human Wizard), Neutral Good",
+   "hp": 33,
+   "hp_dice": "6d8",
+   "ac": 11,
+   "speed": "walk 30 ft.",
+   "str": 8,
+   "dex": 12,
+   "con": 13,
+   "int": 12,
+   "wis": 11,
+   "cha": 10,
+   "alignment": "Neutral Good",
+   "languages": "Common, Draconic, Sphinx",
+   "skills": {
+    "athletics": 1,
+    "deception": 2,
+    "intimidation": 2,
+    "investigation": 3
+   },
+   "passive_perception": 10,
+   "incomplete": true,
+   "description": "Excited to Be Here: Tilana has advantage on initiative rolls.\n\nSpellcasting: Tilana casts one of the following spells, using Intelligence as the spellcasting ability (spell save DC 11): At will: mage hand, prestidigitation. 1/day: detect magic.\n\nReaction — Beginner's Luck (2/Day): When Tilana fails a saving throw, she can reroll the d20. She must use the new roll.\n\nBond Boon (Quick Notes): Tilana loves helping analyze problems. When you go to her for advice, she suggests a helpful solution that you hadn't considered.\n\nBond Bane (Quick Notes): The faculty don't trust you or help you much, for rumor has it that Tilana has found you wanting.\n\nExtraction gaps: The Year One block prints no Hit Points line and no Speed line. Hit Points 33 (6d8 + 6) is inferred from the CON 13 (+1) first-year formula (Aurora Luna Wynterstarr, Bhedum Rampart Sooviij, Iya Ruan, Javenesh Stoutclaw and Melwythorne all print 33, 6d8 + 6). Speed 30 ft. is inferred from Tilana's own Year Three block, which prints Speed 30 ft. Armor Class 11, all six ability scores, skills, senses, languages and Challenge 1/4 (50 XP) ARE printed.",
+   "ocr_uncertain": [
+    "Spell name: the extraction prints 'prestidigation' here. Emitted as 'prestidigitation'."
+   ],
+   "actions": [
+    {
+     "name": "Magic Flare",
+     "desc": "Melee or Ranged Spell Attack: +3 to hit, reach 5 ft. or range 60 ft., one target. Hit: 7 (1d12 + 1) force damage."
+    }
+   ],
+   "hp_dice_printed": "6d8 + 6"
+  },
+  {
+   "name": "Urzmaktok Grojsh",
+   "index": "urzmaktok-grojsh",
+   "cr": 2,
+   "xp": 450,
+   "size": "Medium",
+   "type": "humanoid",
+   "lineage_class": "Medium Humanoid (Orc Wizard), Neutral",
+   "hp": 44,
+   "hp_dice": "8d8",
+   "ac": 13,
+   "speed": "walk 30 ft.",
+   "str": 10,
+   "dex": 15,
+   "con": 13,
+   "int": 15,
+   "wis": 12,
+   "cha": 11,
+   "alignment": "Neutral",
+   "languages": "Common, Draconic, Orc",
+   "saves": {
+    "int": 4,
+    "wis": 3
+   },
+   "skills": {
+    "medicine": 3,
+    "nature": 6,
+    "perception": 5,
+    "survival": 3
+   },
+   "passive_perception": 15,
+   "description": "Regeneration: As long as Urzmaktok has at least 1 hit point remaining, Urzmaktok regains 5 hit points at the start of his turn.\n\nVerdant Talisman: At the end of a 10-minute ritual, Urzmaktok can touch one willing creature (including himself) and bestow upon it a small talisman imbued with magic. Upon receiving the talisman, the creature gains 10 temporary hit points, and it can add 1d6 to its initiative rolls while it wears the talisman. These benefits last for 1 hour or until Urzmaktok conducts another ritual to bestow another talisman. When the benefits expire, the talisman crumbles to dust.\n\nSpellcasting: Urzmaktok casts one of the following spells, requiring no material components and using Charisma as the spellcasting ability: At will: druidcraft, spare the dying. 1/day: pass without trace.\n\nBonus Action — Bond Boon: Study Buddy (1/Day): Urzmaktok chooses another creature within 60 feet who can hear him and with whom he shares a bond boon. Whenever that creature fails a Constitution saving throw to maintain its Concentration, it can reroll the Constitution saving throw. It must use the new roll.\n\nAggressive: Urzmaktok can move up to his speed toward a hostile creature that he can see.\n\nReaction — Wither Burst: When Urzmaktok sees a creature within 30 feet of himself drop to 0 hit points, Urzmaktok channels the expended life essence and targets another creature he can see within 30 feet of himself. The target must succeed on a DC 12 Constitution saving throw or become poisoned for 1 minute. While poisoned in this way, the target takes 3 (1d6) poison damage at the start of each of its turns. The target can repeat the save at the end of each of its turns, ending the effect on itself on a success.\n\nBond Boon (Quick Notes): No matter the subject, you can always find a partner to study with, whether it's Urzmaktok or a classmate doing him a favor.\n\nBond Bane (Quick Notes): No one on campus who isn't another player character will study with you. If you ask, most shrug decline, saying you'll probably fail.\n\nPrinted anomaly preserved as-is: the spellcasting block says 'using Charisma as the spellcasting ability' and gives no spell save DC, though Urzmaktok is an Int-based Wizard. Not corrected.",
+   "actions": [
+    {
+     "name": "Briar Vine",
+     "desc": "Melee Spell Attack: +4 to hit, reach 15 ft., one target. Hit: 7 (1d10 + 2) piercing damage plus 9 (2d8) poison damage. If the target is a Large or smaller creature, Urzmaktok can pull it up to 10 feet closer to himself."
+    }
+   ],
+   "hp_dice_printed": "8d8 + 8"
+  },
+  {
+   "name": "Zanther Bowen",
+   "index": "zanther-bowen",
+   "cr": 0.5,
+   "xp": 100,
+   "size": "Medium",
+   "type": "humanoid",
+   "lineage_class": "Medium Humanoid (Genasi Sorcerer), Chaotic Good",
+   "hp": 33,
+   "hp_dice": "6d8",
+   "ac": 11,
+   "speed": "walk 30 ft.",
+   "str": 8,
+   "dex": 13,
+   "con": 12,
+   "int": 10,
+   "wis": 11,
+   "cha": 12,
+   "alignment": "Chaotic Good",
+   "languages": "Common, Halfling, Primordial",
+   "resistances": "fire",
+   "skills": {
+    "acrobatics": 3,
+    "perception": 2,
+    "performance": 3,
+    "persuasion": 3
+   },
+   "passive_perception": 12,
+   "description": "Excited to Be Here: Zanther has advantage on initiative rolls.\n\nSpellcasting: Zanther casts one of the following spells, using Charisma as the spellcasting ability (spell save DC 11): At will: mage hand, prestidigitation, produce flame. 1/day: detect magic.\n\nReaction — Beginner's Luck (2/Day): When Zanther fails a saving throw, he can reroll the d20. He must use the new roll.\n\nBond Boon (Quick Notes): You enjoy a high social rank as a result of your association with Zanther. Most of your peers fall all over themselves to do you favors.\n\nBond Bane (Quick Notes): No one on campus invites you to parties or events, although your friends receive invitations.",
+   "actions": [
+    {
+     "name": "Magic Flare",
+     "desc": "Melee or Ranged Spell Attack: +3 to hit, reach 5 ft. or range 60 ft., one target. Hit: 7 (1d12 + 1) force damage."
+    },
+    {
+     "name": "Burning Hands (1/Day)",
+     "desc": "As Zanther holds his hands with thumbs touching and fingers spread, a thin sheet of flames shoots forth from his outstretched fingertips. Each creature in a 15-foot cone must make a DC 11 Dexterity saving throw. A creature takes 10 (3d6) fire damage on a failed save, or half as much damage on a successful one. The fire ignites any flammable objects in the area that aren't being worn or carried."
+    }
+   ],
+   "hp_dice_printed": "6d8 + 6"
+  }
+ ]
+}
