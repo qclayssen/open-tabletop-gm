@@ -78,6 +78,26 @@ def campaign_dir(name: str) -> pathlib.Path:
     return campaigns_dir() / name
 
 
+def _is_campaign(path: pathlib.Path) -> bool:
+    """A directory is a campaign only if it has the state file the linter requires.
+
+    A name-only match is not enough. A campaign that has moved leaves an empty shell
+    at the old path, and because every documented entry point resolves a *name*,
+    the shell wins over the real campaign: it is at the configured root, so nothing
+    ever reaches the legacy fallback or the real tree. The default root here did
+    exactly that, pointing at a two-entry `strixhaven-kairos` (an `atlas-vtt/` and
+    an `.obsidian/`, both left by other tools) while the real campaign sat in
+    `~/github/strixhaven-kairos/campaigns/`.
+
+    `state.md` is the one file every consumer already depends on: the linter
+    requires it, `campaign_system` reads it, and `context.state_digest` builds the
+    DM prompt from it. Requiring it here means a directory has to look like a
+    campaign to be resolved as one, and the failure is a miss the caller can
+    report rather than an empty load it cannot.
+    """
+    return path.is_dir() and (path / "state.md").is_file()
+
+
 def find_campaign(name: str, migrate: bool = True) -> pathlib.Path:
     """Locate a campaign directory, with legacy fallback and optional migration.
 
@@ -86,6 +106,11 @@ def find_campaign(name: str, migrate: bool = True) -> pathlib.Path:
     2. ~/open-tabletop-gm/campaigns/<name>/ — legacy default (only checked when
        GM_CAMPAIGN_ROOT is set to a *different* path)
 
+    A directory only counts at either step if `_is_campaign` accepts it. A
+    directory that exists but is not a campaign is a miss, not a hit: the
+    not-found sentinel is returned so the caller reports the campaign as absent
+    rather than resolving to a shell it will then read as empty.
+
     When a campaign is found at the legacy path and the configured root is custom,
     the campaign is copied to the configured root so subsequent sessions use the
     new location. The original is left in place (no files are deleted).
@@ -93,10 +118,13 @@ def find_campaign(name: str, migrate: bool = True) -> pathlib.Path:
     With migrate=False the lookup is read-only: a legacy campaign is returned
     in place and nothing is copied (used by read-only tools such as the linter).
 
-    Returns the path to the campaign directory (may not exist if not found anywhere).
+    Returns the path to the campaign directory. On a miss that path is the
+    not-found sentinel, which is `campaign_dir(name)`: a path that does not exist
+    unless a shell is sitting there, so callers must not read its existence as a
+    hit. Ask `_is_campaign`.
     """
     configured = campaign_dir(name)
-    if configured.exists():
+    if _is_campaign(configured):
         return configured
 
     custom_root = os.environ.get("GM_CAMPAIGN_ROOT", "").strip()
@@ -104,7 +132,7 @@ def find_campaign(name: str, migrate: bool = True) -> pathlib.Path:
         return configured
 
     legacy = _default_root() / "campaigns" / name
-    if not legacy.exists():
+    if not _is_campaign(legacy):
         return configured
     if not migrate:
         return legacy
