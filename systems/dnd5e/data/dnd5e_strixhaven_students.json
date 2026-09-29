@@ -87,8 +87,8 @@
   {
    "name": "Cadoras Damellawar",
    "index": "cadoras-damellawar",
-   "cr": null,
-   "xp": null,
+   "cr": 0.25,
+   "xp": 50,
    "size": "Medium",
    "type": "humanoid",
    "lineage_class": "Medium Humanoid (Elf Druid), Chaotic Good",
@@ -121,7 +121,8 @@
    "hp_dice_printed": "6d8 + 6",
    "numeric_source": "verified against source 693: **Armor Class** 11 / 694: **Hit Points** 33 (6d8 + 6) / 695: **Speed** 30 ft. / [no Challenge line printed in the YEAR ONE block, lines 687-709] | UNRESOLVED - source prints no line for: cr, xp (left null; not inferred)",
    "ac_note": "",
-   "numeric_verification": "HP 33 reconciles with 6d8 and CON 12 (+1): 6 x d8 avg 27.0 + (+1 x 6) = OK"
+   "numeric_verification": "HP 33 reconciles with 6d8 and CON 12 (+1): 6 x d8 avg 27.0 + (+1 x 6) = OK",
+   "cr_inferred": "INFERRED, NOT PRINTED. The Challenge line is absent from this block in the source extraction (no line between Languages and the traits). Set to 1/4 (50 XP) because Cadoras prints HP 33 (6d8+6) and AC 11, matching Aurora and Iya — the other first-years at 33 HP and AC 11, both 1/4. Check against a clean scan before relying on it."
   },
   {
    "name": "Drazhomir Yarnask",
