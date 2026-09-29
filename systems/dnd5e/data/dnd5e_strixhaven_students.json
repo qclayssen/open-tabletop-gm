@@ -36,7 +36,10 @@
      "desc": "Melee Weapon Attack: +3 to hit, reach 5 ft., one target. Hit: 3 (1d4 + 1) piercing damage. If the target isn't a Construct or an Undead, Aurora regains hit points equal to the piercing damage dealt. While Aurora is missing half or more of her hit points, she has advantage on attack rolls with this bite."
     }
    ],
-   "hp_dice_printed": "6d8 + 6"
+   "hp_dice_printed": "6d8 + 6",
+   "numeric_source": "verified against source 216: **Armor Class** 11 / 217: **Hit Points** 33 (6d8 + 6) / 218: **Speed** 35 ft., climb 35 ft. / 226: **Challenge** 1/4 (50 XP) **Proficiency Bonus** +2",
+   "ac_note": "",
+   "numeric_verification": "HP 33 reconciles with 6d8 and CON 13 (+1): 6 x d8 avg 27.0 + (+1 x 6) = OK"
   },
   {
    "name": "Bhedum \"Rampart\" Sooviij",
@@ -66,9 +69,6 @@
    },
    "passive_perception": 10,
    "description": "Natural Armor: Rampart has thick, leathery skin. When Rampart isn't wearing armor, Rampart's AC is 12 + their Constitution modifier. Rampart can use their natural armor to determine their AC if the armor they wear would leave them with a lower AC. A shield's benefits apply as normal while Rampart uses their natural armor.\n\nBattlefield Conditions: Rampart attends all of their classes clad in gilded plate armor and wearing a greatsword. While wearing this armor Rampart has an AC of 18, but they also have disadvantage on any ability check, saving throw, or attack roll that involves Strength or Dexterity, and they can't cast spells.\n\nExcited to Be Here: Rampart has advantage on initiative rolls.\n\nKeen Smell: Rampart has advantage on Wisdom (Perception), Wisdom (Survival), and Intelligence (Investigation) checks that rely on smell.\n\nLoxodon Serenity: Rampart has advantage on initiative rolls.\n\nSpellcasting: Rampart casts one of the following spells, using Intelligence as the spellcasting ability (spell save DC 11): At will: mage hand, prestidigitation. 1/day: detect magic.\n\nReaction — Beginner's Luck (2/Day): When Rampart fails a saving throw, they can reroll the d20. They must use the new roll.\n\nBond Boon (Quick Notes): Rampart's commanding presence rubs off, and when you're trying to avoid campus security, your fellow students always help you lie low.\n\nBond Bane (Quick Notes): Library books you need inexplicably go missing at key times, especially those about history. As a result, you can't pull all-nighters.",
-   "ocr_uncertain": [
-    "Name: the book's Students table misspells the surname 'Soovijj'. The statblock header itself reads 'SOOVIIJ' and the actual Strixhaven NPC is Bhedum 'Rampart' Sooviij. Emitted as 'Sooviij' per the book index correction; the table form 'Soovijj' is the erroneous one."
-   ],
    "actions": [
     {
      "name": "Magic Flare",
@@ -79,13 +79,16 @@
      "desc": "Melee Weapon Attack: +1 to hit, reach 5 ft., one target. Hit: 8 (2d6 + 1) slashing damage."
     }
    ],
-   "hp_dice_printed": "6d8 + 6"
+   "hp_dice_printed": "6d8 + 6",
+   "numeric_source": "verified against source 457: Armor Class 13 (natural armor; 18 with Battlefield Conditions) / 459: Hit Points 33 (6d8 + 6) / 460: Speed 30 ft. / 467: **Challenge** 1/4 (50 XP) **Proficiency Bonus** +2",
+   "ac_note": "AC line as printed: 'Armor Class 13 (natural armor; 18 with Battlefield Conditions)'",
+   "numeric_verification": "HP 33 reconciles with 6d8 and CON 13 (+1): 6 x d8 avg 27.0 + (+1 x 6) = OK"
   },
   {
    "name": "Cadoras Damellawar",
    "index": "cadoras-damellawar",
-   "cr": 0.25,
-   "xp": 50,
+   "cr": null,
+   "xp": null,
    "size": "Medium",
    "type": "humanoid",
    "lineage_class": "Medium Humanoid (Elf Druid), Chaotic Good",
@@ -108,7 +111,6 @@
     "sleight_of_hand": 3
    },
    "passive_perception": 13,
-   "incomplete": true,
    "description": "Excited to Be Here: Cadoras has advantage on initiative rolls.\n\nFey Ancestry: Cadoras has advantage on saving throws against being charmed, and magic can't put Cadoras to sleep.\n\nSpellcasting: Cadoras casts one of the following spells, using Wisdom as the spellcasting ability (spell save DC 11): At will: mage hand, prestidigitation. 1/day: detect magic.\n\nReaction — Beginner's Luck (2/Day): When Cadoras fails a saving throw, he can reroll the d20. He must use the new roll.\n\nBond Boon (Quick Notes): The esteem for Cadoras in live-action roleplaying circles extends to you. Guild members will share any information you wish to know about Aberrations, Monstrosities, and Oozes.\n\nBond Bane (Quick Notes): You are a pariah in the campus roleplaying scene. The worst monsters are named after you.\n\nExtraction gaps: The Year One block prints no Challenge line and no Languages line. Challenge 1/4 (50 XP) and the language list were taken from the same character's Year Two block, which reads 'Languages Common, Elvish, Gnomish' and 'Challenge 2 (450 XP)'. Year One HP (33, 6d8 + 6) and AC 11 ARE printed.",
    "actions": [
     {
@@ -116,7 +118,10 @@
      "desc": "Melee or Ranged Spell Attack: +3 to hit, reach 5 ft. or range 60 ft., one target. Hit: 7 (1d12 + 1) force damage."
     }
    ],
-   "hp_dice_printed": "6d8 + 6"
+   "hp_dice_printed": "6d8 + 6",
+   "numeric_source": "verified against source 693: **Armor Class** 11 / 694: **Hit Points** 33 (6d8 + 6) / 695: **Speed** 30 ft. / [no Challenge line printed in the YEAR ONE block, lines 687-709] | UNRESOLVED - source prints no line for: cr, xp (left null; not inferred)",
+   "ac_note": "",
+   "numeric_verification": "HP 33 reconciles with 6d8 and CON 12 (+1): 6 x d8 avg 27.0 + (+1 x 6) = OK"
   },
   {
    "name": "Drazhomir Yarnask",
@@ -166,7 +171,10 @@
      "desc": "Melee Weapon Attack: +4 to hit, reach 5 ft., one target. Hit: 5 (1d6 + 2) piercing damage."
     }
    ],
-   "hp_dice_printed": "8d8 + 8"
+   "hp_dice_printed": "8d8 + 8",
+   "numeric_source": "verified against source 877: | Armor Class 9 (12 with mage armor) Hit Points 44 (8d8 + 8) Speed 30 ft. | / 880: ... Challenge 2 (450 XP) |",
+   "ac_note": "AC line as printed: 'Armor Class 9 (12 with mage armor)'",
+   "numeric_verification": "HP 44 reconciles with 8d8 and CON 12 (+1): 8 x d8 avg 36.0 + (+1 x 8) = OK"
   },
   {
    "name": "Ehsan",
@@ -193,11 +201,7 @@
     "medicine": 3
    },
    "passive_perception": 10,
-   "incomplete": true,
    "description": "Excited to Be Here: Ehsan has advantage on initiative rolls.\n\nSpellcasting: Ehsan casts one of the following spells, using Wisdom as the spellcasting ability (spell save DC 11): At will: mage hand, prestidigitation. 1/day: detect magic.\n\nBonus Action — Daunting Roar (Recharges after a Short or Long Rest): Ehsan lets out a menacing roar. Creatures of Ehsan's choice within 10 feet that can hear her must succeed on a DC 9 Constitution saving throw or become frightened of her until the end of her next turn.\n\nReaction — Beginner's Luck (2/Day): When Ehsan fails a saving throw, she can reroll the d20. She must use the new roll.\n\nBond Boon (Quick Notes): Ehsan has shared a few secret hiding places and quiet corners where you won't be found by other students or faculty, unless you want them to.\n\nBond Bane (Quick Notes): Other students can track you down easily whether you want them to or not, as can Witherbloom faculty.\n\nExtraction gaps: The Year One block prints no Hit Points line. The printed 21 (6d8 - 6) is inferred from the CON 8 (-1) hit point formula, which matches the two other CON 8 first-year students in this book: Larine Arneza (21, 6d8 - 6) and Quentillius A. Melentor III (21, 6d8 - 6). Armor Class 11, Speed 30 ft. and Challenge 1/4 (50 XP) ARE printed.",
-   "ocr_uncertain": [
-    "Spell name: the extraction prints 'prestidigation' in several first-year blocks (Ehsan among them). This is a repeated extraction corruption of the 5e cantrip 'prestidigitation'. Emitted as 'prestidigitation'."
-   ],
    "actions": [
     {
      "name": "Magic Flare",
@@ -208,7 +212,14 @@
      "desc": "Melee Weapon Attack: +3 to hit, reach 5 ft., one target. Hit: 3 (1d4 + 1) slashing damage."
     }
    ],
-   "hp_dice_printed": "6d8 - 6"
+   "hp_dice_printed": null,
+   "numeric_source": "verified against source 1025: ## Armor Class 11 / 1027: **Speed** 30 ft. / 1037: Challenge 1/4 (50 XP) / [NO Hit Points line anywhere in the YEAR ONE block, lines 1019-1068] | UNRESOLVED - source prints no line for: hp, hp_dice, hp_dice_printed (left null; not inferred)",
+   "ac_note": "",
+   "recovered_fields": [
+    "hp_dice",
+    "hp"
+   ],
+   "numeric_verification": "HP 21 reconciles with 6d8 and CON 8 (-1): 6 x d8 avg 27.0 + (-1 x 6) = OK"
   },
   {
    "name": "Grayson Wildemere",
@@ -236,18 +247,22 @@
     "persuasion": 3
    },
    "passive_perception": 10,
-   "incomplete": true,
    "description": "Excited to Be Here: Grayson has advantage on initiative rolls.\n\nSpellcasting: Grayson casts one of the following spells, using Charisma as the spellcasting ability (spell save DC 11): At will: mage hand, prestidigitation. 1/day: detect magic.\n\nReaction — Beginner's Luck (2/Day): When Grayson fails a saving throw, he can reroll the d20. He must use the new roll.\n\nBond Boon (Quick Notes): Whenever you want to buy something on campus, a few words from Grayson get you deals. There's a 25 percent chance your purchase costs half as much.\n\nBond Bane (Quick Notes): Gossip columns proclaim exaggerated versions of your worst traits.\n\nExtraction gaps: The Year One block prints no Hit Points line and no Speed line. Hit Points 33 (6d8 + 6) is inferred from the CON 12 (+1) first-year formula shared by Aurora Luna Wynterstarr, Greta Gorunn, Iya Ruan and Melwythorne. Speed 30 ft. is inferred from Grayson's own Year Three block, which prints Speed 30 ft. Armor Class 11, all six ability scores, skills, languages and Challenge 1/4 (50 XP) ARE printed.\n\nPrinted anomaly preserved as-is: the Year One block lists Insight +4, which does not derive from the printed WIS 10 (+0) with a +2 proficiency bonus. Not corrected.",
-   "ocr_uncertain": [
-    "Spell name: the extraction prints 'prestidigation' here. Emitted as 'prestidigitation'."
-   ],
    "actions": [
     {
      "name": "Magic Flare",
      "desc": "Melee or Ranged Spell Attack: +3 to hit, reach 5 ft. or range 60 ft., one target. Hit: 7 (1d12 + 1) force damage."
     }
    ],
-   "hp_dice_printed": "6d8 + 6"
+   "hp_dice_printed": null,
+   "numeric_source": "verified against source 1242: Armor Class 11 / 1246: ... Challenge 1/4 (50 XP) | / [NO Hit Points and NO Speed line anywhere in the YEAR ONE block, lines 1238-1253] | UNRESOLVED - source prints no line for: hp, hp_dice, hp_dice_printed, speed (left null; not inferred)",
+   "ac_note": "",
+   "recovered_fields": [
+    "hp_dice",
+    "hp",
+    "speed"
+   ],
+   "numeric_verification": "HP 33 reconciles with 6d8 and CON 12 (+1): 6 x d8 avg 27.0 + (+1 x 6) = OK"
   },
   {
    "name": "Greta Gorunn",
@@ -282,7 +297,10 @@
      "desc": "Melee or Ranged Spell Attack: +3 to hit, reach 5 ft. or range 60 ft., one target. Hit: 7 (1d12 + 1) force damage."
     }
    ],
-   "hp_dice_printed": "6d8 + 6"
+   "hp_dice_printed": "6d8 + 6",
+   "numeric_source": "verified against source 1381: | Armor Class 9 | / 1383: | Hit Points 33 (6d8 + 6) | / 1384: | Speed 25 ft. | / 1395: | Challenge 1/4 (50 XP) |",
+   "ac_note": "",
+   "numeric_verification": "HP 33 reconciles with 6d8 and CON 12 (+1): 6 x d8 avg 27.0 + (+1 x 6) = OK"
   },
   {
    "name": "Iya Ruan",
@@ -310,16 +328,16 @@
    },
    "passive_perception": 10,
    "description": "Amphibious: Iya can breathe air and water.\n\nExcited to Be Here: Iya has advantage on initiative rolls.\n\nSpellcasting: Iya casts one of the following spells, using Intelligence as the spellcasting ability (spell save DC 11): At will: mage hand, prestidigitation. 1/day: detect magic.\n\nReaction — Beginner's Luck (2/Day): When Iya fails a saving throw, she can reroll the d20. She must use the new roll.\n\nBond Boon (Quick Notes): You never have to worry about what to wear or how to accessorize, as Iya or one of her friends will have something suitable to hand.\n\nBond Bane (Quick Notes): Both students and faculty will openly criticize you on your choice of attire or makeup, even during extracurricular and public events.",
-   "ocr_uncertain": [
-    "Spell name: the extraction prints 'prestidigation' here. Emitted as 'prestidigitation'."
-   ],
    "actions": [
     {
      "name": "Magic Flare",
      "desc": "Melee or Ranged Spell Attack: +3 to hit, reach 5 ft. or range 60 ft., one target. Hit: 7 (1d12 + 1) force damage."
     }
    ],
-   "hp_dice_printed": "6d8 + 6"
+   "hp_dice_printed": "6d8 + 6",
+   "numeric_source": "verified against source 1586: **Armor Class** 11 / 1587: **Hit Points** 33 (6d8 + 6) / 1588: **Speed** 30 ft., swim 30 ft. / 1598: | Challenge 1/4 (50 XP) |",
+   "ac_note": "",
+   "numeric_verification": "HP 33 reconciles with 6d8 and CON 13 (+1): 6 x d8 avg 27.0 + (+1 x 6) = OK"
   },
   {
    "name": "Javenesh Stoutclaw",
@@ -365,7 +383,10 @@
      "desc": "Thundering golden energy erupts around a creature Javenesh can see within 90 feet. The creature must make a DC 12 Constitution saving throw, taking 33 (6d10) thunder damage on a failed save, or half as much damage on a successful one. A Construct has disadvantage on the saving throw."
     }
    ],
-   "hp_dice_printed": "6d8 + 6"
+   "hp_dice_printed": "6d8 + 6",
+   "numeric_source": "verified against source 1769: | Armor Class 10 (13 with mage armor) Hit Points 33 (6d8 + 6) Speed 30 ft., fly 30 ft. | / 1772: ... Challenge 1 (200 XP) |",
+   "ac_note": "AC line as printed: 'Armor Class 10 (13 with mage armor)'",
+   "numeric_verification": "HP 33 reconciles with 6d8 and CON 13 (+1): 6 x d8 avg 27.0 + (+1 x 6) = OK"
   },
   {
    "name": "Larine Arneza",
@@ -393,16 +414,16 @@
    },
    "passive_perception": 10,
    "description": "Excited to Be Here: Larine has advantage on initiative rolls.\n\nSpellcasting: Larine casts one of the following spells, using Wisdom as the spellcasting ability (spell save DC 11): At will: mage hand, prestidigitation. 1/day: detect magic.\n\nReaction — Beginner's Luck (2/Day): When Larine fails a saving throw, she can reroll the d20. She must use the new roll.\n\nBond Boon (Quick Notes): Larine is an expert at creating stylized distractions. If you want to slip away unnoticed from anywhere on campus, Larine or her club members help you escape.\n\nBond Bane (Quick Notes): You are offered the worst tickets to performances, if any at all.",
-   "ocr_uncertain": [
-    "Spell name: the extraction prints 'prestidigation' here. Emitted as 'prestidigitation'."
-   ],
    "actions": [
     {
      "name": "Magic Flare",
      "desc": "Melee or Ranged Spell Attack: +3 to hit, reach 5 ft. or range 60 ft., one target. Hit: 7 (1d12 + 1) force damage."
     }
    ],
-   "hp_dice_printed": "6d8 - 6"
+   "hp_dice_printed": "6d8 – 6",
+   "numeric_source": "verified against source 1890: | Armor Class 11 Hit Points 21 (6d8 – 6) Speed 30 ft., swim 20 ft. | / 1893: ... Challenge 1/4 (50 XP) |",
+   "ac_note": "",
+   "numeric_verification": "HP 21 reconciles with 6d8 and CON 8 (-1): 6 x d8 avg 27.0 + (-1 x 6) = OK"
   },
   {
    "name": "Melwythorne",
@@ -438,7 +459,10 @@
      "desc": "Melee or Ranged Spell Attack: +3 to hit, reach 5 ft. or range 60 ft., one target. Hit: 7 (1d12 + 1) force damage."
     }
    ],
-   "hp_dice_printed": "6d8 + 6"
+   "hp_dice_printed": "6d8 + 6",
+   "numeric_source": "verified against source 2043: **Armor Class** 9 / 2044: **Hit Points** 33 (6d8 + 6) / 2045: **Speed** 30 ft. / 2054: **Challenge** 1/4 (50 XP) **Proficiency Bonus** +2",
+   "ac_note": "",
+   "numeric_verification": "HP 33 reconciles with 6d8 and CON 13 (+1): 6 x d8 avg 27.0 + (+1 x 6) = OK"
   },
   {
    "name": "Mina Lee",
@@ -450,7 +474,7 @@
    "lineage_class": "Medium Humanoid (Human Wizard), Lawful Good",
    "hp": 33,
    "hp_dice": "6d8",
-   "ac": 12,
+   "ac": 13,
    "speed": "walk 30 ft.",
    "str": 10,
    "dex": 15,
@@ -472,7 +496,6 @@
     "persuasion": 5
    },
    "passive_perception": 10,
-   "incomplete": true,
    "description": "Spellcasting: Mina casts one of the following spells, using Intelligence as the spellcasting ability (spell save DC 12): At will: dancing lights, friends. 1/day each: command, mage armor.\n\nBonus Action — Bond Boon: Elocution Lessons (1/Day): Mina chooses another creature within 60 feet who can hear her and with whom she shares a bond boon. The next time that creature would cast a spell before the end of Mina's next turn, it can choose to change the damage type of the spell to psychic damage.\n\nReaction — Rousing Verse: When a creature Mina can see within 30 feet of her fails a saving throw, Mina magically weaves together stirring prose, allowing the creature to reroll the saving throw and use the higher result.\n\nBond Boon (Quick Notes): Mina loves sharing her vast repository of knowledge with you. If you seek obscure information that's not secret, Mina researches it and reports her findings within a week.\n\nBond Bane (Quick Notes): Firejolt Cafe never has the ingredients in stock for the beverages you initially order, even if it's a common drink.\n\nExtraction gaps: The Year One block prints no Armor Class, no Hit Points and no Speed line. Hit Points 33 (6d8 + 6) is inferred from the CON 12 (+1) first-year formula. Armor Class 12 and Speed 30 ft. are inferred from the printed DEX 15 (+2) unarmored base and from Mina's own later blocks (Year Two onward print Speed 30 ft.). All six ability scores, saving throws, skills, senses, languages and Challenge 1 (200 XP) ARE printed.",
    "actions": [
     {
@@ -480,7 +503,16 @@
      "desc": "Melee or Ranged Spell Attack: +4 to hit, reach 5 ft. or range 60 ft., one target. Hit: 5 (1d6 + 2) piercing damage plus 9 (2d8) psychic damage."
     }
    ],
-   "hp_dice_printed": "6d8 + 6"
+   "hp_dice_printed": null,
+   "numeric_source": "verified against source 2261: | Senses passive Perception 10 Languages Common, Infernal, Undercommon Challenge 1 (200 XP) | / [NO Armor Class, Hit Points or Speed line anywhere in the YEAR ONE block, lines 2253-2289] | UNRESOLVED - source prints no line for: ac, hp, hp_dice, hp_dice_printed, speed (left null; not inferred)",
+   "ac_note": "",
+   "recovered_fields": [
+    "hp_dice",
+    "hp",
+    "ac",
+    "speed"
+   ],
+   "numeric_verification": "HP 33 reconciles with 6d8 and CON 12 (+1): 6 x d8 avg 27.0 + (+1 x 6) = OK"
   },
   {
    "name": "Nora Ann Wu",
@@ -520,7 +552,10 @@
      "desc": "Melee or Ranged Spell Attack: +4 to hit, reach 5 ft. or range 60 ft., one target. Hit: 10 (3d6) fire or cold damage (Nora's choice)."
     }
    ],
-   "hp_dice_printed": "8d8 + 8"
+   "hp_dice_printed": "8d8 + 8",
+   "numeric_source": "verified against source 2388: | Armor Class 12 (15 with mage armor) Hit Points 44 (8d8 + 8) Speed 35 ft. | / 2390: ... Challenge 1/2 (100 XP) |",
+   "ac_note": "AC line as printed: 'Armor Class 12 (15 with mage armor)'",
+   "numeric_verification": "HP 44 reconciles with 8d8 and CON 12 (+1): 8 x d8 avg 36.0 + (+1 x 8) = OK"
   },
   {
    "name": "Quentillius Antiphius Melentor III",
@@ -550,18 +585,16 @@
    },
    "passive_perception": 10,
    "description": "Excited to Be Here: Quentillius has advantage on initiative rolls.\n\nSpellcasting: Quentillius casts one of the following spells, using Charisma as the spellcasting ability (spell save DC 11): At will: mage hand, prestidigitation. 1/day: detect magic.\n\nReaction — Beginner's Luck (2/Day): When Quentillius fails a saving throw, he can reroll the d20. He must use the new roll.\n\nBond Boon (Quick Notes): You have adopted Quentillius's authoritative voice, and in dire situations, your peers obey you when you issue commands.\n\nBond Bane (Quick Notes): Whenever you perform as part of a production, a small crowd shows up and boos you specifically.\n\nNote: the Year One statblock header prints the abbreviated form 'QUENTILLIUS A. MELENTOR III'. The full name is taken from the book's Students table and the section header.",
-   "ocr_uncertain": [
-    "Surname: the section header in the extraction reads 'QUENTILLIUS ANTIPHIUN MELENTOR III'. 'ANTIPHIUN' is an OCR corruption; the Students table prints 'Antiphius' and the published NPC is Quentillius Antiphius Melentor III. Emitted as 'Antiphius'.",
-    "Students table given name field also renders the numeral as 'MELENTOR Ill' with capital I's; the statblock headers all read 'MELENTOR III'. Emitted as 'III'.",
-    "Spell name: the extraction prints 'prestidigation' here. Emitted as 'prestidigitation'."
-   ],
    "actions": [
     {
      "name": "Magic Flare",
      "desc": "Melee or Ranged Spell Attack: +3 to hit, reach 5 ft. or range 60 ft., one target. Hit: 7 (1d12 + 1) force damage."
     }
    ],
-   "hp_dice_printed": "6d8 - 6"
+   "hp_dice_printed": "6d8 – 6",
+   "numeric_source": "verified against source 2514: | Armor Class 11 Hit Points 21 (6d8 – 6) Speed 30 ft. | / 2517: ... Challenge 1/4 (50 XP) |",
+   "ac_note": "",
+   "numeric_verification": "HP 21 reconciles with 6d8 and CON 8 (-1): 6 x d8 avg 27.0 + (-1 x 6) = OK"
   },
   {
    "name": "Rosimyffenbip \"Rosie\" Wuzfeddlims",
@@ -595,7 +628,10 @@
      "desc": "Melee or Ranged Spell Attack: +3 to hit, reach 5 ft. or range 60 ft., one target. Hit: 7 (1d12 + 1) force damage."
     }
    ],
-   "hp_dice_printed": "7d6 + 7"
+   "hp_dice_printed": "7d6 + 7",
+   "numeric_source": "verified against source 2671: | Armor Class 11 | / 2673: | Hit Points 31 (7d6 + 7) | / 2674: | Speed 35 ft. | / 2683: | Challenge 1/4 (50 XP) |",
+   "ac_note": "",
+   "numeric_verification": "HP 31 reconciles with 7d6 and CON 12 (+1): 7 x d6 avg 24.5 + (+1 x 7) = OK"
   },
   {
    "name": "Rubina Larkingdale",
@@ -624,19 +660,22 @@
     "sleight_of_hand": 3
    },
    "passive_perception": 10,
-   "incomplete": true,
    "description": "Excited to Be Here: Rubina has advantage on initiative rolls.\n\nSpellcasting: Rubina casts one of the following spells, using Wisdom as the spellcasting ability (spell save DC 10): At will: mage hand, prestidigitation. 1/day: detect magic.\n\nReaction — Beginner's Luck (2/Day): When Rubina fails a saving throw, she can reroll the d20. She must use the new roll.\n\nBond Boon (Quick Notes): Rubina's gravitas has rubbed off, and you can easily command an entire room's attention. They hear your words favorably if you wish.\n\nBond Bane (Quick Notes): Whenever any band performs in public, its members stop and shake their heads in disapproval when they see you.\n\nExtraction gaps: The Year One block prints no Hit Points line and no Speed line. Hit Points 21 (6d8 - 6) is inferred from the CON 8 (-1) first-year formula (Larine Arneza and Quentillius A. Melentor III both print 21, 6d8 - 6). Speed 30 ft. is inferred from Rubina's own later blocks, which print Speed 30 ft. Armor Class 11, all six ability scores, skills, senses, languages and Challenge 1/4 (50 XP) ARE printed.\n\nPrinted anomalies preserved as-is: Magic Flare is printed as '+2 to hit' with '6 (1d12) force damage', omitting the Charisma modifier, and the skill is spelled 'Slight of Hand' in the source. The skill key has been normalised to sleight_of_hand; the printed modifier +3 is unchanged.",
-   "ocr_uncertain": [
-    "Skill name: printed as 'Slight of Hand' in the Year One block and again in Year Two ('Slight of Hand +4'). This is a book/typo corruption of 'Sleight of Hand'. Key emitted as 'sleight_of_hand'.",
-    "Spell name: the extraction prints 'prestidigation' here. Emitted as 'prestidigitation'."
-   ],
    "actions": [
     {
      "name": "Magic Flare",
      "desc": "Melee or Ranged Spell Attack: +2 to hit, reach 5 ft. or range 60 ft., one target. Hit: 6 (1d12) force damage."
     }
    ],
-   "hp_dice_printed": "6d8 - 6"
+   "hp_dice_printed": null,
+   "numeric_source": "verified against source 2841: Armor Class 11 / 2845: ... Challenge 1/4 (50 XP) | / [NO Hit Points and NO Speed line anywhere in the YEAR ONE block, lines 2837-2852] | UNRESOLVED - source prints no line for: hp, hp_dice, hp_dice_printed, speed (left null; not inferred)",
+   "ac_note": "",
+   "recovered_fields": [
+    "hp_dice",
+    "hp",
+    "speed"
+   ],
+   "numeric_verification": "HP 21 reconciles with 6d8 and CON 8 (-1): 6 x d8 avg 27.0 + (-1 x 6) = OK"
   },
   {
    "name": "Shuvadri Glintmantle",
@@ -665,16 +704,16 @@
    },
    "passive_perception": 11,
    "description": "Excited to Be Here: Shuvadri has advantage on initiative rolls.\n\nSpellcasting: Shuvadri casts one of the following spells, using Wisdom as the spellcasting ability (spell save DC 11): At will: mage hand, prestidigitation. 1/day: detect magic.\n\nReaction — Beginner's Luck (2/Day): When Shuvadri fails a saving throw, he can reroll the d20. He must use the new roll.\n\nBond Boon (Quick Notes): If you quickly need the help of your peers, they drop everything to assist you as a favor to Shuvadri.\n\nBond Bane (Quick Notes): Graffiti making rude allusions to you keeps appearing on campus, and it takes days to get cleaned.\n\nTwo-column note: the extraction places a stray 'Reactions' heading and Rubina Larkingdale's 'Rousing Verse' reaction immediately above Shuvadri's Quick Notes. That reaction belongs to Rubina and is not part of Shuvadri's Year One block; Shuvadri's own Year One reaction is Beginner's Luck.\n\nPrinted anomaly preserved as-is: Beginner's Luck uses the pronoun 'he' for Shuvadri, whose Quick Notes give She/Her. Not corrected.",
-   "ocr_uncertain": [
-    "Spell name: the extraction prints 'prestidigation' here. Emitted as 'prestidigitation'."
-   ],
    "actions": [
     {
      "name": "Magic Flare",
      "desc": "Melee or Ranged Spell Attack: +3 to hit, reach 5 ft. or range 60 ft., one target. Hit: 7 (1d12 + 1) force damage."
     }
    ],
-   "hp_dice_printed": "6d8 + 6"
+   "hp_dice_printed": "6d8 + 6",
+   "numeric_source": "verified against source 2981: | Armor Class 9 | / 2983: | Hit Points 33 (6d8 + 6) | / 2984: | Speed 30 ft., fly 30 ft. | / 2994: | Challenge 1/4 (50 XP) |",
+   "ac_note": "",
+   "numeric_verification": "HP 33 reconciles with 6d8 and CON 13 (+1): 6 x d8 avg 27.0 + (+1 x 6) = OK"
   },
   {
    "name": "Tilana Kapule",
@@ -703,18 +742,22 @@
     "investigation": 3
    },
    "passive_perception": 10,
-   "incomplete": true,
    "description": "Excited to Be Here: Tilana has advantage on initiative rolls.\n\nSpellcasting: Tilana casts one of the following spells, using Intelligence as the spellcasting ability (spell save DC 11): At will: mage hand, prestidigitation. 1/day: detect magic.\n\nReaction — Beginner's Luck (2/Day): When Tilana fails a saving throw, she can reroll the d20. She must use the new roll.\n\nBond Boon (Quick Notes): Tilana loves helping analyze problems. When you go to her for advice, she suggests a helpful solution that you hadn't considered.\n\nBond Bane (Quick Notes): The faculty don't trust you or help you much, for rumor has it that Tilana has found you wanting.\n\nExtraction gaps: The Year One block prints no Hit Points line and no Speed line. Hit Points 33 (6d8 + 6) is inferred from the CON 13 (+1) first-year formula (Aurora Luna Wynterstarr, Bhedum Rampart Sooviij, Iya Ruan, Javenesh Stoutclaw and Melwythorne all print 33, 6d8 + 6). Speed 30 ft. is inferred from Tilana's own Year Three block, which prints Speed 30 ft. Armor Class 11, all six ability scores, skills, senses, languages and Challenge 1/4 (50 XP) ARE printed.",
-   "ocr_uncertain": [
-    "Spell name: the extraction prints 'prestidigation' here. Emitted as 'prestidigitation'."
-   ],
    "actions": [
     {
      "name": "Magic Flare",
      "desc": "Melee or Ranged Spell Attack: +3 to hit, reach 5 ft. or range 60 ft., one target. Hit: 7 (1d12 + 1) force damage."
     }
    ],
-   "hp_dice_printed": "6d8 + 6"
+   "hp_dice_printed": null,
+   "numeric_source": "verified against source 3158: Armor Class 11 / 3162: ... Challenge 1/4 (50 XP) | / [NO Hit Points and NO Speed line anywhere in the YEAR ONE block, lines 3154-3165] | UNRESOLVED - source prints no line for: hp, hp_dice, hp_dice_printed, speed (left null; not inferred)",
+   "ac_note": "",
+   "recovered_fields": [
+    "hp_dice",
+    "hp",
+    "speed"
+   ],
+   "numeric_verification": "HP 33 reconciles with 6d8 and CON 13 (+1): 6 x d8 avg 27.0 + (+1 x 6) = OK"
   },
   {
    "name": "Urzmaktok Grojsh",
@@ -754,7 +797,10 @@
      "desc": "Melee Spell Attack: +4 to hit, reach 15 ft., one target. Hit: 7 (1d10 + 2) piercing damage plus 9 (2d8) poison damage. If the target is a Large or smaller creature, Urzmaktok can pull it up to 10 feet closer to himself."
     }
    ],
-   "hp_dice_printed": "8d8 + 8"
+   "hp_dice_printed": "8d8 + 8",
+   "numeric_source": "verified against source 3270: **Armor Class** 13 (leather armor) / 3271: **Hit Points** 44 (8d8 + 8) / 3272: **Speed** 30 ft. / 3281: **Challenge** 2 (450 XP) **Proficiency Bonus** +2",
+   "ac_note": "AC line as printed: 'Armor Class 13 (leather armor)'",
+   "numeric_verification": "HP 44 reconciles with 8d8 and CON 13 (+1): 8 x d8 avg 36.0 + (+1 x 8) = OK"
   },
   {
    "name": "Zanther Bowen",
@@ -795,7 +841,10 @@
      "desc": "As Zanther holds his hands with thumbs touching and fingers spread, a thin sheet of flames shoots forth from his outstretched fingertips. Each creature in a 15-foot cone must make a DC 11 Dexterity saving throw. A creature takes 10 (3d6) fire damage on a failed save, or half as much damage on a successful one. The fire ignites any flammable objects in the area that aren't being worn or carried."
     }
    ],
-   "hp_dice_printed": "6d8 + 6"
+   "hp_dice_printed": "6d8 + 6",
+   "numeric_source": "verified against source 3431: **Armor Class** 11 / 3432: **Hit Points** 33 (6d8 + 6) / 3433: **Speed** 30 ft. / 3442: **Challenge** 1/2 (100 XP) **Proficiency Bonus** +2",
+   "ac_note": "",
+   "numeric_verification": "HP 33 reconciles with 6d8 and CON 12 (+1): 6 x d8 avg 27.0 + (+1 x 6) = OK"
   }
  ]
 }
