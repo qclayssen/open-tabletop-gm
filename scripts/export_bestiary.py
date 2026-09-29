@@ -92,8 +92,44 @@ def _modifier(value) -> int | None:
 
 
 def abilities(monster: dict) -> list[int]:
-    """FSB's `stats` is positional: [str, dex, con, int, wis, cha]."""
-    return [int(monster.get(a) or 10) for a in _ABILITY_ORDER]
+    """FSB's `stats` is positional: [str, dex, con, int, wis, cha].
+
+    A missing ability becomes 10, which is the SRD's default for a stat a
+    creature never had. It is also what this printed for every monster until
+    Ruin Grinder arrived with three genuinely absent fields -- and a statblock
+    claiming INT 10 that the sourcebook simply did not print is a value
+    invented at the table, which is the one thing an extraction must not do.
+
+    So an absent ability is refused, naming the monster. Fill the field in the
+    data file, or accept the refusal; there is no third option that is honest.
+    """
+    # Two input shapes reach here: the SRD's named keys (str/dex/...), and a
+    # positional `stats` list some callers already hold. A list is explicit, so
+    # it is never "missing" -- there is no way to read intent from a gap in it.
+    positional = monster.get("stats")
+    if isinstance(positional, list):
+        try:
+            return [int(v) for v in positional]
+        except (TypeError, ValueError):
+            raise ValueError(
+                f"{monster.get('name', '?')}: stats list holds a non-number: "
+                f"{positional!r}") from None
+
+    out = []
+    missing = [a for a in _ABILITY_ORDER if monster.get(a) is None]
+    if missing:
+        raise ValueError(
+            f"{monster.get('name', '?')}: no value for "
+            f"{', '.join(a.upper() for a in missing)}. The source did not print it, and "
+            "guessing one is inventing a stat the table will then use.")
+    for a in _ABILITY_ORDER:
+        try:
+            out.append(int(monster[a]))
+        except (TypeError, ValueError):
+            raise ValueError(
+                f"{monster.get('name', '?')}: {a.upper()} is "
+                f"{monster[a]!r}, which is not a score.") from None
+    return out
 
 
 def saves(monster: dict) -> list[dict]:
@@ -442,11 +478,25 @@ def main(argv: list[str] | None = None) -> int:
     out.mkdir(parents=True, exist_ok=True)
 
     source_name = (args.data or DATA_FILE).name
+    written, refused = 0, []
     for monster in monsters:
+        try:
+            note = note_for(monster, source_name)
+        except ValueError as e:
+            # One creature with an unprinted field must not cost the other
+            # twelve. Report it and leave it out; a note that invents the value
+            # is worse than no note.
+            refused.append(str(e))
+            continue
         path = out / f"{safe_name(monster['name'])}.md"
-        path.write_text(note_for(monster, source_name), encoding="utf-8")
+        path.write_text(note, encoding="utf-8")
+        written += 1
 
-    print(f"wrote {len(monsters)} notes to {out}")
+    print(f"wrote {written} notes to {out}")
+    if refused:
+        print(f"\n{len(refused)} creature(s) not written, for want of a value:")
+        for r in refused:
+            print(f"  - {r}")
     print("\nTo view them, open that directory as an Obsidian vault and install")
     print("Fantasy Statblocks (community plugin), then set the Bestiary Folder")
     print("to Bestiary/ under settings.")

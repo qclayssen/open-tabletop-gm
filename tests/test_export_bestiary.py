@@ -259,3 +259,35 @@ def test_load_monsters_reports_a_missing_file_clearly(tmp_path):
     with pytest.raises(SystemExit) as exc:
         eb.load_monsters(tmp_path / "nope.json")
     assert "not found" in str(exc.value)
+
+
+# ── an ability the source never printed ───────────────────────────────────
+
+def test_an_absent_ability_is_refused_rather_than_defaulted():
+    """Ruin Grinder's INT/WIS/CHA are null because the page did not print them,
+    and the data file says outright that no values were invented. Printing 10
+    for all three would invent them anyway, at the table, where a DM cannot tell
+    a transcribed score from an invented one."""
+    with pytest.raises(ValueError) as exc:
+        eb.abilities({"name": "Ruin Grinder", "str": 22, "dex": 13, "con": 15,
+                      "int": None, "wis": None, "cha": None})
+    msg = str(exc.value)
+    assert "Ruin Grinder" in msg
+    for a in ("INT", "WIS", "CHA"):
+        assert a in msg, f"{a} not named in {msg!r}"
+
+
+def test_a_zero_ability_is_kept_rather_than_read_as_absent():
+    """The trap in the line this replaced: `or 10` treats 0 as missing. An 8 is
+    not a gap, and a construct with INT 0 is a real creature, not a blank."""
+    got = eb.abilities({"name": "Door", "str": 0, "dex": 0, "con": 0,
+                        "int": 0, "wis": 0, "cha": 0})
+    assert got == [0, 0, 0, 0, 0, 0]
+
+
+def test_a_positional_stats_list_is_still_accepted():
+    """Some callers already hold an explicit list. A gap cannot be read in one,
+    so it is never "missing" there -- and refusing it would break them for a
+    problem they do not have."""
+    assert eb.abilities({"name": "Dummy", "stats": [8, 12, 13, 10, 11, 12]}) == \
+        [8, 12, 13, 10, 11, 12]
