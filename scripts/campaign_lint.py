@@ -45,9 +45,11 @@ from paths import campaigns_dir, find_campaign
 REQUIRED_STATE_SECTIONS = {
     **{s: "read into the DM prompt every turn (context.state_digest)"
        for s in context.DIGEST_SECTIONS},
-    "World State": "read by the display sidebar (display/dm_help.py)",
+    # Last, so it wins: World State is in DIGEST_SECTIONS and is also read by the
+    # display sidebar. Listed first it was overwritten by the comprehension above,
+    # so the reason a GM sees named only the sidebar and never the DM prompt.
+    "World State": "read into the DM prompt every turn (context.state_digest), and by the display sidebar (display/dm_help.py)",
     "Session Flags": "roll_mode / council / tts settings",
-    "Active Combat": "rewritten in place by the tactics sync",
 }
 WORLD_SECTIONS = ("Campaign Tone & Genre", "World Foundations", "Factions",
                   "Quest Seed Bank")

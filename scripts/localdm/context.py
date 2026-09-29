@@ -16,8 +16,26 @@ import time
 from . import canon as canon_mod
 
 PROMPTS = pathlib.Path(__file__).resolve().parent / "prompts"
-DIGEST_SECTIONS = ("Current Situation", "Pinned Facts", "Active Quests", "Open Threads & Rumours",
-                   "Live State Flags", "GM Style Notes")
+# What the DM is told, in trim order: state_digest truncates at `limit`, so the
+# sections a turn most depends on come first.
+#
+# World State and Faction Moves used to be absent, so the off-screen faction clocks
+# in world.py were computed and then thrown away: the GM wrote "the Ninefold moved
+# against Frog Pond" and the DM never saw it, so it could not put the consequence in
+# front of the player. Faction Moves is ranked high for that reason: it is the
+# section world.py:241 tells the GM to record into, and putting it last is what
+# would have lost it on exactly the campaigns with the richest world state.
+# Recent Events is history where Live State Flags is current state, so both fit.
+#
+# Campaign Arc is deliberately still absent: templates/state.md's steering_notes
+# and outstanding_beats are GM-only, and handing the DM the whole arc is how NPCs
+# end up voicing the mystery before the player has earned it. Active Combat is safe
+# to include because tactics/cli.py:349 writes only a pointer ("read
+# combat/encounter.json"), never HP or positions, so it cannot contradict the
+# Engine section.
+DIGEST_SECTIONS = ("Current Situation", "Pinned Facts", "World State", "Faction Moves",
+                   "Live State Flags", "Active Quests", "Open Threads & Rumours",
+                   "Recent Events", "Active Combat", "GM Style Notes")
 LABEL = {"player": "Player", "dm": "GM", "engine": "Engine"}
 
 _HEADING = re.compile(r"^## +(.+?)\s*$", re.M)
@@ -37,7 +55,32 @@ def _is_helper(line: str) -> bool:
     return s.startswith("*") and s.endswith("*") and not s.startswith("**")
 
 
+def _truncate(text: str, limit: int) -> str:
+    """Trim to `limit` on a line boundary, and always say when anything was dropped.
+
+    A bare [:limit] cut mid-line and said nothing, so a campaign whose state.md
+    outgrew the budget lost its tail invisibly. With the digest now carrying the
+    faction and threat state, silently losing that is worse than a wasted token, so
+    the marker is reserved out of the budget rather than appended only when it
+    happens to fit.
+    """
+    if len(text) <= limit:
+        return text
+    marker = "\n\n[truncated: more campaign state exists; ask the GM to keep state.md tighter]"
+    room = limit - len(marker)
+    if room <= 0:                     # too small for a line and a marker alike
+        return marker[:limit]
+    kept = text[:room].rsplit("\n", 1)[0]
+    return kept + marker
+
+
 def state_digest(state_md: str, sections=DIGEST_SECTIONS, limit: int = 3000) -> str:
+    """The state.md sections the DM reads, trimmed to what is actually filled in.
+
+    Uses the same unfilled-line test as notes_digest, so a GM who has not filled in
+    World State yet costs the prompt nothing rather than briefing the DM that the
+    in-world date is "<Day, Month, Year - canonical source>".
+    """
     heads = list(_HEADING.finditer(state_md or ""))
     parts = []
     for i, m in enumerate(heads):
@@ -45,10 +88,10 @@ def state_digest(state_md: str, sections=DIGEST_SECTIONS, limit: int = 3000) -> 
             continue
         end = heads[i + 1].start() if i + 1 < len(heads) else len(state_md)
         body = [line for line in state_md[m.end():end].splitlines()
-                if line.strip() and not _is_helper(line)]
+                if line.strip() and not is_template_line(line)]
         if body:
             parts.append(f"### {m.group(1)}\n" + "\n".join(body))
-    return "\n\n".join(parts)[:limit]
+    return _truncate("\n\n".join(parts), limit)
 
 
 SHEET_SECTIONS = ("Identity", "Combat Stats", "Features & Traits", "Equipment & Inventory",
@@ -78,7 +121,11 @@ def sheet_digest(camp_dir, sections=SHEET_SECTIONS, limit: int = 3000) -> str:
     return "\n\n".join(parts)[:limit]
 
 
-NOTE_FILES = ("world.md", "npcs.md")
+# world.md and npcs.md are the campaign's authored notes; faction_log.md is what
+# world.py actually writes the faction clock results to, and leaving it out meant
+# the DM was told about a faction move only if the GM transcribed it into state.md
+# by hand. The GM-only marker lines world.py writes are stripped by is_template_line.
+NOTE_FILES = ("world.md", "npcs.md", "faction_log.md")
 _HEAD_LINE = re.compile(r"^#{1,6} ")
 _TEMPLATE_DEFAULT = re.compile(r"Attitude toward party:\*\*\s*neutral|Current stage:\*\*\s*1\b", re.I)
 _PLACEHOLDER = re.compile(r"<[^>\n]+>")

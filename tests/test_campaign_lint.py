@@ -45,6 +45,12 @@ council: auto
 ## World State
 - **Season:** spring
 
+## Faction Moves
+- The Ninefold moved against Frog Pond.
+
+## Recent Events
+- Session 1: Kairos found the sunken bell.
+
 ## Active Combat
 *(none)*
 """
@@ -131,8 +137,16 @@ def test_every_section_the_code_reads_is_required(tmp_path):
     from localdm import context
     for section in context.DIGEST_SECTIONS:
         assert section in reported, section
-    for section in ("World State", "Session Flags", "Active Combat"):
+    for section in ("World State", "Session Flags"):
         assert section in reported, section
+
+
+def test_world_state_names_both_the_readers_it_has(tmp_path):
+    """World State is in DIGEST_SECTIONS and is also read by the display sidebar.
+    The digest rationale used to be overwritten by the sidebar one, so the reason a
+    DM sees never mentioned the DM."""
+    why = campaign_lint.REQUIRED_STATE_SECTIONS["World State"]
+    assert "state_digest" in why and "dm_help" in why
 
 
 # ── the header line is machine-parsed ────────────────────────────────────────
