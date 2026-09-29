@@ -233,7 +233,7 @@ When a round-based effect expires naturally (reaches 0 on turn advance), the dis
 
 ### Player input panel (autorun mode)
 
-When autorun is enabled, a collapsible input panel appears at the bottom of the display. Players on any device can submit their action before their turn with a **one-tap send** (no separate stage/ready step), and a status strip tracks the turn — *Your move → Sending… → Sent → ✓ The GM has your move → narrating*. The `✓ The GM has your move` toast fires when `check_input.py` actually drains the action off the queue, not just when it's staged. A pie-clock countdown shows the remaining wait window; the queued action is picked up automatically by `check_input.py` at turn start.
+When autorun is enabled, a collapsible input panel appears at the bottom of the display. Players on any device can submit their action before their turn with a **one-tap send** (no separate stage/ready step), and a status strip tracks the turn — *Your move → Sending… → Sent → ✓ The GM has your move → narrating*. The `✓ The GM has your move` toast fires when `check_input.py` actually drains the action off the queue, not just when it's sent. A pie-clock countdown shows the remaining wait window; the queued action is picked up automatically by `check_input.py` at turn start.
 
 Device approval defaults to trusting any LAN device; set `GM_REQUIRE_APPROVAL=1` to restore the approve/deny gate.
 

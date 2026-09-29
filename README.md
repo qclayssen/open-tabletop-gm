@@ -305,13 +305,12 @@ For iOS: open `http://<your-ip>:8080/cert.pem` in Safari → tap Allow → Setti
 
 Players open the companion on their phone browser. The **Party Input** panel lets each player:
 
-1. **Stage** an action — type it and hit Stage. It appears in the panel visible to everyone.
-2. **Mark Ready** — confirms the action is final.
-3. **Skip** — passes the turn without typing.
+1. **Send** an action — pick a character, type it, tap Send (or just hit Enter). It goes straight to the GM's queue; there is no separate stage or confirm step. The action appears in a "sent" list visible to everyone, with a **Recall** button that can pull it back until the GM picks it up.
+2. **Skip** — passes the turn without typing.
 
-When a submission is picked up, three pulsing dots confirm the GM received it. If the player's device has not been seen before, the GM's screen shows a one-time approval card — approved devices are remembered across restarts.
+The GM still decides *when* the actions arrive: they sit in the queue until the DM presses Enter. When a submission is picked up, three pulsing dots confirm the GM received it. If the player's device has not been seen before, the GM's screen shows a one-time approval card — approved devices are remembered across restarts.
 
-Staged input text is cached in the browser — if the page reloads before the GM picks it up, the text is restored automatically.
+Sending again replaces your own pending action rather than queuing a second copy, so a player who revises their move never leaves the GM holding both versions. An in-flight send is cached in the browser — if the page reloads before it lands, or it fails, the text is restored so a tap re-sends without retyping.
 
 ### Scene detection
 
