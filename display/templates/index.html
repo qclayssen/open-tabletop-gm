@@ -1614,7 +1614,7 @@
     color: rgba(215,120,80,0.95); border-color: rgba(195,100,65,0.65);
     background: rgba(35,10,5,0.65);
   }
-  #stage-btn {
+  #send-btn {
     font-family: 'Cinzel', serif; font-size: 8px;
     letter-spacing: 1.8px; text-transform: uppercase;
     color: rgba(200,165,80,0.85); background: rgba(20,14,6,0.6);
@@ -1622,57 +1622,37 @@
     border-radius: 3px; padding: 6px 16px;
     cursor: pointer; transition: all 0.15s ease; white-space: nowrap;
   }
-  #stage-btn:hover {
+  #send-btn:hover {
     color: rgba(220,185,100,1); border-color: rgba(180,140,60,0.8);
     background: rgba(30,20,8,0.75);
   }
-  #stage-btn:disabled { opacity: 0.4; pointer-events: none; }
-  #staged-queue { display: flex; flex-direction: column; gap: 5px; }
-  .staged-entry {
+  #send-btn:disabled { opacity: 0.4; pointer-events: none; }
+  #sent-log { display: flex; flex-direction: column; gap: 5px; }
+  .sent-entry {
     display: flex; align-items: flex-start; gap: 8px;
     background: rgba(18,10,3,0.65);
-    border-left: 2px solid rgba(180,140,60,0.28);
+    border-left: 2px solid rgba(120,190,80,0.45);
     border-radius: 0 2px 2px 0; padding: 6px 9px;
-    transition: border-color 0.2s ease;
   }
-  .staged-entry.is-ready { border-left-color: rgba(120,190,80,0.65); }
-  .staged-entry-body { flex: 1; min-width: 0; }
-  .staged-char {
+  .sent-entry-body { flex: 1; min-width: 0; }
+  .sent-char {
     font-family: 'Cinzel', serif; font-size: 8.5px;
-    letter-spacing: 1px; color: rgba(180,140,60,0.82);
+    letter-spacing: 1px; color: rgba(140,180,90,0.75);
     margin-bottom: 2px;
   }
-  .staged-text {
+  .sent-text {
     font-family: 'IM Fell English', serif; font-size: 11.5px;
-    color: rgba(200,175,120,0.82); word-break: break-word;
+    color: rgba(200,175,120,0.7); word-break: break-word;
   }
-  .staged-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; margin-top: 2px; }
-  .ready-btn {
+  .sent-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; margin-top: 2px; }
+  .recall-btn {
     font-family: 'Cinzel', serif; font-size: 7px;
     letter-spacing: 1.2px; text-transform: uppercase;
     color: rgba(180,140,60,0.55); background: transparent;
     border: 1px solid rgba(180,140,60,0.25); border-radius: 3px;
     padding: 3px 8px; cursor: pointer; transition: all 0.15s ease; white-space: nowrap;
   }
-  .ready-btn:hover { color: rgba(200,230,140,0.9); border-color: rgba(120,190,80,0.55); }
-  .ready-btn.is-ready {
-    color: rgba(140,210,90,0.9); border-color: rgba(120,190,80,0.7);
-    background: rgba(20,35,10,0.6);
-  }
-  .unstage-btn {
-    font-size: 10px; color: rgba(180,140,60,0.3); background: transparent;
-    border: none; cursor: pointer; padding: 1px 3px; line-height: 1;
-    transition: color 0.15s ease;
-  }
-  .unstage-btn:hover { color: rgba(200,100,80,0.75); }
-  .skip-btn {
-    font-family: 'Cinzel', serif; font-size: 7px;
-    letter-spacing: 1.2px; text-transform: uppercase;
-    color: rgba(180,140,60,0.35); background: transparent;
-    border: 1px solid rgba(180,140,60,0.15); border-radius: 3px;
-    padding: 3px 8px; cursor: pointer; transition: all 0.15s ease; white-space: nowrap;
-  }
-  .skip-btn:hover { color: rgba(210,140,80,0.8); border-color: rgba(210,140,80,0.45); }
+  .recall-btn:hover { color: rgba(210,140,80,0.85); border-color: rgba(210,140,80,0.5); }
   #waiting-indicator {
     font-family: 'Cinzel', serif; font-size: 7.5px;
     letter-spacing: 1.2px; color: rgba(180,140,60,0.45);
@@ -2048,7 +2028,7 @@
   body.input-only #input-body[data-active-tab="move"] #input-footer {
     padding: 0 12px 12px;
   }
-  body.input-only #input-body[data-active-tab="move"] #stage-btn {
+  body.input-only #input-body[data-active-tab="move"] #send-btn {
     min-height: 48px;
     padding: 14px 18px;
     font-size: 16px;
@@ -2152,15 +2132,25 @@
     font-size: 16px !important;
   }
 
-  /* ── Phone dice pad (visible only in input-only view) ────────────────── */
-  #dice-pad { display: none; }
-  body.input-only #dice-pad {
-    display: flex !important;
+  /* ── Phone dice pad ─────────────────────────────────────────────────────
+     Shown inside the expanded Party Input panel on the TV/main view (a player
+     may be at the same machine as the display), and as the "Roll" tab section
+     in input-only view. Hiding is driven entirely by the [data-tab-section]
+     rules below, so the pad itself must NOT be blanket-hidden — doing that
+     made the roller unreachable for anyone not on ?view=input. */
+  #dice-pad {
+    display: flex;
     flex-direction: column;
     gap: 10px;
     padding: 12px 14px 16px;
     border-top: 1px solid rgba(180,140,60,0.18);
     background: rgba(0,0,0,0.35);
+  }
+  /* Keep the pad hidden in input-only view while the Move tab is active —
+     the rules at 2010-2015 handle that, but they need a matching display
+     value that is not overridden by the flex above. */
+  body.input-only #input-body[data-active-tab="move"] #dice-pad {
+    display: none;
   }
   #dice-pad .dp-row {
     display: flex;
@@ -2668,17 +2658,27 @@
     border-color: rgba(170, 95, 30, 0.75);
     background: rgba(240, 215, 175, 0.7);
   }
-  :root[data-theme="light"] .staged-char { color: rgba(70, 50, 18, 0.9); }
-  :root[data-theme="light"] .staged-text { color: rgba(40, 28, 14, 0.85); }
+  :root[data-theme="light"] .sent-char { color: rgba(60, 80, 30, 0.9); }
+  :root[data-theme="light"] .sent-text { color: rgba(40, 28, 14, 0.8); }
+  :root[data-theme="light"] .recall-btn {
+    color: rgba(120, 60, 20, 0.85);
+    background: rgba(255, 245, 230, 0.7);
+    border-color: rgba(140, 90, 30, 0.5);
+  }
+  :root[data-theme="light"] .recall-btn:hover {
+    color: rgb(110, 50, 15);
+    background: rgba(255, 235, 210, 0.9);
+    border-color: rgba(140, 90, 30, 0.85);
+  }
 
   /* Action buttons — dark plate + cream text for affordance against parchment */
-  :root[data-theme="light"] #stage-btn,
+  :root[data-theme="light"] #send-btn,
   :root[data-theme="light"] .dm-respond-btn {
     background: rgb(70, 50, 18);
     border-color: rgba(140, 95, 20, 0.8);
     color: rgb(245, 238, 222);
   }
-  :root[data-theme="light"] #stage-btn:hover:not(:disabled),
+  :root[data-theme="light"] #send-btn:hover:not(:disabled),
   :root[data-theme="light"] .dm-respond-btn:hover:not(:disabled) {
     background: rgb(95, 70, 28);
     border-color: rgba(140, 95, 20, 1);
@@ -2920,7 +2920,7 @@
       border-color: rgba(140, 95, 20, 0.85);
       background: rgba(220, 195, 130, 0.65);
     }
-    :root:not([data-theme]) #stage-btn,
+    :root:not([data-theme]) #send-btn,
     :root:not([data-theme]) .dm-respond-btn {
       background: rgb(70, 50, 18);
       border-color: rgba(140, 95, 20, 0.8);
@@ -3126,7 +3126,7 @@
       <button class="dp-tab"        data-tab="roll" type="button">Roll</button>
       <button class="dp-tab"        data-tab="character" type="button">Sheet</button>
     </div>
-    <div id="staged-queue" data-tab-section="move"></div>
+    <div id="sent-log" data-tab-section="move"></div>
     <div id="waiting-indicator" data-tab-section="move"></div>
     <div id="char-tabs" data-tab-section="move">
       <button class="char-tab active" data-char="Everybody">Everybody</button>
@@ -3135,7 +3135,7 @@
               data-tab-section="move"></textarea>
     <div id="input-footer" data-tab-section="move">
       <button id="skip-turn-btn" style="display:none" title="Skip this character's turn">Skip Turn</button>
-      <button id="stage-btn">Stage</button>
+      <button id="send-btn">Send</button>
     </div>
     <!-- Phone-only dice pad (shown by ?view=input) -->
     <div id="dice-pad" data-tab-section="roll">
@@ -6263,14 +6263,13 @@ const _inputBadge      = document.getElementById('input-badge');
 const _inputArrow      = document.getElementById('input-toggle-arrow');
 const _charTabs        = document.getElementById('char-tabs');
 const _inputText       = document.getElementById('player-input-text');
-const _stageBtn        = document.getElementById('stage-btn');
+const _sendBtn         = document.getElementById('send-btn');
 const _skipTurnBtn     = document.getElementById('skip-turn-btn');
-const _stagedQueueEl   = document.getElementById('staged-queue');
+const _sentLogEl       = document.getElementById('sent-log');
 const _waitingEl       = document.getElementById('waiting-indicator');
 
 let _selectedChar     = 'Everybody';
-let _stagedData       = {};   // {char: {text, ready, timestamp}} — mirror of server state
-let _autorunThreshold = null; // null = use player count; int = explicit threshold
+let _sentData         = {};   // {char: {text}} — mirror of server sent log
 
 // ── Toggle open/closed ────────────────────────────────────────────
 _inputPanelHdr.addEventListener('click', () => {
@@ -6299,94 +6298,58 @@ function _buildCharTabs(players) {
   });
 }
 
-// ── Render staged queue ───────────────────────────────────────────
-function _renderStagedQueue(data) {
-  _stagedData = data || {};
-  _stagedQueueEl.innerHTML = '';
+// ── Render sent log ────────────────────────────────────────────────
+// Read-only record of what has been sent and is waiting on the DM. The only
+// action is Recall, and only while the action is still queued.
+function _renderSentLog(data) {
+  _sentData = data || {};
+  _sentLogEl.innerHTML = '';
 
-  const entries = Object.entries(_stagedData);
+  const entries = Object.entries(_sentData);
   entries.forEach(([char, info]) => {
     const entry = document.createElement('div');
-    entry.className = 'staged-entry' + (info.ready ? ' is-ready' : '');
+    entry.className = 'sent-entry';
 
     const body = document.createElement('div');
-    body.className = 'staged-entry-body';
+    body.className = 'sent-entry-body';
 
     const charEl = document.createElement('div');
-    charEl.className = 'staged-char';
+    charEl.className = 'sent-char';
     charEl.textContent = char;
 
     const textEl = document.createElement('div');
-    textEl.className = 'staged-text';
+    textEl.className = 'sent-text';
     textEl.textContent = info.text;
 
     body.appendChild(charEl);
     body.appendChild(textEl);
 
     const acts = document.createElement('div');
-    acts.className = 'staged-actions';
+    acts.className = 'sent-actions';
 
-    const readyBtn = document.createElement('button');
-    readyBtn.className = 'ready-btn' + (info.ready ? ' is-ready' : '');
-    readyBtn.textContent = info.ready ? '✓ Ready' : 'Ready';
-    readyBtn.addEventListener('click', () => _toggleReady(char));
+    const recallBtn = document.createElement('button');
+    recallBtn.className = 'recall-btn';
+    recallBtn.textContent = 'Recall';
+    recallBtn.title = 'Pull this back before the DM reads it';
+    recallBtn.addEventListener('click', () => _recallAction(char, recallBtn));
 
-    acts.appendChild(readyBtn);
-
-    if (!info.ready) {
-      const skipBtn = document.createElement('button');
-      skipBtn.className = 'skip-btn';
-      skipBtn.textContent = 'Skip';
-      skipBtn.title = 'Skip this character\'s turn';
-      skipBtn.addEventListener('click', () => _skipTurn(char));
-      acts.appendChild(skipBtn);
-    }
-
-    const unstageBtn = document.createElement('button');
-    unstageBtn.className = 'unstage-btn';
-    unstageBtn.title = 'Remove';
-    unstageBtn.textContent = '✕';
-    unstageBtn.addEventListener('click', () => _unstageAction(char));
-
-    acts.appendChild(unstageBtn);
+    acts.appendChild(recallBtn);
 
     entry.appendChild(body);
     entry.appendChild(acts);
-    _stagedQueueEl.appendChild(entry);
+    _sentLogEl.appendChild(entry);
   });
 
   // Badge + auto-open
   if (entries.length > 0) {
     _inputBadge.style.display = 'inline';
-    const readyCount = entries.filter(([, v]) => v.ready).length;
-    _inputBadge.textContent = readyCount === entries.length
-      ? `${entries.length} ready` : `${entries.length} staged`;
+    _inputBadge.textContent = `${entries.length} sent`;
     if (_inputPanel.classList.contains('collapsed')) {
       _inputPanel.classList.remove('collapsed');
       _inputArrow.textContent = '▼';
     }
   } else {
     _inputBadge.style.display = 'none';
-  }
-
-  // Waiting / threshold indicator
-  const readyCount = entries.filter(([, v]) => v.ready).length;
-  const notReady   = entries.filter(([, v]) => !v.ready).map(([c]) => c);
-  const anyReady   = readyCount > 0;
-  // Derive display threshold: explicit override, or infer from total known players
-  const knownCount = (_charTabs ? _charTabs.querySelectorAll('.char-tab').length - 1 : 1); // excl. Everybody
-  const threshold  = _autorunThreshold !== null ? _autorunThreshold : Math.max(1, knownCount);
-  const needMore   = readyCount < threshold && !entries.some(([c, v]) => c === 'Everybody' && v.ready);
-
-  if (anyReady && notReady.length > 0) {
-    _waitingEl.style.display = 'flex';
-    const label = needMore
-      ? `${readyCount}/${threshold} ready`
-      : `Queued \u2014 fires on DM Enter`;
-    const checks = notReady.map(c => `<span class="queue-check" style="opacity:0.5">${c}</span>`).join('');
-    _waitingEl.innerHTML = `<span class="queue-label">${label}</span>${checks}`;
-  } else {
-    _waitingEl.style.display = 'none';
   }
 }
 
@@ -6455,89 +6418,84 @@ function _renderQueueStatus(chars) {
   _waitingEl.style.display = 'block';
 }
 
-// ── Handle staged_inputs SSE event ───────────────────────────────
-function _handleStagedInputs(data) {
-  _renderStagedQueue(data);
-}
-
-// ── Stage an action ───────────────────────────────────────────────
-async function _stageAction() {
+// ── Send an action ────────────────────────────────────────────────
+// One tap straight into the DM-gated queue. No staging, no Ready step.
+async function _sendAction() {
   const text = _inputText.value.trim();
   if (!text) return;
-  _stageBtn.disabled = true;
-  _stageBtn.textContent = '…';
+  _sendBtn.disabled = true;
+  _sendBtn.textContent = '…';
 
-  // Cache submission in localStorage so text survives page reload
-  localStorage.setItem('dnd_staged_input', JSON.stringify({ char: _selectedChar, text, ts: Date.now() }));
+  // Cache the submission in localStorage so the text survives a page reload
+  // mid-flight (and so a failed send can be retried without retyping).
+  localStorage.setItem('dnd_pending_input', JSON.stringify({ char: _selectedChar, text, ts: Date.now() }));
 
   let attempts = 0;
-  let _sent = false;
-  let _lastStatus = 0;
+  let sent = false;
+  let lastStatus = 0;
   while (attempts < 3) {
     attempts++;
     try {
-      const res = await fetch('/player-input/stage', {
+      const res = await fetch('/player-input/send', {
         method: 'POST',
         headers: _authHeaders(),
         body: JSON.stringify({ character: _selectedChar, text }),
       });
-      _lastStatus = res.status;
+      lastStatus = res.status;
       if (res.status === 202) {
         // Device pending approval — persist state so it survives page reload
         localStorage.setItem('dnd_awaiting_approval', _deviceId);
-        _stageBtn.disabled = false;
-        _stageBtn.textContent = 'Awaiting approval…';
+        _sendBtn.disabled = false;
+        _sendBtn.textContent = 'Awaiting approval…';
         return;  // leave text in box; auto-retry once approved via _onDeviceApproved
       }
       if (res.ok) {
-        localStorage.removeItem('dnd_staged_input');
+        localStorage.removeItem('dnd_pending_input');
         localStorage.removeItem('dnd_awaiting_approval');
         _inputText.value = '';
-        _sent = true;
+        sent = true;
         break;
       }
       // Non-retriable error (403, 400, etc.)
       break;
     } catch (_) {
       if (attempts < 3) {
-        _stageBtn.textContent = `Retrying (${attempts})…`;
+        _sendBtn.textContent = `Retrying (${attempts})…`;
         await new Promise(r => setTimeout(r, 2000));
       }
     }
   }
-  _stageBtn.disabled = false;
-  if (_sent) {
-    _stageBtn.textContent = 'Stage';
+  _sendBtn.disabled = false;
+  if (sent) {
+    _sendBtn.textContent = 'Send';
   } else {
-    // Honest failure: the text + the dnd_staged_input cache are preserved, so a
-    // tap re-sends without retyping. Never silently reset to 'Stage' on failure —
+    // Honest failure: the text + the dnd_pending_input cache are preserved, so a
+    // tap re-sends without retyping. Never silently reset to 'Send' on failure —
     // that's what read as "submitted but not acknowledged, gone forever".
-    _stageBtn.textContent = _lastStatus
-      ? `Send failed (${_lastStatus}) — tap to retry`
+    _sendBtn.textContent = lastStatus
+      ? `Send failed (${lastStatus}) — tap to retry`
       : 'Send failed — tap to retry';
   }
 }
 
-// ── Toggle ready for a staged char ───────────────────────────────
-async function _toggleReady(char) {
+// ── Pull a sent action back, while it's still queued ──────────────
+async function _recallAction(char, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
   try {
-    await fetch('/player-input/ready', {
+    const res = await fetch('/player-input/recall', {
       method: 'POST',
       headers: _authHeaders(),
       body: JSON.stringify({ character: char }),
     });
-  } catch (_) { /* silently ignore */ }
-}
-
-// ── Remove a staged entry ────────────────────────────────────────
-async function _unstageAction(char) {
-  try {
-    await fetch('/player-input/unstage', {
-      method: 'POST',
-      headers: _authHeaders(),
-      body: JSON.stringify({ character: char }),
-    });
-  } catch (_) { /* silently ignore */ }
+    if (res.status === 409) {
+      // The DM already consumed it — no pretending the recall worked.
+      if (btn) { btn.disabled = false; btn.textContent = 'Delivered'; }
+      return;
+    }
+  } catch (_) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Recall'; }
+  }
+  // On success the SSE sent_log broadcast re-renders and drops the card.
 }
 
 // ── Skip a character's turn ───────────────────────────────────────
@@ -6551,14 +6509,16 @@ async function _skipTurn(char) {
   } catch (_) { /* silently ignore */ }
 }
 
-_stageBtn.addEventListener('click', _stageAction);
+_sendBtn.addEventListener('click', _sendAction);
 _skipTurnBtn.addEventListener('click', () => _skipTurn(_selectedChar));
 
-// Ctrl/Cmd+Enter stages from textarea
+// Enter sends from the textarea (Shift+Enter for a newline). Ctrl/Cmd+Enter
+// also sends, for muscle memory from editors. Both go through the one send path.
 _inputText.addEventListener('keydown', e => {
-  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+  if (e.key !== 'Enter') return;
+  if (e.ctrlKey || e.metaKey || !e.shiftKey) {
     e.preventDefault();
-    _stageAction();
+    _sendAction();
   }
 });
 
@@ -6593,14 +6553,15 @@ function _reserveInputSpace() {
 // Initialise with no extra chars (populated when stats arrive)
 _buildCharTabs([]);
 
-// Restore cached staged input text on page load (survives reload before submission received)
-(function _restoreStagedCache() {
+// Restore a pending send on page load (survives a reload mid-flight, and gives
+// a failed send something to retry without retyping).
+(function _restorePendingCache() {
   try {
-    const cached = JSON.parse(localStorage.getItem('dnd_staged_input') || 'null');
+    const cached = JSON.parse(localStorage.getItem('dnd_pending_input') || 'null');
     if (!cached) return;
     if (Date.now() - cached.ts > 10 * 60 * 1000) {
       // Cache expired (> 10 min)
-      localStorage.removeItem('dnd_staged_input');
+      localStorage.removeItem('dnd_pending_input');
       localStorage.removeItem('dnd_awaiting_approval');
       return;
     }
@@ -6610,11 +6571,11 @@ _buildCharTabs([]);
     // If we were awaiting approval for this device, restore the button state;
     // the SSE device_request replay will confirm and keep it, or clear it if approved.
     if (localStorage.getItem('dnd_awaiting_approval') === _deviceId) {
-      _stageBtn.disabled = false;
-      _stageBtn.textContent = 'Awaiting approval…';
+      _sendBtn.disabled = false;
+      _sendBtn.textContent = 'Awaiting approval…';
     }
   } catch (_) {
-    localStorage.removeItem('dnd_staged_input');
+    localStorage.removeItem('dnd_pending_input');
     localStorage.removeItem('dnd_awaiting_approval');
   }
 })();
@@ -6631,11 +6592,11 @@ function _showDeviceRequest(dev) {
 
   // If it's our own device replayed on SSE reconnect, restore the awaiting state
   if (dev.id === _deviceId) {
-    _stageBtn.disabled = false;
-    _stageBtn.textContent = 'Awaiting approval…';
+    _sendBtn.disabled = false;
+    _sendBtn.textContent = 'Awaiting approval…';
     // Restore cached input text if available
     try {
-      const cached = JSON.parse(localStorage.getItem('dnd_staged_input') || 'null');
+      const cached = JSON.parse(localStorage.getItem('dnd_pending_input') || 'null');
       if (cached && cached.text && Date.now() - cached.ts < 10 * 60 * 1000) {
         if (!_inputText.value.trim()) _inputText.value = cached.text;
       }
@@ -6684,13 +6645,13 @@ async function _respondDevice(deviceId, approve) {
 
 function _onDeviceApproved(deviceId) {
   document.querySelector(`[data-device-id="${deviceId}"]`)?.remove();
-  // If it's our own device — reset stage button and retry
+  // If it's our own device — reset the send button and retry
   if (deviceId === _deviceId) {
     localStorage.removeItem('dnd_awaiting_approval');
-    _stageBtn.disabled = false;
-    _stageBtn.textContent = 'Stage';
+    _sendBtn.disabled = false;
+    _sendBtn.textContent = 'Send';
     if (_inputText.value.trim()) {
-      _stageAction();  // auto-retry with cached text
+      _sendAction();  // auto-retry with cached text
     }
   }
 }
@@ -6699,9 +6660,9 @@ function _onDeviceDenied(deviceId) {
   document.querySelector(`[data-device-id="${deviceId}"]`)?.remove();
   if (deviceId === _deviceId) {
     localStorage.removeItem('dnd_awaiting_approval');
-    localStorage.removeItem('dnd_staged_input');
-    _stageBtn.disabled = true;
-    _stageBtn.textContent = 'Access denied';
+    localStorage.removeItem('dnd_pending_input');
+    _sendBtn.disabled = true;
+    _sendBtn.textContent = 'Access denied';
   }
 }
 
@@ -6867,8 +6828,8 @@ function connect() {
         updateRulesetBadge(payload.stats.ruleset);
       }
     }
-    if (payload.staged_inputs !== undefined) {
-      _handleStagedInputs(payload.staged_inputs);
+    if (payload.sent_log !== undefined) {
+      _renderSentLog(payload.sent_log);
     }
     if (payload.queue_status !== undefined) {
       _renderQueueStatus(payload.queue_status);
@@ -6877,9 +6838,7 @@ function connect() {
       _showProcessingIndicator();
     }
     if (payload.autorun_threshold !== undefined) {
-      _autorunThreshold = payload.autorun_threshold;
-      // Re-render staged queue so threshold counter updates immediately
-      _renderStagedQueue(_stagedData);
+      // Accepted for compatibility; sends no longer wait on a threshold.
     }
     if (payload.autorun_cycle) {
       const el = document.getElementById('autorun-indicator');

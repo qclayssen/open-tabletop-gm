@@ -51,7 +51,7 @@ In later sessions, `/gm load ember-hollow` brings back the party, the date, the 
 
 - **Story**: narration types out in the middle. NPC lines carry the speaker's name, and a collapsed **DM hint** block lists options when tutor mode is on.
 - **Sidebar**: HP, AC and spell slots for each character, plus factions and quests. The in-world date is top right.
-- **Acting from the browser**: open **Party input** at the bottom, pick your character, type what you do, press **Stage**, then **Ready**. When everyone is ready the action shows as queued. The GM picks it up at the start of its next turn (`display/check_input.py`). You can also just type in the GM chat.
+- **Acting from the browser**: open **Party input** at the bottom, pick your character, type what you do, press **Send** (or Enter). That's the whole flow — the action is queued for the GM straight away, and you can **Recall** it until the GM picks it up. The GM picks it up at the start of its next turn (`display/check_input.py`). You can also just type in the GM chat.
 - **Rolling dice**: when the GM calls for a check, a "Waiting on: <name>" badge appears. Press **Phone Mode** (top right) and choose your character: the Roll tab is already filled in (die, modifier, DC). Press **Roll** and the GM gets the result. On a real phone, start the display with `--lan` and open the same page there.
 - **Grid fights**: see [TACTICAL-COMBAT.md](TACTICAL-COMBAT.md). To learn the grid rules on your own first, play [the tutorial](TUTORIAL.md).
 
@@ -76,7 +76,7 @@ echo '"Maddoc never came back from the ridge."' | python3 display/send.py --npc 
 # Waits until someone rolls in Phone Mode, then prints the roll
 python3 display/send.py --dice-request --character Kairos --spec 1d20 --modifier 1 --label "Insight check" --dc 12 --wait
 
-# After Stage + Ready in Party input: prints "[Kairos]: ..."
+# After sending in Party input: prints "[Kairos]: ..."
 python3 display/check_input.py
 ```
 

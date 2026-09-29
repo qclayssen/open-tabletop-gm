@@ -206,8 +206,8 @@ def _audit(text: str) -> None:
 def _inject_queue(master_fd: int) -> None:
     """Inject .input_queue content when the DM presses Enter.
 
-    .input_queue is written by Flask when all expected players are staged and
-    ready but DM-gating is active (i.e. not auto-fired immediately).
+    .input_queue is written by Flask as soon as a player taps Send on the
+    Party Input panel; the DM's Enter is what releases it into Claude.
     This fires the queued player action just before the DM's own Enter is
     forwarded, so Claude sees the player action and DM message in the same turn.
     """

@@ -55,8 +55,8 @@ DRAIN_URL    = f"{_SCHEME}://localhost:{_PORT}/player-input/drain"
 TOKEN_FILE   = _DIR / ".token"
 # The queue the drain endpoint serves; gm-display-app.py persists it here.
 QUEUE_FILE   = _DIR / "player_input.json"
-# Stage + Ready on the display's Party Input panel writes this plain-text file
-# instead ("[Char]: text" per line). wrapper.py and autorun_wait.py read it too;
+# Send on the display's Party Input panel writes this plain-text file instead
+# ("[Char]: text" per line). wrapper.py and autorun_wait.py read it too;
 # whoever reads it first deletes it, so each action is delivered once.
 READY_FILE   = _DIR / ".input_queue"
 CONSUMED_URL = f"{_SCHEME}://localhost:{_PORT}/queue/consumed"

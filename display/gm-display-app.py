@@ -13,10 +13,9 @@ Endpoints:
     POST /clear              → wipe text log and broadcast clear event
     POST /player-input         → legacy queue endpoint (check_input.py compat)
     POST /player-input/drain   → drain legacy queue (check_input.py compat)
-    POST /player-input/stage   → stage an action for review before firing
-    POST /player-input/ready   → mark a staged action as ready
-    POST /player-input/unstage → remove a staged action
-    POST /player-input/skip    → skip a character's turn (stages + readies a skip entry)
+    POST /player-input/send    → send an action straight to the DM-gated queue
+    POST /player-input/recall  → pull a not-yet-consumed action back out
+    POST /player-input/skip    → skip a character's turn (sends a skip entry)
     GET  /srd-lookup           → look up a spell/item/feature/condition by name
 """
 
@@ -307,15 +306,20 @@ def _device_ok(device_id: str, ip: str) -> str:
     return "pending"
 
 
-# ─── Staged input system ──────────────────────────────────────────────────────
-# Players stage their actions from the display companion UI. When all expected
-# players mark ready, the combined action is written to TRIGGER_FILE for
-# wrapper.py to inject into Claude's PTY stdin.
+# ─── Player input send system ────────────────────────────────────────────────
+# Players type an action on the display companion UI and tap Send. It is
+# appended to QUEUE_FILE (.input_queue) straight away — no staging, no Ready
+# step, no "wait for N players" threshold. The DM still gates *when* the
+# actions reach Claude: wrapper.py injects .input_queue on the next Enter.
 
-_staged: dict[str, dict] = {}   # {char_name: {text, ready, timestamp}}
-_staged_lock = threading.Lock()
+_sent: dict[str, dict] = {}     # {char_name: {text, timestamp}} — sent log
+_sent_lock = threading.Lock()
+_queue_lock = threading.Lock()  # serialises read-modify-write of QUEUE_FILE
 _expected_count = 1             # updated when stats arrive; min 1
-_autorun_threshold: Optional[int] = None  # overrides _expected_count when set via push_stats --autorun-threshold
+# Accepted for compatibility with `push_stats --autorun-threshold`, but no
+# longer gates anything: sends reach the queue immediately, so there is no
+# "wait for N players" condition left to satisfy.
+_autorun_threshold: Optional[int] = None
 
 # Tracks which character names are currently sitting in .input_queue waiting
 # for the DM to press Enter. Set when queue is written, cleared when wrapper
@@ -347,47 +351,89 @@ def _normalize_slot(slot: dict) -> None:
         slot["used"] = 0
 
 
-def _staged_snapshot() -> dict:
-    """Return a serialisable copy of the staged dict (no IP field)."""
-    return {k: {"text": v["text"], "ready": v["ready"]} for k, v in _staged.items()}
+def _sent_snapshot() -> dict:
+    """Return a serialisable copy of the sent log."""
+    return {k: {"text": v["text"]} for k, v in _sent.items()}
 
 
-def _check_auto_trigger() -> None:
-    """Move staged-and-ready actions into the DM-gated queue file (.input_queue).
+def _queue_append(char_names: dict[str, str]) -> bool:
+    """Write `[char]: text` lines into .input_queue, one line per character.
 
-    .input_queue is NOT injected immediately — wrapper.py picks it up the next
-    time the DM presses Enter (or Claude explicitly triggers via .input_trigger).
-    This gives the DM control over when player actions enter Claude's context.
+    Sends arrive per-character and independently, so this must not truncate the
+    file — two players tapping Send in the same second both have to reach the
+    DM. A character sending again REPLACES their own pending line instead of
+    adding a second one, so a player who revises an action never leaves the DM
+    holding both the old and new version.
+
+    The whole read-modify-write runs under _queue_lock so concurrent sends
+    can't clobber each other, and writes via tmp+os.replace because
+    check_input.py may move .input_queue away at any moment; a half-written
+    file it moved would lose the action.
+
+    Returns True if the queue was written.
     """
-    with _staged_lock:
-        if not _staged:
-            return
-        everybody_ready = "Everybody" in _staged and _staged["Everybody"]["ready"]
-        all_ready       = all(v["ready"] for v in _staged.values())
-        threshold       = _autorun_threshold if _autorun_threshold is not None else _expected_count
-        enough          = len(_staged) >= threshold or everybody_ready
-        if not (all_ready and enough):
-            return
-        char_names = list(_staged.keys())
-        lines      = [f'[{c}]: {e["text"]}' for c, e in _staged.items()]
-        content    = "\n".join(lines)
-        _staged.clear()
+    with _queue_lock:
+        try:
+            existing: list[str] = []
+            if os.path.exists(QUEUE_FILE):
+                with open(QUEUE_FILE, encoding="utf-8") as f:
+                    existing = f.read().splitlines()
+            replaced = {re.escape(c) for c in char_names}
+            kept = [ln for ln in existing if not re.match(rf"^\[(?:{ '|'.join(replaced) })\]:", ln)]
+            content = "\n".join([*kept, *(f"[{c}]: {t}" for c, t in char_names.items())])
+            tmp = QUEUE_FILE + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                f.write(content + "\n")
+            os.replace(tmp, QUEUE_FILE)
+            return True
+        except Exception:
+            return False
 
-    # Write aside, then rename: check_input.py may move .input_queue away at any
-    # moment, and a half-written file it moved would lose the action.
-    try:
-        tmp = QUEUE_FILE + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            f.write(content)
-        os.replace(tmp, QUEUE_FILE)
-    except Exception:
-        char_names = []
 
-    if char_names:
-        with _queue_status_lock:
-            _queue_status.clear()
-            _queue_status.extend(char_names)
-    _broadcast({"staged_inputs": {}, "queue_status": list(char_names)})
+def _queue_remove(character: str) -> bool:
+    """Drop `[character]: ...` lines from .input_queue. Used by recall.
+
+    Best-effort: if the DM already consumed the queue there is nothing to pull
+    back, and the caller treats that as a no-op rather than an error.
+    """
+    with _queue_lock:
+        try:
+            if not os.path.exists(QUEUE_FILE):
+                return False
+            with open(QUEUE_FILE, encoding="utf-8") as f:
+                lines = f.read().splitlines()
+            kept = [ln for ln in lines
+                    if not re.match(rf"^\[{re.escape(character)}\]:", ln)]
+            if len(kept) == len(lines):
+                return False
+            if not kept:
+                os.unlink(QUEUE_FILE)
+                return True
+            tmp = QUEUE_FILE + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                f.write("\n".join(kept) + "\n")
+            os.replace(tmp, QUEUE_FILE)
+            return True
+        except Exception:
+            return False
+
+
+def _send(character: str, text: str) -> bool:
+    """Record a sent action in the log and append it to the DM-gated queue.
+
+    Returns True once the action is in .input_queue. The DM still decides *when*
+    it reaches Claude — wrapper.py injects the queue on the next Enter.
+    """
+    with _sent_lock:
+        _sent[character] = {"text": text, "timestamp": _time.time()}
+        snap = _sent_snapshot()
+    ok = _queue_append({character: text})
+    with _queue_status_lock:
+        if character not in _queue_status:
+            _queue_status.append(character)
+        status = list(_queue_status)
+    _broadcast({"sent_log": snap, "queue_status": status})
+    return ok
 
 
 def _token_ok() -> bool:
@@ -1657,7 +1703,8 @@ def stats():
     for evt in _effect_expire_events:
         _broadcast({"effect_expired": evt})
 
-    # Update expected player count for staged-input auto-trigger
+    # Party size. Sends reach the queue immediately, so this no longer gates
+    # anything — kept for `push_stats --autorun-threshold` compatibility.
     global _expected_count
     with _stats_lock:
         players = _current_stats.get("players", [])
@@ -2329,9 +2376,13 @@ def device_deny():
     return "", 204
 
 
-@app.route("/player-input/stage", methods=["POST"])
-def stage_input():
-    """Stage a player action for review. Broadcasts staged_inputs to all displays.
+@app.route("/player-input/send", methods=["POST"])
+def send_input():
+    """Send a player action straight to the DM-gated queue (.input_queue).
+
+    One tap, no staging and no Ready step — the action is in the queue as soon
+    as this returns. The DM still controls *when* it reaches Claude.
+    Broadcasts sent_log to all displays.
 
     Body: {"character": "Mira", "text": "draws her rapier"}
     """
@@ -2359,58 +2410,18 @@ def stage_input():
     if not _char_ok(character, known):
         return "Forbidden", 403
 
-    with _staged_lock:
-        _staged[character] = {
-            "text":      text,
-            "ready":     False,
-            "timestamp": _time.time(),
-        }
-        snap = _staged_snapshot()
-
-    _broadcast({"staged_inputs": snap})
+    if not _send(character, text):
+        return "Error", 500
     return "", 204
 
 
-@app.route("/player-input/ready", methods=["POST"])
-def ready_input():
-    """Toggle the ready flag for a staged character.
+@app.route("/player-input/recall", methods=["POST"])
+def recall_input():
+    """Pull a sent action back out, but only while it is still queued.
 
-    Body: {"character": "Mira", "ready": true}
-    Triggers auto-fire when all expected players are ready.
-    """
-    if not _token_ok():
-        return "Forbidden", 403
-    if not _rate_ok(request.remote_addr):
-        return "Too Many Requests", 429
-
-    device_id = request.headers.get("X-DND-Device", "")
-    status    = _device_ok(device_id, request.remote_addr)
-    if status == "denied":
-        return "Forbidden", 403
-    if status == "pending":
-        return jsonify({"status": "pending"}), 202
-
-    data      = request.get_json(force=True, silent=True) or {}
-    character = str(data.get("character", ""))[:50].strip()
-    ready     = bool(data.get("ready", True))
-
-    with _staged_lock:
-        if character not in _staged:
-            return "Not Found", 404
-        _staged[character]["ready"] = ready
-        snap = _staged_snapshot()
-
-    _broadcast({"staged_inputs": snap})
-
-    if ready:
-        _check_auto_trigger()
-
-    return "", 204
-
-
-@app.route("/player-input/unstage", methods=["POST"])
-def unstage_input():
-    """Remove a character's staged action (e.g. player wants to edit it).
+    Once the DM has consumed the queue the action is already in Claude's
+    context and can't be taken back — this reports that honestly rather than
+    pretending the recall worked.
 
     Body: {"character": "Mira"}
     """
@@ -2423,20 +2434,30 @@ def unstage_input():
 
     data      = request.get_json(force=True, silent=True) or {}
     character = str(data.get("character", ""))[:50].strip()
+    if not character:
+        return "Bad Request", 400
 
-    with _staged_lock:
-        _staged.pop(character, None)
-        snap = _staged_snapshot()
+    with _sent_lock:
+        existed = _sent.pop(character, None) is not None
+        snap = _sent_snapshot()
 
-    _broadcast({"staged_inputs": snap})
-    return "", 204
+    recalled = _queue_remove(character)
+    if not recalled and not existed:
+        return "Gone", 204
+
+    with _queue_status_lock:
+        if character in _queue_status:
+            _queue_status.remove(character)
+        status = list(_queue_status)
+
+    _broadcast({"sent_log": snap, "queue_status": status})
+    return ("", 204) if recalled else ("Already delivered", 409)
 
 
 @app.route("/player-input/skip", methods=["POST"])
 def skip_input():
-    """Skip a character's turn — stages a 'skips their turn' entry marked ready.
+    """Skip a character's turn — sends a 'skips their turn' entry.
 
-    Counts toward the auto-trigger threshold and fires auto-trigger if threshold met.
     Body: {"character": "Mira"}
     """
     if not _token_ok():
@@ -2456,16 +2477,8 @@ def skip_input():
     if not _char_ok(character, known):
         return "Forbidden", 403
 
-    with _staged_lock:
-        _staged[character] = {
-            "text":      "skips their turn",
-            "ready":     True,
-            "timestamp": _time.time(),
-        }
-        snap = _staged_snapshot()
-
-    _broadcast({"staged_inputs": snap})
-    _check_auto_trigger()
+    if not _send(character, "skips their turn"):
+        return "Error", 500
     return "", 204
 
 
@@ -2473,16 +2486,19 @@ def skip_input():
 def queue_consumed():
     """Called by wrapper.py after it injects .input_queue into the PTY.
 
-    Clears the server-side queue_status and broadcasts to all clients so
-    the 'Queued — fires on DM Enter' indicator disappears on every display.
-    Token required (called from localhost by the wrapper, but checked for
-    consistency).
+    Clears the server-side queue_status and the sent log (the actions are now
+    in Claude's context, so they are no longer recallable) and broadcasts to all
+    clients so the 'Queued — fires on DM Enter' indicator disappears on every
+    display. Token required (called from localhost by the wrapper, but checked
+    for consistency).
     """
     if not _token_ok():
         return "Forbidden", 403
     with _queue_status_lock:
         _queue_status.clear()
-    _broadcast({"queue_status": [], "dm_processing": True})
+    with _sent_lock:
+        _sent.clear()
+    _broadcast({"queue_status": [], "sent_log": {}, "dm_processing": True})
     return "", 204
 
 
@@ -2508,6 +2524,13 @@ def submit_now():
             f.write(content)
     except Exception:
         return "Error", 500
+    # The actions are on their way to Claude — drop the sent log and the
+    # "fires on DM Enter" indicator so displays don't show them as pending.
+    with _sent_lock:
+        _sent.clear()
+    with _queue_status_lock:
+        _queue_status.clear()
+    _broadcast({"sent_log": {}, "queue_status": []})
     return "", 204
 
 
@@ -2724,10 +2747,10 @@ def stream():
         if _input_queue:
             q.put_nowait({"pending_input": list(_input_queue)})
 
-    # Send current staged inputs so the panel reflects live state on reconnect.
-    with _staged_lock:
-        if _staged:
-            q.put_nowait({"staged_inputs": _staged_snapshot()})
+    # Send the current sent log so the panel reflects live state on reconnect.
+    with _sent_lock:
+        if _sent:
+            q.put_nowait({"sent_log": _sent_snapshot()})
 
     # Send current queue status so the 'Queued' indicator survives page reload.
     with _queue_status_lock:

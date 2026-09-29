@@ -116,10 +116,10 @@ class CheckInputTest(unittest.TestCase):
 
 
 class ReadyPanelQueue(unittest.TestCase):
-    """Stage + Ready on the display's Party Input panel writes `.input_queue`
-    (the file wrapper.py and autorun_wait.py read), not the drain queue. In a
-    plain `claude` session neither runs, so check_input.py must read it too or
-    the player's typed action never reaches the GM."""
+    """Send on the display's Party Input panel writes `.input_queue` (the file
+    wrapper.py and autorun_wait.py read), not the drain queue. In a plain
+    `claude` session neither runs, so check_input.py must read it too or the
+    player's typed action never reaches the GM."""
 
     def setUp(self):
         self.mod = _load_check_input()

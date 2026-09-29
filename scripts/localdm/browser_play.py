@@ -3,7 +3,7 @@
 
     python3 scripts/localdm/browser_play.py -c <campaign> [play.py options]
 
-Runs play.py and feeds it what the players stage and ready in the display's Party
+Runs play.py and feeds it what the players send in the display's Party
 input panel (display/check_input.py drains it). Narration, the sidebar and dice
 requests already go the other way, so nothing is typed in the terminal. Display
 settings sent as [[...]] lines (narration length) are joined to the next action.
