@@ -726,3 +726,112 @@ def test_casting_a_spell_not_on_the_sheet_is_a_no_op(real_camp):
     out = s.handle("I cast Fireball.")
     assert out == ["Nothing happens."]                     # no second (engine) call, no crash
     assert c.roles().count("dm") == 1
+
+
+# ── B2: an advisor that failed is not a note, and is never reported as one ─────
+
+def _boom(model, messages, role):
+    raise llm.LLMError("HTTP 504")
+
+
+def _all_advisors_down():
+    """A responder where every advisor call 504s, exactly as the audit run hit it."""
+    def responder(model, messages, role):
+        if role.startswith("advisor"):
+            raise llm.LLMError("HTTP 504 from http://localhost:20128/v1/chat/completions")
+        return "The reeds whisper." + NULLS
+    return responder
+
+
+def test_advise_does_not_claim_a_consult_that_never_happened(tmp_path):
+    c = FakeClient(_all_advisors_down())
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path), bridge=FakeBridge())
+    out = " ".join(s.handle("/advise continuity What happened last session?"))
+    assert "have been consulted" not in out
+    assert "could not be reached" in out and "No notes" in out
+
+
+def test_a_failed_consult_is_never_saved_as_campaign_notes(tmp_path):
+    """The DM used to be briefed on its own transport error as continuity guidance:
+    "(unavailable: HTTP 504 ... OmniRoute's local rate-limit ...)" was spliced into
+    the next DM prompt. Prompt tokens rose after a dead consult for exactly this
+    reason."""
+    replies = iter(["The reeds whisper." + NULLS, "Dust settles." + NULLS])
+    c = FakeClient(lambda m, msgs, role: next(replies) if role == "dm" else _boom(m, msgs, role))
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path), bridge=FakeBridge())
+    s.handle("/advise continuity What happened last session?")
+    s.handle("I look around.")
+    following = user_text(c.dm_calls()[0])
+    assert "unavailable" not in following and "504" not in following
+    assert "OmniRoute" not in following
+    assert "Advisor notes" not in following                 # nothing was filed at all
+
+
+def test_a_partly_dead_council_reports_who_is_missing(tmp_path):
+    def responder(model, messages, role):
+        if role == "advisor:continuity":
+            raise llm.LLMError("HTTP 504")
+        if role.startswith("advisor"):
+            return "Check the timeline."
+        return "The reeds whisper." + NULLS
+
+    c = FakeClient(responder)
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path), bridge=FakeBridge())
+    # "lore" pulls in historian as well, so the council really is a partial one.
+    out = " ".join(s.handle("/advise council the ancient lore contradicts what happened "
+                            "last session?"))
+    assert sorted(c.advisor_roles()) == ["advisor:continuity", "advisor:historian"]
+    assert "could not be reached" in out and "have been consulted" in out
+
+
+def test_a_partly_dead_council_still_files_the_advisor_that_answered(tmp_path):
+    def responder(model, messages, role):
+        if role == "advisor:continuity":
+            raise llm.LLMError("HTTP 504")
+        return "Check the timeline." if role.startswith("advisor") else "Dust settles." + NULLS
+
+    c = FakeClient(responder)
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path), bridge=FakeBridge())
+    s.handle("/advise council the ancient lore contradicts what happened last session?")
+    s.handle("I look around.")
+    following = user_text(c.dm_calls()[0])
+    assert "Check the timeline." in following and "504" not in following
+
+
+def test_a_failed_guardrail_consult_is_not_cached_as_a_ruling(tmp_path):
+    """The agency guardrail caches its ruling so a DM stuck in one bad pattern does
+    not pay a cloud call per turn. Caching a failure would freeze the failure in."""
+    calls = {"n": 0}
+
+    def responder(model, messages, role):
+        if role.startswith("advisor"):
+            calls["n"] += 1
+            raise llm.LLMError("HTTP 504")
+        return "You reach for the dagger or step back." + NULLS
+
+    c = FakeClient(responder)
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path), bridge=FakeBridge())
+    s._guardrail("agency")
+    s._guardrail("agency")
+    assert calls["n"] == 2                                 # retried, not remembered
+
+
+# ── B3: a turn the engine answers is still a turn the player took ──────────────
+
+def test_a_refused_attack_is_still_remembered(tmp_path):
+    """NO_FIGHT returns before the narration path, so the line used to vanish from
+    the transcript entirely: the player said it, and the DM had amnesia about it."""
+    from localdm.play import NO_FIGHT
+    c = FakeClient(_no_model)
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path), bridge=FakeBridge())
+    assert s.handle("I attack the Innkeeper") == [NO_FIGHT]
+    assert [t["text"] for t in s.memory.turns()] == ["I attack the Innkeeper"]
+
+
+def test_a_line_typed_while_a_roll_waits_is_still_remembered(tmp_path):
+    c = FakeClient(_no_model)
+    b = FakeBridge([fight()], {"status": lambda a: Result(0, "Round 1.")})
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path), bridge=b, combat="engine")
+    s.pending = {"args": ["attack", "kairos", "frog-1"], "rolls": [], "react": False}
+    s.handle("retreat")
+    assert "retreat" in [t["text"] for t in s.memory.turns()]

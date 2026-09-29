@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import pathlib
+import re
 from concurrent.futures import ThreadPoolExecutor
 
 from .llm import LLMError
@@ -82,6 +83,33 @@ def parse_advise(text: str):
     if who == "council":
         return pick(question), question, True
     return [who], question, False
+
+
+# "Director: (unavailable: HTTP 504 ...)" — the inline marker consult() writes for
+# an advisor that did not answer. Parsed back out by split_notes.
+_UNAVAILABLE = re.compile(r"^([A-Za-z][A-Za-z ]*):\s*\(unavailable", re.M)
+
+
+def split_notes(text: str) -> tuple[str, list]:
+    """`(notes, failed_names)` from a consult block.
+
+    consult() reports a per-advisor failure inline so a partial council is still
+    visible in the transcript, but that inline text must not travel on as advice:
+    the DM was being briefed on "Continuity: (unavailable: HTTP 504 ...)" as if it
+    were continuity guidance (audit report B2, 2026-09-29). One place decides what
+    counts as a note, so every caller gets it right by construction.
+    """
+    notes, failed = [], []
+    for block in (text or "").split("\n\n"):
+        block = block.strip()
+        if not block:
+            continue
+        m = _UNAVAILABLE.match(block)
+        if m:
+            failed.append(m.group(1).strip())
+        else:
+            notes.append(block)
+    return "\n\n".join(notes), failed
 
 
 def consult(client, model: str, names, question: str, context: str, *,
