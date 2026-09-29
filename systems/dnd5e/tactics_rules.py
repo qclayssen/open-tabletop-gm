@@ -675,10 +675,19 @@ class DnD5e(Rules):
     def attack(self, attacker, target, attack: dict, ctx: AttackContext, roller,
                player: bool, explicit: str = "normal") -> dict:
         mode, reasons = self.advantage(attacker, target, ctx, explicit)
+        # The odds are the same call the pre-action preview makes, deliberately:
+        # one function, so the badge the player chose on and the number printed
+        # beside the resolved roll can never disagree. Computed before the roll
+        # and not revised after it, because a reaction (Shield, Silvery Barbs)
+        # changes the AC the roll is compared against, not the chance the player
+        # acted on.
+        odds = self.hit_chance(attacker, target, attack, ctx, explicit)
         bonus = int(attack.get("bonus", 0))
         ac = self.ac(target) + ctx.cover
         r = roller.roll(f"1d20{bonus:+d}", attacker.name, f"{attack['name']} vs {target.name}",
                         player=player, advantage=mode)
+        r.odds = {"percent": odds["percent"], "label": "to hit", "about": target.id,
+                  "advantage": mode}
         # One-shot advantages are spent by the roll they helped.
         fx.take(attacker, lambda e: e.get("advantage_vs") == target.id)
         fx.take(attacker, lambda e: e.get("advantage_next"))
@@ -693,7 +702,8 @@ class DnD5e(Rules):
         if hit and ctx.distance <= 5 and self.condition_modifiers(target)["auto_crit_within_5"]:
             crit = True
         out = {"hit": hit, "crit": crit, "natural": natural, "total": total, "ac": ac,
-               "advantage": mode, "reasons": reasons, "damage": None}
+               "advantage": mode, "reasons": reasons, "damage": None,
+               "odds": dict(r.odds)}
         if hit:
             parts = []
             for p in attack.get("damage", []):
@@ -766,6 +776,11 @@ class DnD5e(Rules):
         bonus = self.save_bonus(token, ability, cover)
         r = roller.roll(f"1d20{bonus:+d}", token.name, f"{ability.upper()} save DC {dc}",
                         player=player, advantage=mode)
+        # The same reasoning as attack(): save_chance is the preview's own
+        # function, so the preview and the resolved roll quote one number.
+        r.odds = {"percent": self.save_chance(token, ability, dc, cover,
+                                              explicit)["percent_fail"],
+                  "label": "to fail the save", "about": token.id, "advantage": mode}
         fx.take(token, lambda e: e.get("advantage_next"))
         total, notes = r.total, []
         if cover and ability == "dex":
