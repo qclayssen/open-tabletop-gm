@@ -158,8 +158,14 @@ body.tx-min #tx-panel { max-height: 132px; overflow: hidden; }
 /* The chance a roll was made under, in the system's own words, under the entry
    it belongs to. Muted so it reads as a footnote to what happened rather than
    as a second thing that happened, and never the only signal: it is always
-   alongside the roll's own text. */
-.tx-log .tx-odds { display: block; font-size: 12px; color: var(--tx-line); }
+   alongside the roll's own text.
+
+   --tx-muted, not --tx-line. --tx-line is a *border* colour: on the panel it
+   is 1.35:1 dark and 1.57:1 light, and 12px text at that ratio is not text,
+   it is a smudge. --tx-muted is the log's own colour and clears WCAG AA (4.5:1)
+   in both themes, so the chance is as readable as the line it annotates. The
+   distinction is carried by size and weight, not by fading the number out. */
+.tx-log .tx-odds { display: block; font-size: 12px; color: var(--tx-muted); }
 
 /* ── board ── */
 .tx-cell-lbl { font: 600 11px Figtree, system-ui, sans-serif; fill: var(--tx-ink); paint-order: stroke; stroke-width: 3; }

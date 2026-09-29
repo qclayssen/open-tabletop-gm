@@ -408,6 +408,79 @@ class Accessibility(unittest.TestCase):
         css = CSS.read_text(encoding="utf-8")
         self.assertIn("prefers-reduced-motion: reduce", css)
 
+    def _relative_luminance(self, hex_colour: str) -> float:
+        rgb = [int(hex_colour.lstrip("#")[i:i + 2], 16) / 255 for i in (0, 2, 4)]
+        lin = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in rgb]
+        return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]
+
+    def _contrast(self, a: str, b: str) -> float:
+        la, lb = self._relative_luminance(a), self._relative_luminance(b)
+        hi, lo = max(la, lb), min(la, lb)
+        return (hi + 0.05) / (lo + 0.05)
+
+    def _theme_tokens(self, name: str) -> list:
+        """A theme token's hex value in every theme that declares it.
+
+        The sheet has three theme blocks (vellum light, and two dark variants),
+        so a token is a LIST of values, and a colour that reads well on one panel
+        can be invisible on another. Returned in declaration order.
+        """
+        css = CSS.read_text(encoding="utf-8")
+        found = re.findall(rf"{name}:\s*(#[0-9A-Fa-f]{{6}})", css)
+        self.assertTrue(found, f"{name} is not declared in any theme")
+        return found
+
+    def test_the_odds_text_is_readable_in_every_theme(self):
+        """The chance is 12px text, so it has to clear WCAG AA's 4.5:1 rather
+        than merely be visible.
+
+        This exists because the first version used `--tx-line`, which is a
+        *border* colour: 1.35:1 on the panel in the dark theme and 1.57:1 light.
+        It rendered, and the panel test read the right strings out of the DOM,
+        so nothing was red -- the number was just a smudge beside the roll it
+        belonged to. Contrast is the one property a test asserting on text
+        content cannot see, so it is measured here instead.
+
+        Each theme's own panel is paired with its own token value, in
+        declaration order, so a colour that only works against one background
+        is still caught.
+        """
+        rule = re.search(r"\.tx-log \.tx-odds \{([^}]*)\}", CSS.read_text(encoding="utf-8"))
+        self.assertIsNotNone(rule, ".tx-log .tx-odds has no rule")
+        colour = re.search(r"color:\s*var\((--[a-z-]+)\)", rule.group(1))
+        self.assertIsNotNone(colour, "the odds colour is not a theme token")
+        text_values = self._theme_tokens(colour.group(1))
+        panel_values = self._theme_tokens("--tx-panel")
+        self.assertEqual(len(text_values), len(panel_values),
+                         "the odds colour and the panel are not declared once per theme")
+        for text_hex, panel_hex in zip(text_values, panel_values):
+            ratio = self._contrast(text_hex, panel_hex)
+            self.assertGreaterEqual(
+                ratio, 4.5,
+                f"{colour.group(1)} ({text_hex}) on {panel_hex} is {ratio:.2f}:1, "
+                f"below WCAG AA for 12px text")
+
+    def test_the_odds_are_not_styled_in_a_border_colour(self):
+        """The specific trap: `--tx-line` and `--tx-accent` read as reasonable
+        "quiet" choices in a stylesheet and are borders, not text."""
+        rule = re.search(r"\.tx-log \.tx-odds \{([^}]*)\}",
+                         CSS.read_text(encoding="utf-8"))
+        for borderish in ("--tx-line", "--tx-accent", "--tx-brass"):
+            self.assertNotIn(borderish, rule.group(1),
+                             f"{borderish} is a border colour, not a readable text colour")
+
+    def test_the_odds_float_keeps_contrast_against_the_board(self):
+        """The float is drawn over terrain and artwork, so it cannot rely on a
+        panel background. It carries the same 4px paint-order stroke the damage
+        float does, which is what keeps it legible over a pale map."""
+        css = CSS.read_text(encoding="utf-8")
+        rule = re.search(r"\.tx-float\.tx-odds-float \{([^}]*)\}", css)
+        self.assertIsNotNone(rule)
+        self.assertIn("var(--tx-ink)", rule.group(1))
+        base = re.search(r"\.tx-float \{([^}]*)\}", css)
+        self.assertIn("paint-order: stroke", base.group(1))
+        self.assertIn("stroke: var(--tx-panel)", base.group(1))
+
 
 if __name__ == "__main__":
     unittest.main()
