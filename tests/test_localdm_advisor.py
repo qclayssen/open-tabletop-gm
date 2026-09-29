@@ -109,6 +109,20 @@ def test_an_empty_advisor_answer_is_marked_unavailable_not_silent():
     assert "Arbiter: \n" not in out and "Arbiter: \n\n" not in out
 
 
+@pytest.mark.parametrize("text,notes,failed", [
+    ("Historian: The tower fell in 1123.\n\nDirector: (unavailable: HTTP 504)",
+     "Historian: The tower fell in 1123.", ["Director"]),
+    ("Arbiter: (unavailable: arbiter returned an empty note)", "", ["Arbiter"]),
+    ("Director: Pacing is fine.", "Director: Pacing is fine.", []),
+    ("", "", []),
+])
+def test_split_notes_separates_advice_from_failure(text, notes, failed):
+    """A failed advisor is not advice. Its marker used to travel on into campaign
+    notes and into the DM's prompt (audit report B2), so every caller now goes
+    through this one parser."""
+    assert advisor.split_notes(text) == (notes, failed)
+
+
 def test_one_silent_advisor_does_not_hide_the_others():
     def responder(model, messages, role):
         return "" if role == "advisor:arbiter" else "Check DC 13, not 10."

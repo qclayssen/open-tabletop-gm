@@ -291,31 +291,44 @@ class Session:
         return advisor.consult(self.client, model or self.models.advisor, names, question,
                                ctx, reasoning=self.reasoning)
 
-    def _ask(self, names, question, what, model=None) -> str:
-        """Consult `names` about `question`, announcing the wait.
+    def _ask(self, names, question, what, model=None) -> tuple:
+        """Consult `names` about `question`: `(notes, failed)`, announcing the wait.
 
         The advisor tier is a cloud model, so a consult is seconds of silence in a
         terminal that otherwise prints nothing until the turn is done. Announcing
         it is the difference between "the DM is thinking" and "this is hung".
+
+        `failed` names the advisors that did not answer. It is returned beside the
+        notes rather than folded into them, because a failure is not advice: the
+        audit (2026-09-29) caught the engine saving "Continuity: (unavailable: HTTP
+        504 ...)" as campaign notes, so the DM was briefed on its own transport
+        error as if it were continuity guidance.
         """
         self._say_status(f"[dm] checking {what} with {', '.join(names)} .....")
         started = time.time()
         try:
-            notes = self._consult(names, question, model)
-        except llm.LLMError as e:      # every advisor failed: never a silent no-note
-            notes = f"(advisors unavailable: {e})"
-        self._say_status(f"[dm] notes in ({time.time() - started:.1f}s)")
-        return notes
+            raw = self._consult(names, question, model)
+            notes, failed = advisor.split_notes(raw)
+        except llm.LLMError as e:      # the consult itself failed: never a silent no-note
+            notes, failed = "", list(names)
+            self._say_status(f"[dm] advisors unavailable: {e}")
+        if failed:
+            self._say_status(f"[dm] no notes from {', '.join(failed)} "
+                             f"({time.time() - started:.1f}s)")
+        else:
+            self._say_status(f"[dm] notes in ({time.time() - started:.1f}s)")
+        return notes, failed
 
     def _guardrail(self, kind: str) -> str:
         """The ruling a tripped guardrail is rebuilt from. Cached for the session:
         the first trip pays for the consult, later ones reuse it, so a DM stuck
-        in one bad pattern cannot turn every turn into a cloud round trip."""
+        in one bad pattern cannot turn every turn into a cloud round trip. A failed
+        consult is not cached, so a later turn can still get a real ruling."""
         if kind in self._guard_notes:
             return self._guard_notes[kind]
-        notes = self._ask(list(GUARD_ADVISORS[kind]), GUARD_QUESTIONS[kind],
-                          f"the {kind} guardrail ruling")
-        if "(unavailable" not in notes and "advisors unavailable" not in notes:
+        notes, _failed = self._ask(list(GUARD_ADVISORS[kind]), GUARD_QUESTIONS[kind],
+                                   f"the {kind} guardrail ruling")
+        if notes:
             self._guard_notes[kind] = notes
         return notes
 
@@ -341,8 +354,10 @@ class Session:
         self._asked.add(key)
         ctx = "combat" if self.bridge.is_combat_active() else "social"
         self.on_stall(stall.get_stall_line(ctx))    # shown now: the ask blocks next
-        return self._ask(advisor.pick(question, limit=HELP_ADVISORS),
-                         HELP.format(n=advisor.MAX_WORDS) + f"\n\n{question}", "its notes")
+        notes, _failed = self._ask(advisor.pick(question, limit=HELP_ADVISORS),
+                                   HELP.format(n=advisor.MAX_WORDS) + f"\n\n{question}",
+                                   "its notes")
+        return notes
 
     def _trigger_notes(self) -> str:
         if context.council_setting(self._state()) == "off":
@@ -351,7 +366,8 @@ class Session:
         if not new:
             return ""
         self.memory.mark_seen(t.key for t in new)
-        return self._ask(triggers.advisors_for(new), triggers.question(new), "its notes")
+        notes, _failed = self._ask(triggers.advisors_for(new), triggers.question(new), "its notes")
+        return notes
 
     def _take_notes(self) -> str:
         with self._notes_lock:
@@ -374,10 +390,13 @@ class Session:
             # No "checking ...." line: this runs behind the narration, so the wait
             # is already over by the time the player sees anything. Only the result
             # is worth a line, and only when it is actually guidance.
-            notes = self._consult(names, question)
-            body = notes.split(":", 1)[-1].strip().lower()
-            if body and not body.startswith(("nothing", "(unavailable")):
-                self._save_notes(notes)
+            body, failed = advisor.split_notes(self._consult(names, question))
+            # Nothing to add, or nobody answered: either way there is no note, and a
+            # failure must never be filed as one.
+            if body.split(":", 1)[-1].strip().lower().startswith("nothing"):
+                body = ""
+            if body and not failed:
+                self._save_notes(body)
                 self._say_status(f"[dm] background note from {names[0]} "
                                  f"({time.time() - started:.1f}s)")
 
@@ -569,6 +588,9 @@ class Session:
         if line == "/usage":
             return self._usage()
         if self.pending:                # the engine is waiting: free text must not reach the DM
+            # Recorded anyway: the player said it, and a deferred move is a move the
+            # DM must be able to acknowledge once the roll lands (audit report B3).
+            self.memory.add("player", line)
             return [f"(engine) {_waiting(self.pending)}"]
         return self._player_turn(line)
 
@@ -686,12 +708,28 @@ class Session:
             return [str(e)]
         ctx = "combat" if self.bridge.is_combat_active() else "social"
         self.on_stall(stall.get_stall_line(ctx))    # shown now: the ask blocks next
-        notes = self._ask(names, question, "its notes",
-                          self.models.council if council else None)
-        self._save_notes(notes)
+        notes, failed = self._ask(names, question, "its notes",
+                                  self.models.council if council else None)
+        # Only real notes are filed. An error string here used to be saved as
+        # campaign continuity and handed to the next DM call as advice (B2).
+        if notes:
+            self._save_notes(notes)
         if self.show_notes:
-            return [f"[GM notes]\n{notes}"]
-        return ["(The advisors have been consulted. Their notes will guide the next scene.)"]
+            out = [f"[GM notes]\n{notes}"] if notes else []
+        else:
+            out = []
+        # And never claim a consult that did not happen. Saying so while every
+        # advisor was 504ing left the player with notes that did not exist (B2).
+        if failed and not notes:
+            out.append(f"(No notes: {', '.join(failed)} could not be reached. Carrying on "
+                       f"without them.)")
+        elif failed:
+            out.append(f"(The advisors have been consulted, but {', '.join(failed)} could "
+                       f"not be reached.)")
+        elif notes:
+            out.append("(The advisors have been consulted. Their notes will guide the next "
+                       "scene.)")
+        return out or ["(The advisors had nothing to add.)"]
 
     def _usage(self) -> list:
         rows = llm.totals(self.memory.dir / "usage.jsonl")
@@ -708,6 +746,11 @@ class Session:
             # 2026-09-28). Say what is missing instead; the model never gets to
             # invent a battle the engine is not running.
             if autopilot.declares_attack(line):
+                # Recorded before the engine answers, not after it: this line never
+                # reaches the narration path, so it would otherwise be missing from
+                # the transcript entirely and the DM's next turn would have amnesia
+                # about a move the player demonstrably made (audit report B3).
+                self.memory.add("player", line)
                 return [NO_FIGHT]
             return None
         if self.combat != "engine" or not self._players_turn():
