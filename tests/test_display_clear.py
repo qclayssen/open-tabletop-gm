@@ -181,6 +181,57 @@ class DicePadIsReachableOnTheMainView(ClearBase):
         self.assertIn("function _initDiceBadgeClick()", self.html)
         self.assertIn("_initDiceBadgeClick();", self.html)
 
+    def test_the_pad_is_initialised_outside_the_input_only_guard(self):
+        """The one that matters, and the one the first version of this test missed.
+
+        N2 makes the pad reachable from the main view, so _initDicePad() has to run
+        there. It used to sit inside `if (_inputMode)`, which meant the main view
+        floated a pad whose Roll button had no listener: visible, and dead.
+
+        A test asserting only that the *badge handler* was bound passed happily
+        against that, because the badge handler genuinely was bound — it was the pad
+        underneath it that was inert. This asserts on the pad's own initialisation,
+        and specifically that the call site is not inside the input-only guard.
+        """
+        import re
+        # Match only a real statement line, never a `//` comment: the fix's own
+        # comment names the function with a semicolon, so a bare substring search
+        # matches prose as well as code.
+        calls = []
+        for m in re.finditer(r"^([ \t]*)_initDicePad\(\);[ \t]*$", self.html, re.M):
+            line_start = self.html.rfind("\n", 0, m.start()) + 1
+            if self.html[line_start:m.start()].lstrip().startswith("//"):
+                continue                      # a comment, not a call
+            calls.append(m)
+        self.assertEqual(len(calls), 1,
+                         f"expected exactly one _initDicePad() call site, found {len(calls)}")
+        call = calls[0]
+        line_no = self.html[:call.start()].count("\n") + 1
+
+        # Find the `if (_inputMode) {` block and the offset at which it closes, by
+        # brace counting. A substring search for "is it between the guard and the
+        # next call" is not the question — the question is whether the call's own
+        # indentation puts it inside that block.
+        guard_at = self.html.rfind("if (_inputMode) {", 0, call.start())
+        self.assertNotEqual(guard_at, -1, "the _inputMode guard is gone; re-check this test")
+        depth, i = 0, self.html.index("{", guard_at)
+        start = i
+        while i < len(self.html):
+            if self.html[i] == "{":
+                depth += 1
+            elif self.html[i] == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            i += 1
+        block_end = i
+        # The call must be AFTER the input-only block closes. Being before that
+        # offset means it is still inside the guard.
+        self.assertGreater(call.start(), block_end,
+                           f"_initDicePad() at line {line_no} is inside the "
+                           "`if (_inputMode)` block, so the main-view pad shows but "
+                           "cannot roll: the button has no listener")
+
     def test_the_pad_closes_when_nothing_is_waiting_any_more(self):
         """Otherwise it keeps covering the narration with a roll nobody is asked for."""
         self.assertIn("new MutationObserver", self.html)

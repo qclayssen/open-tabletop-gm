@@ -6982,10 +6982,17 @@ connect();
     const ip = document.getElementById('input-panel');
     if (ip) ip.classList.remove('collapsed');
     _initInputTabs();
-    _initDicePad();
   }
-  // N2: bound in both views — on the main view the badge is how a player reaches
-  // the pad at all. _initDiceBadgeClick is idempotent and guards on a dataset flag.
+  // N2: the dice pad lives inside the Party Input panel, which also exists on the
+  // main view — so it must be initialised in BOTH. Showing the pad via CSS without
+  // calling _initDicePad() left a visible but dead Roll button for anyone not on
+  // ?view=input, which is exactly the player N2 exists to serve: the badge now
+  // floats the pad out on the main view, and it has to actually roll.
+  // _initDicePad is idempotent (it guards on reel/rollBtn being present) and reads
+  // its character binding from ?char= / ?character= or localStorage, so calling it
+  // here changes nothing for input-only users.
+  _initDicePad();
+  // _initDiceBadgeClick is idempotent and guards on a dataset flag.
   _initDiceBadgeClick();
   _initModeSwitcher(_inputMode);
 }
