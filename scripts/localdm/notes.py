@@ -1,13 +1,13 @@
 """notes.py: the advisor council's notes, kept on disk in <campaign>/localdm/.
 
     notes.md   one block per consult, newest last:
-               ## 2026-09-29 21:14 — /advise council — historian, director
+               ## 2026-09-29 21:14 - /advise council - historian, director
                <the notes, verbatim>
 
 Session.saved_notes used to be the only home for advisor output, which means
 the notes lived in RAM until the next DM call consumed them and then vanished
 with the process. A /advise council about a plot thread, run between sessions,
-was simply gone by morning — and the GM, who is the only person who can act on
+was simply gone by morning - and the GM, who is the only person who can act on
 "Continuity Keeper: you promised Mira her brother in session 2", had nothing to
 come back to. This is the audit finding from the 2026-09-29 report.
 
@@ -55,7 +55,7 @@ class Notes:
         # is ambiguous for the hour either side of a DST change.
         stamp = datetime.datetime.now().astimezone().strftime("%Y-%m-%d %H:%M %z")
         who = ", ".join(advisors)
-        head = f"## {stamp} — {source or 'advisor'}" + (f" — {who}" if who else "")
+        head = f"## {stamp} - {source or 'advisor'}" + (f" - {who}" if who else "")
         with self._lock:
             self.dir.mkdir(parents=True, exist_ok=True)
             with open(self.path, "a", encoding="utf-8") as f:
@@ -100,7 +100,7 @@ class Notes:
         out = []
         for block in re.split(r"^## ", text, flags=re.MULTILINE)[1:]:
             head, _, body = block.partition("\n")
-            parts = [p.strip() for p in head.split("—")]
+            parts = [p.strip() for p in head.split(" - ")]
             stamp = parts[0] if parts else ""
             source = parts[1] if len(parts) > 1 else ""
             advisors = [a.strip() for a in parts[2].split(",") if a.strip()] \
@@ -112,8 +112,8 @@ class Notes:
         """The last `limit` consults as markdown, newest last. "" when empty."""
         blocks = []
         for stamp, source, advisors, body in self.entries(limit):
-            head = f"## {stamp} — {source or 'advisor'}"
+            head = f"## {stamp} - {source or 'advisor'}"
             if advisors:
-                head += f" — {', '.join(advisors)}"
+                head += f" - {', '.join(advisors)}"
             blocks.append(f"{head}\n\n{body}")
         return "\n\n".join(blocks)

@@ -57,7 +57,7 @@ SHEET_SECTIONS = ("Identity", "Combat Stats")
 _HEAD2 = re.compile(r"^## +(.+?)\s*$", re.MULTILINE)
 _FENCE = re.compile(r"^```ya?ml[^\n]*\n(.*?)^```", re.MULTILINE | re.DOTALL)
 # The state.md header is one line of "**Label:** value  **Label:** value" pairs, so
-# a value stops at the next label as well as at a pipe — a greedy value swallows
+# a value stops at the next label as well as at a pipe - a greedy value swallows
 # every field after the first and reports the campaign as having none.
 _HEADER_FIELD = re.compile(r"\*\*([A-Za-z][A-Za-z ]*):\*\*\s*([^|\n]*?)(?=\s{2,}\*\*|\s*\||\s*$)",
                            re.MULTILINE)
@@ -106,8 +106,8 @@ def _outside_fences(text: str, index: int) -> bool:
 def lint_placeholders(rep: Report, name: str, text: str, *, skip_fences: bool = True) -> None:
     """Every line the DM prompt would silently drop, reported with its reason.
 
-    Helper lines and empty tables are exempt. The digest drops them on purpose —
-    they are the italic instructions to the GM and the pipes of a table — so
+    Helper lines and empty tables are exempt. The digest drops them on purpose  - 
+    they are the italic instructions to the GM and the pipes of a table - so
     flagging them would bury the real gaps under the structure of the template.
     What is left is content the GM wrote the heading for and then never filled.
     """
@@ -130,7 +130,7 @@ def lint_state(rep: Report, text: str) -> None:
     for section, why in REQUIRED_STATE_SECTIONS.items():
         if section not in present:
             rep.add("error", "state.md", f"missing section '## {section}'",
-                    hint=f"{why} — add the heading back exactly")
+                    hint=f"{why} - add the heading back exactly")
 
     # The header line is regex-parsed by name_registry and paths; a field that
     # lost its label is a field nothing can read any more.
@@ -151,7 +151,7 @@ def lint_state(rep: Report, text: str) -> None:
             rep.add("warn", "state.md", f"header field '**{key}:**' is still a placeholder",
                     line=2, hint="fill it in, or the name registry cannot date the campaign")
     # The System Version field is an opaque ruleset string the GM stamps ("2014",
-    # "1e") — nothing here can judge the value, only that it was left as the
+    # "1e") - nothing here can judge the value, only that it was left as the
     # template's placeholder. Absent is migrate_system_version.py's business:
     # `python3 scripts/migrate_system_version.py <campaign> --check`.
     if fields.get("System Version", "").startswith("<"):

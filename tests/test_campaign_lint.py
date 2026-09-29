@@ -19,7 +19,7 @@ GOOD_STATE = """# Campaign: demo
 
 ## Current Situation
 - **Location:** Frog Pond
-- **Party:** Kairos — Human Wizard 3 | HP 14/14 | AC 13
+- **Party:** Kairos - Human Wizard 3 | HP 14/14 | AC 13
 
 ## Pinned Facts
 - Kairos promised to find Mira's brother.
@@ -53,7 +53,7 @@ GOOD_ARC = ("```yaml\ntype: dynamic\nacts:\n  - act: 1\n    title: Setup\n"
             "    beats:\n      - id: 1a\n        status: current\n"
             "current_act: 1\ncurrent_beat: 1a\noutstanding_beats: [1a]\n```\n")
 
-GOOD_NPCS = """# NPCs — demo
+GOOD_NPCS = """# NPCs - demo
 
 | Name | Role | Faction | Location | Attitude | Notes |
 |------|------|---------|----------|----------|-------|
@@ -81,7 +81,7 @@ def campaign(tmp_path, *, state=GOOD_STATE, npcs=GOOD_NPCS, world=None, sheets=T
                                    "# World: demo\n\n## Campaign Tone & Genre\n- **Tone:** grim\n\n"
                                    "## World Foundations\n- **Biome:** moor\n\n"
                                    "## Factions\n### The Bell Company\n- **Goals:** the bell\n\n"
-                                   "## Quest Seed Bank\n- **Seed 1 — Drowned:** a bell under the fen\n",
+                                   "## Quest Seed Bank\n- **Seed 1 - Drowned:** a bell under the fen\n",
                                    encoding="utf-8")
     if sheets:
         (camp / "characters").mkdir(exist_ok=True)
@@ -177,7 +177,7 @@ def test_the_linter_and_the_digest_agree_on_what_is_unfilled(tmp_path):
              "- **Magic level:** <none / low / high>\n\n## World Foundations\n"
              "- **Biome:** moor\n\n## Factions\n### The Bell Company\n"
              "- **Goals:** the drowned bell\n\n## Quest Seed Bank\n"
-             "- **Seed 1 — Drowned:** a bell rings under the fen at low water\n")
+             "- **Seed 1 - Drowned:** a bell rings under the fen at low water\n")
     camp = campaign(tmp_path, world=world)
     rep = campaign_lint.lint_campaign("demo", camp)
     assert any("Magic level" in f["message"] for f in rep.findings), messages(rep)
@@ -193,7 +193,7 @@ def test_helper_text_is_not_reported_as_a_gap(tmp_path):
     world = ("# World: demo\n\n## Campaign Tone & Genre\n- **Tone:** grimdark\n"
              "*Pick one tone and stay in it.*\n\n## World Foundations\n- **Biome:** moor\n"
              "\n## Factions\n### The Bell Company\n- **Goals:** the bell\n\n"
-             "## Quest Seed Bank\n- **Seed 1 — Drowned:** a bell under the fen\n")
+             "## Quest Seed Bank\n- **Seed 1 - Drowned:** a bell under the fen\n")
     camp = campaign(tmp_path, world=world)
     rep = campaign_lint.lint_campaign("demo", camp)
     assert not any("helper text" in f["message"] for f in rep.findings), messages(rep)
@@ -256,7 +256,7 @@ def test_an_arc_that_does_not_parse_is_reported_not_raised(tmp_path):
 
 
 def test_the_arc_placeholders_inside_the_fence_are_not_reported_as_gaps(tmp_path):
-    """The shipped arc template is full of \"<one sentence — ...>\" by design.
+    """The shipped arc template is full of \"<one sentence - ...>\" by design.
     Reporting those would bury the real gaps in noise."""
     pytest_skip()
     arc = ("```yaml\ntype: dynamic\ntheme: \"<one sentence>\"\n"

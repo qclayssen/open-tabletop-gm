@@ -824,7 +824,7 @@ class Session:
             return [f"(No advisor notes for {self.campaign} yet. /advise council asks for some; "
                     f"they are kept in {self.notes.path}.)"]
         total = len(self.notes.entries())
-        return [f"[GM notes — last {min(limit, total)} of {total} in {self.notes.path}]\n\n"
+        return [f"[GM notes - last {min(limit, total)} of {total} in {self.notes.path}]\n\n"
                 f"{recent}"]
 
     def _usage(self) -> list:

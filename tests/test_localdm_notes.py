@@ -31,7 +31,7 @@ def test_the_note_is_kept_verbatim(tmp_path):
     """An advisor's exact wording is what the GM wants; a lossy copy is a
     different claim. This is why canon.jsonl exists and why this does too."""
     n = Notes(tmp_path)
-    body = "Director: 'Mira would not say that twice.' — italics, dashes, 12% odds."
+    body = "Director: 'Mira would not say that twice.' - italics, dashes, 12% odds."
     n.add(body, source="/advise")
     assert body in n.entries()[0][3]
 
@@ -70,9 +70,9 @@ def test_trimming_drops_whole_leading_blocks_never_half_a_note(tmp_path, monkeyp
         n.add(f"note {i} " + "x" * 60, source="/advise", advisors=("continuity",))
     text = n.path.read_text(encoding="utf-8")
     assert len(text) <= 400 + 200, len(text)
-    # Every surviving block starts with a full "## stamp — source — advisors" header.
+    # Every surviving block starts with a full "## stamp - source - advisors" header.
     for block in text.split("## ")[1:]:
-        assert block.startswith("20") and "— /advise" in block.split("\n")[0]
+        assert block.startswith("20") and " - /advise" in block.split("\n")[0]
     assert "note 39" in text
     # And the newest entry still parses.
     assert n.entries()[-1][1] == "/advise"
@@ -80,7 +80,7 @@ def test_trimming_drops_whole_leading_blocks_never_half_a_note(tmp_path, monkeyp
 
 def test_a_file_too_big_to_split_is_left_alone(tmp_path, monkeypatch):
     """A single oversized note has no safe cut point, so it is kept whole rather
-    than mangled — truncation would silently lose the advisor's advice."""
+    than mangled - truncation would silently lose the advisor's advice."""
     monkeypatch.setattr(notes_mod, "MAX_BYTES", 10)
     n = Notes(tmp_path)
     n.add("a note that is quite long indeed, with no further blocks to follow it")
