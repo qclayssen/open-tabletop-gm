@@ -72,6 +72,10 @@ CHECK_FAIL = ("Narrate this failure in 1 to 4 sentences, and make the world move
               "player must deal with. Never say the attempt simply failed or that nothing "
               "happens. Do not decide what the character does about it. Do not mention the "
               "number or the DC. Then the JSON line with null for every field.")
+CHECK_BEAT = ("You are asking for a check, so this beat is what happens BEFORE the "
+              "roll. Narrate only the character starting the attempt and the world's "
+              "response to the attempt. Keep the check in the JSON line, with null for "
+              "every other field.")
 CAST_TASK = ("Narrate the casting in 1 to 3 sentences, using only the numbers the Engine "
              "section gives (never a different AC, duration or slot count). Then the JSON "
              "line with null for every field.")
@@ -111,6 +115,24 @@ GUARD_QUESTIONS = {
 }
 _DIRECTIVES = re.compile(r"^(?:\s*\[\[.*?\]\])+")
 _OPTION = re.compile(r"^(\d+)\. ", re.M)
+
+
+def _question(res) -> str:
+    """The engine's question, without its CLI-only "re-run with --react/--roll"
+    instruction.
+
+    combat.py/cli.py answer a pending roll or reaction by telling the GM to re-run
+    the command with a flag. That is correct for a terminal and wrong here: this
+    loop answers a pending roll from a bare number and a reaction from a bare
+    yes/no (see handle()), and players have no terminal at all. Shown as-is it read
+
+        Kairos rolls 1d20+5 for Dagger. Nothing has happened yet.
+        Re-run the same command with attack kairos frog-1 --roll <the d20 face...>
+        Roll it and type the number on the die (no modifier).
+
+    which contradicts itself two lines apart. _hint() already says what to type.
+    """
+    return res.text.split("\nRe-run the same command with")[0]
 
 
 def _hint(res) -> str:
@@ -224,6 +246,10 @@ class Session:
                         "land, cost the character something concrete and named, and end on "
                         "the new situation they now have to deal with. Do not write 'you "
                         "fail' or 'nothing happens'.")
+    OUTCOME_FIX = ("Your last draft resolved a check the player has not rolled yet. Rewrite "
+                   "it: narrate only the character starting the attempt and what the world "
+                   "does in response. Never say they found, spotted, succeeded or failed at "
+                   "anything the check decides, and keep the check field in the JSON line.")
 
     def _canon(self, player: str) -> list:
         """Canon worth replaying for this beat: the player's own line, falling
@@ -486,7 +512,7 @@ class Session:
         if res.needs_roll or res.needs_react:
             self.pending = {"args": list(args), "rolls": list(rolls), "reacts": list(reacts),
                             "react": res.needs_react}
-            return [f"{res.text}\n{_hint(res)}"]
+            return [f"{_question(res)}\n{_hint(res)}"]
         self.pending = None
         if args[0] == "choose" and res.code == 0:      # an enemy turn that waited on a reaction
             end = self.bridge.run(["end-turn"])
@@ -541,7 +567,7 @@ class Session:
                 res = self.bridge.run(args)
                 if res.needs_roll or res.needs_react:
                     self.pending = {"args": args, "rolls": [], "react": res.needs_react}
-                    return self._flush(log) + [f"{res.text}\n{_hint(res)}"]
+                    return self._flush(log) + [f"{_question(res)}\n{_hint(res)}"]
                 log.append(res.text)
             else:
                 log.append(opts.text)
@@ -797,6 +823,16 @@ class Session:
                 r = self._dm(player=line, engine=engine, notes=notes)
         self.memory.add("player", line)
         out = self._notes_out(notes)
+        # N5: this beat is the one *before* a roll when r.check is set, so it must
+        # not state the outcome the roll decides. Scoped here rather than in _dm()
+        # on purpose: _check_narration narrates a check that has already been
+        # resolved, where naming the outcome is the whole point, so a blanket
+        # check in _dm() would rewrite the correct sentence every time.
+        if r.check and reply.reveals_check_outcome(r.narration):
+            retry = self._dm(player=line, engine=engine, notes=notes,
+                             task=f"{CHECK_BEAT}\n{self.OUTCOME_FIX}".strip())
+            if retry.check and not reply.reveals_check_outcome(retry.narration):
+                r = retry
         if r.narration:
             self._say(r.narration)
             out.append(r.narration)

@@ -835,3 +835,120 @@ def test_a_line_typed_while_a_roll_waits_is_still_remembered(tmp_path):
     s.pending = {"args": ["attack", "kairos", "frog-1"], "rolls": [], "react": False}
     s.handle("retreat")
     assert "retreat" in [t["text"] for t in s.memory.turns()]
+
+
+# ── N5/N6: the beat before a roll, and the prompt that asks for it ─────────────
+
+def test_a_pending_roll_never_shows_the_player_a_cli_instruction(tmp_path):
+    """N6: the engine tells the GM to re-run the command with --roll. Correct in a
+    terminal, wrong here — this loop answers a pending roll from a bare number
+    (handle(): `if line.isdigit()`) and players have no terminal. Shown verbatim
+    the prompt contradicted itself two lines apart."""
+    replies = iter(['You aim.\n{"command": "attack kairos frog-1 fire bolt"}', "Hit!" + NULLS])
+    c = FakeClient(lambda m, msgs, role: next(replies))
+
+    def attack(args):
+        if "--roll" not in args:
+            return Result(2, ROLL_TEXT)
+        return Result(0, "Kairos hits: 7 fire damage.")
+
+    b = FakeBridge([fight()], {"status": lambda a: Result(0, "Round 1."), "attack": attack})
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path, "council: off"), bridge=b)
+    out = " ".join(s.handle("I attack the frog."))
+    assert "Kairos rolls 1d20+5" in out                    # the question is kept
+    assert "type the number on the die" in out             # the real instruction is kept
+    assert "Re-run the same command" not in out            # the CLI hint is not
+    assert "--roll" not in out and "--for-me" not in out
+
+
+def test_a_pending_reaction_never_shows_the_player_a_cli_instruction(tmp_path):
+    def attack(args):
+        if "--react" not in args:
+            return Result(2, "Giant Frog 1 makes an opportunity attack. Nothing has happened "
+                             "yet.\nRe-run the same command with attack kairos frog-1 "
+                             "--react yes or --react no.")
+        return Result(0, "Kairos steps away.")
+
+    replies = iter(['You step past.\n{"command": "attack kairos frog-1 dagger"}', "Done." + NULLS])
+    c = FakeClient(lambda m, msgs, role: next(replies))
+    b = FakeBridge([fight()], {"status": lambda a: Result(0, "Round 1."), "attack": attack})
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path, "council: off"), bridge=b)
+    out = " ".join(s.handle("I attack the frog."))
+    assert s.pending is not None
+    assert "opportunity attack" in out and "Type yes or no" in out
+    assert "Re-run the same command" not in out and "--react" not in out
+
+
+def test_the_pre_roll_beat_may_not_state_the_outcome(tmp_path):
+    """N5: 'you find the latch' adjudicates the roll the engine is about to make, and
+    the roll then contradicts the story the player was already told."""
+    replies = iter([
+        'Kairos runs a finger along the desk until he finds the hidden latch.\n'
+        '{"escalate": null, "command": null, "check": "Investigation 13"}',
+        'Kairos traces the desk’s edge, feeling for anything out of place.\n'
+        '{"escalate": null, "command": null, "check": "Investigation 13"}',
+        "The roll finds a narrow seam behind the drawer." + NULLS,
+    ])
+    c = FakeClient(lambda m, msgs, role: next(replies))
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path), bridge=FakeBridge())
+    out = " ".join(s.handle("I search the desk for anything hidden."))
+    assert "finds the hidden latch" not in out
+    assert "feeling for anything out of place" in out
+    assert c.dm_calls().__len__() == 3                    # draft, one retry, then the roll
+
+
+def test_a_clean_pre_roll_beat_is_not_rewritten(tmp_path):
+    """The guardrail costs a call when it trips, so a beat that is already clean must
+    be left alone — this is the false-positive budget the other guardrails keep."""
+    replies = iter([
+        'Kairos begins searching the desk, sliding papers aside.\n'
+        '{"escalate": null, "command": null, "check": "Investigation 13"}',
+        "It comes back clean." + NULLS,
+    ])
+    c = FakeClient(lambda m, msgs, role: next(replies))
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path), bridge=FakeBridge())
+    s.handle("I search the desk for anything hidden.")
+    assert len(c.dm_calls()) == 2                         # the beat, then the roll
+
+
+def test_narrating_a_rolled_outcome_is_never_rewritten(tmp_path):
+    """The guardrail is scoped to the beat BEFORE the roll. Once the engine has
+    resolved the check, naming the outcome is the whole job — a blanket check would
+    rewrite the correct sentence every single time."""
+    from localdm import reply
+    replies = iter([
+        'Kairos begins searching the desk.\n'
+        '{"escalate": null, "command": null, "check": "Investigation 13"}',
+        "Kairos finds a narrow seam hidden behind the drawer." + NULLS,
+    ])
+    c = FakeClient(lambda m, msgs, role: next(replies))
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path), bridge=FakeBridge())
+    out = " ".join(s.handle("I search the desk."))
+    assert "finds a narrow seam" in out                    # kept: the roll already happened
+    assert len(c.dm_calls()) == 2
+    assert reply.reveals_check_outcome("Kairos finds a narrow seam.")   # it would trip
+
+
+@pytest.mark.parametrize("leak", [
+    "Kairos finds the hidden latch.",
+    "Kairos fails to spot the tripwire.",
+    "The search succeeds, and the desk gives up its secret.",
+    "Kairos manages to work the lock free.",
+    "He is unable to lift the lid.",
+    "The check is a success.",
+])
+def test_outcome_words_in_a_pre_roll_beat_are_detected(leak):
+    from localdm import reply
+    assert reply.reveals_check_outcome(leak)
+
+
+@pytest.mark.parametrize("clean", [
+    "Kairos runs a finger along the desk’s edge.",
+    "The drawer sticks, then gives.",
+    "Kairos begins searching, papers sliding aside.",
+    "Something in the desk shifts.",
+    "He leans closer to the ledger.",
+])
+def test_a_pre_roll_beat_with_no_outcome_is_left_alone(clean):
+    from localdm import reply
+    assert not reply.reveals_check_outcome(clean)
