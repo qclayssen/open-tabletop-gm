@@ -58,6 +58,11 @@ from paths import (
     characters_dir as _characters_dir,
 )
 
+# The map editor's terrain merge. The engine owns the rules; this only decides
+# what a map file looks like, and it lives in scripts/ so the CLI and the tests
+# can reach it without going through Flask.
+from tactics import mapeditor as _mapeditor
+
 # Audio module — degrades silently if numpy not installed
 import sys as _sys
 if _DISPLAY_DIR not in _sys.path:
@@ -445,8 +450,18 @@ def _token_ok() -> bool:
 
 
 _ICONS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icons")
+# Battle-map artwork. A map JSON may name a file in this directory; the display
+# draws it under the terrain, so it has to be fetchable. Served by one route below,
+# which, like the icons route, is confined to this directory.
+_MAPS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "maps")
 
 app = Flask(__name__)
+# Flask derives its root from the module's __name__, which is only this file's
+# directory when run as __main__. Every other path here is absolute for the same
+# reason, and without it a test client loaded by file location 500s on
+# render_template, which is how the map editor's page and / both fail to load.
+app.root_path = _DISPLAY_DIR
+app.template_folder = os.path.join(_DISPLAY_DIR, "templates")
 app.config['TEMPLATES_AUTO_RELOAD'] = True
 CORS(app)
 
@@ -1248,6 +1263,103 @@ def serve_icon(filename):
 def favicon():
     return send_from_directory(_ICONS_DIR, "favicon.ico",
                                mimetype="image/vnd.microsoft.icon")
+
+
+@app.route("/maps/<path:filename>")
+def map_image(filename):
+    """Serve a battle map's background artwork out of display/maps/.
+
+    Maps that carry an image (see scripts/atlas_to_map.py) name a file here, and
+    the display fetches it to draw under the terrain overlay. Nothing references
+    this route unless a map opts in, so a map without artwork is unaffected.
+
+    send_from_directory rejects traversal, so <path:filename> cannot escape
+    display/maps/, the same guarantee the icons route relies on.
+    """
+    return send_from_directory(_MAPS_DIR, filename)
+
+
+# ─── Map editor ──────────────────────────────────────────────────────────────
+#
+# A GM paints terrain by clicking, and this rewrites the map's features[].
+# Two things make it safe to point at a file the engine reads:
+#
+#   * The merge is a merge. Strokes are replayed onto the map's cells and
+#     features[] is re-derived as a cover of disjoint rectangles, so painting
+#     over a wall replaces the wall's rectangle instead of stacking on it.
+#   * The candidate goes through tactics.maps.compile_map before it is written,
+#     so anything this route saves is a map the engine has already agreed to
+#     load, and grid.rows can only change where the GM actually painted.
+
+
+def _map_not_found(name):
+    return jsonify({"error": f"No map {name!r}. Maps: {', '.join(_mapeditor.available())}"}), 404
+
+
+@app.route("/maps/<name>/edit", methods=["GET"])
+def map_edit(name):
+    """The painting page. Read-only: a GET must never touch the map file."""
+    path = _mapeditor.find(name)
+    if path is None:
+        return _map_not_found(name)
+    try:
+        spec = json.loads(path.read_text(encoding="utf-8"))
+        state = _mapeditor.editor_state(spec, path.stem)
+    except (OSError, ValueError) as e:
+        return jsonify({"error": f"{path.name} could not be read: {e}"}), 400
+    # Inline the state rather than fetching it: the page is a GM's local tool,
+    # and a GET that returns 200 with everything it needs is one round trip.
+    # "<" is escaped because this lands inside a <script> block.
+    return render_template("mapseditor.html",
+                           state=json.dumps(state).replace("<", "\\u003c"),
+                           lan_token=_lan_token or "")
+
+
+@app.route("/maps/<name>/features", methods=["POST"])
+def map_features(name):
+    """Body: {"strokes": [{type, x, y, w, h}, ...]}. Rewrites the map file.
+
+    Tokens and the save gate are the two ways work is lost. A GM paints for ten
+    minutes, so an overwrite of a map that already has features has to be
+    something they asked for (hence `confirm`) and the original file is kept
+    as <name>.json.bak (the first original only, never overwritten).
+    """
+    if not _token_ok():
+        return "Forbidden", 403
+    path = _mapeditor.find(name)
+    if path is None:
+        return _map_not_found(name)
+    body = request.get_json(silent=True) or {}
+    strokes = body.get("strokes")
+    if not isinstance(strokes, list):
+        return jsonify({"error": "strokes must be a list of rectangles"}), 400
+    before = path.read_text(encoding="utf-8")
+    try:
+        spec = json.loads(before)
+    except ValueError as e:
+        return jsonify({"error": f"{path.name} could not be read: {e}"}), 400
+    if not isinstance(spec, dict):
+        return jsonify({"error": f"{path.name} could not be read: not a map object"}), 400
+    if spec.get("features") and not body.get("confirm"):
+        return jsonify({"error": f"{path.name} already has terrain on it. "
+                                 "Re-save with confirm to overwrite it "
+                                 f"({len(spec['features'])} rectangles; the original is kept as a .bak)."}), 409
+    try:
+        merged = _mapeditor.apply_strokes(spec, strokes)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    try:
+        bak = _mapeditor.write(path, merged)
+    except OSError as e:
+        return jsonify({"error": f"{path.name} could not be written: {e}"}), 500
+    compiled = json.loads(path.read_text(encoding="utf-8"))
+    return jsonify({
+        "ok": True,
+        "slug": path.stem,
+        "features": compiled.get("features", []),
+        "backup": bak.name if bak != path else "",
+        "state": _mapeditor.editor_state(compiled, path.stem),
+    })
 
 
 @app.route("/srd-lookup")
