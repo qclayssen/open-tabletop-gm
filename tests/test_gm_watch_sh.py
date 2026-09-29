@@ -87,6 +87,7 @@ _TOOLS = ("bash", "python3", "cat", "date", "sleep", "grep", "rm", "kill",
           "dirname", "env")
 
 
+@unittest.skipIf(os.name == "nt", "the watcher is a bash script run in its own session (os.killpg)")
 class WatcherWithoutCoreutilsTimeout(unittest.TestCase):
     """The macOS path, run for real: no `timeout`, no `gtimeout` on PATH.
 
