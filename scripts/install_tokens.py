@@ -69,6 +69,12 @@ def _pngs(root: pathlib.Path):
 def from_extracted(src: pathlib.Path) -> int:
     if not src.is_dir():
         raise SystemExit(f"{src} is not a directory")
+    # The destination is made here, by the code that is about to write to it, and
+    # not on entry to `main`. Creating it up front meant a run that refused (no
+    # zip, wrong directory) still left an empty display/tokens/ behind on a clone
+    # that had none, and a directory that exists but holds no art is a state the
+    # rest of the system reads as "installed and empty" rather than "not yet".
+    TOKENS_DIR.mkdir(parents=True, exist_ok=True)
     n = 0
     for p in _pngs(src):
         shutil.copy(p, TOKENS_DIR / f"{slugify(p.stem)}.png")
@@ -135,7 +141,6 @@ def main(argv=None) -> int:
             return 0
         return 0 if not (missing or extra) else 1
 
-    TOKENS_DIR.mkdir(parents=True, exist_ok=True)
     n = from_extracted(pathlib.Path(args.from_extracted)) if args.from_extracted \
         else from_zip(pathlib.Path(args.zip))
     print(f"installed {n} portraits into {TOKENS_DIR}")
