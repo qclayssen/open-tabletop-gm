@@ -76,6 +76,50 @@ def test_a_missing_sheet_is_refused_with_the_path():
         raise AssertionError("must refuse a sheet that is not there")
 
 
+def test_the_refusal_works_without_pillow():
+    """The refusal must not depend on the optional dependency.
+
+    run() imported PIL before validating its input, so on a machine with no
+    Pillow the import raised out of the top of the function and the "does not
+    exist" branch was unreachable. CI is the one place Pillow is absent, which
+    is why the test above passed locally and failed there. The input is a
+    question about the filesystem, and the filesystem does not need Pillow.
+    """
+    # A subprocess, not a meta_path hook in this process: this module binds
+    # Image and HAVE_PIL at import time, and no amount of restoring sys.modules
+    # puts them back as they were. Blocking PIL in-process left the later tests
+    # holding stub bytes they could not read, so suite order decided the
+    # outcome. A child cannot leak anything into the parent.
+    import subprocess
+    import textwrap
+    code = textwrap.dedent("""
+        import sys, pathlib
+        class Block:
+            def find_spec(self, name, path=None, target=None):
+                if name == "PIL" or name.startswith("PIL."):
+                    raise ImportError("no PIL")
+                return None
+        sys.meta_path.insert(0, Block())
+        sys.path.insert(0, sys.argv[1])
+        import faculty_sheets as fs
+        try:
+            fs.run(pathlib.Path("/nonexistent/quandrixteachers.jpg"),
+                   pathlib.Path("/tmp/nope"))
+        except fs.Refused as e:
+            assert "does not exist" in str(e), e
+        except ImportError as e:
+            raise SystemExit("crashed on a missing Pillow instead of refusing: " + str(e))
+        else:
+            raise SystemExit("must refuse a sheet that is not there")
+    """)
+    proc = subprocess.run(
+        [sys.executable, "-c", code, str(ROOT / "scripts")],
+        capture_output=True, text=True, encoding="utf-8")
+    assert proc.returncode == 0, (
+        f"a missing sheet must be refused by name, not crash on a missing Pillow."
+        f"\nstdout: {proc.stdout}\nstderr: {proc.stderr}")
+
+
 # ── the crop is square, and never an upscale ────────────────────────────────
 
 def test_square_box_is_square():
