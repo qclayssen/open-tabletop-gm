@@ -32,11 +32,43 @@ Reproducibility:
 
 import random
 import re
+import secrets
 import sys
 
-# One module-level stream, so an unseeded CLI run is a single sequence rather
-# than a fresh generator per call, and so a caller can seed it for a replay.
-_RNG = random.Random()
+def new_rng(seed=None):
+    """A PRNG for dice. With no seed, the seed is drawn from `secrets` (the OS
+    entropy pool), so an unseeded stream is unpredictable; with one, the stream
+    is replayable. The seed is kept on the returned object as `.seed_value` so a
+    caller can quote it. See docs/milestones/08-roll-integrity.md."""
+    if seed is None:
+        seed = secrets.randbits(64)
+    rng = random.Random(seed)
+    rng.seed_value = seed
+    return rng
+
+
+# One stream per process, so an unseeded CLI run is a single sequence rather
+# than a fresh generator per call. Callers that need a replay pass `rng=` to
+# run()/roll_dice(), or swap the default with set_rng() / seed_default().
+_RNG = new_rng()
+
+
+def get_rng():
+    return _RNG
+
+
+def set_rng(rng):
+    """Replace the process default stream; returns the previous one so a test
+    can restore it."""
+    global _RNG
+    prev, _RNG = _RNG, rng
+    return prev
+
+
+def seed_default(seed):
+    """Make the process default stream reproducible from `seed`."""
+    set_rng(new_rng(seed))
+    return _RNG
 
 
 def parse_notation(notation: str):
@@ -64,7 +96,7 @@ def parse_notation(notation: str):
 
 
 def roll_dice(num_dice, die_size, rng=None):
-    rng = rng or _RNG
+    rng = rng if rng is not None else _RNG
     return [rng.randint(1, die_size) for _ in range(num_dice)]
 
 
@@ -149,7 +181,7 @@ if __name__ == "__main__":
         sys.exit(1)
 
     notation = " ".join(args)
-    rng = random.Random(seed) if seed is not None else _RNG
+    rng = new_rng(seed) if seed is not None else _RNG
     result = run(notation, silent=silent, rng=rng)
     if seed is not None and not silent:
         # A roll quoted in a transcript is only auditable if the reader can
