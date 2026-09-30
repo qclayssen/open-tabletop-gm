@@ -37,7 +37,10 @@ TOPICS = (
 _SELF = re.compile(r"\b(my|i|me|mine|am|do i|have i)\b")
 SELF_TOPICS = (
     ("passive", r"\bpassive\b|\bhow (perceptive|observant)\b"),
-    ("ac", r"\b(ac|armou?r class|armou?r)\b"),
+    # "armou?r class" but not bare "armou?r": "how much armor do I need" and "can I see
+    # the goblin's armor" are story questions, and answering either with the player's own
+    # AC would be a confident non-sequitur. Bare "armou?r" was tried and claimed both.
+    ("ac", r"\b(ac|armou?r class)\b"),
     ("hp", r"\b(hp|hit points?|health|hurt|wounded|how (badly|healthy))\b"),
     ("inventory", r"\b(inventory|equipment|gear|backpack|pack|carrying|what do i (have|carry|own)|"
                   r"what('?s| is) (in )?my (bag|pack|things))\b"),

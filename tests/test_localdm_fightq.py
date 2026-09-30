@@ -82,8 +82,41 @@ def test_no_inventory_line_is_said_not_invented(tmp_path):
     assert c.calls == []
 
 
+@pytest.mark.parametrize("sheet,line,needle", [
+    ("# Kairos\n**AC:** 15\n", "how many hit points do I have?", "no HP"),
+    ("# Kairos\n**HP:** 6/8\n", "what is my AC?", "no AC"),
+    ("# Kairos\n", "how many hit points do I have?", "no HP"),
+])
+def test_a_number_the_sheet_does_not_state_is_said_absent_not_filled_in(tmp_path, sheet, line, needle):
+    """party_stats defaults a missing HP to 1/1 and a missing AC to 10 for the sidebar.
+    A sheet question is not the sidebar: with neither field on the sheet the answer has to
+    say so, because a confident "Kairos: 1/1 HP." is a guess wearing the sheet's name."""
+    s, c = explore(tmp_path, sheet)
+    out = s.handle(line)
+    assert needle in out[0]
+    assert not [n for n in ("1/1", "AC 10") if n in " ".join(out)]
+    assert c.calls == []
+
+
+def test_an_active_ac_override_still_wins_over_the_sheet(tmp_path):
+    """Mage Armor is an engine fact, so it is the sheet's AC plus the override, not the
+    override alone: reading the sheet directly must not lose the still-active effect."""
+    import json
+    d = camp_dir(tmp_path, "council: off")
+    (d / "characters").mkdir()
+    (d / "characters" / "Kairos.md").write_text(SHEET, encoding="utf-8")
+    (d / "tracker.json").write_text(json.dumps({"kairos": {"effects": [
+        {"name": "mage armor", "ac": 13}]}}), encoding="utf-8")
+    c = FakeClient(_refuse_model)
+    s = Session("demo", c, MODELS, camp_dir=d, bridge=FakeBridge())
+    assert "AC 13" in " ".join(s.handle("what is my AC?"))
+    assert c.calls == []
+
+
 @pytest.mark.parametrize("line", ["what is the guard's AC?", "what is the old man carrying?",
-                                  "I check my pack for rope", "give me a moment"])
+                                  "I check my pack for rope", "give me a moment",
+                                  "how much armor do I need", "can I see the goblin's armor",
+                                  "should I buy armor"])
 def test_other_lines_still_reach_the_model(tmp_path, line):
     s, c = explore(tmp_path)
     c.responder = lambda m, msgs, role: "Ok." + NULLS

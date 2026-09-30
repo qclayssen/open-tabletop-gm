@@ -306,28 +306,48 @@ def _inventory_line(text: str) -> str:
     return "; ".join(items)
 
 
+def _sheet_hp(text: str):
+    """The sheet's own "**HP:** 6/8" as (current, max), or None when it states no HP.
+
+    Deliberately not party_stats: that fills 1/1 in for a sheet with no HP line, and a
+    question the player asked deserves "the sheet says nothing" over a confident 1/1."""
+    m = re.search(r"\*\*HP:\*\*\s*(\d+)\s*/\s*(\d+)", text)
+    return (int(m.group(1)), int(m.group(2))) if m else None
+
+
+def _sheet_ac(camp_dir, name: str, text: str):
+    """The sheet's own "**AC:** 12", or a still-active AC override (Mage Armor), else None.
+
+    Same reason as the HP: party_stats defaults a missing AC to 10, which is a bare-
+    skinned guess wearing the sheet's authority."""
+    override = _active_ac(camp_dir, name)
+    if override is not None:
+        return override
+    m = re.search(r"\*\*AC:\*\*\s*(\d+)", text)
+    return int(m.group(1)) if m else None
+
+
 def sheet_facts(camp_dir) -> dict | None:
     """Sheet numbers for an out-of-character question, or None with no sheet.
 
-    Plain reads of what the sheet says (HP, AC via party_stats so an active Mage Armor
-    shows) plus the passive scores the check policy already uses (10 + skill bonus)."""
+    Plain reads of what the sheet says (HP, AC, both None when the sheet states neither,
+    with a still-active AC override winning so an active Mage Armor shows) plus the passive
+    scores the check policy already uses (10 + skill bonus)."""
     from localdm import checks
-    stats = party_stats(camp_dir)
     sheet = first_sheet_path(camp_dir)
-    if sheet is None or not stats:
+    if sheet is None:
         return None
-    me = next((e for e in stats if e["name"] == sheet.stem), stats[0])
+    try:
+        text = sheet.read_text(encoding="utf-8")
+    except OSError:
+        return None
     passive = {}
     for skill in ("perception", "insight", "investigation"):
         found = skill_bonus(camp_dir, skill)
         if found:
             passive[skill] = checks.passive_score(found[2])
-    try:
-        inventory = _inventory_line(sheet.read_text(encoding="utf-8"))
-    except OSError:
-        inventory = ""
-    return {"name": me["name"], "hp": (me["hp"]["current"], me["hp"]["max"]),
-            "ac": me["ac"], "passive": passive, "inventory": inventory}
+    return {"name": sheet.stem, "hp": _sheet_hp(text), "ac": _sheet_ac(camp_dir, sheet.stem, text),
+            "passive": passive, "inventory": _inventory_line(text)}
 
 
 def council_setting(state_md: str) -> str:
