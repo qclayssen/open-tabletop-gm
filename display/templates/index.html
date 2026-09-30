@@ -1227,6 +1227,20 @@
   .sb-faction-standing.hostile   { color: rgba(220,60,60,0.80); }
   .sb-faction-standing.unknown   { color: rgba(200,185,150,0.25); }
 
+  /* ── Revealed faction clocks (GM opt-in dials) ── */
+  #sb-clocks {
+    margin-top: 12px; padding-top: 10px;
+    border-top: 1px solid rgba(180,140,60,0.08);
+  }
+  .sb-clock-item { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
+  .sb-clock-dial { width: 34px; height: 34px; flex: none; }
+  .sb-clock-seg { fill: transparent; stroke: rgba(180,140,60,0.45); stroke-width: 1; }
+  .sb-clock-seg.filled { fill: rgba(220,120,50,0.75); }
+  .sb-clock-name {
+    font-size: 9px; color: rgba(200,185,150,0.7);
+    overflow: hidden; text-overflow: ellipsis; flex: 1;
+  }
+
   /* ── Quest tracker ── */
   #sb-quests {
     margin-top: 12px; padding-top: 10px;
@@ -3260,6 +3274,11 @@
   <!-- Faction standings — injected by updateStats() when factions data is present -->
   <div id="sb-factions" style="display:none">
     <div class="sb-factions-header">Factions</div>
+  </div>
+  <!-- Faction clocks the GM chose to reveal; hidden ones are never sent here -->
+  <div id="sb-clocks" style="display:none">
+    <div class="sb-factions-header">Clocks</div>
+    <div id="sb-clocks-list"></div>
   </div>
   <!-- Quest tracker — injected by updateStats() when quests data is present -->
   <div id="sb-quests" style="display:none">
@@ -6755,6 +6774,38 @@ const WEATHER_ICONS = {
   calm:    '',
 };
 
+function renderRevealedClocks(clocks) {
+  const box = document.getElementById('sb-clocks');
+  const list = document.getElementById('sb-clocks-list');
+  if (!box || !list) return;
+  list.textContent = '';
+  (clocks || []).forEach(function (c) {
+    const n = [4, 6, 8].indexOf(c.size) >= 0 ? c.size : 4;
+    const NS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('viewBox', '-17 -17 34 34');
+    svg.setAttribute('class', 'sb-clock-dial');
+    for (let i = 0; i < n; i++) {
+      const a0 = (i / n) * 2 * Math.PI - Math.PI / 2;
+      const a1 = ((i + 1) / n) * 2 * Math.PI - Math.PI / 2;
+      const p = function (a) { return (15 * Math.cos(a)).toFixed(2) + ' ' + (15 * Math.sin(a)).toFixed(2); };
+      const path = document.createElementNS(NS, 'path');
+      path.setAttribute('d', 'M0 0 L' + p(a0) + ' A15 15 0 0 1 ' + p(a1) + ' Z');
+      path.setAttribute('class', 'sb-clock-seg' + (i < c.filled ? ' filled' : ''));
+      svg.appendChild(path);
+    }
+    const row = document.createElement('div');
+    row.className = 'sb-clock-item';
+    const nm = document.createElement('span');
+    nm.className = 'sb-clock-name';
+    nm.textContent = c.name;
+    row.appendChild(svg);
+    row.appendChild(nm);
+    list.appendChild(row);
+  });
+  box.style.display = (clocks && clocks.length) ? '' : 'none';
+}
+
 function updateWorldClock(wt) {
   if (!wt) return;
   const timeKey    = (wt.time || '').toLowerCase();
@@ -6882,6 +6933,9 @@ function connect() {
       if (payload.stats.ruleset) {
         updateRulesetBadge(payload.stats.ruleset);
       }
+    }
+    if (payload.clocks !== undefined) {
+      renderRevealedClocks(payload.clocks);
     }
     if (payload.sent_log !== undefined) {
       _renderSentLog(payload.sent_log);
