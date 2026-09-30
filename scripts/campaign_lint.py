@@ -21,6 +21,7 @@ What it checks:
   - unfilled template lines, per file, with the reason and the line number
   - a character sheet's Identity / Combat Stats fields are filled
   - a campaign arc YAML block parses and names a current beat
+  - the Fantasy Statblocks plugin is pointed at the exported Bestiary/ folder
 
 Exit codes:  0 clean (or warnings only)   1 problems found   2 campaign not found
 With --strict, warnings also exit 1.
@@ -272,6 +273,82 @@ def lint_sheet(rep: Report, path: pathlib.Path, text: str) -> None:
     lint_placeholders(rep, name, text, skip_fences=False)
 
 
+# Fantasy Statblocks ships as the community plugin id "obsidian-5e-statblocks",
+# whatever the marketplace calls it. 4.x moved the bestiary location out of the
+# note body and into this setting, so the export is worthless without it.
+_STATBLOCK_PLUGIN = "obsidian-5e-statblocks"
+_STATBLOCK_SETTINGS = f".obsidian/plugins/{_STATBLOCK_PLUGIN}/data.json"
+# Where export_bestiary.py writes, and what session-workflow.md tells you to set
+# as the plugin's Bestiary Folder.
+_STATBLOCK_BESTIARY = "Bestiary"
+_STATBLOCK_FENCE = re.compile(r"^```statblock\b", re.MULTILINE)
+# The plugin's own default. It means "every folder in the vault", which is the
+# bug this check exists for: session-workflow.md says to set Bestiary Folder to
+# Bestiary/, nothing read the setting back, and the shipped config kept the
+# default. The plugin then parsed world.md, arc.md and the session log as
+# creatures, so the Bestiary view was 40 non-statblocks around 371 real ones.
+_STATBLOCK_DEFAULT_PATH = "/"
+
+
+def lint_statblocks(rep: Report, path: pathlib.Path) -> None:
+    """The Fantasy Statblocks plugin config, read the way the plugin reads it.
+
+    export_bestiary.py writing 334 correct notes proves nothing: the plugin only
+    parses notes inside its configured Bestiary Folder, and that setting lives in
+    the vault, written by a human, in a plugin folder the export never touches.
+    """
+    settings_file = path / _STATBLOCK_SETTINGS
+    if not settings_file.is_file():
+        # Only worth saying when there is a bestiary to render. A campaign that
+        # never ran the export has nothing to point the plugin at.
+        if (path / _STATBLOCK_BESTIARY).is_dir():
+            rep.add("warn", _STATBLOCK_SETTINGS, "Bestiary/ exists but Fantasy Statblocks is not installed",
+                    hint="install the plugin to read the bestiary in Obsidian; "
+                         "nothing at the table depends on it")
+        return
+    try:
+        settings = json.loads(settings_file.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        rep.add("error", _STATBLOCK_SETTINGS, f"unreadable plugin settings: {e}",
+                hint="Obsidian rewrites this file on quit; if it is corrupt, delete it "
+                     "and set the plugin's options again")
+        return
+
+    paths = [str(p).strip("/") for p in settings.get("paths") or []]
+    if not paths:
+        rep.add("error", _STATBLOCK_SETTINGS, "Bestiary Folder is empty",
+                hint="the plugin then parses no notes at all")
+        return
+    if any(p == "" for p in paths):
+        rep.add("error", _STATBLOCK_SETTINGS,
+                f'Bestiary Folder is "{_STATBLOCK_DEFAULT_PATH}" (the plugin default)',
+                hint='that is the whole vault, so the plugin parses world.md, arc.md and '
+                     'the session log as creatures and buries the real bestiary; '
+                     'set it to "Bestiary/"')
+        return
+
+    # Each configured folder must exist and actually hold statblocks, otherwise
+    # the setting is a typo that renders as an empty bestiary with no error.
+    for folder in paths:
+        d = path / folder
+        if not d.is_dir():
+            rep.add("error", f"{_STATBLOCK_SETTINGS} -> {folder}",
+                    "Bestiary Folder does not exist in the vault",
+                    hint="run scripts/export_bestiary.py --out <campaign> to create it")
+            continue
+        notes = sorted(d.glob("*.md"))
+        if not notes:
+            rep.add("warn", folder, "Bestiary Folder is empty",
+                    hint="python3 scripts/export_bestiary.py --out <campaign>")
+            continue
+        without = [n.name for n in notes if not _STATBLOCK_FENCE.search(n.read_text(encoding="utf-8"))]
+        if without:
+            shown = ", ".join(without[:5]) + ("..." if len(without) > 5 else "")
+            rep.add("warn", folder,
+                    f"{len(without)} of {len(notes)} notes have no ```statblock block: {shown}",
+                    hint="the plugin lists them as creatures with nothing to render")
+
+
 def lint_campaign(name: str, path: pathlib.Path | None = None) -> Report:
     path = pathlib.Path(path) if path else find_campaign(name, migrate=False)
     rep = Report(name, path)
@@ -307,6 +384,7 @@ def lint_campaign(name: str, path: pathlib.Path | None = None) -> Report:
             lint_sheet(rep, sheet, sheet.read_text(encoding="utf-8"))
         except OSError as e:
             rep.add("error", f"characters/{sheet.name}", f"unreadable: {e}")
+    lint_statblocks(rep, path)
     return rep
 
 

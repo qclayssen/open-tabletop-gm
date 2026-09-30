@@ -446,3 +446,105 @@ def test_skipped_yaml_check_is_stated_not_clean(monkeypatch):
     rep = campaign_lint.Report("demo", pathlib.Path("."))
     campaign_lint.lint_arc(rep, "type: sandbox\n", 1)
     assert any("SKIPPED" in f["message"] for f in rep.findings)
+
+
+# ── Fantasy Statblocks: the export is worthless if the plugin misses it ──────
+# These pin the bug that shipped: export_bestiary.py wrote 334 correct notes,
+# session-workflow.md said to set Bestiary Folder to Bestiary/, and the installed
+# config still held the plugin's own default of "/". Nothing read it back, so
+# the bestiary was silently unviewable.
+
+STATBLOCK_NOTE = ("---\nstatblock: inline\n---\n\n# Aboleth\n\n"
+                  "```statblock\nname: Aboleth\nac: 17\nhp: 135\n```\n")
+
+
+def bestiary_campaign(tmp_path, paths, *, notes=("Aboleth.md",), installed=True):
+    """A campaign with a Bestiary/ export and a plugin config pointing at `paths`."""
+    camp = campaign(tmp_path)
+    (camp / "Bestiary").mkdir(exist_ok=True)
+    for n in notes:
+        (camp / "Bestiary" / n).write_text(STATBLOCK_NOTE, encoding="utf-8")
+    if installed:
+        f = camp / ".obsidian/plugins/obsidian-5e-statblocks"
+        f.mkdir(parents=True, exist_ok=True)
+        (f / "data.json").write_text(json.dumps({"paths": paths}), encoding="utf-8")
+    return camp
+
+
+def test_the_plugin_default_path_is_an_error_not_a_working_bestiary(tmp_path):
+    """`/` is the plugin's default and means the whole vault. This is the bug."""
+    camp = bestiary_campaign(tmp_path, ["/"])
+    rep = campaign_lint.lint_campaign("demo", camp)
+    errs = findings(rep, "error")
+    assert errs, "paths=['/'] must not pass as a configured bestiary"
+    assert any('"/"' in f["message"] for f in errs), messages(rep)
+    # and it has to name the fix, since this is read at 9am before a session
+    assert any('Bestiary/' in f["hint"] for f in errs if f["hint"]), messages(rep)
+
+
+def test_pointing_the_plugin_at_bestiary_is_clean(tmp_path):
+    camp = bestiary_campaign(tmp_path, ["Bestiary/"])
+    rep = campaign_lint.lint_campaign("demo", camp)
+    assert not any("Statblock" in f["message"] or "Bestiary Folder" in f["message"]
+                   for f in rep.findings), messages(rep)
+
+
+def test_a_bare_slash_and_a_trailing_slash_are_the_same_folder(tmp_path):
+    """The plugin normalises, so `Bestiary` and `Bestiary/` must both be clean."""
+    for paths in (["Bestiary"], ["Bestiary/"]):
+        camp = bestiary_campaign(tmp_path, paths)
+        rep = campaign_lint.lint_campaign("demo", camp)
+        assert not any("Bestiary Folder" in f["message"] for f in rep.findings), \
+            (paths, messages(rep))
+
+
+def test_a_typo_in_the_path_is_an_error_not_an_empty_bestiary(tmp_path):
+    """Bestiary/ misspelt renders as an empty list with no error anywhere."""
+    camp = bestiary_campaign(tmp_path, ["Bestiaryy/"])
+    rep = campaign_lint.lint_campaign("demo", camp)
+    assert any("does not exist" in f["message"] for f in rep.findings), messages(rep)
+
+
+def test_an_empty_path_list_is_an_error(tmp_path):
+    camp = bestiary_campaign(tmp_path, [])
+    rep = campaign_lint.lint_campaign("demo", camp)
+    assert any("empty" in f["message"] for f in rep.findings), messages(rep)
+
+
+def test_notes_without_a_statblock_block_are_reported(tmp_path):
+    """Bestiary/README.md is prose. The plugin lists it as a creature."""
+    camp = bestiary_campaign(tmp_path, ["Bestiary/"],
+                             notes=("Aboleth.md", "README.md"))
+    (camp / "Bestiary" / "README.md").write_text("# Bestiary\n\nDo not edit.\n",
+                                                 encoding="utf-8")
+    rep = campaign_lint.lint_campaign("demo", camp)
+    warns = findings(rep, "warn")
+    assert any("README.md" in f["message"] and "1 of 2" in f["message"] for f in warns), \
+        messages(rep)
+
+
+def test_a_campaign_with_no_bestiary_says_nothing_about_the_plugin(tmp_path):
+    """No export means nothing to point the plugin at; silence is correct."""
+    rep = campaign_lint.lint_campaign("demo", campaign(tmp_path))
+    assert not any("Bestiary" in f["message"] or "Statblock" in f["message"]
+                   for f in rep.findings), messages(rep)
+
+
+def test_an_uninstalled_plugin_is_only_warned_about_when_a_bestiary_exists(tmp_path):
+    without = bestiary_campaign(tmp_path / "a", ["Bestiary/"], installed=False)
+    assert any("not installed" in f["message"] for f in
+               campaign_lint.lint_campaign("demo", without).findings)
+
+    with_none = campaign(tmp_path / "b")   # separate root, no Bestiary/ folder
+    assert not (with_none / "Bestiary").exists()
+    assert not any("not installed" in f["message"] for f in
+                   campaign_lint.lint_campaign("demo", with_none).findings)
+
+
+def test_corrupt_plugin_settings_are_an_error_not_a_crash(tmp_path):
+    camp = bestiary_campaign(tmp_path, ["Bestiary/"])
+    (camp / ".obsidian/plugins/obsidian-5e-statblocks/data.json").write_text(
+        "{ not json", encoding="utf-8")
+    rep = campaign_lint.lint_campaign("demo", camp)
+    assert rep.errors == 1, messages(rep)
+    assert any("unreadable" in f["message"] for f in rep.findings), messages(rep)
