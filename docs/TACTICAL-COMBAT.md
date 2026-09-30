@@ -70,6 +70,8 @@ All commands: `python3 scripts/tactics/combat.py -c <campaign> <command> ...`. E
 | `log [n]` | The last n combat log lines |
 | `reachable <id>` | Squares reachable walking and with Dash (used by the display) |
 | `targets <id>` | Every attack and target with hit chance (used by the display) |
+| `sight <id>` | Who that creature sees and with what cover, as text |
+| `card <id>` [--players] | The state card: creatures and named landmarks with squares, feet and cover. North is stated on the card. `--players` filters through the display's fog |
 | `end` | Ends combat: character sheets, tracker, session log, `state.md` |
 
 Flags for any command: `--roll N` (a player's natural roll; repeat for several), `--for-me` (the engine rolls the player's dice this time), `--react yes|no` (answer a reaction prompt; repeat when several are asked, in order), `--seed N` (repeatable engine dice, for demos).

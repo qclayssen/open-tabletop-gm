@@ -37,12 +37,14 @@ A map is a grid of 5 ft squares. You paint it with rectangles, in order, over a 
 | `diagonals` | no | `"5"` (default, 2014 rule: every square costs 5 ft) or `"5-10-5"` (every second diagonal costs 10 ft) |
 | `info` | no | A short description for the display |
 | `base` | no | Terrain under everything, default `floor` |
-| `features` | no | Rectangles: `type`, `x`, `y`, `w` and `h` (both default 1), optional `label`. The map editor rewrites this list; see below |
+| `features` | no | Rectangles: `type`, `x`, `y`, `w` and `h` (both default 1), optional `label` and optional `name`. The map editor rewrites this list; see below |
 | `terrain` | no | Extra terrain types for this map (see below) |
 | `zones` | no | x positions of dashed vertical lines across the board (the Mage Tower halfway line) |
 | `spawns` | no | Suggested token positions; `color` is a college (`quan`, `lore`, `pris`, `silv`, `with`), `danger` or `brass` |
 | `grid` | no | `cell_px`, `offset_x`, `offset_y` — the grid aligned to the map's artwork in pixels. See below |
 | `token_art` | no | Per-spawn token portraits for `scripts/map_to_atlas.py`: `{"<spawn id>": "<path>"}`. See below |
+
+A feature's optional `name` is what makes it addressable. Every feature gets a landmark handle when the map compiles: the `name` slugged (`north-door`) if you gave one, otherwise its type plus a per-type counter (`crate-1`, `crate-2`). So `combat.py card <token>` can list landmarks by name with their squares, and "move him behind the altar" becomes a checkable instruction instead of a guess. Naming features is optional and no shipped map needs it, but it is what turns scenery into somewhere to go. A duplicate name gets `-2`; a feature painted over entirely is dropped but still advances the counter, so handles stay stable.
 
 ### `grid`: the pixel size of a square
 

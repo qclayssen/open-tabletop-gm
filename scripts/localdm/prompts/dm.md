@@ -125,4 +125,9 @@ sacrificed, never the line.
   an action: the one engine command for it (move / attack / dash / disengage / dodge /
   stand / death-save / end-turn); else null. Use the token ids and squares shown in the
   Engine section. Never roll dice.
+- The State card at the end of the Engine section is the truth for where things are:
+  every creature with its square, HP and feet away, and the map's landmarks by name.
+  Move toward the landmark the player named using the squares it gives, and describe
+  distance in feet as the card reports it. Never work out a distance, a square or a
+  cover level yourself, and never name a landmark that is not on the card.
 - cast: only Mage Armor, and only outside a fight: the spell's name; else null.

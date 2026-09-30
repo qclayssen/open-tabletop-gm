@@ -188,9 +188,9 @@ def test_a_command_in_a_truncated_draft_runs_on_the_engine_exactly_once(tmp_path
     s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path, "council: off"),
                 bridge=b, combat="model")
     s.handle("I hold my ground.")
-    # `status` is a read-only probe _engine_context makes to build the context, not
-    # a command the DM asked for, so only the mutating ones are counted.
-    mutating = [c[0] for c in b.ran if c[0] not in ("status", "snapshot")]
+    # `status` and `card` are read-only probes _engine_context makes to build the
+    # context, not commands the DM asked for, so only the mutating ones are counted.
+    mutating = [c[0] for c in b.ran if c[0] not in ("status", "card", "snapshot")]
     assert mutating == ["dodge"], f"the engine ran {b.ran}, and only the re-draft may act"
 
 
@@ -875,7 +875,9 @@ def test_in_a_fight_an_unreadable_line_runs_nothing(tmp_path, monkeypatch):
     s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path), bridge=b, combat="engine")
     out = s.handle("I taunt the frog")
     assert len(out) == 1 and out[0].startswith("(engine) I could not read") and "shout" not in out[0]
-    assert {a[0] for a in b.ran} <= {"status"}            # read-only context, no action
+    # `card` is read-only like `status`: both are _engine_context probes, so an
+    # unreadable line still runs no action.
+    assert {a[0] for a in b.ran} <= {"status", "card"}
 
 
 # ─── T1.2: a fight owns every roll, so a check asked for in one is refused ────
