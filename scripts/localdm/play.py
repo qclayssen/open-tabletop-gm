@@ -259,6 +259,11 @@ class Session:
         self._status_lock = threading.Lock()
         self._guard_notes = {}       # guardrail kind -> ruling, cached for the session
         self._asked = set()          # questions the DM already escalated on
+        # The name ledger: which names this campaign established, and which one
+        # the model has started handing to everyone. Rebuilt from the digest each
+        # time the digest changes, and read on every reply (see Session._dm).
+        self.names = reply.NameLedger()
+        self._names_digest = None
         self.directives = []           # table settings from the display, for the next DM call
         self._narrated = []            # this turn's narration, for the display
         # combat "engine": the player's line is parsed, enemies pick by the
@@ -302,6 +307,19 @@ class Session:
                         "land, cost the character something concrete and named, and end on "
                         "the new situation they now have to deal with. Do not write 'you "
                         "fail' or 'nothing happens'.")
+    # The repeated-name escalation, the "Marcus" bug. One name, handed to the
+    # guard, the innkeeper and the porter, and the more turns go on the more it
+    # spreads, because every reply that repeats it is another mention the model
+    # was rewarded for. The rewrite says what to do with the others rather than
+    # only what not to do: "do not repeat the name" reads as "say less", and the
+    # scene loses its people. Roles are the repair, and they are the thing the
+    # model already knows how to write.
+    NAME_FIX = ("Your last draft gave one name to more than one person: {name} was the "
+                "guard, the innkeeper and the porter. A name belongs to one character. "
+                "Keep {name} for the one person the scene has already established, and "
+                "call everyone else by what they are: the guard, the porter, a student, "
+                "a voice in the corridor, or no name at all. Do not rename a character "
+                "who already has another name, and do not give {name} to anyone else.")
     OUTCOME_FIX = ("Your last draft resolved a check the player has not rolled yet. Rewrite "
                    "it: narrate only the character starting the attempt and what the world "
                    "does in response. Never say they found, spotted, succeeded or failed at "
@@ -338,6 +356,13 @@ class Session:
     def _dm(self, *, player="", engine="", notes="", task="") -> reply.DMReply:
         digest = self._digest()
         block = self._canon(player)
+        # The names the campaign itself vouches for: the PC in the sheet digest,
+        # the NPCs in the notes, the places. Established names are never throttled
+        # by the guardrail below, and re-reading the digest only when it changed
+        # keeps this off the hot path for a scene that is not moving.
+        if digest != self._names_digest:
+            self._names_digest = digest
+            self.names.establish(digest)
 
         def call(extra_task, *, retries=LENGTH_RETRIES, strict=True):
             """One draft, retried while the model overruns the cap.
@@ -425,6 +450,25 @@ class Session:
                          strict=False)
             if retry is not None and not reply.grants_injection(retry.narration):
                 r = retry
+        # The "Marcus" bug: one name spread across the whole cast, and worse the
+        # more turns go on. Checked in script rather than asked about in the
+        # prompt, because by the time the model has said "Marcus" forty times the
+        # recent window, the summary and canon all carry it, and one more line of
+        # prompt does not outweigh forty mentions.
+        #
+        # No advisor consult on this trip, unlike the two above: this one is not
+        # a judgement about good prose, it is a count, and a cloud round trip to
+        # be told that a number went up is not worth the seconds. The retry is
+        # adopted only when the rewrite is clean, so a false positive costs one
+        # call and nothing else, the same bargain as the rest.
+        over = self.names.suspect(r.narration)
+        if over:
+            retry = call(_join(task, self.NAME_FIX.format(name=over)), strict=False)
+            if retry is not None and not self.names.suspect(retry.narration):
+                r = retry
+        # Only prose the player was actually shown is counted, so the ledger
+        # never records a name the model was talked out of using.
+        self.names.observe(r.narration)
         return r
 
     def _say_status(self, text: str) -> None:
@@ -661,6 +705,12 @@ class Session:
         if args and args[0] == "end":                  # a fight closed by hand: forget its log
             self.fight_log = []
         res = self.bridge.run(full)
+        # A fight starting or ending is a new scene, and the name ledger is a
+        # per-scene one: the cast that shared a tavern has not been given the run
+        # of the battlefield. Derived from the command rather than by asking the
+        # bridge again, which would cost a snapshot call on the hot path.
+        if args and args[0] in ("start", "end") and res.code == 0:
+            self.names.begin()
         if res.needs_roll or res.needs_react:
             self.pending = {"args": list(args), "rolls": list(rolls), "reacts": list(reacts),
                             "react": res.needs_react}

@@ -349,3 +349,243 @@ def reveals_check_outcome(narration: str) -> bool:
     positive costs one model call, the same bargain the other guardrails make.
     """
     return bool(_CHECK_OUTCOME.search(narration or ""))
+
+
+# ---------------------------------------------------------------------------
+# The "Marcus" bug: one name repeated, and then every person in the scene wears
+# it. A per-scene ledger of names, kept in code rather than asked for in the
+# prompt, because the defect gets worse the more turns mention the name: by the
+# time the model has said "Marcus" forty times, the recent window, the summary
+# and canon all carry it, and the correction the player typed is one more
+# mention in a pile of them. Nothing in the prompt wins against that, so
+# nothing in the prompt is asked to.
+#
+# Deterministic and cheap: one regex pass and a couple of dicts per reply, on
+# the same path every turn already takes, with no model call to detect.
+# ---------------------------------------------------------------------------
+
+# A capitalised word, optionally a two-word name ("Maribeth Vance"). Three
+# letters minimum so "I" and "A" are not candidates.
+_NAME_WORD = re.compile(r"[A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})?")
+# What follows a mention inside the same sentence: an appositive role, or the
+# next capitalised word (a surname, or the next sentence's subject). Lowercase
+# words are verbs and noise, so "Marcus leans in" yields no follower and
+# "Marcus the guard" yields "the guard".
+_FOLLOWER = re.compile(r"\s+(?:(?:the|a|an)\s+[a-z]+|[A-Z][a-z]{2,})")
+# A sentence boundary, for the same "is this the first word of a sentence"
+# question the follower needs.
+_SENTENCE = re.compile(r"[.!?\n]")
+
+# Capitalised words that are not people: function words, numerals, and the
+# common nouns a small model puts at the head of a sentence. The nouns matter as
+# much as the function words, because "Thunder rolls. Thunder shakes the shutters.
+# Thunder fades." is three mentions of a name by this measure.
+#
+# Deliberately one-sided. A word missing from this list can cost a wasted rewrite,
+# which is the cheap direction; a word wrongly IN it exempts a character from the
+# check, which is the expensive one. So this list is generous and the rule is
+# strict, never the other way round.
+_NOT_NAMES = frozenset("""
+the a an and or but so yet then now here there this that these those
+one two three four five six seven eight nine ten eleven twelve twenty thirty
+first second third fourth next last another other same whole half
+rain wind sun moon star storm thunder lightning fog mist smoke dust ash snow ice
+fire flame ember water river sea wave stone stones wood iron steel gold silver
+light dark night day morning evening dusk dawn shadow shadows silence laughter
+music voices voice sound noise footsteps torch torches lantern candles candle
+door doors gate gates floor floors stair stairs wall walls ceiling corridor hall
+kitchen courtyard tower library tavern cellar road road bridge path
+look listen watch wait hold keep take give come go turn step stand opens closes
+yes no please nothing something anything somewhere anyone everyone somebody
+nobody hey oh ah well
+behind before after under over near beyond through across around along
+inside outside above below between within without from into onto upon
+down up out off away back still even only just also very too more most less
+least each every both few several many much some any all none
+your his her its their our my mine yours theirs ours
+""".split())
+
+
+def _sentence_start(text: str, at: int) -> bool:
+    head = text[:at].rstrip()
+    return (not head) or head[-1] in ".!?\n"
+
+
+def _mentions(text: str, known: set) -> dict:
+    """name -> {"count": int, "followers": set} for the personal names in `text`.
+
+    A capitalised word counts as a name when it recurs in this text, when it is
+    not the first word of its sentence, when this ledger already knows it, or
+    when it carries an appositive. The third of those is the scene memory: once
+    "Maribeth" has been seen as a name, the sentence-initial "Maribeth." of the
+    next reply is her too. The fourth is a naming pattern rather than a sentence
+    subject, and it is what carries the slow form of the bug into the ledger.
+    """
+    text = text or ""
+    found = {}
+    tally = {}
+    for word in _NAME_WORD.findall(text):
+        tally[word.split(" ", 1)[0]] = tally.get(word.split(" ", 1)[0], 0) + 1
+    for m in _NAME_WORD.finditer(text):
+        given = m.group(0).split(" ", 1)[0]
+        if given.lower() in _NOT_NAMES:
+            continue
+        tail = _SENTENCE.split(text[m.end():], maxsplit=1)[0]
+        follower = _FOLLOWER.match(tail)
+        # Four ways in, because a capitalised word at the head of a sentence and
+        # a name look identical. It recurs in this text; it is not the first
+        # word of its sentence; the ledger already knows it; or it carries an
+        # appositive ("Marcus the porter"), which is a naming pattern rather
+        # than a sentence subject, and is the one that carries the slow form of
+        # this bug.
+        if not (tally[given] >= 2 or given in known or follower
+                or not _sentence_start(text, m.start())):
+            continue
+        entry = found.setdefault(given, {"count": 0, "followers": set()})
+        entry["count"] += 1
+        if follower:
+            entry["followers"].add(follower.group(0).strip())
+    return found
+
+
+def _candidates(text: str) -> set:
+    """Every capitalised name-shaped word in `text`, however it got its capital.
+
+    Looser than `_mentions`, and used for one thing only: deciding whether
+    anyone else is in the reply. A single sentence-initial "Maribeth." is not
+    counted as a mention of Maribeth, because a name and a capitalised first
+    word look the same, but it is still a person in the room, and "is anyone
+    else here" is exactly the question the overuse rule asks.
+    """
+    return {w.split(" ", 1)[0] for w in _NAME_WORD.findall(text or "")
+            if w.split(" ", 1)[0].lower() not in _NOT_NAMES}
+
+
+# A name this many times inside one reply is not a name, it is a default.
+_OVERUSE = 3
+# ... and a name this dominant across the scene has stopped being a person.
+_SCENE_SHARE = 0.6
+_SCENE_CAST = 3
+
+
+class NameLedger:
+    """Which names the scene has actually established, and which one is taking over.
+
+    `establish` is for the names the campaign itself vouches for: the player
+    character in the sheet digest, the NPCs in the campaign notes, the tokens
+    on the grid. Those are never throttled, so a PC named in nearly every turn
+    costs nothing: the ledger is there to catch a name the campaign never
+    introduced being handed to person after person.
+
+    `suspect` is the check, and it answers with the offending name so the caller
+    can say which one in the corrective retry.
+    """
+
+    def __init__(self):
+        self.established = set()
+        self.turns = []            # one dict of name -> count, per observed reply
+        self.roles = []            # per reply, the appositives each name wore
+        self.known = set()         # names seen behaving like names
+
+    def begin(self) -> None:
+        """Start a new scene: the old cast is a different room now.
+
+        Established names survive, because the campaign's cast does, but the
+        per-turn history does not: a name that dominated a crowded tavern has
+        not been given the run of a new one.
+        """
+        self.turns = []
+        self.roles = []
+        self.known = set()
+
+    def establish(self, text: str) -> None:
+        """Take every capitalised personal name in `text` as the campaign's own.
+
+        Over-approximates on purpose: it reads the sheet digest, the state file
+        and the notes, so it picks up section headings and place names as well as
+        the cast. That is the cheap direction. A name the campaign states once in
+        prose and the ledger fails to recognise is a wasted rewrite; a heading
+        word in the established set only means one more name is never throttled.
+        """
+        for m in _NAME_WORD.finditer(text or ""):
+            given = m.group(0).split(" ", 1)[0]
+            if given.lower() not in _NOT_NAMES:
+                self.established.add(given)
+                self.known.add(given)
+
+    def observe(self, narration: str) -> None:
+        """Record one accepted reply. The ledger only ever sees prose the player
+        was shown, so what it counts is what the model was rewarded for."""
+        found = _mentions(narration, self.known)
+        self.turns.append({n: e["count"] for n, e in found.items()})
+        self.roles.append({n: set(e["followers"]) for n, e in found.items()})
+        self.known.update(found)
+
+    def cast(self) -> set:
+        """Every name the scene has used, in any reply."""
+        return {n for turn in self.turns for n in turn}
+
+    def _drowned(self) -> str:
+        """A name that has taken over the scene, or "".
+
+        The slow form of the bug: one name in most replies while several other
+        people are around. It is a scene measurement rather than a reply one,
+        because "Marcus" in a single reply can be a joke about Marcus, and the
+        defect is only visible once other people exist and the name is on more
+        than one of them.
+
+        The role test is what keeps a long conversation with one NPC out of it.
+        Ten turns of "Halda reads, Halda turns a page, Halda answers" is a
+        dominant name and a perfectly good scene; the same name also on the
+        porter and the archivist is not. Sharing the room is not the defect.
+        Being several people is.
+        """
+        if len(self.turns) < _SCENE_CAST or len(self.cast()) < _SCENE_CAST:
+            return ""
+        for name in sorted(self.cast() - self.established):
+            hits = sum(1 for turn in self.turns if turn.get(name))
+            said = sum(turn.get(name, 0) for turn in self.turns)
+            roles = set().union(*[r.get(name, set()) for r in self.roles]) \
+                if self.roles else set()
+            if hits / len(self.turns) < _SCENE_SHARE:
+                continue
+            if len(roles) >= 2 or said >= 2 * hits:
+                return name
+        return ""
+
+    def suspect(self, narration: str) -> str:
+        """The name `narration` over-applies, or "".
+
+        Two shapes, and the second is the sharp one:
+
+          - a name said implausibly often in one reply, relative to everyone
+            else in it, which is the "Marcus" bug inside four sentences;
+          - the same name on two or three different people in one reply
+            ("Marcus the guard", "Marcus the innkeeper"), which is the same
+            defect at two mentions.
+
+        An established name is never returned. That exemption is the whole
+        false-positive budget: a PC who is in most turns, or an NPC the campaign
+        notes introduce, is doing exactly what the ledger would otherwise call
+        suspicious.
+        """
+        drowned = self._drowned()
+        if drowned and drowned in (narration or ""):
+            return drowned
+        found = _mentions(narration, self.known)
+        everyone = _candidates(narration)
+        for name, entry in sorted(found.items(), key=lambda kv: -kv[1]["count"]):
+            if name in self.established:
+                continue
+            others = everyone - {name}
+            count, roles = entry["count"], len(entry["followers"])
+            # Three mentions, and either someone else is in the reply or the name
+            # is on three different people. A lone name said three times in four
+            # sentences is allowed: that is a reply about one character.
+            if count >= _OVERUSE and (others or count >= _OVERUSE + 1 or roles >= 3):
+                return name
+            # Two mentions on two different people, with someone else named in
+            # the reply, is the same defect at its smallest.
+            if count >= 2 and roles >= 2 and others:
+                return name
+        return ""
