@@ -117,6 +117,23 @@ def test_a_blank_answer_spent_on_reasoning_says_so():
     assert "400/400" in msg and "reasoning" in msg and "max_tokens" in msg
 
 
+def test_finish_reason_is_reported_and_defaults_to_stop():
+    """The DM's reply is narration plus a JSON line in that order, so a reply the
+    endpoint cut short has no directive in it at all. Nothing read finish_reason
+    before, so the turn was silently voided. It has to be readable from here."""
+    seen = []
+    c = llm.Client(base_url="http://x", api_key="", transport=fake(seen=seen))
+    assert c.chat("m", []).finish_reason == "stop", "an endpoint that omits it is not truncating"
+
+    def truncating(url, body, headers, timeout):
+        return {"model": "m", "choices": [{"finish_reason": "length",
+                                           "message": {"content": "A long scene and th"}}]}
+
+    c = llm.Client(base_url="http://x", api_key="", transport=truncating)
+    r = c.chat("m", [], max_tokens=600)
+    assert r.finish_reason == "length" and r.text.endswith("and th")
+
+
 def test_a_genuinely_empty_answer_without_reasoning_is_returned_as_empty():
     """Not every blank answer is a budget problem. With no reasoning behind it and
     tokens to spare, "   " is a real (if useless) answer and the caller decides."""

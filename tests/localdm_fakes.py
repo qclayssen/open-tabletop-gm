@@ -13,13 +13,30 @@ from localdm.bridge import Result    # noqa: E402,F401  (re-exported for the tes
 
 
 class FakeClient:
-    """responder(model, messages, role) -> reply text. Records every call."""
+    """responder(model, messages, role) -> reply text. Records every call.
 
-    def __init__(self, responder):
+    `finish_reason` scripts the truncation the real endpoint reports, so a test can
+    replay a `finish_reason: length` overrun. A str applies to every call; a list is
+    consumed one entry per call, and the last entry repeats, so
+    `["length", "stop"]` is "overrun once, then answer properly".
+    """
+
+    def __init__(self, responder, finish_reason=None):
         self.responder = responder
+        self.finish_reason = finish_reason
         self.calls = []
         self.reasoning = []
         self._lock = threading.Lock()
+
+    def _finish(self) -> str:
+        if self.finish_reason is None:
+            return "stop"
+        if isinstance(self.finish_reason, str):
+            return self.finish_reason
+        item = self.finish_reason[0] if len(self.finish_reason) > 1 else self.finish_reason[0]
+        if len(self.finish_reason) > 1:
+            self.finish_reason = self.finish_reason[1:]
+        return item
 
     def chat(self, model, messages, *, max_tokens=600, temperature=0.8, role="dm",
              reasoning=None):
@@ -27,7 +44,7 @@ class FakeClient:
             self.calls.append((model, role, messages))
             self.reasoning.append((role, reasoning))
         text = self.responder(model, messages, role)
-        return llm.Reply(text, model, 100, 10, 0.0)
+        return llm.Reply(text, model, 100, max_tokens, 0.0, self._finish())
 
     def roles(self):
         return [c[1] for c in self.calls]

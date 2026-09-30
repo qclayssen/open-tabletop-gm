@@ -44,6 +44,15 @@ class Reply:
     prompt_tokens: int
     completion_tokens: int
     seconds: float
+    # Why generation stopped. "length" means the answer hit `max_tokens` and was
+    # cut off mid-sentence, which for the DM is not a short answer: the JSON
+    # directive line is the LAST thing the prompt asks for, so a truncated turn
+    # arrives as narration with no directive in it at all. Nothing in the tree
+    # read this before, so the turn was silently voided (the 2026-09-28 arbiter
+    # run, 2629+ tokens at a 3000-token cap, finish_reason: length). Callers that
+    # need a whole turn decide for themselves; a truncated advisor note is still
+    # worth reading, so this reports rather than raises.
+    finish_reason: str = "stop"
 
 
 @dataclass
@@ -118,8 +127,13 @@ class Client:
                     f"reasoning, none to the answer. Raise max_tokens, or set "
                     f"reasoning_effort (GM_REASONING=none).")
         usage = data.get("usage") or {}
+        try:
+            finish = (data["choices"][0] or {}).get("finish_reason") or "stop"
+        except (KeyError, IndexError, TypeError):
+            finish = "stop"
         reply = Reply(text, data.get("model") or model, int(usage.get("prompt_tokens") or 0),
-                      int(usage.get("completion_tokens") or 0), round(time.monotonic() - start, 2))
+                      int(usage.get("completion_tokens") or 0), round(time.monotonic() - start, 2),
+                      str(finish))
         self._log(role, model, reply)
         return reply
 
