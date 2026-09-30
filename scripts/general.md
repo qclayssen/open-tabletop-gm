@@ -113,8 +113,10 @@ python3 $SKILL/scripts/world.py -c $CAMP --seed 7 tick --days 3  # calendar.py d
 
 **When to run:** `add` when a faction becomes active; `clock`/`lean` when the
 party acts against or for one; `status` + `complete` at `/gm save`. A full clock
-fires and waits for the GM — narrate the visible change, write it under
-`state.md → ## Faction Moves`, then `complete` it.
+fires and waits for the GM. `tick` and `clock` write the result into
+`state.md → ## Faction Moves` themselves, so the DM sees the off-screen world
+even if you forget; your job is to narrate it in your own words, then
+`complete` it.
 
 ---
 

@@ -13,6 +13,8 @@ The rules under test, in one place:
   * held and fired factions never tick;
   * party interference is a direct segment change, not a permanent modifier;
   * a clock created today cannot fill today;
+  * a tick writes the move into state.md's `## Faction Moves` (appending, never
+    clobbering) so the DM digest can read it;
   * everything printed is GM-only, and calendar.py advance drives the ticks.
 
 Run from repo root:
@@ -407,6 +409,252 @@ class FactionClockTests(unittest.TestCase):
         code, out, err = _run(CALENDAR, ["advance", "1", "day"], self.root, self.campaign)
         self.assertEqual(code, 0, "the date must still advance")
         self.assertIn("faction clocks skipped", out + err)
+
+
+STATE_MD = """# Campaign: unittest
+**Created:** 2026-01-01  **Last session:** -  **Session count:** 0  **System Module:** dnd5e  **System Version:** 1.0
+
+## Current Situation
+- **Location:** Frog Pond
+
+## Pinned Facts
+*(none pinned yet)*
+
+## World State
+- **In-world date:** 1 Harvestmoon 1247
+- **Faction states:**
+  - Red Hand: unknown
+
+## Active Quests
+*(none yet)*
+
+## Open Threads & Rumours
+- Who burned the south granary?
+
+## Faction Moves
+*Updated at the end of each session - what each active faction did while the party was occupied.*
+*(none yet)*
+
+## Recent Events
+- Session 1: the party arrived.
+
+## Active Combat
+*(none)*
+
+## GM Notes (hidden from players)
+Do not spoil the granary.
+"""
+
+
+class FactionMovesStateWriteTests(unittest.TestCase):
+    """The tick writes `## Faction Moves` into state.md, so the DM is not blind.
+
+    world.py used to print "record this under `## Faction Moves`" and leave the
+    writing to the GM, while localdm/context.py's digest read that section. A GM
+    who forgot left the DM with no off-screen world at all, which is the exact
+    failure the clocks exist to prevent. These tests pin the write, the append
+    (not replace), the survival of every other section, and the GM-facing output
+    that must not change.
+    """
+
+    def setUp(self):
+        self.td = tempfile.TemporaryDirectory()
+        self.root = pathlib.Path(self.td.name)
+        self.campaign = f"unittest-moves-{os.getpid()}-{id(self)}"
+        self.camp_dir = self.root / "campaigns" / self.campaign
+        self.camp_dir.mkdir(parents=True)
+        self.state_path = self.camp_dir / "state.md"
+        self.state_path.write_text(STATE_MD, encoding="utf-8")
+        self._add("Red Hand", "seize the granary", 6)
+        self._init_calendar()
+
+    def tearDown(self):
+        self.td.cleanup()
+
+    # ── helpers ─────────────────────────────────────────────────────────────
+
+    def _world(self, *args):
+        return _world(self.root, self.campaign, *args)
+
+    def _add(self, name, goal, clock=4):
+        return _world(self.root, self.campaign, "add", name, "--goal", goal, "--clock", str(clock))
+
+    def _init_calendar(self, date="1 Harvestmoon 1247"):
+        return _run(CALENDAR, ["init", "--date", date, "--time", "morning",
+                               "--months", "Frostfall,Harvestmoon", "--month-length", "30"],
+                    self.root, self.campaign)
+
+    def _state(self) -> str:
+        return self.state_path.read_text(encoding="utf-8")
+
+    def _moves(self) -> str:
+        """Just the body of `## Faction Moves`, so assertions cannot pass on a
+        line that happens to sit in some other section."""
+        text = self._state()
+        start = re.search(r"^## Faction Moves\s*$", text, re.M)
+        self.assertIsNotNone(start, "the section must still be there")
+        rest = text[start.end():]
+        nxt = re.search(r"^## ", rest, re.M)
+        return (rest[:nxt.start()] if nxt else rest).strip()
+
+    def _fire(self):
+        """Drive Red Hand to a full clock with direct moves, within the
+        ±3 interference limit the engine enforces."""
+        while self._faction("Red Hand")["current"] < 6:
+            self._world("clock", "Red Hand", "3")
+        self.assertTrue(self._faction("Red Hand")["fired"])
+
+    def _faction(self, name) -> dict:
+        data = json.loads((self.camp_dir / "factions.json").read_text(encoding="utf-8"))
+        return data["factions"][name]
+
+    def _tick_until_moved(self, tries=12):
+        """Advance until a clock actually moves, so the assertion is about the
+        write and not about a d6."""
+        for seed in range(tries):
+            self._world("--seed", str(seed), "tick", "--days", "1")
+            if self._moves():
+                return seed
+        self.fail("no seed moved a clock in %d ticks" % tries)
+
+    # ── the write ───────────────────────────────────────────────────────────
+
+    def test_a_tick_records_the_move_in_state_md(self):
+        self._tick_until_moved()
+        moves = self._moves()
+        self.assertIn("Red Hand", moves)
+        self.assertIn("seize the granary", moves)
+        self.assertIn("Harvestmoon", moves, "the move is stamped in world time, "
+                                           "so it is findable three sessions later")
+        self.assertNotIn("*(none yet)*", moves,
+                         "an empty-section marker above real moves tells the DM the "
+                         "section is empty when it is not")
+
+    def test_the_digest_actually_reads_what_the_tick_wrote(self):
+        """The point of the whole change: the entry has to survive context.py's
+        filtering, or writing it buys the DM nothing."""
+        self._tick_until_moved()
+        sys.path.insert(0, str(REPO))
+        from scripts.localdm import context as ctx
+        digest = ctx.state_digest(self._state())
+        self.assertIn("### Faction Moves", digest)
+        self.assertIn("Red Hand", digest)
+
+    def test_a_fired_clock_is_recorded_as_completed(self):
+        self._fire()
+        moves = self._moves()
+        self.assertIn("completed", moves)
+        self.assertIn("seize the granary", moves)
+
+    def test_party_interference_is_recorded_too(self):
+        self._world("clock", "Red Hand", "2", "--notes", "let a caravan through")
+        moves = self._moves()
+        self.assertIn("let a caravan through", moves)
+
+    def test_a_tick_that_moves_nothing_records_nothing(self):
+        """Rolls that did nothing are GM bookkeeping. Writing "nothing happened"
+        every day would drown the moves that did."""
+        before = self._state()
+        for seed in (1, 2, 3):        # d6 faces 1-3 map to zero progress
+            self._world("--seed", str(seed), "tick", "--days", "1")
+        self.assertEqual(before, self._state(),
+                         "state.md must be left byte-identical when no clock moved")
+
+    # ── append, do not clobber ──────────────────────────────────────────────
+
+    def test_a_second_tick_appends_rather_than_replaces(self):
+        self._tick_until_moved()
+        first = self._moves()
+        for seed in range(1, 12):
+            self._world("--seed", str(seed), "tick", "--days", "1")
+            second = self._moves()
+            if second != first:
+                break
+        else:
+            self.fail("no second tick moved a clock")
+        self.assertTrue(second.startswith(first),
+                        "the earlier moves must survive verbatim")
+        self.assertGreater(len(second), len(first))
+
+    def test_an_unrelated_section_and_the_rest_of_the_file_survive(self):
+        self._tick_until_moved()
+        text = self._state()
+        for section in ("## Current Situation", "## Pinned Facts", "## World State",
+                        "## Active Quests", "## Open Threads & Rumours",
+                        "## Recent Events", "## Active Combat",
+                        "## GM Notes (hidden from players)"):
+            self.assertIn(section, text, f"{section} was lost by the faction write")
+        self.assertIn("Do not spoil the granary.", text)
+        self.assertIn("- Session 1: the party arrived.", text)
+        self.assertEqual(text.count("## Faction Moves"), 1, "no duplicate section")
+
+    def test_a_section_still_holding_only_its_template_line_is_filled_in(self):
+        text = re.sub(r"## Faction Moves\n.*?\n\n", "## Faction Moves\n*(none yet)*\n\n",
+                      self._state(), flags=re.S)
+        self.state_path.write_text(text, encoding="utf-8")
+        self._tick_until_moved()
+        moves = self._moves()
+        self.assertNotIn("*(none yet)*", moves)
+        self.assertNotIn("Updated at the end of each session", moves,
+                         "the template helper line is GM instructions, not a move")
+        self.assertIn("Red Hand", moves)
+
+    def test_a_missing_section_is_created_rather_than_dropped(self):
+        """A hand-written state.md with no `## Faction Moves` used to be the
+        case that lost the move entirely, so the section is created in place."""
+        text = re.sub(r"## Faction Moves\n.*?\n\n", "", self._state(), flags=re.S)
+        self.state_path.write_text(text, encoding="utf-8")
+        self._tick_until_moved()
+        out = self._state()
+        self.assertEqual(out.count("## Faction Moves"), 1)
+        self.assertIn("Red Hand", self._moves())
+        # and it lands where templates/state.md keeps it, above Recent Events,
+        # not dumped at the end under the DM-only notes.
+        self.assertLess(out.index("## Faction Moves"), out.index("## Recent Events"))
+        self.assertLess(out.index("## Recent Events"), out.index("## GM Notes"))
+
+    # ── safety ──────────────────────────────────────────────────────────────
+
+    def test_the_previous_state_md_is_kept_as_a_bak(self):
+        before = self._state()
+        self._tick_until_moved()
+        bak = self.camp_dir / "state.md.bak"
+        self.assertTrue(bak.exists(), "the .bak convention is what makes this write safe")
+        self.assertEqual(bak.read_text(encoding="utf-8"), before)
+        self.assertNotEqual(self._state(), before)
+        self.assertFalse(list(self.camp_dir.glob("*.tmp")),
+                         "the temp file must be renamed away, not left behind")
+
+    def test_a_campaign_with_no_state_md_is_left_alone(self):
+        """Not every directory world.py resolves has a state.md; making one up
+        would invent a campaign file the linter then has to check."""
+        self.state_path.unlink()
+        code, out, _ = self._world("--seed", "5", "tick", "--days", "1")
+        self.assertEqual(code, 0, out)
+        self.assertFalse(self.state_path.exists())
+        self.assertFalse((self.camp_dir / "state.md.bak").exists())
+
+    # ── the GM's terminal is unchanged ──────────────────────────────────────
+
+    def test_the_tick_still_prints_exactly_what_it_printed(self):
+        code, out, _ = self._world("--seed", "5", "tick", "--days", "1")
+        self.assertEqual(code, 0)
+        self.assertIn("GM-only", out)
+        self.assertIn("one hidden d6 per faction per day", out)
+        self.assertIn("Red Hand:", out)
+        self.assertIn("d6 5", out)
+        # Writing the file is an addition, not a replacement of the GM's view.
+        self.assertNotIn("state.md", out)
+
+    def test_a_fired_clock_still_tells_the_gm_to_narrate_and_complete(self):
+        # The GM's terminal is unchanged by the write: the same two lines a GM
+        # has always read, saying what to narrate and which call acknowledges.
+        self._world("clock", "Red Hand", "3")
+        code, out, _ = self._world("clock", "Red Hand", "3")
+        self.assertEqual(code, 0, out)
+        self.assertIn("COMPLETE", out)
+        self.assertIn("Faction Moves", out)
+        self.assertIn("complete", out)
 
 
 if __name__ == "__main__":

@@ -151,8 +151,9 @@ python3 $SKILL/scripts/world.py -c $CAMP --seed 7 tick --days 3
 
 **When to run:** `add` when a faction becomes active; `clock`/`lean` the moment
 the party acts against or for one; `status` and `complete` at `/gm save`; never
-`tick` by hand during play — `calendar.py advance` owns that. A fired clock
-(`status` shows `FIRED`) needs a `## Faction Moves` line in `state.md` and a
+`tick` by hand during play; `calendar.py advance` owns that. `tick` and `clock`
+write the result into `state.md → ## Faction Moves` themselves; a fired clock
+(`status` shows `FIRED`) additionally needs your narration on that line and a
 `complete` call; see the `/gm factions` procedure in SKILL-commands.md.
 
 ---

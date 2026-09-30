@@ -44,6 +44,8 @@ import json
 import os
 import pathlib
 import random
+import re
+import shutil
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -85,6 +87,10 @@ def factions_file(campaign: str) -> pathlib.Path:
 
 def faction_log_file(campaign: str) -> pathlib.Path:
     return get_campaign_dir(campaign) / "faction_log.md"
+
+
+def state_file(campaign: str) -> pathlib.Path:
+    return get_campaign_dir(campaign) / "state.md"
 
 
 def in_game_date(campaign: str) -> str:
@@ -222,6 +228,110 @@ def log_faction_event(campaign: str, event: str) -> None:
         f.write(f"\n## {timestamp} ({GM_ONLY})\n{event}\n")
 
 
+# ─── state.md: ## Faction Moves ──────────────────────────────────────────────
+
+MOVES_HEADING = "## Faction Moves"
+
+# The template lines that mean "this section has nothing in it yet": the
+# *(none yet)* marker and templates/state.md's italic helper sentence. The
+# digest drops both (is_template_line), so leaving one above real entries would
+# tell the DM a section was empty when it is not. Matched on the italic shape
+# rather than the exact wording, so a reworded template still matches.
+_EMPTY_MOVES = ("*(none yet)*",)
+_HELPER_LINE = re.compile(r"^\*[^*].*[^*]\*$")
+
+# Where a state.md with no `## Faction Moves` gets one. templates/state.md keeps
+# the section between "Open Threads & Rumours" and "Recent Events", so that is
+# where a missing section is created rather than at the end of the file, where
+# it would land under the DM-only notes.
+_MOVES_ANCHOR = "## Recent Events"
+
+
+def _moves_block(text: str, entries: list) -> Optional[str]:
+    """The whole of `text` with `entries` appended under `## Faction Moves`.
+
+    Splitting the section at the next `## ` heading is what makes this an
+    append: every other section, and every move already recorded above the new
+    ones, is copied through untouched. When the section is absent it is created
+    just above `## Recent Events`, which is where templates/state.md keeps it.
+    """
+    lines = text.splitlines()
+
+    start = next((i for i, ln in enumerate(lines)
+                  if ln.strip().lower() == MOVES_HEADING.lower()), None)
+
+    if start is not None:
+        end = len(lines)
+        for j in range(start + 1, len(lines)):
+            if lines[j].startswith("## "):
+                end = j
+                break
+        # Template lines only ever sit above real content, so dropping them is
+        # a no-op on a section that already has moves in it.
+        body = [ln for ln in lines[start + 1:end]
+                if ln.strip() not in _EMPTY_MOVES and not _HELPER_LINE.match(ln.strip())]
+        while body and not body[-1].strip():
+            body.pop()
+        # A blank line after the last entry when the section is not the last
+        # heading in the file, so the next `## ` does not look glued to it.
+        block = entries + ([""] if end < len(lines) else [])
+        lines[start + 1:end] = body + ([""] if body else []) + block
+        return "\n".join(lines) + "\n"
+
+    # No section yet: create one just above the anchor heading, keeping the
+    # blank-line separation the rest of the file uses.
+    at = next((i for i, ln in enumerate(lines)
+               if ln.strip().lower() == _MOVES_ANCHOR.lower()), len(lines))
+    head = lines[:at]
+    while head and not head[-1].strip():
+        head.pop()
+    tail = lines[at:]
+    while tail and not tail[0].strip():
+        tail.pop(0)
+    block = [MOVES_HEADING, ""] + entries
+    out = head + ([""] if head else []) + block + (["", *tail] if tail else [])
+    return "\n".join(out) + "\n"
+
+
+def append_faction_moves(campaign: str, entries: list) -> bool:
+    """Write tick results into state.md's `## Faction Moves`. True if written.
+
+    world.py used to print an instruction telling the GM to record the move by
+    hand while localdm/context.py's digest read that section, so a GM who
+    forgot left the DM blind about the off-screen world. The clock result is
+    now written here; the GM still narrates it in their own words, which
+    SKILL.md asks for and which this does not attempt to fake.
+
+    Appends only, atomically, with the same .bak convention as
+    tactics/state.py's save(): a failed or interrupted write leaves the previous
+    state.md intact. Returns False when there is nothing to say or no state.md
+    to say it in, so a campaign without one is not disturbed.
+    """
+    entries = [e for e in entries if e]
+    if not entries:
+        return False
+    spath = state_file(campaign)
+    if not spath.exists():
+        return False
+    try:
+        text = spath.read_text(encoding="utf-8")
+    except OSError:
+        return False
+
+    new = _moves_block(text, entries)
+    if new == text:
+        return False
+
+    tmp = spath.with_name(spath.name + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(new)
+        f.flush()
+        os.fsync(f.fileno())
+    shutil.copy2(spath, spath.with_name(spath.name + ".bak"))
+    os.replace(tmp, spath)
+    return True
+
+
 # ─── Reporting ───────────────────────────────────────────────────────────────
 
 def _clock_bar(faction: Faction) -> str:
@@ -233,13 +343,27 @@ def _count(steps: int, unit: str) -> str:
     return f"{steps} {unit}{'' if steps == 1 else 's'}"
 
 
+def _moved_entry(faction: Faction, old: int, note: str) -> str:
+    """One state.md line for a clock that gained or lost segments."""
+    return (f"{faction.name} {old}/{faction.clock_size} → "
+            f"{faction.current}/{faction.clock_size} ({note} *{faction.goal}*).")
+
+
+def _fired_entry(faction: Faction) -> str:
+    """One state.md line for a full clock: the goal landed, the world changed."""
+    return (f"**{faction.name}** has completed *{faction.goal}* "
+            f"(clock {faction.current}/{faction.clock_size}); the change is now "
+            f"visible in the world.")
+
+
 def _fired_lines(faction: Faction, lines: list) -> None:
     lines.append(
         f"  ⚡ {faction.name}: *{faction.goal}* — COMPLETE"
         + (f" ({faction.fired_at})" if faction.fired_at else "")
     )
-    lines.append(f"    Narrate the visible change, record it under `## Faction Moves`, "
-                 f"then: world.py -c <campaign> complete \"{faction.name}\".")
+    lines.append(f"    The clock result is recorded under `## Faction Moves`; add the visible "
+                 f"change in your own words, then: world.py -c <campaign> "
+                 f"complete \"{faction.name}\".")
 
 
 # ─── Core functions ───────────────────────────────────────────────────────────
@@ -295,6 +419,7 @@ def tick_factions(campaign: str, days: int, rng: Optional[random.Random] = None)
     lines = [f"[{GM_ONLY}] {_count(steps, unit)} passed{stamp} — one hidden d6 per faction per {unit}."]
     fired_this_tick: list = []
     skipped: dict = {}
+    moves: list = []          # the lines that go into state.md's ## Faction Moves
 
     for step in range(steps):
         for faction in state.factions.values():
@@ -331,11 +456,19 @@ def tick_factions(campaign: str, days: int, rng: Optional[random.Random] = None)
                 f"  (d6 {face} → {progress:+d} segment{'' if abs(progress) == 1 else 's'})"
                 f"  · {unit} {step + 1}/{steps}")
 
+            # Only a real move goes into state.md: the rolls that did nothing
+            # are GM bookkeeping (faction_log.md keeps them), and writing
+            # "nothing happened" every day would drown the moves that did.
+            dated = f"- *{today}*: " if today else "- "
+            if faction.current != old:
+                moves.append(dated + _moved_entry(faction, old, "off-screen, toward"))
+
             if faction.current >= faction.clock_size and not faction.fired:
                 faction.fired = True
                 faction.fired_at = today or datetime.now().isoformat(timespec="seconds")
                 faction.fired_tick = state.current_tick + step
                 fired_this_tick.append(faction)
+                moves.append(dated + _fired_entry(faction))
 
     state.current_tick += steps
     save_state(state, campaign)
@@ -350,6 +483,11 @@ def tick_factions(campaign: str, days: int, rng: Optional[random.Random] = None)
         # Every faction was held or already fired: say so rather than printing
         # a header and nothing under it.
         lines.append("- No faction moved.")
+
+    # The clock is the record of what happened; state.md is the record the DM
+    # reads. Written after factions.json is safely on disk so a crash between
+    # the two loses the state.md note, not the tick.
+    append_faction_moves(campaign, moves)
 
     log_faction_event(campaign, "\n".join(lines[1:]))
     return lines
@@ -398,6 +536,18 @@ def modify_clock(campaign: str, faction_name: str, delta: int, notes: str = "") 
         faction.fired_tick = state.current_tick
 
     save_state(state, campaign)
+
+    # Party interference is a faction move too, and the same reasoning applies:
+    # the DM reads state.md, so the outcome belongs there whether it came from a
+    # hidden roll or from the party walking into it.
+    today = in_game_date(campaign)
+    dated = f"- *{today}*: " if today else "- "
+    moves = []
+    if moved:
+        moves.append(dated + _moved_entry(faction, old, f"{reason}, off-screen, toward"))
+    if faction.fired:
+        moves.append(dated + _fired_entry(faction))
+    append_faction_moves(campaign, moves)
 
     msg = f"[{GM_ONLY}] {faction_name}: {old}/{faction.clock_size} → {faction.current}/{faction.clock_size} ({reason}){unfired}"
     lines = [msg]
