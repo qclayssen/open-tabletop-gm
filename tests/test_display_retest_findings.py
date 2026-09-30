@@ -200,6 +200,24 @@ class Panel(unittest.TestCase):
         for bottom in bars:
             self.assertLessEqual(bottom, m["panel"]["b"] + 1, f"an HP bar is cut: {m}")
 
+    def test_every_action_button_reaches_the_panel_on_a_phone(self):
+        """Not just the first. The action bar is a scroll box on a phone, and the
+        bar itself may overflow the panel it sits in, which is a different defect
+        from the one above and would leave End turn (the last button) off-screen
+        however well the first row is placed."""
+        page = self.open(IFRAME, snapshot())
+        m = page.evaluate("""() => {
+          const panel = document.getElementById('tx-panel').getBoundingClientRect();
+          return {panelBottom: Math.round(panel.bottom),
+                  buttons: [...document.querySelectorAll('#tx-actions button')].map(b => {
+                    const r = b.getBoundingClientRect();
+                    return {text: b.textContent.trim(), top: Math.round(r.top),
+                            bottom: Math.round(r.bottom)}; })}; }""")
+        self.assertTrue(m["buttons"], "no action buttons to measure")
+        for b in m["buttons"]:
+            self.assertLessEqual(b["bottom"], m["panelBottom"] + 1,
+                                 f"{b['text']!r} runs past the panel: {m}")
+
     def test_the_action_bar_is_inside_the_panel_on_a_phone(self):
         """At 768 the panel was 692px tall holding 907px of content, so Move and
         Attack began at y=705: below the board, below the panel, with nothing to
@@ -497,12 +515,31 @@ class Panel(unittest.TestCase):
         self.assertIn("Kobold 2's turn", m["text"], m)
         self.assertEqual(m["role"], "alert", m)
         # The banner is the answer and it stays; the toast is the transient copy
-        # of it, so the toast going is not the message going.
+        # of it, so the toast going is not the message going. The toast is
+        # dismissed here rather than waited out, so the assertion is about the
+        # banner's lifetime and not about a timer.
         page.evaluate("document.getElementById('tx-toast').hidden = true")
-        page.wait_for_timeout(6500)          # past the toast's 6s life
+        page.wait_for_timeout(300)
         still = page.inner_text("#tx-banner")
         self.assertIn("Kobold 2's turn", still,
                       f"the refusal left with the toast: {still!r}")
+
+    def test_a_refusal_outlives_the_toast_timer(self):
+        """The toast's 6s expiry is what the banner has to survive: before, the
+        only copy of the reason a click did nothing was on a timer."""
+        page = self.open(DESKTOP, snapshot())
+        page.route("**/combat/do", lambda route: route.fulfill(
+            status=409, content_type="application/json",
+            body=json.dumps({"error": "There is no player's turn open right now. "
+                                      "It is Kobold 2's turn. Nothing was sent."})))
+        page.click("#tx-actions button:has-text('End turn')")
+        page.wait_for_timeout(700)
+        self.assertFalse(page.evaluate("document.getElementById('tx-toast').hidden"),
+                         "the toast should be showing at first")
+        page.wait_for_function("document.getElementById('tx-toast').hidden", timeout=12000)
+        still = page.inner_text("#tx-banner")
+        self.assertIn("Kobold 2's turn", still,
+                      f"the refusal went when the toast did: {still!r}")
 
     def test_the_toast_does_not_cover_the_log(self):
         """The toast sat at the bottom of the panel, over the combat log and, on
