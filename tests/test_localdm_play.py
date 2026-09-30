@@ -878,6 +878,146 @@ def test_in_a_fight_an_unreadable_line_runs_nothing(tmp_path, monkeypatch):
     assert {a[0] for a in b.ran} <= {"status"}            # read-only context, no action
 
 
+# ─── T1.2: a fight owns every roll, so a check asked for in one is refused ────
+
+def test_a_check_asked_for_mid_fight_is_refused_and_never_rolled(tmp_path, monkeypatch):
+    """The B3 incident, still live in code: dm.md:72-73 says a running fight owns
+    every roll, and nothing enforced it. Here the fight is on the engine's turn, so
+    `_players_turn` is false and the turn takes the ordinary out-of-fight path --
+    the one that rolls. The check used to be rolled for real, mid-fight, and the
+    model got to narrate a result the engine had never produced."""
+    monkeypatch.setattr(Session, "_autopilot", lambda self, line: None)   # the model path
+    rolled = []
+    monkeypatch.setattr(random, "randint", lambda a, b: rolled.append((a, b)) or 14)
+
+    def fake(m, msgs, role):
+        return ('Kairos edges toward the reeds.\n'
+                '{"escalate": null, "command": null, "check": "Stealth 13"}')
+
+    c = FakeClient(fake)
+    b = FakeBridge([fight(current="frog-1", controller="gm")],
+                   {"status": lambda a: Result(0, "Round 1.")})
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path, "council: off"),
+                bridge=b, combat="engine")
+    out = "\n".join(s.handle("I try to slip past the frog."))
+    assert rolled == [], "a check was rolled while a fight was running"
+    assert "Stealth 13" not in out or "was not rolled" in out
+    assert "A fight is running" in out and "was not rolled" in out
+    assert "Stealth check" not in out, "no die was reported to the player"
+
+
+def test_the_refusal_tells_the_player_what_to_do_instead(tmp_path, monkeypatch):
+    """A silently dropped roll request is its own bug: the player asked for something
+    uncertain, watched a fight move, and got no roll and no reason. The refusal is
+    the engine speaking, like NO_FIGHT and NO_ACTION."""
+    monkeypatch.setattr(Session, "_autopilot", lambda self, line: None)
+    monkeypatch.setattr(random, "randint", lambda a, b: pytest.fail("a die was rolled mid-fight"))
+
+    def fake(m, msgs, role):
+        return ('Kairos edges toward the reeds.\n'
+                '{"escalate": null, "command": null, "check": "Stealth 13"}')
+
+    c = FakeClient(fake)
+    b = FakeBridge([fight(current="frog-1", controller="gm")],
+                   {"status": lambda a: Result(0, "Round 1.")})
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path, "council: off"),
+                bridge=b, combat="engine")
+    out = "\n".join(s.handle("I try to slip past the frog."))
+    assert "every roll comes from the engine" in out
+    assert "the engine will ask for the die" in out
+    assert "Kairos edges toward the reeds." in out, "the prose is kept, only the roll is refused"
+
+
+def test_a_check_mid_fight_survives_no_retry_and_costs_no_second_call(tmp_path, monkeypatch):
+    """The whole point of refusing rather than rewriting: a mid-fight check is
+    unownable, so there is no correct rewrite to ask for, and the fight turn keeps
+    its single model call. A re-draft here would be a call spent on a directive the
+    engine cannot honour, on the turn where the model is cheapest to be wrong."""
+    monkeypatch.setattr(Session, "_autopilot", lambda self, line: None)
+    monkeypatch.setattr(random, "randint", lambda a, b: pytest.fail("a die was rolled mid-fight"))
+
+    def fake(m, msgs, role):
+        return ('Kairos edges toward the reeds.\n'
+                '{"escalate": null, "command": null, "check": "Stealth 13"}')
+
+    c = FakeClient(fake)
+    b = FakeBridge([fight(current="frog-1", controller="gm")],
+                   {"status": lambda a: Result(0, "Round 1.")})
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path, "council: off"),
+                bridge=b, combat="engine")
+    s.handle("I try to slip past the frog.")
+    assert len(c.dm_calls()) == 1, "the refusal re-drafted instead of refusing"
+
+
+def test_a_mid_fight_check_is_refused_even_when_a_retry_puts_it_back(tmp_path, monkeypatch):
+    """The guard has to hold on the re-draft paths too, not only on the first draft.
+    Two of them can put a check back on the reply that is actually played: the
+    length re-draft (#105) and the guardrail rewrites. A draft cut off after its
+    JSON line, re-asked, and answered with the same check, must still be refused:
+    a discarded first draft is not a licence for the second one."""
+    monkeypatch.setattr(Session, "_autopilot", lambda self, line: None)
+    monkeypatch.setattr(random, "randint", lambda a, b: pytest.fail("a die was rolled mid-fight"))
+    cut = ("The reeds close over the path, water to the ankles and closing. " * 4)
+
+    def fake(m, msgs, role):
+        if len(c.dm_calls()) == 1:
+            return cut + ('\n{"escalate": null, "command": null, "check": "Stealth 13"}')
+        return ('Kairos edges toward the reeds.\n'
+                '{"escalate": null, "command": null, "check": "Stealth 13"}')
+
+    c = FakeClient(fake, finish_reason=["length", "stop"])
+    b = FakeBridge([fight(current="frog-1", controller="gm")],
+                   {"status": lambda a: Result(0, "Round 1.")})
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path, "council: off"),
+                bridge=b, combat="engine")
+    out = "\n".join(s.handle("I try to slip past the frog."))
+    assert len(c.dm_calls()) == 2, "the length re-draft happened"
+    assert "was not rolled" in out, "the re-draft's check was refused too"
+
+
+def test_a_check_on_a_fight_turn_is_refused_and_the_command_still_runs(tmp_path, monkeypatch):
+    """The other mid-fight path: the model is asked for a tactics command, and it
+    answers with both a command and a check. The engine's action must still happen,
+    and the roll must still not."""
+    monkeypatch.setattr(Session, "_autopilot", lambda self, line: None)
+    monkeypatch.setattr(random, "randint", lambda a, b: pytest.fail("a die was rolled mid-fight"))
+    replies = iter(['{"escalate": null, "check": "Dexterity DC 13", '
+                    '"command": "attack kairos frog-1 dagger"}'])
+    c = FakeClient(lambda m, msgs, role: next(replies))
+    b = FakeBridge([fight()], {
+        "status": lambda a: Result(0, "Round 1."),
+        "attack": lambda a: Result(0, "Kairos Dagger -> Giant Frog 1: 5 vs AC 11, miss."),
+        "options": lambda a: Result(0, "no options"),
+        "end-turn": lambda a: Result(0, "Turn passes.")})
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path, "council: off"),
+                bridge=b, combat="engine")
+    out = "\n".join(s.handle("I stab the wounded frog"))
+    assert ["attack", "kairos", "frog-1", "dagger"] in b.ran, "the engine still got the action"
+    assert "was not rolled" in out, "the model-invented save was refused by name"
+    assert "Dexterity DC 13" in out
+
+
+def test_a_check_outside_a_fight_still_rolls(tmp_path):
+    """The other half, and the one that matters as much: the guard is scoped to a
+    running fight and refuses nothing else. A check on an ordinary turn is the
+    engine's roll to make, and the refusal must not swallow it."""
+    camp = camp_dir(tmp_path)
+    (camp / "characters").mkdir()
+    (camp / "characters" / "Kairos.md").write_text(
+        "## Skills\n| Skill | Ability | Bonus |\n|---|---|---|\n| Stealth | Dex | +4 |\n",
+        encoding="utf-8")
+
+    def fake(m, msgs, role):
+        return ('Kairos eases along the wall.\n'
+                '{"escalate": null, "command": null, "check": "Stealth 13"}')
+
+    c = FakeClient(fake)
+    s = Session("demo", c, MODELS, camp_dir=camp, bridge=FakeBridge())   # no fight running
+    out = "\n".join(s.handle("I try to sneak past the guard."))
+    assert "Stealth check" in out and "against DC 13" in out
+    assert "A fight is running" not in out
+
+
 def _last_kill_session(tmp_path, flavor, replies):
     snap = fight()
     for t in snap["tokens"]:

@@ -83,6 +83,21 @@ NO_ACTION = ("(engine) I could not read that as a fight action. Name an attack, 
              "spell or end turn.")
 NO_FIGHT = ("(engine) There is no fight running, so there is nothing to attack. Start one "
             "with /c start <map>, or say it in the fiction and let the scene play out.")
+# T1.2 as code. dm.md:72-73 already tells the model that a running fight owns every
+# roll, and on 2026-09-26 (B3) it did not: the model invented a Dex save mid-fight,
+# reported it as a check, rolled it in prose against the wrong scene, and the grapple
+# rules were never applied. A prompt clause is a request, not an enforcement, and the
+# engine owns the rules while the model only narrates, so a roll the engine did not
+# ask for is not rolled here either. Same shape as the two refusals above: the engine
+# speaks, it says what it did not do, and it says what to do instead, because a
+# silently dropped roll request would be its own bug.
+#
+# No model-invented save needs a case of its own. `reply.parse` has one field for
+# both, so "Dexterity save 15" arrives as a check and is refused as one. The sharp
+# finding is not saves: it is that a mid-fight directive of any kind is unowned.
+CHECK_MID_FIGHT = ("(engine) A fight is running, so {spec} was not rolled. In a fight every "
+                   "roll comes from the engine, not from the story. Say what your character "
+                   "does and the engine will ask for the die.")
 NARRATE = ("Narrate what the Engine section says just happened, in 1 to 4 sentences. "
            "Then the JSON line with null for both fields.")
 # The ordinary player turn used to be sent with no task at all, so context.build_messages
@@ -1054,11 +1069,17 @@ class Session:
             r = self._dm(player=line, engine=engine, task=COMBAT_PARSE)
             self.turn += 1
             self.memory.add("player", line)
+            # A check asked for while the engine owns the fight is refused (see
+            # CHECK_MID_FIGHT), and the player is told, because the roll they were
+            # expecting never happens and silence reads as a dropped turn. This path
+            # never rolled it: `r.check` is simply not read here, which is the
+            # engine's own rule (COMBAT_PARSE) and not code.
+            refused = [CHECK_MID_FIGHT.format(spec=r.check)] if r.check else []
             args = parse_player_command(r.command) if r.command else None
             if not args:
-                return [NO_ACTION]
+                return refused + [NO_ACTION]
             snap = self.bridge.snapshot()
-            return self._engine(resolve_names(args, snap["tokens"]) if snap else args)
+            return refused + self._engine(resolve_names(args, snap["tokens"]) if snap else args)
         self.turn += 1
         r = self._dm(player=line, engine=engine, notes=notes, task=PLAYER_TURN)
         # The DM may ask a smarter advisor for help on any turn, and is never
@@ -1098,7 +1119,19 @@ class Session:
         if r.narration:
             self._say(r.narration)
             out.append(r.narration)
-        if r.check and not self._players_turn():
+        if r.check and self.bridge.is_combat_active():
+            # A fight owns every roll, and this is the only place a `check` becomes
+            # one: `_ability_check` is the single consumer, so this is where a check
+            # stops being a request and becomes a die. The check is refused here rather
+            # than in `_dm` on purpose. `_dm` is also the narration path for a check the
+            # engine already rolled (`_check_narration`), where `r.check` is never read,
+            # and it is the path every retry inside it comes back through, so a draft from
+            # a guardrail rewrite, an escalate re-draft or a length re-draft is refused by
+            # exactly this line rather than by a guard that would have had to be repeated
+            # on each of those. `bridge.is_combat_active` is the same single question the
+            # stall lines ask, and it is read here only when a check is actually present.
+            out.append(CHECK_MID_FIGHT.format(spec=r.check))
+        elif r.check and not self._players_turn():
             out += self._ability_check(r.check, line)
         if r.cast and not self._players_turn():
             out += self._cast_spell(r.cast)
