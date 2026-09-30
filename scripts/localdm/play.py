@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """play.py: run a session on a small local model, with a smarter advisor on call.
 
-    python3 scripts/localdm/play.py -c <campaign> [--show-gm-notes] [--budget 12000]
+    python3 scripts/localdm/play.py <campaign> [--show-gm-notes] [--budget 12000]
                                     [--display-url URL | --no-display]
 
 Type what your character does. While a roll is pending, type the number on the
@@ -1199,12 +1199,32 @@ class Session:
         return out
 
 
+def _missing_campaign_message(name, camp_dir) -> str:
+    """No such campaign: say where we looked, what exists, and how to make one."""
+    import paths
+    root = paths.campaigns_dir()
+    found = []
+    try:
+        found = sorted(d.name for d in root.iterdir() if paths._is_campaign(d))
+    except OSError:
+        pass
+    lines = [f"No campaign {name!r} at {camp_dir}", f"Campaign root: {root}"]
+    if found:
+        lines.append("Campaigns found: " + ", ".join(found))
+    else:
+        lines.append("No campaigns found there. Set GM_CAMPAIGN_ROOT if yours live elsewhere.")
+    lines.append("To create one, run /gm new <name> in the /gm skill (Claude Code or OpenCode).")
+    return "\n".join(lines)
+
+
 def main(argv=None) -> int:
     from paths import find_campaign
     ap = argparse.ArgumentParser(prog="play.py", description=__doc__.split("\n\n")[0],
                                  formatter_class=argparse.RawDescriptionHelpFormatter,
                                  epilog=__doc__.split("\n\n", 1)[1])
-    ap.add_argument("-c", "--campaign", required=True)
+    ap.add_argument("campaign_pos", nargs="?", metavar="campaign", help="campaign name")
+    ap.add_argument("-c", "--campaign", dest="campaign_opt", metavar="NAME",
+                    help="campaign name (same as the positional form)")
     ap.add_argument("--show-gm-notes", action="store_true",
                     help="print advisor notes (spoilers: for a GM, not a player)")
     ap.add_argument("--no-status", action="store_true",
@@ -1226,9 +1246,14 @@ def main(argv=None) -> int:
     ap.add_argument("--no-display", action="store_true",
                     help="send nothing to any display (narration or grid combat)")
     args = ap.parse_args(argv)
+    if args.campaign_pos and args.campaign_opt and args.campaign_pos != args.campaign_opt:
+        ap.error(f"two campaigns given ({args.campaign_pos!r} and -c {args.campaign_opt!r})")
+    args.campaign = args.campaign_opt or args.campaign_pos
+    if not args.campaign:
+        ap.error("which campaign? Usage: play.py <campaign>")
     camp_dir = find_campaign(args.campaign)
     if not camp_dir.exists():
-        print(f"No campaign {args.campaign!r} at {camp_dir}")
+        print(_missing_campaign_message(args.campaign, camp_dir))
         return 1
     usage = camp_dir / "localdm" / "usage.jsonl"
     client = llm.Client(usage_log=usage)
