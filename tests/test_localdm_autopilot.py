@@ -172,3 +172,9 @@ def test_no_spells_means_a_mundane_attack():
     p = autopilot.plan("I swing my quarterstaff in a melee attack at Giant Frog 2, no spells",
                        two_frogs(), "kairos")
     assert p.cmds[0] == ["attack", "kairos", "frog-2", "Dagger"]
+
+
+def test_a_named_feature_the_engine_lacks_is_reported():
+    pc = two_frogs().tokens["kairos"]
+    assert autopilot.unapplied_feature("I sneak attack it", pc) == "sneak attack"
+    assert autopilot.unapplied_feature("I shoot the frog", pc) == ""

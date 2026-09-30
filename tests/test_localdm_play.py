@@ -1178,7 +1178,8 @@ def test_a_partly_dead_council_reports_who_is_missing(tmp_path):
     out = " ".join(s.handle("/advise council the ancient lore contradicts what happened "
                             "last session?"))
     assert sorted(c.advisor_roles()) == ["advisor:continuity", "advisor:historian"]
-    assert "could not be reached" in out and "have been consulted" in out
+    assert "could not be reached" in out and "Advise partly worked" in out
+    assert "notes saved from historian" in out and "Check the timeline." not in out
 
 
 def test_a_partly_dead_council_still_files_the_advisor_that_answered(tmp_path):
@@ -1475,3 +1476,38 @@ def test_a_notes_write_failure_does_not_lose_the_consult(tmp_path):
     s.notes.add = lambda *a, **k: (_ for _ in ()).throw(OSError("disk full"))
     s.handle("/advise continuity what about the frogs?")
     assert "Keep the frogs fed." in s.saved_notes
+
+
+def test_advise_success_is_unambiguous_and_never_prints_the_notes(tmp_path):
+    c = FakeClient(lambda m, msgs, role: "SPOILER: the duke did it.")
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path), bridge=FakeBridge())
+    out = " ".join(s.handle("/advise historian who founded this city?"))
+    assert "Advise OK" in out and "historian" in out and "SPOILER" not in out
+
+
+def test_advise_failure_says_failed_and_that_nothing_was_saved(tmp_path):
+    def responder(model, messages, role):
+        raise llm.LLMError("HTTP 504")
+
+    s = Session("demo", FakeClient(responder), MODELS, camp_dir=camp_dir(tmp_path),
+                bridge=FakeBridge())
+    out = " ".join(s.handle("/advise historian who founded this city?"))
+    assert "Advise FAILED" in out and "No notes were saved" in out and "Advise OK" not in out
+
+
+def test_check_margin_note_scales_with_the_miss():
+    from localdm.play import check_margin_note
+    assert "hair" in check_margin_note(-1)
+    assert "clearly" in check_margin_note(-4)
+    assert "badly" in check_margin_note(-9)
+    assert "only just" in check_margin_note(0)
+    assert "wide margin" in check_margin_note(12)
+
+
+def test_combat_consequences_come_from_the_engine_text():
+    from localdm.play import combat_consequences
+    t = ("Frog Bite -> Kairos: 15 vs AC 15, hit. 8 piercing damage; Kairos drops to 0 HP and "
+         "falls unconscious.\nKairos loses concentration on Bless.")
+    c = combat_consequences(t)
+    assert "dropped to 0 HP" in c and "concentration broke" in c and "died" not in c
+    assert combat_consequences("Kairos moves A1 to A2.") == ""
