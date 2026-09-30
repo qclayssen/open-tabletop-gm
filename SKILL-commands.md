@@ -43,6 +43,7 @@ Do NOT run `git init` or any git commands in campaign directories.
 | `/gm update [--check]` | Pull the latest skill changes from origin/main. Follow `/gm update` branch. |
 | `/gm graph <subcommand>` | Campaign relationship graph: `init`, `add-node`, `add-edge`, `set-disposition`, `close-edge`, `supersede-edge`, `list`, `show`, `subgraph`, `scene-context`, `extract`, `extract-apply`. See `/gm graph` procedure below. |
 | `/gm factions <subcommand>` | Off-screen faction clocks: `add`, `status`, `clock`, `lean`, `hold`, `release`, `complete`, `set-interval`, `clear`. Ticks themselves come from `calendar.py advance`. See `/gm factions` procedure below. |
+| `/gm rhythm [show\|plan\|set <scene-id\|session\|campaign> <tempo\|pressure\|preset> <value>\|validate]` | The campaign's tempo and pressure, resolved with provenance. `show` prints it; `set campaign preset dread` edits `world.md → ## Campaign Rhythm` in place. Maps to `python3 <skill-base>/scripts/rhythm.py -c <current> <subcommand>`. Add `--dry-run` to `set` to preview. |
 
 ---
 
