@@ -121,6 +121,18 @@ GM-only report. Hours and rests do not tick. Campaigns without
 
 ---
 
+## Oracle and World Queue, `scripts/oracle.py` and `scripts/world_queue.py`
+
+```bash
+python3 $SKILL/scripts/oracle.py -c $CAMP chaos            # show / set --value N / adjust --pc-won|--pc-lost
+python3 $SKILL/scripts/oracle.py ask --likelihood likely -c $CAMP
+python3 $SKILL/scripts/oracle.py event --seed 4            # Random Event Focus (a direction, not an outcome)
+python3 $SKILL/scripts/world_queue.py -c $CAMP start       # pending, 3x-dismissed and expired entries
+python3 $SKILL/scripts/world_queue.py -c $CAMP roll        # seed at most one event, only while pending < 3
+```
+
+See `/gm queue` in SKILL-commands.md. Both are GM-only; the d100 never reaches the player.
+
 ## Faction Clocks — `scripts/world.py`
 
 Off-screen world pressure: a goal and a 4/6/8-segment clock per active faction.

@@ -13,6 +13,8 @@ import pathlib
 import re
 import time
 
+import world_queue                # scripts/ is on sys.path via localdm/__init__
+
 from . import canon as canon_mod
 
 PROMPTS = pathlib.Path(__file__).resolve().parent / "prompts"
@@ -27,6 +29,12 @@ PROMPTS = pathlib.Path(__file__).resolve().parent / "prompts"
 # would have lost it on exactly the campaigns with the richest world state.
 # Recent Events is history where Live State Flags is current state, so both fit.
 #
+# World Queue sits in state.md between Faction Moves and Recent Events, and the digest
+# follows state.md order, so it is trimmed before Active Quests and after Live State
+# Flags. It is optional (a campaign without the section is unchanged), and it is
+# rendered by world_queue.digest_lines rather than dumped as raw YAML: fired entries
+# in full, pending ones as unsurfaced hooks the DM must not reveal.
+#
 # Campaign Arc is deliberately still absent: templates/state.md's steering_notes
 # and outstanding_beats are GM-only, and handing the DM the whole arc is how NPCs
 # end up voicing the mystery before the player has earned it. Active Combat is safe
@@ -35,7 +43,10 @@ PROMPTS = pathlib.Path(__file__).resolve().parent / "prompts"
 # Engine section.
 DIGEST_SECTIONS = ("Current Situation", "Pinned Facts", "World State", "Faction Moves",
                    "Live State Flags", "Active Quests", "Open Threads & Rumours",
-                   "Recent Events", "Active Combat", "GM Style Notes")
+                   "Recent Events", "Active Combat", "GM Style Notes", "World Queue")
+# Sections in DIGEST_SECTIONS that older campaigns legitimately lack; the linter
+# does not call their absence an error.
+OPTIONAL_DIGEST_SECTIONS = ("World Queue",)
 LABEL = {"player": "Player", "dm": "GM", "engine": "Engine"}
 
 _HEADING = re.compile(r"^## +(.+?)\s*$", re.M)
@@ -87,8 +98,11 @@ def state_digest(state_md: str, sections=DIGEST_SECTIONS, limit: int = 3000) -> 
         if m.group(1) not in sections:
             continue
         end = heads[i + 1].start() if i + 1 < len(heads) else len(state_md)
-        body = [line for line in state_md[m.end():end].splitlines()
-                if line.strip() and not is_template_line(line)]
+        if m.group(1) == "World Queue":
+            body = world_queue.digest_lines(state_md[m.end():end])
+        else:
+            body = [line for line in state_md[m.end():end].splitlines()
+                    if line.strip() and not is_template_line(line)]
         if body:
             parts.append(f"### {m.group(1)}\n" + "\n".join(body))
     return _truncate("\n\n".join(parts), limit)

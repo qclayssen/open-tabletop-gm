@@ -43,6 +43,8 @@ Do NOT run `git init` or any git commands in campaign directories.
 | `/gm update [--check]` | Pull the latest skill changes from origin/main. Follow `/gm update` branch. |
 | `/gm graph <subcommand>` | Campaign relationship graph: `init`, `add-node`, `add-edge`, `set-disposition`, `close-edge`, `supersede-edge`, `list`, `show`, `subgraph`, `scene-context`, `extract`, `extract-apply`. See `/gm graph` procedure below. |
 | `/gm factions <subcommand>` | Off-screen faction clocks: `add`, `status`, `clock`, `lean`, `hold`, `release`, `reveal`, `hide`, `complete`, `set-interval`, `clear`. Ticks themselves come from `calendar.py advance`. See `/gm factions` procedure below. |
+| `/gm oracle <chaos [set N\|adjust --pc-won\|--pc-lost] \| ask [--likelihood L] \| event [--seed S]>` | Solo/GM oracles: the chaos factor (`## Session Flags`, 1-9, default 5), a yes/no verdict, and Mythic Random Event Focus (a direction to interpret against existing threads, not an outcome). Maps to `python3 <skill-base>/scripts/oracle.py -c <campaign> <subcommand>`. The d100 is rolled through `dice.py`; `--seed` replays it. |
+| `/gm queue [roll \| add \| fire <id> \| dismiss <id> --reason "..." \| requeue <id> \| start \| validate]` | The `## World Queue` in state.md: off-screen pressure waiting to surface. Bare `/gm queue` lists pending entries with triggers and `demands`. See `/gm queue` procedure below. |
 
 ---
 
@@ -328,6 +330,20 @@ can read is bookkeeping, not pressure.
    filling too fast with `clock`, and say why in `--notes`.
 
 ---
+
+
+## `/gm queue` : off-screen pressure waiting to surface
+
+Faction clocks and the random-event oracle generate things that happen off-screen.
+`## World Queue` (fenced YAML in `state.md`, between Faction Moves and Recent Events) is where they wait.
+Maps to `python3 <skill-base>/scripts/world_queue.py -c <campaign> <subcommand>`. Everything it prints is GM-only.
+
+- **At `/gm load` (the start of a session):** run `queue start`. It lists pending entries, surfaces any `id` dismissed three times, and flags expired entries. Judge each `trigger` yourself against `world.py status`; `trigger` is prose, never parsed.
+- **`queue roll [--seed N]`** seeds at most one entry, only while fewer than 3 are pending. The row gets `demands: null`: a d100 picks a *what*, you pick the *how much*. Fill in `ask` and `if_ignored` before firing; an event with no decision and no cost is colour, not a game.
+- **`queue fire <id>`** marks it fired (entries are never deleted) and, if `demands` is set, tells you the pressure it claims. Re-emit the pacing directive with that pressure only if it differs from the scene's. `demands` is a default, not a command.
+- **`queue dismiss <id> --reason "..."`** is the way to refuse. The reason is kept. There is no date field: the queue is a supply, not a calendar players could learn.
+- **`queue validate`** reports schema problems and entries past `expires_by`.
+- `surfaces_as: rumour | visible_change` may enter a calm scene; `npc_move | deadline` set the agenda. Never narrate the roll.
 
 ## In-Fiction Wait Phrasing During Operations
 

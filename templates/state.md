@@ -28,6 +28,15 @@
 *Updated at the end of each session — what each active faction did while the party was occupied.*
 *(none yet)*
 
+## World Queue
+*Off-screen pressure waiting to surface, stored by `/gm queue` (scripts/world_queue.py). Optional: a campaign without this section behaves as before. `demands` is a pressure claim (none | ambient | urgent | null) and a default, not a command.*
+```yaml
+# Off-screen pressure waiting to surface. Checked at /gm start. An entry with
+# demands set forces a pressure override on the scene it lands in (a default,
+# not a command: the GM can dismiss it with a reason). trigger is prose the GM
+# judges; nothing here fires on its own.
+```
+
 ## Recent Events
 *(Session 1 pending)*
 
@@ -156,6 +165,8 @@ revision_log: []
 
 ## Session Flags
 *(tutor_mode, autorun, autorun_interval, roll_mode, tts_voice, sfx_languages — session-scoped flags set via /gm commands or by the display companion)*
+*(chaos_factor: 1-9, default 5, the Mythic dial read by `scripts/oracle.py`. Set with `oracle.py -c <campaign> chaos set --value N`.)*
+- chaos_factor: 5
 *(roll_mode: `players` (default — players roll their own PCs; GM waits) or `auto` (GM rolls everything openly). See SKILL.md → Dice convention.)*
 
 ## GM Style Notes

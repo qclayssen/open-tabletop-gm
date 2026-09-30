@@ -136,6 +136,9 @@ def test_every_section_the_code_reads_is_required(tmp_path):
     reported = messages(rep)
     from localdm import context
     for section in context.DIGEST_SECTIONS:
+        if section in context.OPTIONAL_DIGEST_SECTIONS:
+            assert section not in reported, section   # older campaigns lack it
+            continue
         assert section in reported, section
     for section in ("World State", "Session Flags"):
         assert section in reported, section
