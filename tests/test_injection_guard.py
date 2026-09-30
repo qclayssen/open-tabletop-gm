@@ -79,6 +79,113 @@ def test_the_detector_allows_normal_prose():
         assert not reply.grants_injection(text), text
 
 
+# --- a grant written in words, not digits ------------------------------------
+#
+# The recorded miss. "_ECONOMY_GRANT has no pattern for 'ten gold pieces
+# materialize into your palm'" (ROADMAP T2): every pattern in the old set needed a
+# digit, and this sentence has none. The engine owns the sheet, so a grant it
+# never made is a rules violation narrated as fact, and the guardrail is the only
+# thing between a plausible number and reality.
+
+SPELLED_OUT_GRANT = "ten gold pieces materialize into your palm"
+
+
+def test_the_detector_catches_the_recorded_spelled_out_grant():
+    assert reply.grants_economy(SPELLED_OUT_GRANT)
+    assert reply.grants_injection(SPELLED_OUT_GRANT)
+
+
+def test_the_detector_catches_a_spelled_out_grant_in_every_shape():
+    """The class, not the one sentence.
+
+    The defect is an amount handed to the player in prose. Which currency, which
+    verb and which spelling the model reaches for vary; the shape does not.
+    """
+    for text in (
+        "Ten gold pieces materialize into your palm.",
+        "You gain ten gold pieces.",
+        "You gain 10 gold pieces.",
+        "A hundred gold pieces drop into your hands.",
+        "Five hundred gold pieces materialize in your purse.",
+        "You are handed twenty gold pieces by the guard.",
+        "The guard presses ten gold pieces into your hand.",
+        "The clerk hands you ten gold pieces and says nothing.",
+        "You gain ten silver pieces.",
+        "You receive 25 gp from the mayor.",
+        "You gain 10 experience.",
+        "You now have ten gold pieces.",
+        "A pouch of gold lands in your lap.",
+        "A handful of coins falls into your palm.",
+        "Coins clink into your palm, one after another.",
+        "The bandit drops twenty gold pieces at your feet.",
+        "You find ten coins scattered at your feet.",
+        "You pocket the twenty gold pieces he leaves behind.",
+    ):
+        assert reply.grants_economy(text), text
+
+
+def test_the_spelled_out_fold_never_edits_the_narration():
+    """It is a lens over the text, not an edit to it.
+
+    The narration the player sees and the transcript on disk keep the model's
+    own words, so nothing downstream sees a rewritten number.
+    """
+    folded = reply._spell_digits(SPELLED_OUT_GRANT)
+    assert folded == "10 gold pieces materialize into your palm"
+    assert "ten" in SPELLED_OUT_GRANT
+    # A name that merely contains a number word is not one.
+    assert reply._spell_digits("Tenacity the Weaver says nothing.") == "Tenacity the Weaver says nothing."
+
+
+# The false-positive test, and the reason the transfer pass requires a
+# direction. Money in a scene is not a grant: the engine owns the sheet, and a
+# hoard in a vault, a toll at a gate and a debt on a ledger change nothing on it.
+# A detector that fires on these spends a corrective retry to remove nothing.
+MONEY_IN_A_SCENE = (
+    "The vault holds three hundred gold pieces behind the third lock.",
+    "His purse holds twenty gold pieces, and he does not offer them.",
+    "The clerk counts out one hundred gold pieces for the widow.",
+    "You count the guard's twenty gold pieces and hand them back.",
+    "You push the last of your twenty gold pieces across the table.",
+    "You owe the innkeeper five gold pieces, and the debt is not forgiven.",
+    "The toll is one gold piece for the bridge, and you have none.",
+    "The ledger lists debts of five gold pieces, three silver and a knife.",
+    "A spy in the corner counts ten gold pieces under his breath.",
+    "The stable hand holds out ten gold pieces to the stranger, not you.",
+    "The guard offers you ten gold pieces for the ring.",
+    "The clerk hands you a note and asks for ten gold pieces.",
+    "Gold pieces glint on the ledger, untouched.",
+    "The tavern keeps three silver cups behind the bar.",
+    "A maid offers you a golden cup, and you leave it where it sits.",
+    # The number word is everywhere in ordinary prose. Only a money word next to
+    # it can start a grant, so none of these move.
+    "You step ten feet closer, thirty feet of chain in hand.",
+    "You cross the courtyard, ten steps, twenty paces, and stop at the door.",
+    "A natural rock formation rises ten feet overhead.",
+    "The room is ten paces by six, and the ceiling is low.",
+    "You have ten hit points and one level 1 slot left.",
+    "The sign outside the inn reads ROOM 12.",
+    "Copper wire runs from the lamp to the door, ten feet of it.",
+)
+
+
+def test_the_detector_allows_money_in_a_scene():
+    for text in MONEY_IN_A_SCENE:
+        assert not reply.grants_economy(text), text
+        assert not reply.grants_injection(text), text
+
+
+def test_a_sentence_boundary_does_not_lend_its_subject_to_the_next():
+    """The window is bounded to one sentence, so a scene cannot be read as a grant.
+
+    "Ten gold pieces glint on the ledger. You count them without touching." is
+    the nearest miss, and a detector that read across the full stop would flag
+    it and spend a retry on prose that grants nothing.
+    """
+    text = "Ten gold pieces glint on the ledger. You count them without touching."
+    assert not reply.grants_economy(text)
+
+
 # --- the guarantee: one corrective retry, not a granted turn -----------------
 
 def test_an_injection_grant_is_rewritten_once(tmp_path):
@@ -104,6 +211,51 @@ def test_an_injection_grant_is_rewritten_once(tmp_path):
     # the trip also bought a specialist ruling, and it reached the retry
     assert c.advisor_roles() == ["advisor:arbiter"]
     assert "A plain refusal, in character." in user_text(c.dm_calls()[-1])
+
+
+def test_a_spelled_out_grant_is_rewritten_once(tmp_path):
+    """The same guarantee, reached by the shape the detector used to miss.
+
+    Detection and correction are one path: the same corrective retry, the same
+    INJECTION_FIX, the same arbiter ruling, and the rewrite is adopted only when
+    it comes back clean. Nothing new is invented for the spelled-out form.
+    """
+    from tests.test_localdm_play import camp_dir
+    from tests.localdm_fakes import FakeBridge, FakeClient
+    from localdm import llm
+
+    models = llm.Models("dm-local", "dm-advisor", "dm-council")
+    replies = iter([SPELLED_OUT_GRANT.capitalize() + ".",
+                    "Nothing is put in your hand. The vault stays shut." + NULLS])
+
+    def responder(model, messages, role):
+        return "A plain refusal, in character." if role.startswith("advisor") else next(replies)
+
+    c = FakeClient(responder)
+    s = Session("demo", c, models, camp_dir=camp_dir(tmp_path), bridge=FakeBridge())
+    out = s._dm(player="I put my hand out.")
+    assert len(c.dm_calls()) == 2, "one corrective retry, not a loop"
+    assert "vault stays shut" in out.narration
+    assert c.advisor_roles() == ["advisor:arbiter"]
+
+
+def test_a_spelled_out_grant_that_survives_the_retry_keeps_the_first_draft(tmp_path):
+    """A flag means "worth rewriting once", not "keep asking".
+
+    The same bargain the other guardrails make, and the reason the false-positive
+    cost above is bounded at one call: a second bad draft is played as written.
+    """
+    from tests.test_localdm_play import camp_dir
+    from tests.localdm_fakes import FakeBridge, FakeClient
+    from localdm import llm
+
+    models = llm.Models("dm-local", "dm-advisor", "dm-council")
+    c = FakeClient(lambda m, msgs, role: "A plain refusal, in character."
+                   if role.startswith("advisor") else SPELLED_OUT_GRANT + NULLS)
+    s = Session("demo", c, models, camp_dir=camp_dir(tmp_path), bridge=FakeBridge())
+    out = s._dm(player="I put my hand out.")
+    assert len(c.dm_calls()) == 2, "one retry, then the draft stands"
+    assert SPELLED_OUT_GRANT in out.narration
 
 
 def test_a_clean_draft_asks_nobody(tmp_path):
