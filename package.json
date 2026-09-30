@@ -1,0 +1,13 @@
+{
+  "name": "open-tabletop-gm-chartdown",
+  "private": true,
+  "type": "module",
+  "description": "Chartdown tooling for open-tabletop-gm. Only scripts/chartdown_to_atlas.mjs needs these; the Python engine does not.",
+  "scripts": {
+    "chartdown": "node scripts/chartdown_to_atlas.mjs"
+  },
+  "dependencies": {
+    "@chartdown/core": "0.8.0",
+    "@chartdown/render-svg": "0.8.0"
+  }
+}

@@ -548,3 +548,49 @@ def test_corrupt_plugin_settings_are_an_error_not_a_crash(tmp_path):
     rep = campaign_lint.lint_campaign("demo", camp)
     assert rep.errors == 1, messages(rep)
     assert any("unreadable" in f["message"] for f in rep.findings), messages(rep)
+
+
+# ── token art: Atlas wants an image per token, and most creatures have none ───
+
+def test_art_coverage_is_reported_as_a_ratio_not_an_error(tmp_path):
+    """A missing portrait is playable (the colour disc), so this must never
+    raise the error count - only state the ratio, which is otherwise only
+    discoverable by opening Create tokens and counting."""
+    camp = bestiary_campaign(tmp_path, ["Bestiary/"], notes=("Aboleth.md", "Acolyte.md"))
+    art = camp / "atlas-vtt/assets/bestiary"
+    art.mkdir(parents=True)
+    (art / "aboleth.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+    rep = campaign_lint.lint_campaign("demo", camp)
+    assert rep.errors == 0, messages(rep)
+    warns = [f["message"] for f in findings(rep, "warn") if "have a portrait" in f["message"]]
+    assert warns and "1 of 2 creatures" in warns[0], messages(rep)
+
+
+def test_art_coverage_is_silent_when_there_is_no_art_directory(tmp_path):
+    camp = bestiary_campaign(tmp_path, ["Bestiary/"])
+    rep = campaign_lint.lint_campaign("demo", camp)
+    assert not any("have a portrait" in f["message"] for f in rep.findings), messages(rep)
+
+
+def test_the_readme_note_is_excluded_from_the_art_ratio(tmp_path):
+    """README.md is prose in the bestiary folder. Counting it would report
+    47/372 and quietly make the number wrong."""
+    camp = bestiary_campaign(tmp_path, ["Bestiary/"], notes=("Aboleth.md",))
+    (camp / "Bestiary" / "README.md").write_text("# Bestiary\n", encoding="utf-8")
+    art = camp / "atlas-vtt/assets/bestiary"
+    art.mkdir(parents=True)
+    (art / "aboleth.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+    rep = campaign_lint.lint_campaign("demo", camp)
+    assert any("1 of 1 creatures" in f["message"] for f in rep.findings), messages(rep)
+
+
+def test_art_matching_uses_the_exporter_slug_not_a_second_copy(tmp_path):
+    """A name the exporter would slug differently must still match, which only
+    holds if the lint imports map_to_atlas.slug instead of reimplementing it."""
+    camp = bestiary_campaign(tmp_path, ["Bestiary/"], notes=("Adult Blue Dragon.md",))
+    art = camp / "atlas-vtt/assets/bestiary"
+    art.mkdir(parents=True)
+    # the slug map_to_atlas.slug() actually produces for that note
+    (art / "adult-blue-dragon.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+    rep = campaign_lint.lint_campaign("demo", camp)
+    assert any("1 of 1 creatures" in f["message"] for f in rep.findings), messages(rep)
