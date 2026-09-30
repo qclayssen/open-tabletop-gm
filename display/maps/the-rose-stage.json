@@ -1,0 +1,18 @@
+{
+ "name": "The Rose Stage",
+ "width": 34,
+ "height": 25,
+ "diagonals": "5",
+ "info": "170 by 125 feet (34x25 squares of 5 ft). Artwork by Ekrahir. Terrain is unpainted: open /maps/the-rose-stage/edit and paint walls, water and cover before running a fight here.",
+ "image": "images/the-rose-stage.jpg",
+ "grid": {
+  "cell_px": 100,
+  "offset_x": 0,
+  "offset_y": 0
+ },
+ "credit": "Ekrahir",
+ "source": "Free - The Rose Stage - 3400x2500 - 34x25 - 100px - gridless.jpg",
+ "base": "floor",
+ "features": [],
+ "spawns": []
+}
