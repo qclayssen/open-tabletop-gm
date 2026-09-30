@@ -99,6 +99,13 @@ def vault_relative(vault: pathlib.Path, path: pathlib.Path) -> str:
     return path.resolve().relative_to(vault.resolve()).as_posix()
 
 
+try:  # Pillow is optional, and register() needs to know that without asking per image.
+    from PIL import Image
+    HAVE_PIL = True
+except ImportError:
+    HAVE_PIL = False
+
+
 def resize_for_thumbnail(src: pathlib.Path, dest: pathlib.Path) -> bool:
     """Write a webp thumbnail beside the original, Atlas's way.
 
@@ -106,9 +113,7 @@ def resize_for_thumbnail(src: pathlib.Path, dest: pathlib.Path) -> bool:
     fatal: Atlas regenerates a missing thumbnail on its own next time it sees
     the asset, so the token still works without it.
     """
-    try:
-        from PIL import Image
-    except ImportError:
+    if not HAVE_PIL:
         return False
     with Image.open(src) as im:
         w, h = im.size
@@ -185,7 +190,21 @@ def register(vault: pathlib.Path, art_dir: pathlib.Path, collection: str,
             None)
         if existing_id and not force:
             entry = data["assets"][existing_id]
-            if entry.get("thumbnailPath") and (vault / entry["thumbnailPath"]).exists():
+            thumb = entry.get("thumbnailPath")
+            if thumb and (vault / thumb).exists():
+                skipped.append(name)
+                continue
+            # Already registered, and the only thing outstanding is a thumbnail this
+            # machine cannot produce: resize_for_thumbnail returns False when Pillow
+            # is absent, so the completeness check above can never be satisfied and
+            # EVERY run re-registered the whole folder, reporting it as `updated` --
+            # false, since nothing changed, and unbounded work for a loop that is
+            # documented as safe to run repeatedly. It surfaced only in CI, because CI
+            # is the one place Pillow is missing. The image bytes are still compared,
+            # so a genuinely new or changed portrait is not skipped: it has a
+            # different imagePath, or different bytes, and reaches the write path.
+            if not HAVE_PIL and dest.exists() and src.exists() \
+                    and dest.read_bytes() == src.read_bytes():
                 skipped.append(name)
                 continue
         aid = existing_id or f"token-{slug(name)}"

@@ -132,6 +132,50 @@ def test_running_twice_registers_nothing_new(tmp_path):
     assert index(v) == before, "a second run must not churn the index"
 
 
+def test_running_twice_without_pillow_still_skips(tmp_path, monkeypatch):
+    """The idempotence the section above promises must not depend on Pillow.
+
+    resize_for_thumbnail returns False when Pillow is absent, so no thumbnail
+    file is ever written and the "entry is complete" check can never be
+    satisfied. Without this, every run re-registered the whole folder and
+    reported it as `updated`, which is false and unbounded. It surfaced only in
+    CI, because CI is the one machine without Pillow, and it turned main red.
+    """
+    monkeypatch.setattr(rt, "HAVE_PIL", False)
+    v = vault(tmp_path)
+    a = art(tmp_path)
+    first = rt.register(v, a, "Strixhaven", [])
+    second = rt.register(v, a, "Strixhaven", [])
+    assert len(first["added"]) == 2 and not first["skipped"]
+    assert second["added"] == [] and second["updated"] == [], (
+        "a second run with no Pillow must not re-register unchanged portraits")
+    assert len(second["skipped"]) == 2
+
+
+def test_a_changed_portrait_is_still_registered_without_pillow(tmp_path, monkeypatch):
+    """The companion risk: skipping must not mean ignoring changed art.
+
+    The skip above is gated on the copied file matching the source byte for
+    byte, so a portrait that genuinely changed still reaches the write path.
+    """
+    monkeypatch.setattr(rt, "HAVE_PIL", False)
+    v = vault(tmp_path)
+    a = art(tmp_path)
+    # Overwrite with stub bytes either way. art() writes a REAL png when Pillow
+    # is importable in this module, and if the first run produced a real
+    # thumbnail on disk then the second run skips for the ordinary, correct
+    # reason and this test would prove nothing. Stub bytes also keep
+    # resize_for_thumbnail from trying to open them.
+    (a / "Aboleth.png").write_bytes(b"\x89PNG\r\n\x1a\nBEFORE")
+    rt.register(v, a, "Strixhaven", [])
+    (a / "Aboleth.png").write_bytes(b"\x89PNG\r\n\x1a\nAFTER")
+    res = rt.register(v, a, "Strixhaven", [])
+    assert "Aboleth" not in res["skipped"], "changed art must not be skipped"
+    assert "Aboleth" in res["updated"]
+    dest = v / "atlas-vtt/collections/Strixhaven/tokens/aboleth.png"
+    assert dest.read_bytes() == b"\x89PNG\r\n\x1a\nAFTER", "new bytes must be copied"
+
+
 def test_force_re_registers_a_complete_entry(tmp_path):
     v = vault(tmp_path)
     a = art(tmp_path)
