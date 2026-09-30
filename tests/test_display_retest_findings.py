@@ -543,9 +543,8 @@ class Panel(unittest.TestCase):
         self.assertNotIn("no player's turn", got.lower(), got)
 
     def test_the_fold_button_is_big_enough_to_hit(self):
-        """P3-2, still open from the first pass and cheap to close: the HIDE
-        control was 7.5px and faint, which is a target and a legibility problem
-        in one."""
+        """P3-2, still open from the first pass and cheap to close: the map's
+        Hide/Show control was a target and a legibility problem in one."""
         page = self.open(DESKTOP, snapshot())
         m = page.evaluate("""() => { const b = document.getElementById('tx-min');
           const cs = getComputedStyle(b), r = b.getBoundingClientRect();
@@ -555,6 +554,39 @@ class Panel(unittest.TestCase):
         self.assertGreaterEqual(m["h"], 32, f"the fold control is {m['h']}px tall: {m}")
         self.assertGreaterEqual(m["size"], 12, f"the fold control is {m['size']}px type: {m}")
         self.assertTrue(m["name"] or m["label"], m)
+
+    def test_the_rail_hide_control_is_a_legible_reachable_button(self):
+        """P3-2 again, on the other control the report meant: the "Hide >" in the
+        settings rail was 7.5px of text at 0.5 alpha, on a div with a click
+        handler, so it was neither readable nor reachable by keyboard."""
+        page = self.open(DESKTOP, snapshot())
+        m = page.evaluate("""() => {
+          const row = document.getElementById('controls-toggle-row');
+          const label = row.querySelector('.audio-label');
+          const r = row.getBoundingClientRect(), lcs = getComputedStyle(label);
+          // The alpha is read here, not from the string: computed color is
+          // "rgba(r, g, b, a)" when translucent and "rgb(r, g, b)" when not, and
+          // 1 is the default for the second form.
+          const parts = lcs.color.split(',');
+          return {tag: row.tagName, h: r.height, size: parseFloat(lcs.fontSize),
+                  alpha: parts.length > 3 ? parseFloat(parts[3]) : 1,
+                  text: label.textContent.trim(),
+                  name: row.getAttribute('aria-label'),
+                  expanded: row.getAttribute('aria-expanded')}; }""")
+        self.assertEqual(m["tag"], "BUTTON", f"the rail hide control is a {m['tag']}: {m}")
+        self.assertGreaterEqual(m["h"], 32, f"the rail hide row is {m['h']}px tall: {m}")
+        self.assertGreaterEqual(m["size"], 12, f"the rail hide label is {m['size']}px: {m}")
+        self.assertGreaterEqual(m["alpha"], 0.75,
+                                f"the rail hide label is nearly invisible: {m}")
+        self.assertTrue(m["name"], f"the rail hide row has no accessible name: {m}")
+        self.assertEqual(m["expanded"], "true", m)
+        # Keyboard: Tab reaches it and Enter toggles, as any button does.
+        page.evaluate("document.getElementById('controls-toggle-row').focus()")
+        page.keyboard.press("Enter")
+        page.wait_for_timeout(300)
+        self.assertEqual(
+            page.evaluate("document.getElementById('controls-toggle-row')"
+                          ".getAttribute('aria-expanded')"), "false")
 
 
 class ClientWording(unittest.TestCase):

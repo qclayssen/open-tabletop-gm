@@ -2485,9 +2485,15 @@
      folds every row away except the toggle row itself, so the narration
      reclaims the right side. */
   #audio-controls.collapsed .audio-row:not(#controls-toggle-row) { display: none; }
-  #controls-toggle-row { cursor: pointer; justify-content: flex-end; }
-  #controls-toggle-row .audio-label { color: rgba(180,140,60,0.5); }
-  #controls-toggle-row:hover .audio-label { color: rgba(180,140,60,0.9); }
+  /* A real button, not a div with a click handler: it is reached by Tab and
+     activated by Enter or Space like every other control on the page. */
+  #controls-toggle-row { cursor: pointer; justify-content: flex-end;
+                         align-items: center; }
+  /* 0.5 alpha put this at roughly a third of its own contrast against the
+     backdrop, which is where "HIDE >" was nearly-invisible text the report
+     flagged twice. Same amber as the other rail labels, at full strength. */
+  #controls-toggle-row .audio-label { color: rgba(220,185,100,0.9); }
+  #controls-toggle-row:hover .audio-label { color: rgba(245,215,130,1); }
 
   #phone-mode-menu {
     position: fixed;
@@ -3213,6 +3219,9 @@
       background: rgba(8, 5, 2, 0.55);
     }
     #audio-controls .audio-row { flex: none; }
+    /* A button carries the UA's own background and border, which would draw a
+       box round every setting in the row. */
+    #audio-controls button.audio-row { background: none; border: 0; font: inherit; }
     /* The sidebar paints after the rail, so start the row past it rather than
        letting the sheet cover the character card. */
     body:has(#sidebar.has-data:not(.hidden)) #audio-controls { left: 232px; }
@@ -3276,9 +3285,11 @@
 
 <!-- Audio toggle controls — SFX triggered by narration text -->
 <div id="audio-controls">
-  <div class="audio-row" id="controls-toggle-row" title="Hide the settings column">
+  <button class="audio-row" id="controls-toggle-row" type="button"
+          aria-label="Show or hide the settings column" aria-expanded="true"
+          title="Hide the settings column">
     <span class="audio-label" id="controls-toggle">Hide ▶</span>
-  </div>
+  </button>
   <div class="audio-row" id="sfx-row" title="Sound effects (triggered by narration)">
     <span class="audio-label">Sound Effects</span>
     <div class="toggle-track" id="sfx-track"><div class="toggle-thumb"></div></div>
@@ -7217,6 +7228,9 @@ const _controlsBtn   = document.getElementById('controls-toggle');
 let _controlsVisible = true;
 function _setControlsVisible(visible, persist = true) {
   _controlsVisible = visible;
+  // aria-expanded is what says the column is showing, so it belongs on the
+  // control that toggles it and moves with it.
+  if (_controlsBtn) _controlsBtn.parentElement.setAttribute('aria-expanded', String(visible));
   if (visible) {
     _audioControls.classList.remove('collapsed');
     _textScroll.classList.remove('controls-hidden');
@@ -7229,7 +7243,10 @@ function _setControlsVisible(visible, persist = true) {
   if (persist) { try { localStorage.setItem('otgm-controls-visible', visible ? '1' : '0'); } catch (e) {} }
 }
 if (_controlsBtn) {
-  _controlsBtn.addEventListener('click', () => _setControlsVisible(!_controlsVisible));
+  // On the row, not the label: the row is the button, so a click anywhere in it
+  // and a keyboard activation of the button itself both land here. A listener on
+  // the inner span meant Enter and Space did nothing at all.
+  _controlsBtn.closest('.audio-row').addEventListener('click', () => _setControlsVisible(!_controlsVisible));
   try {
     const pref = localStorage.getItem('otgm-controls-visible');
     if (pref === '0') _setControlsVisible(false);
