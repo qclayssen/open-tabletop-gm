@@ -135,6 +135,82 @@ def grants_injection(narration: str) -> bool:
     return fakes_system_log(narration) or grants_economy(narration)
 
 
+# Load-time scrub. The guardrail above only ever sees a draft the DM is writing
+# right now: a transcript that recorded a successful grant keeps that grant
+# forever, and memory.turns() feeds those lines straight back into the DM's
+# context on every campaign load. One captured injection is therefore replayed
+# as a fresh instruction, which makes it a property of the saved file rather
+# than of the turn that produced it. Sanitising on load is the fix that closes
+# it: the file is never rewritten (the player still sees the turn they were
+# shown), so what the model reads is clean.
+#
+# Deliberately narrower than grants_injection: a scrub must not corrupt
+# legitimate narration, and "the pool is restored to full" is ordinary prose.
+# What is removed is only the fake system block plus a player-issued override
+# sentence, which no real narration contains.
+_OVERRIDE = re.compile(
+    r"\b(?:forget|ignore|disregard|override)\b[^.!?\n]{0,40}?"
+    r"\b(?:instruction|prompt|rule|guardrail|policy)s?\b"
+    r"|\bnew\s+(?:system\s+)?instructions?\s*:"
+    r"|\byou\s+are\s+now\s+(?:a|an|the|in)\b"
+    r"|\b(?:give|grant)\s+(?:me|us)\b[^.!?\n]{0,20}?\b(?:gold|gp|xp)\b"
+    r"|\broll\s+(?:me\s+)?a\s+natural\s+(?:20|twenty)\b",
+    re.I)
+_SENTENCE = re.compile(r"(?<=[.!?])[ \t]+")
+REMOVED = "[a turn that granted a player-typed instruction was removed]"
+
+
+def scrub_injection(text: str) -> str:
+    """Drop the granted-instruction sentences from one GM turn.
+
+    Sentence by sentence, so the narration around a payload survives: a draft
+    that granted gold and then described the room keeps the room. A turn that
+    was nothing but the payload becomes a neutral marker, because an empty
+    turn would read to the model as a dropped turn rather than a refused one.
+
+    A turn with no payload is returned byte for byte. Reassembling clean text
+    out of sentences would tidy its spacing and blank lines, and a scrub that
+    rewrites ordinary narration is a bug waiting to be argued about.
+    """
+    if not text:
+        return text
+    lines, removed = [], False
+    for line in text.split("\n"):
+        kept = []
+        for sentence in _SENTENCE.split(line):
+            if _SYSTEM_LOG.search(sentence) or _OVERRIDE.search(sentence):
+                removed = True
+            else:
+                kept.append(sentence)
+        if len(kept) < len(_SENTENCE.split(line)):
+            kept = [s for s in kept if s.strip()]   # a removed sentence leaves a gap
+        lines.append(" ".join(kept))
+    if not removed:
+        return text
+    out = "\n".join(l for l in lines if l.strip()).strip()
+    return out or REMOVED
+
+
+def sanitize_turns(turns: list) -> list:
+    """Transcript turns as the model may read them, injections scrubbed.
+
+    Only GM and Engine turns are touched. A player turn saying "forget your
+    instructions" is the player talking, and it is the attack arriving: it
+    belongs in the transcript, and the prompt (prompts/dm.md) is what refuses
+    it. Scrubbing the player's own words would edit their transcript to hide
+    what was typed at the table.
+    """
+    out = []
+    for t in turns:
+        if isinstance(t, dict) and t.get("role") in ("dm", "engine") \
+                and isinstance(t.get("text"), str):
+            clean = scrub_injection(t["text"])
+            out.append(t if clean == t["text"] else {**t, "text": clean})
+        else:
+            out.append(t)
+    return out
+
+
 # Spell names count as cast context, because the model often drops the verb and
 # reports the bookkeeping instead. Deliberately NOT read from
 # tactics_spells.BUILTIN: reply.py is imported with no engine on sys.path (the
