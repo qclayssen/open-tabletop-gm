@@ -293,6 +293,43 @@ def sheet_skills(camp_dir):
             re.finditer(r"^\|\s*([A-Za-z][A-Za-z ]*?)\s*\|[^|]*\|\s*[+-]?\d+\s*\|", text, re.M)]
 
 
+def _inventory_line(text: str) -> str:
+    """The "Equipment & Inventory" section's filled-in entries as one line, else ""."""
+    m = re.search(r"^##\s*Equipment[^\n]*\n(.*?)(?=^##\s|\Z)", text, re.M | re.S)
+    if not m:
+        return ""
+    items = []
+    for ln in m.group(1).splitlines():
+        ln = re.sub(r"\*\*([^*]+):\*\*", "", ln).strip().lstrip("-*").strip()
+        if ln and not re.fullmatch(r"0gp 0sp 0cp|[-_ ]*", ln):
+            items.append(ln.rstrip("."))
+    return "; ".join(items)
+
+
+def sheet_facts(camp_dir) -> dict | None:
+    """Sheet numbers for an out-of-character question, or None with no sheet.
+
+    Plain reads of what the sheet says (HP, AC via party_stats so an active Mage Armor
+    shows) plus the passive scores the check policy already uses (10 + skill bonus)."""
+    from localdm import checks
+    stats = party_stats(camp_dir)
+    sheet = first_sheet_path(camp_dir)
+    if sheet is None or not stats:
+        return None
+    me = next((e for e in stats if e["name"] == sheet.stem), stats[0])
+    passive = {}
+    for skill in ("perception", "insight", "investigation"):
+        found = skill_bonus(camp_dir, skill)
+        if found:
+            passive[skill] = checks.passive_score(found[2])
+    try:
+        inventory = _inventory_line(sheet.read_text(encoding="utf-8"))
+    except OSError:
+        inventory = ""
+    return {"name": me["name"], "hp": (me["hp"]["current"], me["hp"]["max"]),
+            "ac": me["ac"], "passive": passive, "inventory": inventory}
+
+
 def council_setting(state_md: str) -> str:
     m = _COUNCIL.search(state_md or "")
     return "off" if m and m.group(1).lower() == "off" else "auto"
