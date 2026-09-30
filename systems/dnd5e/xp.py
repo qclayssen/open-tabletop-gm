@@ -61,6 +61,39 @@ XP_THRESHOLDS: dict[int, tuple[int, int, int, int]] = {
     20: (2800,  5700,  8500,  12700),
 }
 
+# -- Adventuring day XP budget: adjusted XP per character a party can handle in a day --
+# Source: D&D 5e 2014 Basic Rules, "The Adventuring Day" (DMG p. 84), the
+# "Adventuring Day XP" table. The DMG's own column heading for it is "Adjusted XP
+# per Adventuring Day per Character".
+#
+# This is a DIFFERENT axis from XP_THRESHOLDS above and confusing the two is the
+# easy mistake: a threshold is what ONE encounter costs, this is what a whole day
+# of encounters costs. Six to eight medium or hard fights make up a day, so a day
+# at level 5 is worth about seven Medium fights, not one.
+#
+# It lives here, with the other 2014 XP tables, for the reason the module docstring
+# gives: a second copy of an XP table is a second thing to get wrong. `encounter.py`
+# imports it rather than restating it, the same way it imports XP_THRESHOLDS.
+ADVENTURING_DAY_XP: dict[int, int] = {
+    1: 300,     2: 600,     3: 1200,    4: 1700,    5: 3500,
+    6: 4000,    7: 5000,    8: 6000,    9: 7500,    10: 9000,
+    11: 10500,  12: 11500,  13: 13500,  14: 15000,  15: 18000,
+    16: 20000,  17: 25000,  18: 27000,  19: 30000,  20: 40000,
+}
+
+# How many encounters make up an adventuring day, quoted from the same page: "most
+# adventuring parties can handle about six to eight medium or hard encounters in a
+# day. If the adventure has more easy encounters, the adventurers can get through
+# more. If it has more deadly encounters, they can handle fewer."
+#
+# The "medium or hard" is load-bearing and is not a hedge. The day table is
+# calibrated to that blend, so it divides to the Medium column's 5 to 8 and the
+# Hard column's 3 to 5, and to neither the Easy column's 11 to 16 nor the Deadly
+# column's 2 to 3. An earlier draft of this work claimed 3 to 5, which is the Hard
+# column alone, and printed it to the GM on every invocation as though the DMG had
+# said it. Quoting the DMG's own sentence is the whole defence against that.
+ENCOUNTERS_PER_DAY = (6, 8)
+
 # ── XP by CR ─────────────────────────────────────────────────────────────────
 CR_XP: dict[str, int] = {
     "0":   10,    "1/8": 25,    "1/4": 50,    "1/2": 100,

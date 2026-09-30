@@ -13,11 +13,76 @@ This project is the LLM-agnostic, system-flexible fork of [claude-dnd-skill](htt
 ## [Unreleased]
 
 ### Added: named landmarks and the state card (A)
+> (kept below, above the `day` entry, in the order it landed on main)
+
 - **The gap.** A map's features were scenery. `compile_map` painted them into the terrain and, at most, wrote a floating label, so nothing could say *which* one. "Move behind the altar" or "put him by the north door" was unanswerable: the model had no handle to ask about and no way to check its own answer. It also had no source for distance or cover mid-fight, so feet got invented and disagreed with the engine that rolls the attack.
 - **Every map feature is now an addressable landmark.** `maps.compile_map` returns `meta["landmarks"]`: the feature's own `name` slugged (`north-door`) when the map gives one, otherwise its type plus a per-type counter (`crate-1`, `crate-2`), so every map written before names existed still gets stable handles and no shipped map needed editing. A duplicate explicit name gets `-2`. Squares are tracked per feature through later rectangles — a feature painted over entirely is dropped but **still advances the counter**, so the other handles do not shift under anything that already cited them. Display and GM text only; the engine's rules read `rows` and never this.
 - **`$T card <token>`: the one command for where things are.** Every creature with square, HP and feet from the actor; the map's landmarks by name with their squares, feet and the cover the actor has against them. **Every number comes from the engine** (`Grid.distance` for feet, `sight.sight` for cover and line of sight), so the card and a real attack always agree. North is fixed and stated on the card (row 1 top, columns A, B, C west to east) because "north" is otherwise the model's guess. `--players` applies the display's fog filter, leaving hidden and unseen creatures out of both the card and the text, exactly as `sight(players=True)` does.
 - **The fight now reads it, so the DM prompt can trust it.** `_engine_context` appends the current actor's card to the engine section of the Local DM's context; `dm.md` tells the model the card is the truth for squares and feet, to move toward the landmark the player named using the squares given, and never to work out a distance, square or cover level itself. `card` is in `READ_ONLY`, so like `status` it is a read-only probe, not a command the DM asked for — the two Local DM tests that enumerate context probes were updated to include it, and their guard is unchanged: an unreadable line still runs no action.
 - 8 new tests in `tests/test_tactics_statecard.py`, plus an assertion over **every shipped map** that landmarks compile with unique names, so the counter scheme cannot rot as maps are added. `scripts/tactics.md` and `dm.md` document the card and the handles.
+
+### Added: `combat.py day` — what a whole adventuring day costs, not one fight
+- **The gap.** `budget` answers what one encounter costs and `rate` answers what a
+  fight just cost. Neither answered the question a GM asks when planning a session
+  rather than rating a fight: *is this a day, or is this three days?* The 2014 DMG
+  tabulates a whole day separately from an encounter, and nothing read it.
+- `ADVENTURING_DAY_XP` (20 rows) and `ENCOUNTERS_PER_DAY` in `systems/dnd5e/xp.py`,
+  not in `encounter.py`. The module states for itself that a second copy of an XP
+  table is a second thing to get wrong, and the day table is an XP table;
+  `encounter.py` imports it the way it already imports `XP_THRESHOLDS`. Source: the
+  2014 Basic Rules "The Adventuring Day" (DMG p. 84), whose own column heading is
+  "Adjusted XP per Adventuring Day per Character".
+- **`--plan` is the feature; the budget is only the frame.** The day budget alone is
+  close to useless, and the reason is the non-obvious part: the DMG puts a day at
+  about six to eight *medium or hard* encounters and the table is calibrated to that
+  blend, so dividing it by the Medium column gives 5 to 8 and by the Hard column 3 to
+  5, at **every level from 1 to 20**. "A day holds about seven Medium fights" is true
+  at level 1 and at level 20 and tells a GM planning a level 20 day nothing they had
+  not already assumed. The budget can never come out over or under on its own. So
+  `day --plan "goblin x4 | orc x2"` costs a day the GM has already designed, fight by
+  fight, and reports the share with a banded verdict: room for more / a full day /
+  two days / far over.
+- **The bands do not name a condition level.** An earlier draft ended the far-over
+  band with "exhaustion 5 (speed 0) is likely by the end of it". The exhaustion number
+  is correct 2014 5e and was still wrong here: `day` is read-only, loads no encounter
+  and sees no tokens, and the day XP budget measures expected XP earned rather than
+  resource depletion. Exhaustion lives in the tracker, where only a long rest reduces
+  it. The sentence asserted a specific mechanical game state the tool did not compute,
+  and a GM would have put it on a character sheet. The editorial half survives: "the
+  party will be spent" is a GM's judgement, offered as advice.
+- **Each planned fight is rated through `rate()`**, so a day cannot be costed by a
+  second implementation that drifts from the one that costs a single fight, and the
+  2014 monster-count multiplier is applied per fight rather than to the day total
+  (two fights of two is x1.5 twice, not x2 once).
+- **The fight count reported is the count the GM typed.** The first version converted
+  the XP back into a "fights' worth" figure and reported four planned fights as
+  "roughly 1 fights' worth". A GM who planned four fights learns nothing from that,
+  and it is the exact confident-wrong-number failure this command was written against.
+- **`|` separates fights, `,` separates monsters within one.** Reusing the comma for
+  both would make `goblin x4, orc x2` ambiguously one fight or two.
+- **2024 is refused, not derived.** 2024 removed the adventuring day outright, so
+  there is no table to read and nothing to port. An earlier draft justified the
+  refusal as "2024's three tiers are a whole day's share, not an encounter cost",
+  which is a true observation standing in for a false reason; the refusal now says
+  the thing that is actually true and points at `rate`.
+- **A mixed party gets each character's own day, not a mean.** `party_total //
+  party_size` is the arithmetic mean of the party's days: for a L1 and a L20 that is
+  20,150, a figure belonging to no character on the table, printed beneath a
+  threshold row built from the *average level's* data. Two different averages
+  presented as one table. Each character is now reported by name, and the mean is
+  not reported at all: it is arithmetic, not a budget.
+- `day` is in `READ_ONLY`, and a test asserts it writes nothing: no encounter, no
+  `pending.json`, no session-log line. This was a real defect on the first run, not a
+  hypothetical — `day` reached the save path with `enc` still `None` and died on
+  `enc.board()`. A planning tool that mutates fight state can be called at the wrong
+  moment and cost a real roll. Verified mid-fight as well: with a live encounter and a
+  three-receipt chain, every campaign file is byte-identical afterwards and the chain
+  still verifies.
+- Documented where the GM will find it: `scripts/tactics.md` (the text loaded at
+  `/gm combat grid`), the `rules.py` design-contract block, and the `SYSTEM-PORTING.md`
+  Design table, so a second system implementing the interface has a row to read.
+- 26 tests in `tests/test_adventuring_day.py`. The guard is proven red rather than
+  assumed: with the six source files stashed and the tests kept, **all 26 fail**.
 
 ### Added: random-event oracle and the World Queue (E0, E1)
 - `scripts/oracle.py`: chaos factor (`## Session Flags`), yes/no, and Random Event Focus, ported from the mature tree without `scene_meaning()` (unanchored word pairs dilute an authored world). Rolls go through `scripts/dice.py`; `--seed` replays them. `/gm oracle` documented.

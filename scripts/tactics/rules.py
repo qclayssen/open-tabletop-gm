@@ -23,8 +23,10 @@ The contract, grouped the way SYSTEM-PORTING.md documents it:
                 lasting_conditions(token) -> list
   design        encounter_budget(levels, ruleset) -> dict: what a party can be handed
                 rate_encounter(groups, levels, ruleset) -> dict: what a monster list
-                costs ; award_xp(sheet_path, amount) -> dict ; record_awards(campaign_dir,
-                entries, note) — so a finished fight feeds the campaign's own XP ledger
+                costs ; adventuring_day(levels, ruleset, plan) -> dict: what a whole
+                day holds, and what a planned day costs against it ; award_xp(sheet_path,
+                amount) -> dict ; record_awards(campaign_dir, entries, note) — so a
+                finished fight feeds the campaign's own XP ledger
 
 Result dicts carry a short `text` the CLI prints as-is. Rolls go through the
 Roller, so their source (engine, player, verbal) is always recorded.
@@ -233,6 +235,26 @@ class Rules:
         adjusted total, the per-character share) and the difficulty tier, so the
         GM can check the number instead of trusting it. An unknown monster name
         raises ValueError with a message the GM can act on.
+        """
+        raise NotImplementedError
+
+    def adventuring_day(self, levels: list, ruleset: str = "",
+                        plan: list | None = None) -> dict:
+        """The whole day a party can be handed, not one fight.
+
+        The thresholds above answer what a single encounter costs; this answers
+        how much a day of them costs, which is the question behind "is this a
+        session or a campaign?".
+
+        `plan` is the part that makes it worth asking: a list of planned
+        encounters, each a `groups` list in the shape `rate_encounter` takes. With
+        a plan, the return value also carries the rated fights, their total, and
+        whether the day is under, about right, or over.
+
+        Returns the per-character and party day budgets and how many encounters
+        each difficulty fits. A system with no day concept raises
+        NotImplementedError, which is the honest answer: a day is a table lookup
+        in 2014 and a rules question elsewhere.
         """
         raise NotImplementedError
 

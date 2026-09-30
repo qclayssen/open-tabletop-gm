@@ -1023,6 +1023,14 @@ class DnD5e(Rules):
                                         lookup=_lookup_monster, suggest=_srd_suggest,
                                         known=known)
 
+    def adventuring_day(self, levels, ruleset="", plan=None):
+        # Each planned fight is rated through the same path `rate_encounter` uses,
+        # so a day's worth of fights is costed by the code that costs one fight
+        # and the two cannot drift apart.
+        return _encounter_module().adventuring_day(levels, ruleset or "2014", plan=plan,
+                                                   lookup=_lookup_monster,
+                                                   suggest=_srd_suggest)
+
     def award_xp(self, sheet_path, amount):
         return _encounter_module().award_xp(sheet_path, amount)
 
