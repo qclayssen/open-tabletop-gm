@@ -182,6 +182,15 @@ def square_box(box: tuple[int, int, int, int], size: tuple[int, int]) -> tuple[i
 
 
 def run(sheet: pathlib.Path, out: pathlib.Path) -> dict:
+    # The input is checked BEFORE the optional dependency is imported. The import
+    # used to come first, so a machine without Pillow raised ModuleNotFoundError
+    # out of the top of this function and the "does not exist" refusal was
+    # unreachable: asking about a file that is not there crashed instead of
+    # saying so. Pillow is runtime-only and deliberately not installed by CI, so
+    # the refusal path must not depend on it. A missing sheet is a question about
+    # the filesystem, and the filesystem does not need Pillow to answer it.
+    if not sheet.exists():
+        raise Refused(f"{sheet} does not exist")
     from PIL import Image
     try:
         im = Image.open(sheet).convert("RGB")

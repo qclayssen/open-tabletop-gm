@@ -466,8 +466,16 @@ _NAME_WORD = re.compile(r"[A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})?")
 # "Marcus the guard" yields "the guard".
 _FOLLOWER = re.compile(r"\s+(?:(?:the|a|an)\s+[a-z]+|[A-Z][a-z]{2,})")
 # A sentence boundary, for the same "is this the first word of a sentence"
-# question the follower needs.
-_SENTENCE = re.compile(r"[.!?\n]")
+# question the follower needs. Named BOUNDARY, not _SENTENCE: the scrub above
+# already owns that name in this module, and Python has no namespaces, so the
+# second definition silently replaced the first. The scrub splits on the gap
+# AFTER a terminator and needs the terminator left in the piece; this one
+# splits on the terminator itself. Sharing a name between two different regexes
+# with the same intent and different behaviour is how
+# test_the_scrub_keeps_the_narration_around_a_payload started failing: the
+# scrub was handed the wrong pattern and dropped sentence-final punctuation
+# from the prose the player was shown.
+_BOUNDARY = re.compile(r"[.!?\n]")
 
 # Capitalised words that are not people: function words, numerals, and the
 # common nouns a small model puts at the head of a sentence. The nouns matter as
@@ -523,7 +531,7 @@ def _mentions(text: str, known: set) -> dict:
         given = m.group(0).split(" ", 1)[0]
         if given.lower() in _NOT_NAMES:
             continue
-        tail = _SENTENCE.split(text[m.end():], maxsplit=1)[0]
+        tail = _BOUNDARY.split(text[m.end():], maxsplit=1)[0]
         follower = _FOLLOWER.match(tail)
         # Four ways in, because a capitalised word at the head of a sentence and
         # a name look identical. It recurs in this text; it is not the first
