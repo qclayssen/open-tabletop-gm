@@ -35,7 +35,9 @@ file was genuinely cp1251 rather than some other single-byte encoding. UTF-8 is
 always tried first precisely because it is the one that can be proven.
 """
 import locale
+import os
 import pathlib
+import tempfile
 
 
 class TextDecodeError(ValueError):
@@ -90,3 +92,31 @@ def read_text(path) -> str:
             "refusing to read"
         ) from None
     return text
+
+
+def write_text(path, text: str) -> None:
+    """Write UTF-8 atomically: a temp file in the same directory, then rename.
+
+    The rename is what makes this safe on the shared documents this tree owns
+    -- an Atlas `assets-metadata.json` is the entire asset library, and a plain
+    `write_text` interrupted midway leaves invalid JSON that costs the user
+    every token they had. A same-directory temp file keeps the rename on one
+    filesystem, which is what makes it atomic; a temp file in /tmp would be a
+    copy, and a copy is exactly the window this exists to close.
+    """
+    path = pathlib.Path(path)
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=path.name + ".", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        # Never leave the partial file behind: it would sit next to the real
+        # one looking like content.
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise

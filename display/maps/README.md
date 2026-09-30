@@ -58,6 +58,22 @@ Reach for it when generated art does not arrive named after the monster: a vault
 
 **The engine never reads `token_art`.** Only the Atlas exporter does, and a map with no `token_art` behaves exactly as before.
 
+### Making art importable (the other half)
+
+`token_art` is for *a map's* spawns. It is not how art reaches Atlas's asset library, and a portrait sitting in the vault is not a token: Atlas lists tokens from entries in `atlas-vtt/.atlas-data/assets-metadata.json`, so a folder of correct, correctly named PNGs still shows every token as **Missing image** in the Create-tokens panel.
+
+Two halves, both required:
+
+```bash
+python3 scripts/register_tokens.py --vault ~/path/to/vault --art /path/to/art --dry-run
+python3 scripts/register_tokens.py --vault ~/path/to/vault --art /path/to/art
+python3 scripts/register_tokens.py --vault ~/path/to/vault --list    # any missing image, exit 1
+```
+
+It copies each picture into `atlas-vtt/collections/<collection>/tokens/`, writes the metadata entry, and generates the thumbnail at the name Atlas looks for — `assets/thumbnails/<stem>-<fnv1a(imagePath)>.webp`. That hash is Atlas's, and it is pinned by tests against five thumbnails from a working vault: get it wrong and every token renders a blank swatch with no error. Idempotent, so it is safe in a loop; `--list` exits non-zero when an entry points at a file that is gone, which is the one failure a user cannot otherwise see coming.
+
+`map_to_atlas.py` deliberately still does not touch `assets-metadata.json` — it writes only scene files, so a half-finished export cannot corrupt an index Atlas owns.
+
 ## Terrain types
 
 | Type | Moving in | Sight | Cover |
