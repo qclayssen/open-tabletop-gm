@@ -34,7 +34,8 @@
                hover: null, armed: null, busy: false, lastMove: null, toastTimer: 0, hoverTimer: 0,
                spells: null, spell: null, singles: null, darts: null, dartsText: '',
                helpTarget: null, readyWhat: null, readyStep: null,
-               cursor: null, sight: false, sightFrom: null, sightData: null, sightKey: '' };
+               cursor: null, ruler: { tool: null, a: null, b: null, fixed: false }, camMap: null, camTimer: 0,
+               sight: false, sightFrom: null, sightData: null, sightKey: '' };
   const CONDITION_CODES = { blinded: 'Bl', charmed: 'Ch', deafened: 'De', exhaustion: 'Ex', frightened: 'Fr',
     grappled: 'Gr', incapacitated: 'In', invisible: 'Iv', paralyzed: 'Pa', petrified: 'Pe', poisoned: 'Po',
     prone: 'Pr', restrained: 'Re', stunned: 'St', unconscious: 'Un' };
@@ -159,6 +160,87 @@
     }
     return `Waiting on ${w}: ${p}`;
   }
+
+  // The two geometry seams for anything drawn or measured on the board. The ruler
+  // and new board drawing call only these, so a later hex grid swaps the bodies
+  // and leaves the callers alone.
+  // Centre of a square in SVG units.
+  const cellCentre = (x, y) => ({ px: x * C + C / 2, py: y * C + C / 2 });
+  // Feet between two squares (a, b are [x, y]), ignoring terrain. `sq` is the
+  // square size in ft (snap.square_ft).
+  const distFeet = (a, b, diagonals, sq) => gridDistance(diagonals, sq || 5, a, b);
+
+  // Feet between two squares, ignoring terrain: a port of Grid.distance in
+  // scripts/tactics/grid.py, which is what reach, range and opportunity attacks
+  // use. `diagonals` is the map's own rule ("5" or "5-10-5", snap.grid.diagonals)
+  // and `sq` the square size in feet (snap.square_ft). tests/test_display_ruler.py
+  // pins this against the Python answer on sample pairs, so the two cannot drift.
+  function gridDistance(diagonals, sq, a, b) {
+    const dx = Math.abs(a[0] - b[0]), dy = Math.abs(a[1] - b[1]);
+    const diag = Math.min(dx, dy), straight = Math.abs(dx - dy);
+    if (diagonals !== '5-10-5') return (diag + straight) * sq;
+    return (straight + diag + Math.floor(diag / 2)) * sq;
+  }
+
+  // The squares a sphere, cone or line covers, ignoring walls: the shape half of
+  // grid.area (same containment rule: a square counts when its centre is inside,
+  // boundary included). The engine also drops squares behind walls; a ruler is a
+  // measuring aid and says so. Pinned against the Python on an open map.
+  // shape: 'circle' (centred on target), 'cone' or 'line' (from caster toward target).
+  function templateSquares(shape, sizeFt, sq, caster, target, W, H, widthFt) {
+    const EPS = 1e-9, cells = sizeFt / sq, out = [];
+    const inb = (x, y) => x >= 0 && y >= 0 && x < W && y < H;
+    if (shape === 'circle') {
+      const ox = target[0] + 0.5, oy = target[1] + 0.5;
+      for (let x = Math.floor(ox - cells); x <= Math.ceil(ox + cells); x++)
+        for (let y = Math.floor(oy - cells); y <= Math.ceil(oy + cells); y++)
+          if (inb(x, y) && Math.hypot(x + 0.5 - ox, y + 0.5 - oy) <= cells + EPS) out.push([x, y]);
+    } else if (shape === 'cone' || shape === 'line') {
+      if (caster[0] === target[0] && caster[1] === target[1]) return out;
+      const cx = caster[0] + 0.5, cy = caster[1] + 0.5;
+      const dx = target[0] + 0.5 - cx, dy = target[1] + 0.5 - cy;
+      const scale = 0.5 / Math.max(Math.abs(dx), Math.abs(dy));
+      const ox = cx + dx * scale, oy = cy + dy * scale;
+      const len = Math.hypot(dx, dy), ux = dx / len, uy = dy / len;
+      const halfW = (widthFt || sq) / sq / 2, reach = Math.ceil(cells) + 2;
+      for (let x = caster[0] - reach; x <= caster[0] + reach; x++)
+        for (let y = caster[1] - reach; y <= caster[1] + reach; y++) {
+          if (!inb(x, y)) continue;
+          const px = x + 0.5 - ox, py = y + 0.5 - oy;
+          const along = px * ux + py * uy, across = Math.abs(px * uy - py * ux);
+          if (along <= EPS || along > cells + EPS) continue;
+          if (across <= (shape === 'cone' ? along / 2 : halfW) + EPS) out.push([x, y]);
+        }
+    }
+    return out.sort((p, q) => p[1] - q[1] || p[0] - q[0]);
+  }
+
+  // Camera memory: one localStorage entry, {mapname: {scrollL, scrollT[, zoom]}}.
+  // `zoom` is optional and passed through untouched so a later pan/zoom camera
+  // can extend the record without a migration. Newest map last; oldest dropped
+  // past CAMERA_MAX so the entry cannot grow without bound.
+  const CAMERA_MAX = 40;
+  function cameraParse(raw) {
+    let o; try { o = JSON.parse(raw); } catch (e) { return {}; }
+    if (!o || typeof o !== 'object' || Array.isArray(o)) return {};
+    const out = {};
+    for (const k of Object.keys(o)) {
+      const v = o[k];
+      if (!v || !isFinite(v.scrollL) || !isFinite(v.scrollT)) continue;
+      out[k] = { scrollL: Math.max(0, +v.scrollL), scrollT: Math.max(0, +v.scrollT) };
+      if (isFinite(v.zoom) && +v.zoom > 0) out[k].zoom = +v.zoom;
+    }
+    return out;
+  }
+  function cameraPut(store, name, cam) {
+    if (!name) return store;
+    const next = Object.assign({}, store);
+    delete next[name];
+    next[name] = cam;
+    const keys = Object.keys(next);
+    for (const k of keys.slice(0, Math.max(0, keys.length - CAMERA_MAX))) delete next[k];
+    return next;
+  }
   /* end pure helpers */
 
   // Nudge a text element back inside the board, horizontally and vertically.
@@ -217,6 +299,11 @@
       '<header class="tx-head"><div class="tx-title"><span id="tx-map"></span> <span class="tx-sub">Round <span id="tx-round">1</span></span></div>' +
       '<div id="tx-banner" role="status" aria-live="polite"></div>' +
       '<button class="tx-btn" id="tx-cover" type="button" aria-pressed="false" title="Shade cover and line of sight from a creature (C)">Cover</button>' +
+      '<span class="tx-rulers" role="group" aria-label="Measure">' +
+      '<button class="tx-btn tx-small" data-ruler="line" type="button" aria-pressed="false" title="Measure a distance: tap two squares">Ruler</button>' +
+      '<button class="tx-btn tx-small" data-ruler="cone" type="button" aria-pressed="false" title="Cone template from a square toward another">Cone</button>' +
+      '<button class="tx-btn tx-small" data-ruler="circle" type="button" aria-pressed="false" title="Circle template: centre, then edge">Circle</button>' +
+      '<span id="tx-ruler-out" class="tx-ruler-out" role="status" aria-live="polite"></span></span>' +
       '<button class="tx-btn" id="tx-min" type="button" aria-expanded="true">Hide map</button></header>' +
       '<div id="tx-strip" class="tx-strip" role="list" aria-label="Initiative order"></div>' +
       '<div class="tx-body"><div id="tx-board" class="tx-board" tabindex="0" role="application" aria-roledescription="battle map"' +
@@ -240,8 +327,15 @@
       el.min.textContent = min ? 'Show map' : 'Hide map';
       el.min.setAttribute('aria-expanded', String(!min));
     });
-    document.addEventListener('keydown', e => { if (e.key === 'Escape' && ui.mode) { clearMode(); render(); } });
+    document.addEventListener('keydown', e => {
+      if (e.key !== 'Escape') return;
+      if (ui.ruler.tool) { setRuler(null); return; }
+      if (ui.mode) { clearMode(); render(); }
+    });
     el.cover.addEventListener('click', toggleSight);
+    for (const b of p.querySelectorAll('[data-ruler]')) b.addEventListener('click', () => setRuler(b.dataset.ruler));
+    el.rulerOut = document.getElementById('tx-ruler-out');
+    el.board.addEventListener('scroll', saveCameraSoon, { passive: true });
     el.board.addEventListener('keydown', onBoardKey);
     el.board.addEventListener('focus', () => { if (!ui.cursor) placeCursor(homeSquare()); else say(describeSquare(ui.cursor)); drawCursor(); });
     el.board.addEventListener('blur', drawCursor);
@@ -452,6 +546,7 @@
     ui.defsLayer = svg('defs', {}, s);
     ui.tokenLayer = svg('g', {}, s);
     ui.markLayer = svg('g', { 'aria-hidden': 'true' }, s);
+    ui.rulerLayer = svg('g', { 'aria-hidden': 'true', class: 'tx-ruler-layer' }, s);
     ui.floatLayer = svg('g', {}, s);
     ui.cursorLayer = svg('g', { 'aria-hidden': 'true' }, s);
     ui.svg = s;
@@ -464,10 +559,17 @@
     s.addEventListener('pointerleave', () => {
       if ((ui.mode === 'move' || ui.mode === 'aim') && ui.armed !== ui.hover) { ui.hover = null; drawOverlay(); renderInfo(); }
     });
-    const keepL = el.board.scrollLeft, keepT = el.board.scrollTop;
+    let keepL = el.board.scrollLeft, keepT = el.board.scrollTop;
+    // A map that has just mounted (page load, or a new battle) opens where the
+    // table last left it; a re-render of the same map keeps the live scroll.
+    const camName = cameraName(), saved = camName !== ui.camMap ? cameraLoad()[camName] : null;
+    if (saved) { keepL = saved.scrollL; keepT = saved.scrollT; }
+    ui.camMap = camName;
     el.board.innerHTML = ''; el.board.appendChild(s);
     el.board.scrollLeft = keepL; el.board.scrollTop = keepT;   // a re-render must not snap back to the corner
-    keepActorInView(cell);
+    drawRuler();
+    if (!saved) keepActorInView(cell);
+    saveCameraSoon();
     floaters();
   }
 
@@ -921,6 +1023,87 @@
     }
   }
 
+  // ── ruler and templates (BV6) ────────────────────────────────────────────
+  // Ephemeral: lives in ui.ruler and one SVG layer, never sent to the engine and
+  // never written to encounter.json. Distances come from gridDistance, the port
+  // of Grid.distance, fed the map's own diagonal rule and square size.
+  const RULER_WORD = { line: 'Ruler', cone: 'Cone', circle: 'Circle' };
+
+  function setRuler(tool) {
+    const r = ui.ruler;
+    r.tool = tool && tool !== r.tool ? tool : null;
+    r.a = r.b = null; r.fixed = false;
+    for (const b of el.panel.querySelectorAll('[data-ruler]'))
+      b.setAttribute('aria-pressed', String(b.dataset.ruler === r.tool));
+    el.panel.classList.toggle('tx-ruling', !!r.tool);
+    if (el.rulerOut) el.rulerOut.textContent = r.tool ? RULER_WORD[r.tool] + ': pick the first square.' : '';
+    drawRuler();
+  }
+
+  function rulerClick(sq) {
+    const p = parseSq(sq), r = ui.ruler; if (!p) return;
+    if (!r.a || r.fixed) { r.a = p; r.b = p; r.fixed = false; }
+    else { r.b = p; r.fixed = true; }
+    drawRuler();
+  }
+  function rulerHover(sq) {
+    const p = parseSq(sq), r = ui.ruler;
+    if (!p || !r.a || r.fixed || (r.b && r.b[0] === p[0] && r.b[1] === p[1])) return;
+    r.b = p; drawRuler();
+  }
+
+  function drawRuler() {
+    const layer = ui.rulerLayer, r = ui.ruler; if (!layer) return;
+    layer.innerHTML = '';
+    if (!r.tool || !r.a) return;
+    const g = snap.grid || {}, sq = snap.square_ft || 5, a = r.a, b = r.b || r.a;
+    const ft = distFeet(a, b, g.diagonals, sq);
+    const ca = cellCentre(a[0], a[1]), cb = cellCentre(b[0], b[1]);
+    const ax = ca.px, ay = ca.py, bx = cb.px, by = cb.py;
+    let text = '';
+    if (r.tool !== 'line' && ft > 0 || r.tool === 'circle') {
+      const cells = templateSquares(r.tool === 'circle' ? 'circle' : r.tool, ft, sq,
+                                    a, r.tool === 'circle' ? a : b, ui.W || 0, ui.H || 0, sq);
+      for (const c of cells) svg('rect', { x: c[0] * C, y: c[1] * C, width: C, height: C, class: 'tx-ruler-cell' }, layer);
+      text = `${RULER_WORD[r.tool]} ${ft} ft: ${cells.length} squares, walls not counted`;
+    } else if (r.tool === 'line') {
+      text = `${ft} ft (${ft / sq} squares)`;
+    } else text = 'Pick the second square.';
+    svg('line', { x1: ax, y1: ay, x2: bx, y2: by, class: 'tx-ruler-line' }, layer);
+    svg('circle', { cx: ax, cy: ay, r: 4, class: 'tx-ruler-dot' }, layer);
+    if (b !== a) svg('circle', { cx: bx, cy: by, r: 4, class: 'tx-ruler-dot' }, layer);
+    if (ft > 0 || r.tool === 'circle') {
+      const t = svg('text', { x: Math.min((ui.W || 1) * C - 4, bx + 8), y: Math.max(14, by - 8), class: 'tx-cell-lbl tx-ruler-lbl',
+                              style: 'stroke:var(--tx-paper)' }, layer);
+      t.textContent = ft + ' ft';
+      t.setAttribute('text-anchor', bx > (ui.W || 1) * C - 60 ? 'end' : 'start');
+    }
+    if (el.rulerOut) el.rulerOut.textContent = text;
+    if (r.fixed) say(text);
+  }
+
+  // ── camera memory (PV3) ──────────────────────────────────────────────────
+  // {mapname: {scrollL, scrollT[, zoom]}} in localStorage, restored when the map
+  // mounts. Same class as the tx-cover toggle: a convenience, so blocked storage
+  // is ignored.
+  const CAMERA_KEY = 'tx-camera';
+  function cameraName() { return ((snap && snap.meta && snap.meta.name) || (snap && snap.grid && snap.grid.name) || '').trim(); }
+  function cameraLoad() {
+    try { return cameraParse(localStorage.getItem(CAMERA_KEY)); } catch (e) { return {}; }
+  }
+  function saveCamera() {
+    ui.camTimer = 0;
+    const name = ui.camMap, b = el.board;
+    if (!name || !b || !b.clientWidth) return;              // hidden panel: scroll reads 0, not where they were
+    try {
+      localStorage.setItem(CAMERA_KEY, JSON.stringify(cameraPut(cameraLoad(), name,
+        { scrollL: Math.round(b.scrollLeft), scrollT: Math.round(b.scrollTop) })));
+    } catch (e) { /* storage blocked */ }
+  }
+  function saveCameraSoon() {
+    if (!ui.camTimer) ui.camTimer = setTimeout(saveCamera, 300);   // throttle: at most one write per 300 ms
+  }
+
   // ── side panel: info, actions, log ───────────────────────────────────────
   function renderSide() {
     const t = current();
@@ -1322,6 +1505,7 @@
   }
 
   function hoverSquare(sq) {
+    if (ui.ruler.tool) { rulerHover(sq); return; }
     if (ui.mode === 'aim') {
       if (!sq || sq === ui.hover) return;
       ui.hover = sq; ui.armed = null;
@@ -1370,6 +1554,7 @@
   }
 
   async function clickSquare(sq, pointerType) {
+    if (ui.ruler.tool) { rulerClick(sq); return; }
     if (ui.busy) return;
     if (ui.mode === 'aim') return clickAim({ pointerType }, sq);
     if (ui.mode === 'ready' && ui.readyStep === 'target' && ui.readyWhat && ui.readyWhat.area) return readyFinish(sq);
@@ -1421,6 +1606,7 @@
   }
 
   function onToken(t, evt) {
+    if (ui.ruler.tool) { rulerClick(sqOf(t)); return; }
     // With cover shading on and no action under way, a click picks whose view to shade.
     if (ui.sight && !ui.mode && !t.dead && t.id !== ui.sightFrom) { selectSight(t); return; }
     if (ui.busy || !myTurn()) return;

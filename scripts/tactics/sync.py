@@ -25,6 +25,7 @@ import shutil
 import urllib.parse
 
 from . import slots as slots_mod
+from .grid import SQUARE_FT
 _SKILL = pathlib.Path(__file__).resolve().parents[2]
 _push = None
 
@@ -163,6 +164,9 @@ def snapshot(enc, meta: dict = None) -> dict:
     return {"status": enc.status, "round": enc.round,
             "current": None if hidden_turn or not cur else cur.id, "unseen_turn": hidden_turn,
             "order": [i for i in enc.order if i in seen], "grid": enc.grid, "meta": meta or {},
+            # What the board's ruler needs to read feet the way grid.distance does: the
+            # diagonal rule rides in grid["diagonals"], the square size is here.
+            "square_ft": SQUARE_FT,
             # Squares no PC can see are dimmed; in "hide" mode the creatures there are left out.
             # "runs" is [row, first col, last col] per run: one entry per stretch, not per square.
             "fog": None if visible is None else {"mode": sight.fog_mode(enc),

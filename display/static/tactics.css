@@ -320,3 +320,12 @@ body.tx-min #tx-panel { max-height: 132px; overflow: hidden; }
      block cannot take them. */
   #tx-panel, #tx-panel * { scroll-behavior: auto !important; transition: none !important; }
 }
+
+/* Ruler and templates: drawn over the board, never in the way of a click. */
+.tx-rulers { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.tx-ruler-out { font-size: 12px; color: var(--tx-ink); margin-left: 4px; }
+.tx-ruler-layer { pointer-events: none; }
+.tx-ruler-cell { fill: var(--tx-brass); fill-opacity: .3; stroke: var(--tx-brass); stroke-opacity: .7; }
+.tx-ruler-line { stroke: var(--tx-ink); stroke-width: 2.5; stroke-dasharray: 6 4; }
+.tx-ruler-dot { fill: var(--tx-ink); stroke: var(--tx-paper); stroke-width: 1.5; }
+.tx-ruling .tx-board svg { cursor: crosshair; }
