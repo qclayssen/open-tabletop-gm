@@ -5,12 +5,16 @@ Usage:
     python3 display/preflight.py [campaign]
 
 Prints one line per problem or piece of news, nothing when all is well:
-  - the campaign folder is missing (with the campaigns that exist),
+  - the campaign is missing, or the folder carrying that name is not a campaign
+    (with the campaigns that do exist),
   - the 5e SRD data is missing or was built by an older build_srd.py (spells
     cast from the grid would get the wrong range: rebuild it),
   - a grid fight is in progress in this campaign (the map comes back on its
     own; the GM resumes it with /gm combat grid).
-Exit code 1 only when the campaign does not exist.
+Exit code 1 only when the campaign does not exist or is not a campaign.
+
+"What is not a campaign" means a directory with no `state.md`, which is the
+shape a campaign leaves behind when it moves. See paths._is_campaign.
 """
 from __future__ import annotations
 
@@ -21,7 +25,7 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from paths import campaigns_dir, campaign_system, find_campaign  # noqa: E402
+from paths import campaigns_dir, campaign_system, find_campaign, _is_campaign  # noqa: E402
 
 SRD = ROOT / "systems" / "dnd5e" / "data" / "dnd5e_srd.json"
 REBUILD = "python3 systems/dnd5e/build_srd.py --no-fvtt"
@@ -57,8 +61,16 @@ def main(argv: list) -> int:
     name = argv[0].strip() if argv else ""
     if name:
         camp = find_campaign(name)   # also the legacy folder, like /gm load
-        if not camp.is_dir():
-            have = sorted(p.name for p in campaigns_dir().glob("*") if p.is_dir())
+        # _is_campaign, not is_dir. "This folder exists" is exactly the check that
+        # let a two-entry shell pass as the campaign for a session. find_campaign
+        # already rejects a shell and falls through to the not-found sentinel, but
+        # that sentinel is campaign_dir(name), and a shell at the configured root
+        # *is* campaign_dir(name) -- so the path exists and the guard still passes.
+        if not _is_campaign(camp):
+            # Only real campaigns are offered, or the reply to "no campaign
+            # 'strixhaven-kairos'" names a shell that is not one.
+            have = sorted(p.name for p in campaigns_dir().glob("*")
+                          if _is_campaign(p))
             print(f"No campaign {name!r} in {campaigns_dir()}. "
                   f"Campaigns: {', '.join(have) or '(none)'}.")
             return 1

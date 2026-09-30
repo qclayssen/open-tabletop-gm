@@ -408,7 +408,13 @@ def test_output_is_ascii_so_cp1252_consoles_do_not_crash(tmp_path):
 def test_lint_does_not_migrate_a_legacy_campaign(tmp_path, monkeypatch):
     import paths
     home = tmp_path / "home"
-    (home / "open-tabletop-gm" / "campaigns" / "old").mkdir(parents=True)
+    # A state.md, or it is not a campaign: find_campaign validates the legacy
+    # folder the same way it validates the configured root, so an empty directory
+    # is a miss rather than a legacy campaign (see
+    # tests/test_paths_campaign_resolution.py).
+    old = home / "open-tabletop-gm" / "campaigns" / "old"
+    old.mkdir(parents=True)
+    (old / "state.md").write_text("# Old\n", encoding="utf-8")
     new_root = tmp_path / "new"
     new_root.mkdir()
     monkeypatch.setattr(paths, "_default_root", lambda: home / "open-tabletop-gm")
