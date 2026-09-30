@@ -192,3 +192,18 @@ python3 scripts/map_catalog.py --open                      # browse what you hav
 `map_catalog.py` renders every map that loads into one static HTML page with a thumbnail, its size in feet, and its terrain. Thumbnails are inlined as data URIs, so it works from a USB stick and survives being emailed; a map with no artwork installed says so rather than drawing a blank tile that would be indistinguishable from an empty map.
 
 Thumbnails need an image resizer, and none is a dependency of the engine. It looks for `magick`, `convert`, `ffmpeg` and `sips` (macOS only) in that order. With none of them installed the page is still written and every map still listed -- the artwork is simply not shown, and both the page and stdout say so, rather than passing off a missing resizer as missing artwork.
+
+## Exporting to Chartdown
+
+`python3 scripts/map_to_chartdown.py <map> [--tokens] [--terrain NAME=WORD] [--out DIR]`
+writes `<map>.cd`, a [Chartdown](https://github.com/Nossimonov/Chartdown) (spec v0.8)
+text document with a `chartdown: 0.8` header. It is one-way, like the Atlas export: it
+reads the map the way the engine does and never reads a `.cd` back. Square grids only.
+
+Terrain becomes vocabulary words through an explicit table: `difficult` is `rubble`,
+`water` is `water`, `wall` is `earth` (solid rock), `void` is `void`, `feature` is
+`boulder`, `hazard` is a declared `hazard` word, and floor is left unmarked. A custom
+terrain such as `wood` or `finish` is refused until you name a word for it
+(`--terrain wood=grass`); nothing is guessed. Each run prints what was lost: the
+diagonal rule, terrain costs and cover, pixel cell size, labels, and (with `--tokens`)
+that spawns are a position and a name only and do not survive Chartdown's UVTT export.
