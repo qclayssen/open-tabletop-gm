@@ -2,10 +2,10 @@
 
 Each test here pins a defect the re-test reproduced against a real page, with
 the numbers the report gave. The pattern is the one
-test_display_tactics_layout.py established: drive the real index.html (or
-evidence-panel.html) through the Flask app on an ephemeral port, hand the panel
-a snapshot in the shape scripts/tactics/sync.py produces, and measure what a
-browser actually did. Skipped when playwright or Chromium is absent.
+test_display_tactics_layout.py established: drive the real index.html through
+the Flask app on an ephemeral port, hand the panel a snapshot in the shape
+scripts/tactics/sync.py produces, and measure what a browser actually did.
+Skipped when playwright or Chromium is absent.
 
   N-1  the reading column collapses to a ribbon at narrow widths
   N-2  the map panel covers the story, and the folded panel clips its chips
@@ -15,7 +15,6 @@ browser actually did. Skipped when playwright or Chromium is absent.
   N-5  the roll banner omits the advantage the engine is rolling under
   N-6  a refusal is unreadable, contradicts the banner, and covers the log
 """
-import http.server
 import importlib.util
 import itertools
 import json
@@ -93,11 +92,6 @@ def snapshot(w=12, h=9, **turn):
     if turn:
         base["turn"].update(turn)
     return base
-
-
-class _Quiet(http.server.SimpleHTTPRequestHandler):
-    def log_message(self, *args):
-        pass
 
 
 @unittest.skipUnless(HAVE_PLAYWRIGHT, "playwright is not installed")
