@@ -10,6 +10,10 @@ verbatim lines the player already heard must outlive the fold.
 
 The summarizer writes from a background thread while the REPL appends turns,
 so every read and write takes the same lock.
+
+Turns are sanitised on read (reply.sanitize_turns): a transcript that recorded a
+granted player-issued instruction would otherwise replay it into the DM on every
+load. The file itself is never rewritten.
 """
 from __future__ import annotations
 
@@ -17,6 +21,8 @@ import json
 import os
 import pathlib
 import threading
+
+from . import reply
 
 
 def _write(path: pathlib.Path, text: str) -> None:
@@ -58,11 +64,20 @@ class Memory:
         return len(texts[-limit:])
 
     def turns(self) -> list:
+        """Every turn, with granted player instructions scrubbed on the way out.
+
+        turns() is the one place a transcript is read, so it is the one place a
+        load-time scrub can be enforced: the DM's context, the advisor briefs,
+        the summarizer and canon all read through here. A transcript that
+        captured a successful injection would otherwise replay it into the DM
+        on every load. The file on disk is left alone, so the player still sees
+        the turn they were shown.
+        """
         with self._lock:
             if not self._transcript.exists():
                 return []
             lines = self._transcript.read_text(encoding="utf-8").splitlines()
-        return [json.loads(line) for line in lines if line.strip()]
+        return reply.sanitize_turns([json.loads(line) for line in lines if line.strip()])
 
     def summary(self) -> str:
         path = self.dir / "summary.md"
