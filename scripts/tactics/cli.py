@@ -35,6 +35,7 @@ Actions (the current creature)
     trigger <token> [target]       the readied action happens now (a reaction)
     reactions <token> ask|auto|off Shield / Silvery Barbs: ask the player, always, never
     sight <token>                  who it sees, and with what cover (the display's cover shading)
+    card <token> [--players]       state card: creatures and named landmarks, feet, cover, north
     fog hide|dim|off               display fog of war: squares no PC sees are dimmed; "hide"
                                    also leaves out the creatures there (the default)
     condition <token> add|remove <condition>     GM ruling (e.g. a rider the engine left to you)
@@ -73,7 +74,7 @@ import sys
 from paths import find_campaign            # scripts/paths.py (on sys.path via tactics/__init__)
 
 from . import (actions, ai, effects, encounter, engine, formations, maps, policy, receipts,
-                 rest, roller, sight, spells, slots, state, sync)
+                 rest, roller, sight, slots, spells, state, statecard, sync)
 from .core import rules_for
 from .grid import label, parse_square
 from .roller import PendingRoll, Roller
@@ -87,7 +88,7 @@ _DISPLAY_CAMPAIGN = _SCRIPTS.parent / "display" / ".campaign"
 # is an encounter to save, so they must work with nothing running and must not
 # touch combat/pending.json.
 READ_ONLY = ("status", "options", "preview", "reachable", "approach", "targets", "log", "spells",
-             "preview-area", "sight", "budget", "rate", "receipts", "formation")
+             "preview-area", "sight", "card", "budget", "rate", "receipts", "formation")
 # `formation` is here even though `formation save` writes a file: pending.json
 # exists to replay the *same* engine dice after a decision, and nothing under
 # `formation` rolls. Saving a formation is a deliberate act, and making it
@@ -751,6 +752,9 @@ def run(args) -> int:
         elif cmd == "sight":
             data = sight.sight(enc, args.token, players=args.players)
             text = data["text"]
+        elif cmd == "card":
+            data = statecard.statecard(enc, args.token, players=args.players)
+            text = data["text"]
         elif cmd == "fog":
             enc.meta["fog"] = args.mode
             text = f"Fog of war: {args.mode}." + {
@@ -998,6 +1002,10 @@ def parser() -> argparse.ArgumentParser:
     s.add_argument("token")
     s.add_argument("--players", action="store_true",
                    help="only what the players can see (the display passes this)")
+    s = sub.add_parser("card", parents=c, help="state card: creatures and landmarks with feet and cover")
+    s.add_argument("token")
+    s.add_argument("--players", action="store_true",
+                   help="only what the players can see (fog and hidden enemies filtered)")
     s = sub.add_parser("fog", parents=c, help="display fog of war: hide, dim or off")
     s.add_argument("mode", choices=list(sight.FOG_MODES))
     sub.add_parser("undo-move", parents=c)

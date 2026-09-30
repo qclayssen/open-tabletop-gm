@@ -761,7 +761,15 @@ class Session:
         if not snap or snap["status"] != "active":
             return ""
         ids = ", ".join(f"{t['id']} = {t['name']}" for t in snap["tokens"])
-        return f"{self.bridge.run(['status']).text}\nToken ids: {ids}"
+        text = f"{self.bridge.run(['status']).text}\nToken ids: {ids}"
+        # Engine-computed positions, feet and cover for whoever acts now, so the
+        # model points at handles and squares instead of inventing them. Players'
+        # view: no hidden or fogged creature is named here.
+        if snap["current"]:
+            card = self.bridge.run(["card", snap["current"]["id"], "--players"])
+            if card.code == 0 and card.text:
+                text += f"\n{card.text}"
+        return text
 
     def _foes_down(self) -> bool:
         snap = self.bridge.snapshot()
