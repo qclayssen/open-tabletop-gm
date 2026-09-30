@@ -54,9 +54,9 @@ def test_map_errors_are_specific():
 def test_kairos_sheet_reads_into_a_token():
     k = sheet_mod.read_sheet(KAIROS_MD, "kairos", (1, 6))
     assert (k.name, k.hp, k.max_hp, k.ac, k.speed, k.dex_mod) == ("Kairos", 8, 8, 12, 30, 2)
-    assert k.saves == {"str": -1, "dex": 2, "con": 2, "int": 5, "wis": 3, "cha": -1}
+    assert k.saves == {"str": -1, "dex": 2, "con": 2, "int": 6, "wis": 2, "cha": -1}
     bolt, dagger = k.attacks
-    assert bolt == {"name": "Fire Bolt", "bonus": 5, "type": "ranged", "range": [120, 120],
+    assert bolt == {"name": "Fire Bolt", "bonus": 6, "type": "ranged", "range": [120, 120],
                     "damage": [{"dice": "1d10", "type": "fire"}], "source": "spell", "flags": []}
     assert dagger["type"] == "melee_or_ranged" and dagger["range"] == [20, 60]
     assert k.extra["slots"] == {"1": {"total": 2, "used": 0}}
@@ -199,7 +199,7 @@ def test_a_player_roll_is_asked_for_and_nothing_changes_meanwhile(camp, capsys):
     before = path.read_text(encoding="utf-8")
 
     code, out = run(capsys, "attack", "kairos", "frog-1", "fire", "bolt")
-    assert code == 2 and "Kairos rolls 1d20+5" in out and "--roll" in out
+    assert code == 2 and "Kairos rolls 1d20+6" in out and "--roll" in out
     assert path.read_text(encoding="utf-8") == before
     code, out = run(capsys, "attack", "kairos", "frog-1", "fire", "bolt", "--roll", "14")
     assert code == 2 and "--roll 14 --roll <the dice total" in out
@@ -256,8 +256,8 @@ def test_a_paused_roll_is_mirrored_to_the_display(camp, capsys, monkeypatch):
     before = path.read_text(encoding="utf-8")
 
     code, out = run(capsys, "attack", "kairos", "frog-1", "fire", "bolt")
-    assert code == 2 and "Kairos rolls 1d20+5" in out
-    assert [p["turn"]["pending"] for p in pushed] == ["", "roll:1d20+5"]
+    assert code == 2 and "Kairos rolls 1d20+6" in out
+    assert [p["turn"]["pending"] for p in pushed] == ["", "roll:1d20+6"]
     assert path.read_text(encoding="utf-8") == before           # paused: pushed, not saved
 
 
@@ -386,11 +386,11 @@ def _edit(camp, **turn):
 
 def test_the_kairos_sheet_carries_his_spellcasting():
     k = sheet_mod.read_sheet(KAIROS_MD, "kairos", (0, 0))
-    assert k.extra["spell_dc"] == 13 and k.extra["spell_attack"] == 5 and k.extra["level"] == 1
+    assert k.extra["spell_dc"] == 14 and k.extra["spell_attack"] == 6 and k.extra["level"] == 1
     assert {"Fire Bolt", "Mind Sliver", "Shield", "Silvery Barbs", "Mage Armor",
             "Magic Missile"} <= set(k.extra["spells"])
     assert not any("choice" in s.lower() for s in k.extra["spells"])      # notes are not spells
-    assert k.extra["skills"]["stealth"] == 4 and k.extra["passive_perception"] == 11
+    assert k.extra["skills"]["stealth"] == 4 and k.extra["passive_perception"] == 12
 
 
 def test_cast_from_the_command_line_with_loose_spell_words(camp, capsys):

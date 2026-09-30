@@ -162,7 +162,7 @@ def test_player_attack_waits_for_the_roll_then_logs_its_source():
     enc = start(encounter([kairos(), frog("frog-1", (5, 0))]), ["kairos", "frog-1"])
     with pytest.raises(PendingRoll) as e:
         engine.attack(enc, roller(), "kairos", "frog-1", "fire bolt")
-    assert e.value.notation == "1d20+5"
+    assert e.value.notation == "1d20+6"
     enc = start(encounter([kairos(), frog("frog-1", (5, 0))]), ["kairos", "frog-1"])
     res = engine.attack(enc, roller(supplied=[14, 7]), "kairos", "frog-1", "fire bolt")
     assert res["hit"] and enc.tokens["frog-1"].hp == 11
@@ -216,8 +216,8 @@ def test_attack_options_rank_targets_with_hit_chance():
     opts = engine.attack_options(enc, "kairos")
     bolt = [o for o in opts if o["attack"] == "Fire Bolt"]
     assert {o["target"] for o in bolt} == {"frog-1", "frog-2"}
-    assert all(o["hit_percent"] == 75 for o in bolt)
-    assert opts[0]["legal"] and opts[0]["attack"] == "Fire Bolt"     # 75% x 5.5 beats the dagger
+    assert all(o["hit_percent"] == 80 for o in bolt)
+    assert opts[0]["legal"] and opts[0]["attack"] == "Fire Bolt"     # 80% x 5.5 beats the dagger
 
 
 # ─── dying ───────────────────────────────────────────────────────────────────
@@ -311,7 +311,7 @@ def test_roll_for_me_keeps_the_rolls_already_made():
     r = roller(7, supplied=[14], source="player")
     r.for_me = True
     res = engine.attack(enc, r, "kairos", "frog-1", "fire bolt")
-    assert res["total"] == 19 and res["damage"]["total"] == 7
+    assert res["total"] == 20 and res["damage"]["total"] == 7
     assert [x["source"] for x in enc.log[-1]["rolls"]] == ["player", "engine"]
 
 

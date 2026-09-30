@@ -127,7 +127,7 @@ def test_a_typed_roll_is_used_as_the_die_face():
     ask = p.ask
     p.ask = lambda q: next(rolls, "") if "Your roll" in q else ask(q)
     game(["kobolds", "--seed", "5"], p)
-    assert re.search(r"Fire Bolt -> Kobold 1: 25 vs AC 1\d.*hit \(CRIT\)", p.text)
+    assert re.search(r"Fire Bolt -> Kobold 1: 26 vs AC 1\d.*hit \(CRIT\)", p.text)
 
 
 def test_map_symbols_stand_for_creatures_and_squares_are_left_alone():

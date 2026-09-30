@@ -63,13 +63,13 @@ def goblin(tid="goblin-1", pos=(1, 0)) -> Token:
 
 
 def kairos(pos=(0, 0), hp=8, controller="player") -> Token:
-    """Kairos_Level1.md: wizard 1, AC 12, HP 8, DEX +2, INT save +5."""
+    """Kairos_Level1.md: wizard 1, AC 12, HP 8, DEX +2, INT save +6, WIS save +2."""
     return Token(
         id="kairos", name="Kairos", side="pc", x=pos[0], y=pos[1], hp=hp, max_hp=8, ac=12,
         speed=30, dex_mod=2, controller=controller,
-        saves={"str": -1, "dex": 2, "con": 2, "int": 5, "wis": 3, "cha": -1},
+        saves={"str": -1, "dex": 2, "con": 2, "int": 6, "wis": 2, "cha": -1},
         attacks=[
-            {"name": "Fire Bolt", "type": "ranged", "source": "spell", "bonus": 5,
+            {"name": "Fire Bolt", "type": "ranged", "source": "spell", "bonus": 6,
              "range": [120, 120], "damage": [{"dice": "1d10", "type": "fire"}], "flags": []},
             {"name": "Dagger", "type": "melee_or_ranged", "source": "weapon", "bonus": 4,
              "reach": 5, "range": [20, 60], "damage": [{"dice": "1d4+2", "type": "piercing"}],
@@ -116,12 +116,12 @@ KAIROS_SPELLS = ["Fire Bolt", "Mind Sliver", "Minor Illusion", "Silvery Barbs", 
 
 
 def caster(pos=(0, 0), hp=8, controller="player", spells=None, slots=2) -> Token:
-    """Kairos with his spellcasting: DC 13, +5, level 1, two level 1 slots."""
+    """Kairos with his spellcasting: DC 14, +6, level 1, two level 1 slots."""
     k = kairos(pos=pos, hp=hp, controller=controller)
-    k.extra.update(spells=list(spells or KAIROS_SPELLS), spell_dc=13, spell_attack=5, level=1,
-                   slots={"1": {"total": slots, "used": 0}}, passive_perception=11,
-                   skills={"stealth": 4, "athletics": -1, "acrobatics": 2},
-                   abilities={"str": 8, "dex": 15, "con": 14, "int": 17, "wis": 12, "cha": 8})
+    k.extra.update(spells=list(spells or KAIROS_SPELLS), spell_dc=14, spell_attack=6, level=1,
+                   slots={"1": {"total": slots, "used": 0}}, passive_perception=12,
+                   skills={"stealth": 4, "athletics": -1, "acrobatics": 4},
+                   abilities={"str": 8, "dex": 14, "con": 14, "int": 19, "wis": 10, "cha": 8})
     return k
 
 
