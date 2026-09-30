@@ -6,6 +6,7 @@
 #   bash start-display.sh --lan        # LAN mode, HTTP  ← use this for home/trusted networks
 #   bash start-display.sh --lan --tls  # LAN mode, HTTPS ← use this on public/untrusted networks
 #   bash start-display.sh --campaign NAME   # also point the display at a campaign
+#   bash start-display.sh --stop       # stop the GM watcher, then this port's server
 #
 # --campaign shows that campaign's last exchanges on reconnect, checks the SRD
 # data, and says when a grid fight is waiting to resume. Without it, the display
@@ -43,6 +44,7 @@ while [[ $# -gt 0 ]]; do
     --tls) TLS_MODE=true ;;
     --campaign) CAMPAIGN="${2:-}"; shift ;;
     --campaign=*) CAMPAIGN="${1#--campaign=}" ;;
+    --stop) exec bash "$DISPLAY_DIR/gm-watch.sh" stop --port "$PORT" ;;
   esac
   shift
 done
