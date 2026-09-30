@@ -11,6 +11,7 @@ One file per milestone. `CLAUDE.md` holds only what every session needs (rules, 
 | 5 | [Polish](05-polish.md) | done | [#9](https://github.com/qclayssen/open-tabletop-gm/pull/9), [#10](https://github.com/qclayssen/open-tabletop-gm/pull/10) |
 | 6 | [Local DM with a smarter advisor](06-local-dm.md) | done | [#8](https://github.com/qclayssen/open-tabletop-gm/pull/8) |
 | 7 | [SRD sources and attribution](07-srd-sources.md) | done | [#18](https://github.com/qclayssen/open-tabletop-gm/pull/18) |
+| 8 | [Roll integrity](08-roll-integrity.md) | decision | |
 
 ## Template
 
