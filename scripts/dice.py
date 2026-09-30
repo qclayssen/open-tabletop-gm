@@ -20,11 +20,23 @@ Output (unless --silent):
     Rolls: [x, x, x]  →  Total: N
     For advantage/disadvantage, shows both rolls and which was taken.
     Flags natural 20 (CRITICAL HIT) and natural 1 (FUMBLE) on single d20s.
+
+Reproducibility:
+    --seed N   roll from a seeded stream and print the seed with a replay
+               command, so a roll quoted in a transcript can be re-run and
+               land the same faces. Same shape as the tactical engine's
+               Roller.rng and its receipts; this is the free-standing CLI's
+               half of that idea, since the engine cannot cover a roll the
+               GM typed by hand.
 """
 
 import random
 import re
 import sys
+
+# One module-level stream, so an unseeded CLI run is a single sequence rather
+# than a fresh generator per call, and so a caller can seed it for a replay.
+_RNG = random.Random()
 
 
 def parse_notation(notation: str):
@@ -51,8 +63,9 @@ def parse_notation(notation: str):
     return num_dice, die_size, modifier, keep_mode, keep_count, adv, dis
 
 
-def roll_dice(num_dice, die_size):
-    return [random.randint(1, die_size) for _ in range(num_dice)]
+def roll_dice(num_dice, die_size, rng=None):
+    rng = rng or _RNG
+    return [rng.randint(1, die_size) for _ in range(num_dice)]
 
 
 def format_modifier(mod):
@@ -61,13 +74,13 @@ def format_modifier(mod):
     return f" + {mod}" if mod > 0 else f" - {abs(mod)}"
 
 
-def run(notation: str, silent: bool = False) -> int:
+def run(notation: str, silent: bool = False, rng=None) -> int:
     num_dice, die_size, modifier, keep_mode, keep_count, adv, dis = parse_notation(notation)
 
     # Advantage / disadvantage (only meaningful for single d20)
     if adv or dis:
-        roll_a = roll_dice(num_dice, die_size)
-        roll_b = roll_dice(num_dice, die_size)
+        roll_a = roll_dice(num_dice, die_size, rng)
+        roll_b = roll_dice(num_dice, die_size, rng)
         total_a = sum(roll_a) + modifier
         total_b = sum(roll_b) + modifier
         chosen = max(total_a, total_b) if adv else min(total_a, total_b)
@@ -79,7 +92,7 @@ def run(notation: str, silent: bool = False) -> int:
             print(f"Takes roll {taken} → Total: {chosen}")
         return chosen
 
-    rolls = roll_dice(num_dice, die_size)
+    rolls = roll_dice(num_dice, die_size, rng)
 
     # Keep highest / lowest
     if keep_mode and keep_count:
@@ -113,14 +126,36 @@ def run(notation: str, silent: bool = False) -> int:
 
 
 if __name__ == "__main__":
-    args = [a for a in sys.argv[1:] if a != "--silent"]
-    silent = "--silent" in sys.argv[1:]
+    argv = list(sys.argv[1:])
+
+    seed = None
+    if "--seed" in argv:
+        i = argv.index("--seed")
+        if i + 1 >= len(argv):
+            print("--seed needs an integer: --seed 7")
+            sys.exit(1)
+        try:
+            seed = int(argv[i + 1])
+        except ValueError:
+            print(f"--seed needs an integer, got '{argv[i + 1]}'")
+            sys.exit(1)
+        del argv[i:i + 2]
+
+    args = [a for a in argv if a != "--silent"]
+    silent = "--silent" in argv
 
     if not args:
-        print("Usage: python3 dice.py <notation>  e.g. d20+5  2d6  4d6kh3  d20 adv")
+        print("Usage: python3 dice.py <notation> [--seed N]  e.g. d20+5  2d6  4d6kh3  d20 adv")
         sys.exit(1)
 
     notation = " ".join(args)
-    result = run(notation, silent=silent)
+    rng = random.Random(seed) if seed is not None else _RNG
+    result = run(notation, silent=silent, rng=rng)
+    if seed is not None and not silent:
+        # A roll quoted in a transcript is only auditable if the reader can
+        # re-run it and land the same faces, so the seed goes out with it.
+        # The path is spelled out because a bare `dice.py` is not re-runnable
+        # from the repo root, which is where the reader is.
+        print(f"(seed {seed} - replay: python3 scripts/dice.py {notation} --seed {seed})")
     if silent:
         print(result)
