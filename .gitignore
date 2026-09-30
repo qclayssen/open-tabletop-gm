@@ -2,6 +2,7 @@
 display/.token
 display/stats.json
 display/text_log.json
+display/gm-adjudication.jsonl
 display/session_tail.json
 display/app.log
 display/app.pid

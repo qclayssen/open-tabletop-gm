@@ -423,22 +423,65 @@ def _queue_remove(character: str) -> bool:
             return False
 
 
+def _queued_characters() -> set:
+    """Names that currently have a `[name]: ...` line in .input_queue."""
+    with _queue_lock:
+        try:
+            with open(QUEUE_FILE, encoding="utf-8") as f:
+                lines = f.read().splitlines()
+        except OSError:
+            return set()
+    names = set()
+    for ln in lines:
+        m = re.match(r"^\[([^\]]+)\]:", ln)
+        if m:
+            names.add(m.group(1))
+    return names
+
+
+def _reconcile_queue_state() -> bool:
+    """Drop `_sent` / `_queue_status` entries that are no longer in .input_queue.
+
+    The file is the source of truth. An action that left it (consumed by a poller
+    that does not POST /queue/consumed, cleared, or lost) must not keep showing
+    QUEUED with a live RECALL: that tells the player their action is safe when
+    nothing holds it. Broadcasts when it changed anything. Returns True if so.
+    """
+    queued = _queued_characters()
+    with _sent_lock:
+        stale = [c for c in _sent if c not in queued]
+        for c in stale:
+            _sent.pop(c, None)
+        snap = _sent_snapshot()
+    with _queue_status_lock:
+        keep = [c for c in _queue_status if c in queued]
+        changed = bool(stale) or len(keep) != len(_queue_status)
+        _queue_status[:] = keep
+        status = list(_queue_status)
+    if changed:
+        _broadcast({"sent_log": snap, "queue_status": status})
+    return changed
+
+
 def _send(character: str, text: str) -> bool:
-    """Record a sent action in the log and append it to the DM-gated queue.
+    """Append a sent action to the DM-gated queue and record it in the sent log.
 
     Returns True once the action is in .input_queue. The DM still decides *when*
-    it reaches Claude — wrapper.py injects the queue on the next Enter.
+    it reaches Claude — wrapper.py injects the queue on the next Enter. The
+    sent log and QUEUED badge are only set after the file write succeeded, so a
+    failed write never shows a recallable action that does not exist.
     """
+    if not _queue_append({character: text}):
+        return False
     with _sent_lock:
         _sent[character] = {"text": text, "timestamp": _time.time()}
         snap = _sent_snapshot()
-    ok = _queue_append({character: text})
     with _queue_status_lock:
         if character not in _queue_status:
             _queue_status.append(character)
         status = list(_queue_status)
     _broadcast({"sent_log": snap, "queue_status": status})
-    return ok
+    return True
 
 
 def _token_ok() -> bool:
@@ -1132,6 +1175,50 @@ def _load_stats() -> None:
             _current_stats.update(data)
     except Exception:
         pass
+    _drop_stale_turn_order()
+
+
+def _encounter_active() -> "bool | None":
+    """True/False when the active campaign's encounter state is known, else None.
+
+    None means the campaign cannot be resolved (no .campaign file, unreadable),
+    in which case the caller must leave the saved fight alone.
+    """
+    try:
+        camp = open(CAMP_FILE, encoding="utf-8").read().strip()
+    except OSError:
+        return None
+    camp = re.sub(r"[^A-Za-z0-9_-]", "", camp)[:50]
+    if not camp:
+        return None
+    try:
+        path = _find_campaign(camp) / "combat" / "encounter.json"
+    except Exception:
+        return None
+    try:
+        with open(path, encoding="utf-8") as f:
+            enc = json.load(f)
+    except FileNotFoundError:
+        return False
+    except (OSError, ValueError):
+        return None
+    return isinstance(enc, dict) and enc.get("status", "active") == "active"
+
+
+def _drop_stale_turn_order() -> None:
+    """Clear a restored turn_order when the campaign has no active encounter.
+
+    stats.json survives restarts on purpose (a fight in progress comes back), but
+    it cannot tell a live fight from a finished one whose stats were never
+    cleared. The encounter file can: absent or status "ended" means no fight.
+    """
+    with _stats_lock:
+        if not _current_stats.get("turn_order"):
+            return
+    if _encounter_active() is False:
+        with _stats_lock:
+            _current_stats["turn_order"] = None
+        _persist_stats()
 
 
 _load_stats()
@@ -1464,6 +1551,8 @@ def health():
         log_count = len(_text_log)
     with _clients_lock:
         client_count = len(_clients)
+    with _stats_lock:
+        roster_count = len(_current_stats.get("players", []))
     return {
         "alive": True,
         "tail_buffer": tail_count,
@@ -1472,7 +1561,116 @@ def health():
         "text_log": log_count,
         "campaign": camp,
         "clients": client_count,
+        "roster": roster_count,
+        "author_violations": len(_author_violations),
     }, 200
+
+
+# ─── Authorship (N11) ─────────────────────────────────────────────────────────
+# Every /chunk push may carry an `author` (send.py --author / GM_DISPLAY_AUTHOR).
+# It is stored on the transcript entry so a reader can tell who wrote a block.
+# A harness declares the one author it expects with POST /author; a block from
+# anyone else is refused (409) and recorded, and an unstamped block is accepted
+# but recorded, so a second writer is loud instead of invisible. With no
+# expectation declared, nothing is enforced and old callers behave as before.
+
+_expected_author: Optional[str] = None
+_author_violations: list = []
+_author_lock = threading.Lock()
+_AUTHOR_MAX = 40
+_VIOLATIONS_KEEP = 100
+
+
+def _clean_author(raw) -> str:
+    return re.sub(r"[^\w .:@/-]", "", str(raw or "")).strip()[:_AUTHOR_MAX]
+
+
+def _author_check(author: str, text: str) -> Optional[dict]:
+    """Return a violation record if `author` is not the expected one, else None."""
+    with _author_lock:
+        expected = _expected_author
+        if expected is None or author == expected:
+            return None
+        rec = {"kind": "unstamped" if not author else "wrong_author",
+               "author": author, "expected": expected,
+               "text": text[:120], "at": _time.time()}
+        _author_violations.append(rec)
+        del _author_violations[:-_VIOLATIONS_KEEP]
+    print(f"[display] AUTHOR MISMATCH: expected {expected!r}, got {author or '(none)'!r}: "
+          f"{text[:60]!r}", file=sys.stderr, flush=True)
+    return rec
+
+
+@app.route("/author", methods=["GET", "POST", "DELETE"])
+def author_route():
+    """GET: expected author + violations. POST {"author": "..."}: declare the
+    expected author (clears old violations). DELETE: stop enforcing."""
+    global _expected_author
+    if not _token_ok():
+        return "Forbidden", 403
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        name = _clean_author(data.get("author"))
+        if not name:
+            return "Bad Request", 400
+        with _author_lock:
+            _expected_author = name
+            _author_violations.clear()
+    elif request.method == "DELETE":
+        with _author_lock:
+            _expected_author = None
+    with _author_lock:
+        return jsonify({"expected": _expected_author,
+                        "violations": list(_author_violations)}), 200
+
+
+# ─── GM-side adjudication record (dice log DC leak) ──────────────────────────
+# The GM's bookkeeping (base DC, current DC, dial word, floor, mark state) is not
+# table talk. A chunk may carry `gm_log`, kept in gm-adjudication.jsonl beside
+# the display and never broadcast, replayed or written to the transcript. For
+# `dice` chunks, sentences that are pure bookkeeping are moved there
+# automatically, and with `hide_dc` the "vs DC N" target is dropped too.
+
+GM_LOG_FILE = os.path.join(_DISPLAY_DIR, "gm-adjudication.jsonl")
+_gm_log_lock = threading.Lock()
+_BOOKKEEPING = re.compile(
+    r"\bDC\s+(?:falls|drops|rises|climbs|is now|now|stays|holds)\b"
+    r"|^\s*(?:the\s+)?dial\s*:"
+    r"|\b(?:the\s+)?floor\s+(?:is|was)\s+(?:not\s+)?reached\b"
+    r"|\bno\s+mark\b|\bmark\s+(?:earned|awarded|gained|banked)\b"
+    r"|\bnew\s+floor\b",
+    re.IGNORECASE)
+_VS_DC = re.compile(r"\s*\bvs\.?\s+DC\s*\d+", re.IGNORECASE)
+
+
+def _split_gm_bookkeeping(text: str, hide_dc: bool = False) -> tuple:
+    """Split a dice line into (player_text, gm_only_text)."""
+    public: list = []
+    private: list = []
+    for line in text.splitlines():
+        keep: list = []
+        for sent in re.split(r"(?<=[.!?])\s+", line.strip()):
+            if not sent:
+                continue
+            if _BOOKKEEPING.search(sent):
+                private.append(sent)
+            else:
+                keep.append(sent)
+        joined = " ".join(keep)
+        if hide_dc and _VS_DC.search(joined):
+            private.append(joined)
+            joined = _VS_DC.sub("", joined)
+        if joined:
+            public.append(joined)
+    return "\n".join(public).strip(), "\n".join(private).strip()
+
+
+def _write_gm_log(entry: dict) -> None:
+    try:
+        with _gm_log_lock, open(GM_LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except OSError:
+        pass
 
 
 @app.route("/chunk", methods=["POST"])
@@ -1543,9 +1741,19 @@ def chunk():
         _broadcast(payload)
         return "", 204
 
+    author = _clean_author(data.get("author"))
+    gm_log = str(data.get("gm_log") or "").strip()[:2000]
+
     raw = data.get("text", "")
     if not raw:
+        if gm_log:
+            _write_gm_log({"at": _time.time(), "author": author, "gm_log": gm_log})
         return "", 204
+
+    violation = _author_check(author, str(raw))
+    if violation and violation["kind"] == "wrong_author":
+        return jsonify({"error": "author_mismatch", "expected": violation["expected"],
+                        "got": author}), 409
 
     is_action = bool(data.get("action"))
     is_player = bool(data.get("player"))
@@ -1556,6 +1764,17 @@ def chunk():
     # Player/npc/dice/tutor/action text comes from send.py (no ANSI/chrome) — light clean only.
     # DM narration may come from wrapper.py — full clean.
     cleaned = raw.strip() if (is_action or is_player or is_npc or is_dice or is_tutor) else _clean(raw)
+    if not cleaned.strip():
+        return "", 204
+
+    # GM adjudication never reaches the player-facing transcript.
+    if is_dice:
+        cleaned, private = _split_gm_bookkeeping(cleaned, bool(data.get("hide_dc")))
+        if private:
+            gm_log = (gm_log + "\n" + private).strip() if gm_log else private
+    if gm_log:
+        _write_gm_log({"at": _time.time(), "author": author, "gm_log": gm_log,
+                       "shown": cleaned})
     if not cleaned.strip():
         return "", 204
 
@@ -1594,6 +1813,12 @@ def chunk():
         log_entry["dice"] = True
     elif is_tutor:
         log_entry["tutor"] = True
+
+    if author:
+        log_entry["author"] = author
+        payload["author"] = author
+    if violation:
+        log_entry["author_flag"] = violation["kind"]
 
     # Stamp campaign onto the tail entry so cross-campaign replay can filter
     # and a stale shared file does not bleed into the active session.
@@ -2495,6 +2720,9 @@ def get_character_sheet(character):
     CAMP_FILE, then reads (via paths.py, which honors GM_CAMPAIGN_ROOT):
         <root>/campaigns/<campaign>/characters/<character>.md
 
+    An NPC on stage resolves from <campaign>/npc-files/<name>.md (slug match,
+    e.g. "The Count" -> the-count.md) after the PC locations below.
+
     Falls back to the global roster (<root>/characters/<character>.md) if the
     campaign-side file is missing — useful when the character was just imported
     but not yet replicated. The legacy ~/.claude/dnd/characters/ path is kept as
@@ -2526,6 +2754,21 @@ def get_character_sheet(character):
     candidates.append(str(_characters_dir() / f"{safe}.md"))
     # Legacy Claude-skill global roster — final fallback for older installs.
     candidates.append(os.path.expanduser(f"~/.claude/dnd/characters/{safe}.md"))
+
+    # NPC sheets: <campaign>/npc-files/<slug>.md, so an on-stage NPC has a sheet.
+    # Tried last so a PC of the same name always wins. `safe` is already reduced to
+    # [A-Za-z0-9 _-], so the slug cannot contain a separator or "..".
+    if camp:
+        slug = re.sub(r"[^a-z0-9]+", "-", safe.lower()).strip("-")
+        if slug:
+            npc_dir = (_find_campaign(camp) / "npc-files").resolve()
+            npc_path = (npc_dir / f"{slug}.md").resolve()
+            if npc_path.parent == npc_dir:
+                candidates.append(str(npc_path))
+                # Files named with the original casing/spaces ("Count Varga.md").
+                alt = (npc_dir / f"{safe}.md").resolve()
+                if alt.parent == npc_dir:
+                    candidates.append(str(alt))
 
     for path in candidates:
         if os.path.isfile(path):
@@ -2567,6 +2810,33 @@ def device_deny():
     return "", 204
 
 
+def _roster_refusal(character: str):
+    """Validate a sender against the roster; return an error Response or None.
+
+    An empty roster (stats.json wiped by hand, or a display that never got a
+    push_stats seed) used to fall through _char_ok, whose `known` test is skipped
+    when the roster is empty only for well-formed names, and the browser saw a
+    bare 403 it could not explain. Now the reply names the cause so the panel can
+    show it. The validation itself is unchanged: an unknown name is still refused.
+    """
+    with _stats_lock:
+        known = {p["name"] for p in _current_stats.get("players", []) if p.get("name")}
+    if not known:
+        resp = jsonify({"error": "no_roster",
+                        "message": "The display has no party roster, so input is "
+                                   "disabled. The GM must re-seed it with push_stats.py "
+                                   "(do not edit stats.json by hand)."})
+        resp.status_code = 409
+        return resp
+    if not _CHAR_NAME_RE.match(character):
+        return jsonify({"error": "bad_name",
+                        "message": "That character name is not valid."}), 403
+    if not _char_ok(character, known):
+        return jsonify({"error": "not_in_party",
+                        "message": f"'{character}' is not in the party roster."}), 403
+    return None
+
+
 @app.route("/player-input/send", methods=["POST"])
 def send_input():
     """Send a player action straight to the DM-gated queue (.input_queue).
@@ -2596,10 +2866,9 @@ def send_input():
     if not character or not text:
         return "Bad Request", 400
 
-    with _stats_lock:
-        known = {p["name"] for p in _current_stats.get("players", [])}
-    if not _char_ok(character, known):
-        return "Forbidden", 403
+    refusal = _roster_refusal(character)
+    if refusal is not None:
+        return refusal
 
     if not _send(character, text):
         return "Error", 500
@@ -2610,9 +2879,9 @@ def send_input():
 def recall_input():
     """Pull a sent action back out, but only while it is still queued.
 
-    Once the DM has consumed the queue the action is already in Claude's
-    context and can't be taken back — this reports that honestly rather than
-    pretending the recall worked.
+    Once the action has left .input_queue it can't be taken back. The reply is
+    409 "No longer queued; delivery is unconfirmed": the app does not claim it
+    was delivered, because a missing line may equally mean it was lost.
 
     Body: {"character": "Mira"}
     """
@@ -2628,11 +2897,11 @@ def recall_input():
     if not character:
         return "Bad Request", 400
 
+    in_queue = character in _queued_characters()
+    recalled = _queue_remove(character)
     with _sent_lock:
         existed = _sent.pop(character, None) is not None
         snap = _sent_snapshot()
-
-    recalled = _queue_remove(character)
     if not recalled and not existed:
         return "Gone", 204
 
@@ -2642,7 +2911,15 @@ def recall_input():
         status = list(_queue_status)
 
     _broadcast({"sent_log": snap, "queue_status": status})
-    return ("", 204) if recalled else ("Already delivered", 409)
+    if recalled:
+        return "", 204
+    # Not in .input_queue. That means a consumer took it OR it was lost; the app
+    # cannot tell which (only wrapper.py reports consumption). Never say "safely
+    # delivered" for something we cannot confirm.
+    resp = Response("No longer queued; delivery is unconfirmed", status=409,
+                    mimetype="text/plain")
+    resp.headers["X-Recall-State"] = "missing" if not in_queue else "unknown"
+    return resp
 
 
 @app.route("/player-input/skip", methods=["POST"])
@@ -2663,10 +2940,9 @@ def skip_input():
     if not character:
         return "Bad Request", 400
 
-    with _stats_lock:
-        known = {p["name"] for p in _current_stats.get("players", [])}
-    if not _char_ok(character, known):
-        return "Forbidden", 403
+    refusal = _roster_refusal(character)
+    if refusal is not None:
+        return refusal
 
     if not _send(character, "skips their turn"):
         return "Error", 500
@@ -2939,6 +3215,7 @@ def stream():
             q.put_nowait({"pending_input": list(_input_queue)})
 
     # Send the current sent log so the panel reflects live state on reconnect.
+    _reconcile_queue_state()
     with _sent_lock:
         if _sent:
             q.put_nowait({"sent_log": _sent_snapshot()})
@@ -2993,6 +3270,12 @@ def stream():
                     payload = q.get(timeout=5)
                     yield f"data: {json.dumps(payload)}\n\n"
                 except queue.Empty:
+                    # Self-heal: an action that left .input_queue must stop
+                    # showing QUEUED. Broadcasts only when something changed.
+                    try:
+                        _reconcile_queue_state()
+                    except Exception:
+                        pass
                     yield ": keepalive\n\n"   # prevent proxy timeout
         except GeneratorExit:
             with _clients_lock:
