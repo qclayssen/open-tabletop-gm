@@ -152,7 +152,9 @@
     position: fixed; inset: 0;
     overflow-y: auto;
     overflow-x: hidden;
-    padding: 72px max(340px, 18vw) 48px 230px;  /* left: sidebar+gap; right: clears the settings column */
+    /* Symmetric insets keep the prose centred on the screen: each side reserves the
+       larger of the two rails (sidebar left, settings and party input right). */
+    padding: 72px max(340px, 18vw) 48px max(340px, 18vw);
     z-index: 4;
     scroll-behavior: smooth;
     transition: padding 0.4s ease;
@@ -160,18 +162,18 @@
     scrollbar-width: none;
   }
   #text-scroll::-webkit-scrollbar { display: none; }
-  #text-scroll.sidebar-hidden { padding-left: 60px; }
+  /* With the sidebar hidden the right rail still sets the width, so nothing changes. */
   /* When the settings column is collapsed, the prose reclaims the right space
      (only the small toggle row remains up there). */
-  #text-scroll.controls-hidden { padding-right: 160px; }  /* clears Phone Mode and the Settings toggle */
+  /* Hiding the settings column does not narrow the right inset: the party input
+     box stays in the right rail, so shrinking it would put the box over the prose. */
 
   /* ── "New ↓" pill — appears when the reader has scrolled up and fresh
        narration has arrived below. Tap to jump back to the newest text. ── */
   #new-content-pill {
     position: fixed;
-    /* centred over the reading column: midpoint of the left padding (sidebar)
-       and right padding (settings rail) of #text-scroll */
-    left: calc(50% + (230px - max(340px, 18vw)) / 2);
+    /* the reading column is centred on the screen, so the pill is too */
+    left: 50%;
     bottom: 96px;
     transform: translateX(-50%) translateY(8px);
     z-index: 20;
@@ -194,9 +196,6 @@
     background: rgba(60, 42, 12, 0.96);
     border-color: rgba(230, 200, 110, 0.85);
   }
-  #text-scroll.sidebar-hidden ~ #new-content-pill { left: calc(50% + (60px - max(340px, 18vw)) / 2); }
-  #text-scroll.controls-hidden ~ #new-content-pill { left: calc(50% + (230px - 160px) / 2); }
-  #text-scroll.sidebar-hidden.controls-hidden ~ #new-content-pill { left: calc(50% + (60px - 160px) / 2); }
   :root[data-theme="light"] #new-content-pill {
     color: rgb(70, 50, 18);
     background: rgba(245, 238, 222, 0.96);
