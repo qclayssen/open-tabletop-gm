@@ -185,7 +185,7 @@ PROMPT = """You keep the canon of a tabletop roleplaying session: the lines that
 Rules:
 - Copy "text" character for character from the narration. Never paraphrase, summarize or rewrite it, even to shorten it. A line that is not a verbatim span will be discarded.
 - Quote nothing: give the words without quotation marks.
-- Only what the player was actually shown. No invented lore, no foreshadowing you expect later.
+- Only what the player was actually shown. No invented lore and nothing you expect later. Signalled danger the player was actually shown (a rumour, a warning, a cost someone else already paid) is canon; the outcome it points to is not.
 - Most turns have one or two entries. Return [] if there is nothing worth keeping.
 - Array only, no prose, no code fence.
 
