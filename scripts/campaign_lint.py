@@ -38,6 +38,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from localdm import context
+from map_to_atlas import IMAGE_SUFFIXES, slug
 from paths import campaigns_dir, find_campaign
 
 # The headings the code greps for, and why. DIGEST_SECTIONS goes into the DM
@@ -347,6 +348,36 @@ def lint_statblocks(rep: Report, path: pathlib.Path) -> None:
             rep.add("warn", folder,
                     f"{len(without)} of {len(notes)} notes have no ```statblock block: {shown}",
                     hint="the plugin lists them as creatures with nothing to render")
+        _lint_token_art(rep, path, folder, notes)
+
+
+def _lint_token_art(rep: Report, path: pathlib.Path, folder: str,
+                    notes: list[pathlib.Path]) -> None:
+    """How much of the bestiary has a portrait in the Atlas vault.
+
+    Atlas wants one real image per token, so a parsed statblock with no picture
+    still shows as "needs attention" in Create tokens. The bestiary is 371 notes
+    and the art packs that exist cover a small fraction of it, so the number is
+    reported as a ratio rather than left to be rediscovered by counting.
+
+    Deliberately not an error. A creature with no portrait still plays; the
+    engine's colour disc is the honest fallback, and a missing picture is not a
+    broken campaign. Only a spawn the *maps* actually use could be an error, and
+    that check belongs with the maps, not here.
+    """
+    art_dir = path / "atlas-vtt" / "assets" / "bestiary"
+    if not art_dir.is_dir():
+        return
+    creatures = [n for n in notes if n.stem.lower() != "readme"]
+    if not creatures:
+        return
+    have = [n for n in creatures
+            if any((art_dir / f"{slug(n.stem)}{s}").exists() for s in IMAGE_SUFFIXES)]
+    pct = round(100 * len(have) / len(creatures))
+    rep.add("warn", f"{folder}/ (art)",
+            f"{len(have)} of {len(creatures)} creatures have a portrait ({pct}%)",
+            hint=f"{art_dir.relative_to(path)} holds the matched art; the rest render "
+                 "as a colour disc, which is playable and not a broken image")
 
 
 def lint_campaign(name: str, path: pathlib.Path | None = None) -> Report:
