@@ -466,8 +466,12 @@ _NAME_WORD = re.compile(r"[A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})?")
 # "Marcus the guard" yields "the guard".
 _FOLLOWER = re.compile(r"\s+(?:(?:the|a|an)\s+[a-z]+|[A-Z][a-z]{2,})")
 # A sentence boundary, for the same "is this the first word of a sentence"
-# question the follower needs.
-_SENTENCE = re.compile(r"[.!?\n]")
+# question the follower needs. Named _BOUNDARY and NOT _SENTENCE: it consumes
+# the punctuation, while the _SENTENCE above splits *after* it. This file had
+# both under one name, and because the definitions run at import time the
+# later one won, so scrub_injection spent a while splitting on a pattern that
+# eats every full stop in a turn.
+_BOUNDARY = re.compile(r"[.!?\n]")
 
 # Capitalised words that are not people: function words, numerals, and the
 # common nouns a small model puts at the head of a sentence. The nouns matter as
@@ -523,7 +527,7 @@ def _mentions(text: str, known: set) -> dict:
         given = m.group(0).split(" ", 1)[0]
         if given.lower() in _NOT_NAMES:
             continue
-        tail = _SENTENCE.split(text[m.end():], maxsplit=1)[0]
+        tail = _BOUNDARY.split(text[m.end():], maxsplit=1)[0]
         follower = _FOLLOWER.match(tail)
         # Four ways in, because a capitalised word at the head of a sentence and
         # a name look identical. It recurs in this text; it is not the first

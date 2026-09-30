@@ -1,18 +1,607 @@
 {
- "name": "Salome - tower-bunks",
- "width": 60,
- "height": 60,
- "diagonals": "5",
- "info": "300 by 300 feet (60x60 squares of 5 ft). Artwork by Salome Avassava (Patreon: patreon.com/salomeart). Terrain is unpainted: open /maps/salome-tower-bunks/edit and paint walls, water and cover before running a fight here.",
- "image": "images/salome-tower-bunks.jpg",
- "grid": {
-  "cell_px": 100,
-  "offset_x": 0,
-  "offset_y": 0
- },
- "credit": "Salome Avassava (Patreon: patreon.com/salomeart)",
- "source": "Salome - tower-bunks - 6000x6000 - 60x60 - 100px - gridless.jpg",
- "base": "floor",
- "features": [],
- "spawns": []
+  "name": "Salome - tower-bunks",
+  "width": 60,
+  "height": 60,
+  "diagonals": "5",
+  "info": "300 by 300 feet (60x60 squares of 5 ft). Artwork by Salome Avassava (Patreon: patreon.com/salomeart). Terrain is unpainted: open /maps/salome-tower-bunks/edit and paint walls, water and cover before running a fight here.",
+  "image": "images/salome-tower-bunks.jpg",
+  "grid": {
+    "cell_px": 100,
+    "offset_x": 0,
+    "offset_y": 0
+  },
+  "credit": "Salome Avassava (Patreon: patreon.com/salomeart)",
+  "source": "Salome - tower-bunks - 6000x6000 - 60x60 - 100px - gridless.jpg",
+  "base": "floor",
+  "features": [
+    {
+      "type": "water",
+      "x": 21,
+      "y": 2,
+      "w": 15,
+      "h": 8
+    },
+    {
+      "type": "water",
+      "x": 41,
+      "y": 0,
+      "w": 19,
+      "h": 8
+    },
+    {
+      "type": "floor",
+      "x": 24,
+      "y": 1,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "type": "floor",
+      "x": 25,
+      "y": 2,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "type": "floor",
+      "x": 26,
+      "y": 3,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "type": "floor",
+      "x": 27,
+      "y": 4,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "type": "hazard",
+      "x": 36,
+      "y": 17,
+      "w": 3,
+      "h": 2
+    },
+    {
+      "type": "feature",
+      "x": 27,
+      "y": 17,
+      "w": 3,
+      "h": 3
+    },
+    {
+      "type": "feature",
+      "x": 20,
+      "y": 34,
+      "w": 3,
+      "h": 4
+    },
+    {
+      "type": "feature",
+      "x": 35,
+      "y": 34,
+      "w": 3,
+      "h": 4
+    },
+    {
+      "type": "feature",
+      "x": 20,
+      "y": 12,
+      "w": 3,
+      "h": 3
+    },
+    {
+      "type": "feature",
+      "x": 23,
+      "y": 12,
+      "w": 3,
+      "h": 3
+    },
+    {
+      "type": "feature",
+      "x": 20,
+      "y": 15,
+      "w": 3,
+      "h": 3
+    },
+    {
+      "type": "feature",
+      "x": 23,
+      "y": 15,
+      "w": 3,
+      "h": 3
+    },
+    {
+      "type": "feature",
+      "x": 29,
+      "y": 13,
+      "w": 2,
+      "h": 3
+    },
+    {
+      "type": "feature",
+      "x": 29,
+      "y": 11,
+      "w": 1,
+      "h": 2
+    },
+    {
+      "type": "feature",
+      "x": 31,
+      "y": 15,
+      "w": 1,
+      "h": 2
+    },
+    {
+      "type": "feature",
+      "x": 33,
+      "y": 15,
+      "w": 1,
+      "h": 3
+    },
+    {
+      "type": "feature",
+      "x": 34,
+      "y": 17,
+      "w": 2,
+      "h": 1
+    },
+    {
+      "type": "feature",
+      "x": 35,
+      "y": 14,
+      "w": 3,
+      "h": 3
+    },
+    {
+      "type": "feature",
+      "x": 38,
+      "y": 14,
+      "w": 2,
+      "h": 3
+    },
+    {
+      "type": "feature",
+      "x": 38,
+      "y": 21,
+      "w": 2,
+      "h": 3
+    },
+    {
+      "type": "feature",
+      "x": 24,
+      "y": 23,
+      "w": 2,
+      "h": 2
+    },
+    {
+      "type": "feature",
+      "x": 22,
+      "y": 25,
+      "w": 2,
+      "h": 3
+    },
+    {
+      "type": "feature",
+      "x": 33,
+      "y": 25,
+      "w": 2,
+      "h": 3
+    },
+    {
+      "type": "feature",
+      "x": 25,
+      "y": 38,
+      "w": 2,
+      "h": 3
+    },
+    {
+      "type": "feature",
+      "x": 30,
+      "y": 38,
+      "w": 2,
+      "h": 3
+    },
+    {
+      "type": "feature",
+      "x": 23,
+      "y": 28,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "type": "feature",
+      "x": 24,
+      "y": 28,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "type": "feature",
+      "x": 26,
+      "y": 37,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "type": "feature",
+      "x": 31,
+      "y": 37,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "type": "feature",
+      "x": 37,
+      "y": 24,
+      "w": 3,
+      "h": 3
+    },
+    {
+      "type": "feature",
+      "x": 37,
+      "y": 30,
+      "w": 3,
+      "h": 3
+    },
+    {
+      "type": "feature",
+      "x": 39,
+      "y": 26,
+      "w": 2,
+      "h": 2
+    },
+    {
+      "type": "feature",
+      "x": 40,
+      "y": 31,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "type": "feature",
+      "x": 37,
+      "y": 34,
+      "w": 2,
+      "h": 1
+    },
+    {
+      "type": "feature",
+      "x": 17,
+      "y": 16,
+      "w": 4,
+      "h": 3
+    },
+    {
+      "type": "feature",
+      "x": 15,
+      "y": 19,
+      "w": 2,
+      "h": 2
+    },
+    {
+      "type": "feature",
+      "x": 17,
+      "y": 19,
+      "w": 2,
+      "h": 2
+    },
+    {
+      "type": "feature",
+      "x": 15,
+      "y": 21,
+      "w": 3,
+      "h": 2
+    },
+    {
+      "type": "feature",
+      "x": 17,
+      "y": 22,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "type": "feature",
+      "x": 20,
+      "y": 15,
+      "w": 1,
+      "h": 2
+    },
+    {
+      "type": "feature",
+      "x": 22,
+      "y": 17,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "type": "feature",
+      "x": 20,
+      "y": 19,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "type": "feature",
+      "x": 14,
+      "y": 24,
+      "w": 4,
+      "h": 3
+    },
+    {
+      "type": "feature",
+      "x": 13,
+      "y": 27,
+      "w": 3,
+      "h": 2
+    },
+    {
+      "type": "feature",
+      "x": 16,
+      "y": 27,
+      "w": 2,
+      "h": 1
+    },
+    {
+      "type": "feature",
+      "x": 19,
+      "y": 24,
+      "w": 1,
+      "h": 4
+    },
+    {
+      "type": "feature",
+      "x": 21,
+      "y": 26,
+      "w": 2,
+      "h": 2
+    },
+    {
+      "type": "feature",
+      "x": 14,
+      "y": 31,
+      "w": 3,
+      "h": 3
+    },
+    {
+      "type": "feature",
+      "x": 18,
+      "y": 31,
+      "w": 3,
+      "h": 3
+    },
+    {
+      "type": "feature",
+      "x": 13,
+      "y": 29,
+      "w": 1,
+      "h": 2
+    },
+    {
+      "type": "feature",
+      "x": 25,
+      "y": 22,
+      "w": 8,
+      "h": 1
+    },
+    {
+      "type": "feature",
+      "x": 33,
+      "y": 23,
+      "w": 1,
+      "h": 8
+    },
+    {
+      "type": "feature",
+      "x": 32,
+      "y": 31,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "type": "feature",
+      "x": 25,
+      "y": 32,
+      "w": 7,
+      "h": 1
+    },
+    {
+      "type": "feature",
+      "x": 24,
+      "y": 31,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "type": "feature",
+      "x": 24,
+      "y": 24,
+      "w": 1,
+      "h": 7
+    },
+    {
+      "type": "feature",
+      "x": 24,
+      "y": 23,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "type": "wall",
+      "x": 28,
+      "y": 11,
+      "w": 1,
+      "h": 6
+    },
+    {
+      "type": "wall",
+      "x": 13,
+      "y": 19,
+      "w": 1,
+      "h": 12
+    },
+    {
+      "type": "wall",
+      "x": 13,
+      "y": 31,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "type": "wall",
+      "x": 14,
+      "y": 18,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "type": "wall",
+      "x": 14,
+      "y": 32,
+      "w": 1,
+      "h": 2
+    },
+    {
+      "type": "wall",
+      "x": 15,
+      "y": 17,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "type": "wall",
+      "x": 15,
+      "y": 34,
+      "w": 1,
+      "h": 3
+    },
+    {
+      "type": "wall",
+      "x": 16,
+      "y": 16,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "type": "wall",
+      "x": 16,
+      "y": 37,
+      "w": 1,
+      "h": 2
+    },
+    {
+      "type": "wall",
+      "x": 17,
+      "y": 15,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "type": "wall",
+      "x": 17,
+      "y": 39,
+      "w": 1,
+      "h": 2
+    },
+    {
+      "type": "wall",
+      "x": 17,
+      "y": 41,
+      "w": 19,
+      "h": 1
+    },
+    {
+      "type": "wall",
+      "x": 18,
+      "y": 14,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "type": "wall",
+      "x": 19,
+      "y": 13,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "type": "wall",
+      "x": 20,
+      "y": 12,
+      "w": 3,
+      "h": 1
+    },
+    {
+      "type": "wall",
+      "x": 23,
+      "y": 11,
+      "w": 3,
+      "h": 1
+    },
+    {
+      "type": "wall",
+      "x": 26,
+      "y": 10,
+      "w": 3,
+      "h": 1
+    },
+    {
+      "type": "wall",
+      "x": 36,
+      "y": 10,
+      "w": 1,
+      "h": 3
+    },
+    {
+      "type": "wall",
+      "x": 36,
+      "y": 40,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "type": "wall",
+      "x": 37,
+      "y": 13,
+      "w": 1,
+      "h": 2
+    },
+    {
+      "type": "wall",
+      "x": 37,
+      "y": 39,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "type": "wall",
+      "x": 38,
+      "y": 15,
+      "w": 1,
+      "h": 2
+    },
+    {
+      "type": "wall",
+      "x": 38,
+      "y": 36,
+      "w": 1,
+      "h": 3
+    },
+    {
+      "type": "wall",
+      "x": 39,
+      "y": 17,
+      "w": 1,
+      "h": 2
+    },
+    {
+      "type": "wall",
+      "x": 40,
+      "y": 19,
+      "w": 1,
+      "h": 17
+    }
+  ],
+  "spawns": []
 }
