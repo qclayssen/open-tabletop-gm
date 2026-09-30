@@ -35,7 +35,7 @@
                spells: null, spell: null, singles: null, darts: null, dartsText: '',
                helpTarget: null, readyWhat: null, readyStep: null,
                cursor: null, ruler: { tool: null, a: null, b: null, fixed: false }, camMap: null, camTimer: 0,
-               sight: false, sightFrom: null, sightData: null, sightKey: '' };
+               sight: false, sightFrom: null, sightData: null, sightKey: '', layoutAt: null };
   const CONDITION_CODES = { blinded: 'Bl', charmed: 'Ch', deafened: 'De', exhaustion: 'Ex', frightened: 'Fr',
     grappled: 'Gr', incapacitated: 'In', invisible: 'Iv', paralyzed: 'Pa', petrified: 'Pe', poisoned: 'Po',
     prone: 'Pr', restrained: 'Re', stunned: 'St', unconscious: 'Un' };
@@ -145,20 +145,42 @@
     }
     return out.join(' · ');
   }
-  // The banner for a roll or reaction the engine is waiting on (turn.pending is
-  // "roll:<dice>" or "react:<key>"; "death_save" is handled by its own line).
-  // `who` is the name of the token whose turn it is. Returns '' when there is
-  // nothing to wait on.
-  function pendingBanner(p, who) {
+  // The banner for a roll or reaction the engine is waiting on. turn.pending is
+  // "roll:<notation>[|<advantage>]", "react:<id>:<what>" or "death_save".
+  // Returns '' when there is nothing to wait on. `byId` resolves a token id.
+  //
+  // Two things this used to get wrong, both of them about naming.
+  //
+  // The reaction named whoever was acting rather than whoever has to decide.
+  // Those are different creatures: while Kobold 2 acts, the engine can be
+  // waiting on Kairos to spend a reaction, and "Waiting on Kobold 2: silvery
+  // barbs?" asks a kobold to answer for a spell reaction it is the victim of.
+  // The key carries the reacting creature's id, so that is who gets named.
+  //
+  // The roll named the dice and nothing else. "roll 1d20+4" reads as a straight
+  // roll, and the player watches for one number, when the engine is holding two
+  // and keeping the lower. The advantage rides along in the marker
+  // (cli._push_pending) precisely so the wait can say so: it is part of what is
+  // being waited on, not a footnote to the result. Without it the only place
+  // the disadvantage appeared was the log line after the dice had landed, which
+  // is too late to plan around.
+  function pendingBanner(p, who, byId) {
     if (!p || p === 'death_save') return '';
-    const w = who || 'the party';
-    if (p.startsWith('roll:')) return `Waiting on ${w}: roll ${p.slice(5)}`;
+    const waiting = who || 'the party';
+    if (p.startsWith('roll:')) {
+      const bar = p.slice(5);
+      const cut = bar.indexOf('|');
+      const dice = cut === -1 ? bar : bar.slice(0, cut);
+      const adv = cut === -1 ? '' : bar.slice(cut + 1).trim();
+      return `Waiting on ${waiting}: roll ${dice}` + (adv ? ` with ${adv}` : '');
+    }
     if (p.startsWith('react:')) {
       const parts = p.slice(6).split(':');
       const what = parts[parts.length - 1];
-      return `Waiting on ${w}: ${what}? yes/no`;
+      const decider = parts.length > 1 && byId ? byId(parts[0]) : null;
+      return `Waiting on ${decider ? decider.name : waiting}: ${what}? yes/no`;
     }
-    return `Waiting on ${w}: ${p}`;
+    return `Waiting on ${waiting}: ${p}`;
   }
 
   // The two geometry seams for anything drawn or measured on the board. The ruler
@@ -386,6 +408,7 @@
       const min = document.body.classList.toggle('tx-min');
       el.min.textContent = min ? 'Show map' : 'Hide map';
       el.min.setAttribute('aria-expanded', String(!min));
+      publishPanelExtent();          // folding changes the panel's height at once
     });
     document.addEventListener('keydown', e => {
       if (e.key !== 'Escape') return;
@@ -393,6 +416,7 @@
       if (ui.mode) { clearMode(); render(); }
     });
     el.cover.addEventListener('click', toggleSight);
+    watchPanel();
     for (const b of p.querySelectorAll('[data-ruler]')) b.addEventListener('click', () => setRuler(b.dataset.ruler));
     el.rulerOut = document.getElementById('tx-ruler-out');
     el.board.addEventListener('scroll', saveCameraSoon, { passive: true });
@@ -417,6 +441,7 @@
     clearTimeout(ui.toastTimer);
     ui.toastTimer = setTimeout(() => { el.toast.hidden = true; }, kind === 'error' ? 6000 : 4500);
   }
+
 
   function clearMode() {
     ui.mode = ui.kind = ui.reach = ui.targets = ui.attack = ui.hover = ui.armed = null;
@@ -451,9 +476,15 @@
     render();
     animate();
     announceRolls();
+    publishPanelExtent();
   }
 
-  function hide() { el.panel.hidden = true; document.body.classList.remove('tx-on', 'tx-min'); clearMode(); }
+  function hide() {
+    el.panel.hidden = true;
+    document.body.classList.remove('tx-on', 'tx-min');
+    clearMode();
+    publishPanelExtent();
+  }
   function flash() { el.banner.classList.remove('tx-flash'); void el.banner.offsetWidth; el.banner.classList.add('tx-flash'); }
 
   function announceRolls() {
@@ -558,10 +589,51 @@
     return 'var(--tx-' + base + ')';
   }
 
+  // The width the side column costs the board, the gap between them, and the
+  // panel's own horizontal padding. Named here and mirrored by the rules in
+  // tactics.css; a container query would read these straight off the box, but
+  // the split is decided before the map is measured, so the arithmetic is
+  // spelled out instead.
+  const SIDE_COL = 250, BODY_GAP = 10, PANEL_PAD_X = 12;
+
+  // Whether the side column sits beside the board or under it.
+  //
+  // It used to be a viewport breakpoint: two columns from 1101px, one below.
+  // That is the wrong question. The split is worth having only when the board
+  // can still hold the whole map at a square a player can read from across the
+  // room; below that it takes 260px the board needed and the map is clipped
+  // instead, which is how a 12x9 grid lost its right-hand two columns at
+  // 1200px while fitting whole at 768px -- a wider screen with less of the
+  // fight on it. So it is measured: the board gets the whole panel when the
+  // two-column split would clip the map.
+  //
+  // Never the reverse: a map too wide for the panel still scrolls. That is the
+  // table-display rule (boardCell's floor), and stacking would not make it fit.
+  function chooseLayout(W) {
+    // Measured from the panel, not the board: the board's own width is only
+    // meaningful once the split is decided, so reading it here would be circular
+    // and the two layouts would each keep re-deciding for the other.
+    const inner = el.panel.clientWidth - PANEL_PAD_X * 2;
+    // Held for as long as the panel is this wide. A decision taken from the
+    // current class name flips back on the next render and oscillates: stacked
+    // measures as fitting, which un-stacks it, which then measures as not
+    // fitting. Re-deciding only when the width itself changes is what makes it
+    // settle.
+    if (ui.layoutAt === inner) return el.panel.classList.contains('tx-stacked') ? 'stack' : 'side';
+    // The floor, not a guess: a square narrower than TABLE_MIN is the squint the
+    // table-display rule exists to prevent, so if the split cannot buy it the
+    // split has to go.
+    const sideBySide = inner - SIDE_COL - BODY_GAP >= W * TABLE_MIN;
+    el.panel.classList.toggle('tx-stacked', !sideBySide);
+    ui.layoutAt = inner;
+    return sideBySide ? 'side' : 'stack';
+  }
+
   function renderBoard() {
     const rows = (snap.grid && snap.grid.rows) || [];
     const H = rows.length, W = H ? rows[0].length : 0;
     ui.W = W; ui.H = H;
+    ui.layout = chooseLayout(W);
     const box = boardBox();
     const cell = boardCell(W, H, box.w, box.h, box.phone);
     const s = svg('svg', { viewBox: `0 0 ${W * C} ${H * C}`, width: W * cell, height: H * cell,
@@ -636,18 +708,48 @@
     let keepL = el.board.scrollLeft, keepT = el.board.scrollTop;
     // A map that has just mounted (page load, or a new battle) opens where the
     // table last left it; a re-render of the same map keeps the live scroll.
-    const camName = cameraName(), saved = camName !== ui.camMap ? cameraLoad()[camName] : null;
+    const camName = cameraName(), fresh = camName !== ui.camMap;
+    const saved = fresh ? cameraLoad()[camName] : null;
     if (saved) { keepL = saved.scrollL; keepT = saved.scrollT; }
     ui.camMap = camName;
     el.board.innerHTML = ''; el.board.appendChild(s);
     el.board.scrollLeft = keepL; el.board.scrollTop = keepT;   // a re-render must not snap back to the corner
     drawRuler();
-    if (!saved) keepActorInView(cell);
+    // First look at a map, with no camera to return to: show the whole fight,
+    // not the square the hero happens to be standing on. Anything else and a
+    // wide map opens on one corner with every enemy off-screen, which is the
+    // first thing a player sees and the one they have to notice is incomplete.
+    // A re-render of the map already on screen only nudges the view when the
+    // acting token has genuinely gone out of it, so a player who scrolled
+    // somewhere on purpose keeps that view.
+    if (fresh && !saved) frameEncounter(cell);
+    else ensureActorVisible(cell);
     saveCameraSoon();
     floaters();
   }
 
   const isPhone = () => !!(window.matchMedia && matchMedia(`(max-width: ${PHONE_MAX_W}px)`).matches);
+
+  // ── the panel's own geometry, published to the stylesheet ────────────────
+  //
+  // The panel is an overlay, and the reading column has to start below it. How
+  // much room it takes is decided by what is in it (the board, the spell list,
+  // the log, a header that wrapped), so the inset cannot be a constant in the
+  // stylesheet: a fixed guess was 25px short of the panel at 1200x784 and 116px
+  // short at 1024x768, which is how the opening lines of every scene ended up
+  // under the board. Measured here and read back as --tx-bottom.
+  //
+  // A ResizeObserver rather than a call after every render, because the panel
+  // changes height without tactics.js being involved: the header re-wraps when
+  // the banner text changes, "Hide map" folds it, the window resizes.
+  function publishPanelExtent() {
+    if (!el.panel || el.panel.hidden) { document.body.style.removeProperty('--tx-bottom'); return; }
+    document.body.style.setProperty('--tx-bottom', Math.round(el.panel.getBoundingClientRect().bottom) + 'px');
+  }
+  function watchPanel() {
+    if (!el.panel || !window.ResizeObserver) { publishPanelExtent(); return; }
+    new ResizeObserver(publishPanelExtent).observe(el.panel);
+  }
 
   // The space the board is drawn into. On a table display the height comes
   // from the board's CSS box, not from the map inside it, so a short map does
@@ -662,16 +764,54 @@
     };
   }
 
-  // A map larger than the box scrolls; bring the acting token into view when it is off-screen.
-  function keepActorInView(cell) {
+  // A map larger than the box scrolls. The scroll position is a choice the
+  // player made, so it is only ever moved to make something visible that is
+  // not: here, the acting token, and only when it has actually left the box.
+  // Framing around the acting token on every render is what threw the player's
+  // scroll away after each push, and a token already inside the box is exactly
+  // the case that used to trigger it.
+  function ensureActorVisible(cell) {
     const t = (snap.tokens || []).find(k => k.id === snap.current);
     const b = el.board;
     if (!t || !b.clientWidth || !b.clientHeight) return;
-    const x0 = t.x * cell, y0 = t.y * cell, pad = cell;
-    if (x0 - pad < b.scrollLeft) b.scrollLeft = Math.max(0, x0 - pad);
-    else if (x0 + cell + pad > b.scrollLeft + b.clientWidth) b.scrollLeft = x0 + cell + pad - b.clientWidth;
-    if (y0 - pad < b.scrollTop) b.scrollTop = Math.max(0, y0 - pad);
-    else if (y0 + cell + pad > b.scrollTop + b.clientHeight) b.scrollTop = y0 + cell + pad - b.clientHeight;
+    const x0 = t.x * cell, y0 = t.y * cell, left = b.scrollLeft, top = b.scrollTop;
+    // Already wholly inside the box: leave it alone. This is the whole point of
+    // the function, and the old version got it wrong in a way that lost the
+    // player's scroll on every push: it compared the token against a padded
+    // edge, so a hero standing in the first two columns always looked "out of
+    // view" however far right the player had scrolled, and the board was sent
+    // back to the left edge to fix it.
+    if (x0 >= left && x0 + cell <= left + b.clientWidth &&
+        y0 >= top && y0 + cell <= top + b.clientHeight) return;
+    const pad = cell;
+    if (x0 < left) b.scrollLeft = Math.max(0, x0 - pad);
+    else if (x0 + cell > left + b.clientWidth) b.scrollLeft = x0 + cell + pad - b.clientWidth;
+    if (y0 < top) b.scrollTop = Math.max(0, y0 - pad);
+    else if (y0 + cell > top + b.clientHeight) b.scrollTop = y0 + cell + pad - b.clientHeight;
+  }
+
+  // Every living token in the box, with a square of slack around them.
+  //
+  // The first view of a map has to answer "where is everyone" without a scroll.
+  // Centring the acting token, which is what this used to do, put the party in
+  // the middle of an empty floor at 1200px wide and left both kobolds past the
+  // right edge of the board. When the fight is wider than the box there is no
+  // framing that shows all of it, so the hero stays put: a fight you cannot see
+  // all of should open on the piece you control, and the board scrolls the rest.
+  function frameEncounter(cell) {
+    const alive = living();
+    const b = el.board;
+    if (!alive.length || !b.clientWidth || !b.clientHeight) return;
+    const xs = alive.map(t => t.x), ys = alive.map(t => t.y);
+    const left = Math.min(...xs) * cell, top = Math.min(...ys) * cell;
+    const right = (Math.max(...xs) + 1) * cell, bottom = (Math.max(...ys) + 1) * cell;
+    const pad = cell;
+    if (right - left + pad * 2 <= b.clientWidth && bottom - top + pad * 2 <= b.clientHeight) {
+      b.scrollLeft = Math.max(0, left - pad - (b.clientWidth - (right - left + pad * 2)) / 2);
+      b.scrollTop = Math.max(0, top - pad - (b.clientHeight - (bottom - top + pad * 2)) / 2);
+      return;
+    }
+    ensureActorVisible(cell);
   }
 
   // What the current mode says about a token: a ring class, a badge and words for screen readers.
@@ -1946,7 +2086,7 @@
     let resizeTimer = 0;
     window.addEventListener('resize', () => {
       clearTimeout(resizeTimer);
-      resizeTimer = setTimeout(() => { if (snap) render(); }, 150);
+      resizeTimer = setTimeout(() => { if (snap) render(); publishPanelExtent(); }, 150);
     });
   }
 
