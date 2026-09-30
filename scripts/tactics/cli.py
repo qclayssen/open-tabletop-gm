@@ -1149,7 +1149,14 @@ def main(argv=None) -> int:
     except PendingRoll as e:
         if camp_dir is not None:
             _save_pending(camp_dir, canon, args._seed, args._decisions)
-            _push_pending(camp_dir, f"roll:{e.notation}")
+            # The advantage goes into the marker as well as the printed line.
+            # The display's banner said "roll 1d20+4" for a roll the engine was
+            # holding two dice for and keeping the lower of, so a player watched
+            # for one number that was never going to arrive; the only place the
+            # disadvantage was visible was the log entry after the fact. A "|"
+            # separates it from the notation, which never contains one.
+            adv = f"|{e.advantage}" if e.advantage and e.advantage != "normal" else ""
+            _push_pending(camp_dir, f"roll:{e.notation}{adv}")
         what = "the d20 face" if e.notation.startswith("1d20") else "the dice total"
         adv = f" with {e.advantage}" if e.advantage != "normal" else ""
         prior = _prior(args)

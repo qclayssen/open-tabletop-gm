@@ -1,24 +1,32 @@
-"""The wave-2 re-test findings N-2 and N-3, measured in a browser.
+"""The wave-2 re-test findings N-1 to N-6, measured in a browser.
 
 Each test here pins a defect the re-test reproduced against a real page, with
 the numbers the report gave. The pattern is the one
-test_display_tactics_layout.py established: drive the real index.html through
-the Flask app on an ephemeral port, hand the panel a snapshot in the shape
-scripts/tactics/sync.py produces, and measure what a browser actually did.
-Skipped when playwright or Chromium is absent.
+test_display_tactics_layout.py established: drive the real index.html (or
+evidence-panel.html) through the Flask app on an ephemeral port, hand the panel
+a snapshot in the shape scripts/tactics/sync.py produces, and measure what a
+browser actually did. Skipped when playwright or Chromium is absent.
 
+  N-1  the reading column collapses to a ribbon at narrow widths
   N-2  the map panel covers the story, and the folded panel clips its chips
   N-3  the board opens on the hero with the enemies off-screen, and a re-render
        throws away the player's scroll
+  N-4  the reaction prompt names the acting creature, not the deciding one
+  N-5  the roll banner omits the advantage the engine is rolling under
+  N-6  a refusal is unreadable, contradicts the banner, and covers the log
 """
+import http.server
 import importlib.util
 import itertools
 import json
 import pathlib
+import re
 import threading
 import unittest
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
+INDEX = REPO / "display" / "templates" / "index.html"
+HARNESS = REPO / "display" / "evidence-panel.html"
 
 try:
     from playwright.sync_api import sync_playwright
@@ -85,6 +93,11 @@ def snapshot(w=12, h=9, **turn):
     if turn:
         base["turn"].update(turn)
     return base
+
+
+class _Quiet(http.server.SimpleHTTPRequestHandler):
+    def log_message(self, *args):
+        pass
 
 
 @unittest.skipUnless(HAVE_PLAYWRIGHT, "playwright is not installed")
@@ -390,6 +403,235 @@ class Panel(unittest.TestCase):
         self.assertGreater(m["svgW"], m["clientW"],
                            f"a 40-wide map was squeezed to fit instead of scrolling: {m}")
         self.assertGreaterEqual(round(m["svgW"] / 40), 40, m)
+
+    # ── N-4 and N-5: the banner names the right creature and the right roll ──
+    BANNER = """(pending) => ({
+      banner: document.getElementById('tx-banner').textContent,
+      info: document.getElementById('tx-info').textContent,
+    })"""
+
+    def banner_for(self, pending, size=DESKTOP, snap=None):
+        page = self.open(size, snap or snapshot())
+        page.evaluate("p => { Tactics.state().turn.pending = p; Tactics.update(Tactics.state()); }",
+                      pending)
+        page.wait_for_timeout(300)
+        out = page.evaluate("""() => ({
+          banner: document.getElementById('tx-banner').textContent,
+          info: document.getElementById('tx-info').textContent,
+        })""")
+        page.close()
+        return out
+
+    def test_a_reaction_names_the_creature_that_has_to_decide(self):
+        """Kobold 2 was acting and the engine was waiting on Kairos to spend a
+        reaction. The banner named Kobold 2, so it read as the kobold answering
+        for a spell reaction it was the victim of."""
+        snap = snapshot()
+        snap["turn"]["pending"] = "react:kairos:silvery barbs"
+        snap["current"] = "kob-2"
+        got = self.banner_for("react:kairos:silvery barbs", snap=snap)
+        self.assertIn("Kairos", got["info"], got)
+        self.assertNotIn("Waiting on Kobold 2", got["info"], got)
+        self.assertIn("silvery barbs", got["info"], got)
+
+    def test_a_roll_banner_says_how_the_roll_is_made(self):
+        """The terminal said 'rolls 1d20+4 with disadvantage' and the display
+        said 'roll 1d20+4', which reads as one die. The advantage has to be in
+        the wait: it is what the player is deciding how to respond to."""
+        for adv in ("advantage", "disadvantage"):
+            with self.subTest(adv=adv):
+                got = self.banner_for(f"roll:1d20+4|{adv}")
+                self.assertIn(f"with {adv}", got["info"], got)
+        plain = self.banner_for("roll:1d20+4")
+        self.assertIn("roll 1d20+4", plain["info"], plain)
+        self.assertNotIn("with normal", plain["info"], plain)
+
+    # ── N-6: a refusal has to be readable, agree with the banner, and not hide
+    #         the log line that says the same thing ─────────────────────────
+    # Class attribute rather than a list literal in the method, so a reader can
+    # see the four shapes the server can return next to the test that uses them.
+    REFUSALS = (
+        (404, "No active campaign.", "Start one in the terminal"),
+        (403, "This device is not approved to act yet.", "not approved"),
+        (409, "There is no player's turn open right now. It is Kobold 2's turn.",
+         "Kobold 2's turn"),
+        (409, "Only Kairos can act now. Nothing was sent.", "Kairos"),
+    )
+
+    def test_each_refusal_says_what_to_do_about_it(self):
+        """A player cannot act on 'It is not a player's turn.' The four refusals
+        the map's buttons can return each need a different sentence, and each
+        needs to name the thing that has to change."""
+        page = self.open(DESKTOP, snapshot())
+        for status, body, expect in self.REFUSALS:
+            with self.subTest(status=status, body=body):
+                got = page.evaluate("a => Tactics.refusal(a[0], {error: a[1]})",
+                                    [status, body])
+                self.assertIn(expect, got, f"refusal({status}, {body!r}) = {got!r}")
+                self.assertGreater(len(got), 30, f"nothing actionable in {got!r}")
+
+    def test_a_refusal_for_a_status_the_server_did_not_name_is_still_shown(self):
+        """The engine's own sentence is shown when there is no case for it: a
+        refusal the display cannot improve on is still the truth, and hiding it
+        because it is unrecognised would leave a click with no answer."""
+        page = self.open(DESKTOP, snapshot())
+        got = page.evaluate("""a => Tactics.refusal(a[0], {error: a[1]})""",
+                            [422, "That spell needs a line of effect."])
+        self.assertIn("line of effect", got)
+        got2 = page.evaluate("a => Tactics.refusal(a[0], null)", [500])
+        self.assertIn("500", got2)
+
+    def test_a_refusal_shows_in_the_banner_and_survives_the_toast(self):
+        page = self.open(DESKTOP, snapshot())
+        page.route("**/combat/do", lambda route: route.fulfill(
+            status=409, content_type="application/json",
+            body=json.dumps({"error": "There is no player's turn open right now. "
+                                      "It is Kobold 2's turn. Nothing was sent."})))
+        page.click("#tx-actions button:has-text('End turn')")
+        page.wait_for_timeout(700)
+        m = page.evaluate("""() => {
+          const b = document.getElementById('tx-banner');
+          return {text: b.textContent, role: b.getAttribute('role'),
+                  cls: b.className};
+        }""")
+        self.assertIn("Kobold 2's turn", m["text"], m)
+        self.assertEqual(m["role"], "alert", m)
+        # The banner is the answer and it stays; the toast is the transient copy
+        # of it, so the toast going is not the message going.
+        page.evaluate("document.getElementById('tx-toast').hidden = true")
+        page.wait_for_timeout(6500)          # past the toast's 6s life
+        still = page.inner_text("#tx-banner")
+        self.assertIn("Kobold 2's turn", still,
+                      f"the refusal left with the toast: {still!r}")
+
+    def test_the_toast_does_not_cover_the_log(self):
+        """The toast sat at the bottom of the panel, over the combat log and, on
+        a phone, over the action bar: the two things a player looks at when an
+        action does not happen."""
+        for size in (DESKTOP, IFRAME, PHONE):
+            with self.subTest(size=size):
+                page = self.open(size, snapshot())
+                page.evaluate("""() => { const t = document.getElementById('tx-toast');
+                  t.textContent = 'x'; t.hidden = false; }""")
+                m = page.evaluate("""() => {
+                  const tb = document.getElementById('tx-toast').getBoundingClientRect();
+                  const log = document.getElementById('tx-log').getBoundingClientRect();
+                  const bar = document.getElementById('tx-actions').getBoundingClientRect();
+                  const over = (a, b) => a.width > 0 && a.height > 0 &&
+                    a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+                  return {overLog: over(tb, log), overBar: over(tb, bar)};
+                }""")
+                self.assertFalse(m["overLog"], f"the toast covers the log: {m}")
+                self.assertFalse(m["overBar"], f"the toast covers the action bar: {m}")
+
+    def test_a_new_turn_clears_a_standing_refusal(self):
+        page = self.open(DESKTOP, snapshot())
+        page.route("**/combat/do", lambda route: route.fulfill(
+            status=409, content_type="application/json",
+            body=json.dumps({"error": "There is no player's turn open right now."})))
+        page.click("#tx-actions button:has-text('End turn')")
+        page.wait_for_timeout(600)
+        self.assertIn("no player's turn",
+                      page.inner_text("#tx-banner").lower())
+        snap = snapshot()
+        snap["current"] = "kob-1"
+        page.unroute("**/combat/do")
+        page.evaluate("s => Tactics.update(s)", snap)
+        page.wait_for_timeout(400)
+        got = page.inner_text("#tx-banner")
+        self.assertIn("Kobold 1", got)
+        self.assertNotIn("no player's turn", got.lower(), got)
+
+    def test_the_fold_button_is_big_enough_to_hit(self):
+        """P3-2, still open from the first pass and cheap to close: the HIDE
+        control was 7.5px and faint, which is a target and a legibility problem
+        in one."""
+        page = self.open(DESKTOP, snapshot())
+        m = page.evaluate("""() => { const b = document.getElementById('tx-min');
+          const cs = getComputedStyle(b), r = b.getBoundingClientRect();
+          return {w: r.width, h: r.height, size: parseFloat(cs.fontSize),
+                  label: b.textContent.trim(),
+                  name: b.getAttribute('aria-label'), title: b.title}; }""")
+        self.assertGreaterEqual(m["h"], 32, f"the fold control is {m['h']}px tall: {m}")
+        self.assertGreaterEqual(m["size"], 12, f"the fold control is {m['size']}px type: {m}")
+        self.assertTrue(m["name"] or m["label"], m)
+
+
+class ClientWording(unittest.TestCase):
+    """The static half: wording the browser test cannot reach, pinned in source."""
+
+    src = INDEX.read_text(encoding="utf-8")
+    tactics = (REPO / "display" / "static" / "tactics.js").read_text(encoding="utf-8")
+    cli = (REPO / "scripts" / "tactics" / "cli.py").read_text(encoding="utf-8")
+    app = (REPO / "display" / "gm-display-app.py").read_text(encoding="utf-8")
+
+    def test_no_em_dash_in_the_new_client_text(self):
+        for name, text in (("index.html", self.src), ("tactics.js", self.tactics)):
+            # "—" was already in tactics.js (the CRIT/fumble suffix) before this
+            # work, so only the strings added here are checked.
+            for line in text.splitlines():
+                if "tx-refusal" in line or "refusal(" in line or "not your turn" in line.lower():
+                    self.assertNotIn("—", line, f"{name}: {line}")
+
+    def test_the_no_campaign_refusal_says_what_to_do(self):
+        m = re.search(r"NO_CAMPAIGN = \((.*?)\)\n", self.app, re.DOTALL)
+        self.assertIsNotNone(m, "NO_CAMPAIGN is not defined in gm-display-app.py")
+        msg = " ".join(m.group(1).split())
+        self.assertIn("combat start", msg,
+                      f"the no-campaign message does not say how to fix it: {msg!r}")
+        self.assertIn("No fight is open", msg, msg)
+
+    def test_the_advantage_reaches_the_marker(self):
+        """The marker is what carries the advantage, so the plumbing is pinned
+        against the real engine rather than only in the display: a PendingRoll at
+        disadvantage has to reach turn.pending with it attached, or the banner
+        cannot say it however well it is written. Driven through cli.main with
+        the campaign resolved and the engine stubbed, so this exercises the
+        shipped except-branch and not a copy of it."""
+        import sys
+        sys.path.insert(0, str(REPO))
+        try:
+            from scripts.tactics import cli, roller
+        finally:
+            sys.path.pop(0)
+
+        pushed = []
+        real = {n: getattr(cli, n) for n in
+                ("_push_pending", "_clear_pending", "_save_pending", "_camp_dir", "run")}
+        cli._push_pending = lambda camp, marker: pushed.append(marker)
+        cli._clear_pending = lambda camp: None
+        cli._save_pending = lambda *a: None
+        # A campaign path that exists, so main() gets as far as the pause.
+        cli._camp_dir = lambda args: pathlib.Path(REPO)
+        real_state_load = cli.state.load
+        cli.state.load = lambda path: _encounter()
+
+        def _raise(args):
+            raise roller.PendingRoll("Kairos", "attack: Fire Bolt", "1d20+4", ADV[0])
+
+        cli.run = _raise
+        try:
+            for adv, want in (("normal", "roll:1d20+4"),
+                              ("disadvantage", "roll:1d20+4|disadvantage"),
+                              ("advantage", "roll:1d20+4|advantage")):
+                with self.subTest(adv=adv):
+                    ADV[0] = adv
+                    pushed.clear()
+                    # main() takes the argument list without the program name,
+                    # which is how it is called from __main__ and from the app.
+                    code = cli.main(["-c", "t", "attack", "kairos",
+                                     "kob-1", "fire", "bolt"])
+                    self.assertEqual(code, 2, f"PendingRoll should exit 2, got {code}")
+                    self.assertEqual(pushed, [want])
+        finally:
+            ADV[0] = "normal"
+            for n, fn in real.items():
+                setattr(cli, n, fn)
+            cli.state.load = real_state_load
+
+    def test_the_reaction_marker_is_resolved_to_a_token(self):
+        self.assertIn("byId", self.tactics,
+                      "pendingBanner cannot resolve the deciding creature's id")
 
 
 if __name__ == "__main__":

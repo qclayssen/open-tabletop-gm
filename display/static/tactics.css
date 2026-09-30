@@ -74,6 +74,10 @@ body.tx-min #tx-panel { max-height: none; }
 .tx-title .tx-sub { color: var(--tx-muted); font-weight: 400; }
 #tx-banner { flex: 1; text-align: center; font-weight: 700; color: var(--tx-banner); min-height: 1.4em; }
 #tx-banner.tx-flash { animation: tx-flash 1.4s ease; }
+/* A refusal. Above the map, where nothing else is, and it stays: the engine's
+   own sentence about why a click did nothing is the answer to that click, and
+   it is still true after the toast that repeated it has gone. */
+#tx-banner.tx-refusal { color: var(--tx-danger); font-weight: 600; }
 @keyframes tx-flash { 0% { transform: scale(1.25); opacity: 0; } 30% { opacity: 1; } 100% { transform: scale(1); } }
 .tx-btn {
   font: 600 13px Figtree, system-ui, sans-serif; border: 1px solid var(--tx-line);
@@ -292,10 +296,16 @@ body.tx-min #tx-panel { max-height: none; }
 .tx-float.tx-odds-float { font-size: 12px; fill: var(--tx-ink); }
 @keyframes tx-rise { from { transform: translateY(0); opacity: 1; } to { transform: translateY(-26px); opacity: 0; } }
 
+/* Above the map, not over the log. At the bottom of the panel it covered the
+   combat log entry that says the same thing in full, and on a phone it covered
+   the action bar, which is what the player was reaching for when the refusal
+   arrived. A roll toast floats over the board for its few seconds, which costs
+   nothing: nothing under it has to be read first. */
 .tx-toast {
-  position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); max-width: 90%;
+  position: absolute; left: 50%; top: 44px; transform: translateX(-50%); max-width: 90%;
   background: var(--tx-ink); color: var(--tx-paper); padding: 8px 12px; border-radius: 6px;
-  font-size: 14px; box-shadow: 0 6px 18px rgba(0,0,0,.3); z-index: 2;
+  font-size: 14px; box-shadow: 0 6px 18px rgba(0,0,0,.3); z-index: 6;
+  pointer-events: none;
 }
 .tx-toast[hidden] { display: none; }
 .tx-toast.tx-error { background: var(--tx-danger); }
@@ -356,8 +366,8 @@ body.tx-min #tx-panel { max-height: none; }
   #tx-actions [data-tx="end"] { order: 99; position: sticky; bottom: 0; z-index: 1;
     box-shadow: 0 -7px 0 0 var(--tx-panel), 0 -6px 6px -5px rgba(0,0,0,.4); }
   .tx-actions .tx-spell { flex: 1 1 120px; }
-  /* The roll toast sits over the map rather than over the bar. */
-  .tx-toast { top: 38%; bottom: auto; }
+  /* Just under the header, over the map rather than over the action bar. */
+  .tx-toast { top: 40px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

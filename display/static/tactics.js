@@ -363,11 +363,11 @@
     try {
       const r = await fetch('/combat/do', { method: 'POST', headers: headers(),
         body: JSON.stringify(Object.assign({ cmd, args }, extra || {})) });
-      if (r.status === 429) return { error: 'Too many actions at once. Try again in a moment.' };
       const body = await r.json().catch(() => null);
-      return body || { error: 'The display could not reach the engine (HTTP ' + r.status + ').' };
+      if (r.ok) return body || { ok: true };
+      return { error: refusal(r.status, body), status: r.status };
     } catch (e) {
-      return { error: 'The display could not reach the engine.' };
+      return { error: 'The display could not reach the engine. Is the server still running?' };
     }
   }
 
@@ -439,9 +439,36 @@
     el.toast.textContent = text; el.toast.hidden = false;
     el.toast.className = 'tx-toast' + (kind === 'error' ? ' tx-error' : '');
     clearTimeout(ui.toastTimer);
-    ui.toastTimer = setTimeout(() => { el.toast.hidden = true; }, kind === 'error' ? 6000 : 4500);
+    // Always transient, refusals included. A toast is a duplicate of the banner
+    // for a refusal and of the log for a roll, and a duplicate that outlives its
+    // twin is the thing that made a stale error look current.
+    ui.toastTimer = setTimeout(() => { el.toast.hidden = true; },
+                               kind === 'error' ? 6000 : 4500);
   }
 
+  // A refusal, in the one place that is always visible.
+  //
+  // The toast sits at the bottom of the panel, which is where the combat log
+  // and the action bar are: it covered the log line that says the same thing
+  // more fully, and on a phone it covered the action bar outright. The banner
+  // is above the map with nothing under it, so that is where a refusal goes,
+  // and it is announced: it arrives without a page load and it is the answer to
+  // a click the player just made.
+  function refuse(message) {
+    el.banner.textContent = message;
+    el.banner.classList.add('tx-refusal');
+    el.banner.setAttribute('role', 'alert');
+    flash();
+  }
+
+  // Clear the refusal when the next snapshot is genuinely a new state. A push
+  // that is only a turn's own progress keeps it up until the player acts, since
+  // nothing they did was the cause and the banner is still the answer.
+  function clearRefusal() {
+    if (!el.banner.classList.contains('tx-refusal')) return;
+    el.banner.classList.remove('tx-refusal');
+    el.banner.setAttribute('role', 'status');
+  }
 
   function clearMode() {
     ui.mode = ui.kind = ui.reach = ui.targets = ui.attack = ui.hover = ui.armed = null;
@@ -449,6 +476,50 @@
     ui.dartsText = '';
     ui.preview = {};
     clearTimeout(ui.hoverTimer);
+  }
+
+  // Why a refusal happened, in the reader's terms, before the engine's.
+  //
+  // "It is not a player's turn." arrives while the banner above the map is
+  // saying "Your turn, Kairos", which reads as the display being wrong rather
+  // than the click being refused, and the two were both true: the map's own
+  // snapshot had a player's turn open and the engine had moved on. A 409 while
+  // the display believes it is the player's turn is exactly that race.
+  //
+  // The status code is the honest signal here, not the message: the server
+  // already distinguishes "no campaign", "device not approved" and "not your
+  // turn", and each of those needs a different thing said about it. A message
+  // the display cannot act on is shown, not paraphrased into a guess.
+  function refusal(status, body) {
+    const why = (body && body.error) || '';
+    if (status === 404 || /no (active )?campaign/i.test(why)) {
+      return 'No fight is open for this display. Start one in the terminal ' +
+             '(combat start), then reload. Nothing was sent.';
+    }
+    if (status === 403 && /not approved|device/i.test(why)) {
+      return 'This device is not approved to act. The GM has to approve it in ' +
+             'the terminal (devices approve) before the map buttons do anything.';
+    }
+    if (status === 409) {
+      // The server already names the creature acting when there is one, and that
+      // is the sentence a player needs: "it is Kobold 2's turn" is the reason,
+      // and the old generic wording was read as the display disagreeing with
+      // itself. Kept verbatim, with only "Nothing was sent" appended when the
+      // server did not say it, so nothing the engine said is ever lost.
+      const turns = /\b([A-Z][\w' -]*?)'s turn\b/.exec(why);
+      if (turns) {
+        return /nothing was sent/i.test(why) ? why
+          : why.replace(/\s*$/, '') + ' Nothing was sent.';
+      }
+      if (/only .* can act now/i.test(why)) {
+        const m = /only (.*?) can act now/i.exec(why);
+        return `${m[1]}'s turn now, not yours. Nothing was sent; wait for your turn.`;
+      }
+      return 'It is not your turn: the engine has moved on since this map was ' +
+             'drawn. Nothing was sent; wait for the banner to say your turn.';
+    }
+    if (status === 429) return why;
+    return why || ('The engine refused that (HTTP ' + status + '). Nothing was sent.');
   }
 
   // ── snapshots ────────────────────────────────────────────────────────────
@@ -468,6 +539,9 @@
     if (!prev || prev.current !== snap.current) {
       clearMode(); ui.spells = null;
       const t = current();
+      // A new turn is new state, so any standing refusal is stale: the engine
+      // has moved, which is often the very thing the refusal was about.
+      clearRefusal();
       el.banner.textContent = t ? (t.controller === 'player' ? 'Your turn, ' + t.name : t.name + "'s turn") : snap.unseen_turn ? 'Enemy turn' : '';
       flash();
       if (t && t.controller === 'player') ui.sightFrom = t.id;
@@ -482,6 +556,8 @@
   function hide() {
     el.panel.hidden = true;
     document.body.classList.remove('tx-on', 'tx-min');
+    el.toast.hidden = true;
+    el.banner.classList.remove('tx-refusal');
     clearMode();
     publishPanelExtent();
   }
@@ -1442,7 +1518,7 @@
     // turn.pending): shown on every turn, so spectators and the party do not
     // see a bare "Kairos's turn" while the engine is paused.
     const t = current();
-    const text = pendingBanner(snap.turn && snap.turn.pending, t && t.name);
+    const text = pendingBanner(snap.turn && snap.turn.pending, t && t.name, id => tokenById(id));
     return text ? `<br><span class="tx-warn">${esc(text)}</span>` : '';
   }
 
@@ -1926,7 +2002,7 @@
         else extra.rolls.push(answer.roll);
         continue;
       }
-      if (res.error) toast(res.error, 'error');
+      if (res.error) { refuse(res.error); toast(res.error, 'error'); }
       else {                                      // GM hints ("Next: options frog-1") are not for players
         const text = res.text.split('\n').filter(l => !/^(Next:|Then:|Waiting for)/.test(l))
           .map(l => l.replace(/\s*The GM runs: .*$/, '')).join(' ');
@@ -2090,7 +2166,10 @@
     });
   }
 
-  window.Tactics = { update, init, state: () => snap };
+  // refusal() is exported so the wording is testable as a function rather than
+  // only through a click: it is a pure map from (status, body) to a sentence,
+  // and the cases that matter are the four the server can return.
+  window.Tactics = { update, init, state: () => snap, refusal, pendingBanner };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 })();
