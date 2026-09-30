@@ -518,3 +518,28 @@ def test_advantage_keeps_the_single_supplied_face_and_flags_it():
     r = Roller(supplied=["16", "5"], supplied_source="verbal")
     rec = r.roll("1d20+5", "Kairos", "Fire Bolt", player=True, advantage="advantage")
     assert (rec.natural, rec.total, rec.dice, rec.advantage) == (16, 21, [16], "advantage")
+
+
+def test_gm_typed_condition_add_respects_condition_immunities(camp, capsys):
+    begin(capsys)
+    path = _edit(camp)
+    enc = json.loads(path.read_text(encoding="utf-8"))
+    enc["tokens"]["frog-1"]["condition_immunities"] = ["poisoned"]
+    path.write_text(json.dumps(enc), encoding="utf-8")
+    code, out = run(capsys, "condition", "frog-1", "add", "poisoned")
+    assert code == 0 and "immune to being poisoned" in out
+    after = json.loads(path.read_text(encoding="utf-8"))
+    assert "poisoned" not in after["tokens"]["frog-1"]["conditions"]
+    code, out = run(capsys, "condition", "frog-1", "add", "prone")
+    assert code == 0 and "prone added" in out
+
+
+def test_end_puts_the_summary_above_the_session_template(camp, capsys):
+    (camp / "session-log.md").write_text(
+        "# Session Log\n\n*(No sessions yet.)*\n\n---\n\n## Session Template\n\n---\n\n"
+        "## Session X\n\n### Recap\n", encoding="utf-8")
+    begin(capsys)
+    assert run(capsys, "end")[0] == 0
+    log = (camp / "session-log.md").read_text(encoding="utf-8")
+    assert log.index("### Grid combat") < log.index("## Session Template")
+    assert log.count("## Session Template") == 1 and "## Session X" in log

@@ -318,6 +318,13 @@ def append_faction_moves(campaign: str, entries: list) -> bool:
     except OSError:
         return False
 
+    # Idempotent: an entry already recorded verbatim (same date, same words) is
+    # not written twice, so a re-run of the same advance leaves state.md alone.
+    present = {ln.strip() for ln in text.splitlines()}
+    entries = [e for e in entries if e.strip() not in present]
+    if not entries:
+        return False
+
     new = _moves_block(text, entries)
     if new == text:
         return False
@@ -344,16 +351,19 @@ def _count(steps: int, unit: str) -> str:
 
 
 def _moved_entry(faction: Faction, old: int, note: str) -> str:
-    """One state.md line for a clock that gained or lost segments."""
-    return (f"{faction.name} {old}/{faction.clock_size} → "
-            f"{faction.current}/{faction.clock_size} ({note} *{faction.goal}*).")
+    """One state.md line for a clock that gained or lost segments.
+
+    No segment numbers: clocks are GM-only by design, and state.md is read back
+    into the DM digest, so the line says only which way the faction moved.
+    """
+    way = "closer to" if faction.current > old else "further from"
+    return f"{faction.name} moved {way} *{faction.goal}* ({note})."
 
 
 def _fired_entry(faction: Faction) -> str:
     """One state.md line for a full clock: the goal landed, the world changed."""
     return (f"**{faction.name}** has completed *{faction.goal}* "
-            f"(clock {faction.current}/{faction.clock_size}); the change is now "
-            f"visible in the world.")
+            f"the change is now visible in the world.")
 
 
 def _fired_lines(faction: Faction, lines: list) -> None:
@@ -461,7 +471,7 @@ def tick_factions(campaign: str, days: int, rng: Optional[random.Random] = None)
             # "nothing happened" every day would drown the moves that did.
             dated = f"- *{today}*: " if today else "- "
             if faction.current != old:
-                moves.append(dated + _moved_entry(faction, old, "off-screen, toward"))
+                moves.append(dated + _moved_entry(faction, old, "off-screen"))
 
             if faction.current >= faction.clock_size and not faction.fired:
                 faction.fired = True
@@ -544,7 +554,7 @@ def modify_clock(campaign: str, faction_name: str, delta: int, notes: str = "") 
     dated = f"- *{today}*: " if today else "- "
     moves = []
     if moved:
-        moves.append(dated + _moved_entry(faction, old, f"{reason}, off-screen, toward"))
+        moves.append(dated + _moved_entry(faction, old, f"{reason}, off-screen"))
     if faction.fired:
         moves.append(dated + _fired_entry(faction))
     append_faction_moves(campaign, moves)
