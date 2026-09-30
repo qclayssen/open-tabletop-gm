@@ -44,7 +44,7 @@ _HERE = pathlib.Path(__file__).resolve().parent
 sys.path[:] = [p for p in sys.path if pathlib.Path(p or ".").resolve() != _HERE]
 sys.path.insert(0, str(_HERE.parent))
 
-from tactics import cli, engine, state  # noqa: E402
+from tactics import cli, engine, fightq, state  # noqa: E402
 from tactics.grid import col_label, label  # noqa: E402
 
 KAIROS = _HERE.parents[1] / "tests" / "fixtures" / "Kairos_Level1.md"
@@ -128,6 +128,7 @@ HELP = """Commands (squares like D4; creatures by their map symbol, like 1, or t
   cast fire bolt 1     cast at a creature             cast magic missile 1 1 2   one target per dart
   area mind sliver 2   preview a spell: who, what chance, expected damage
   dash | disengage | dodge | hide | stand | escape      the other actions
+  move toward 1        the game picks the square      how far is 1? / what can I do?   ask, no turn used
   undo                 take back your last move       reactions ask|auto|off   Shield and Silvery Barbs
   end                  end your turn                  quit         leave the game
 When a roll is asked for, type the die face (no modifier) or press Enter to let the game roll.
@@ -137,7 +138,10 @@ ALIASES = {"m": "map", "s": "status", "go": "move", "a": "attack", "c": "cast", 
            "r": "reach", "e": "end", "done": "end", "pass": "end", "end-turn": "end",
            "q": "quit", "exit": "quit", "undo-move": "undo", "preview-area": "area", "h": "help"}
 SIMPLE = {"dash", "disengage", "dodge", "hide", "stand", "escape"}
+SQUARE = re.compile(r"[A-Za-z]{1,2}\d{1,3}")
 NEEDS = {"preview": 1, "move": 1, "attack": 1, "cast": 1, "area": 2, "reactions": 1}
+KNOWN_VERBS = (set(ALIASES) | set(ALIASES.values()) | SIMPLE | set(NEEDS)
+               | {"help", "quit", "end", "map", "reach", "status", "log", "targets", "spells", "undo"})
 
 
 def _color(on: bool):
@@ -174,8 +178,7 @@ class Game:
             try:
                 code = cli.main(["-c", CAMPAIGN, *argv])
             except SystemExit:                      # argparse: a malformed command
-                last = (buf.getvalue().strip().splitlines() or ["?"])[-1]
-                return 1, f"That command is not complete ({last})."
+                return 1, "That command is not complete. Type `help` for the commands."
         return code, buf.getvalue().rstrip()
 
     def run_cmd(self, *argv) -> tuple:
@@ -390,11 +393,24 @@ class Game:
             if not words:
                 continue
             verb = ALIASES.get(words[0].lower(), words[0].lower())
+            if verb not in KNOWN_VERBS and self.ask_engine(t.id, line):
+                continue
             ok, finished = self.do(t.id, verb, words[1:])
             if ok:
                 self.learn(verb)
             if finished or self.outcome(self.enc()):
                 return
+
+    def ask_engine(self, pid: str, line: str) -> bool:
+        """A question ("how far is the frog", "what can I do") is answered from the engine,
+        with no model and no change to the fight. True when the line was one."""
+        q = fightq.classify(line, KNOWN_VERBS)
+        if q is None:
+            return False
+        enc = self.enc()
+        for text in fightq.answer(enc, pid, q, self.symbols(enc)):
+            self.out(text)
+        return True
 
     def prompt_line(self) -> str:
         enc = self.enc()
@@ -427,6 +443,16 @@ class Game:
         if len(rest) < NEEDS.get(verb, 0):
             self.out(f"`{verb}` needs more: type `help`.")
             return False, False
+        if verb in ("attack", "cast"):
+            rest = [w for w in rest if w.lower() not in ("at", "on", "the")]
+            if len(rest) < NEEDS[verb]:
+                self.out(f"`{verb}` needs more: type `help`.")
+                return False, False
+        if verb in ("move", "preview") and not SQUARE.fullmatch(rest[0]):
+            enc = self.enc()             # "move toward the frog": the engine picks the square
+            foe = fightq.approach_target(enc, pid, rest, self.symbols(enc))
+            if foe is not None:
+                rest = [foe]
         rest = self.resolve(rest)
         if verb in SIMPLE:
             argv = [verb, pid]
