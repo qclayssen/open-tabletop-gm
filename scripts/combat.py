@@ -22,15 +22,22 @@ Example:
 
 import json
 import random
+import shlex
 import sys
 import re
 
+# One module-level stream, seeded-able for a replay. See scripts/dice.py for why
+# the free-standing CLI needs this even though the tactical engine has receipts:
+# these two are the GM's hand-typed tools, and the engine cannot cover them.
+_RNG = random.Random()
 
-def roll(n, sides):
-    return [random.randint(1, sides) for _ in range(n)]
+
+def roll(n, sides, rng=None):
+    rng = rng or _RNG
+    return [rng.randint(1, sides) for _ in range(n)]
 
 
-def dice(notation: str) -> tuple[int, list[int]]:
+def dice(notation: str, rng=None) -> tuple[int, list[int]]:
     """Parse NdS+M notation, return (total, individual_rolls)."""
     m = re.match(r'^(\d*)d(\d+)([+-]\d+)?$', notation.strip().lower())
     if not m:
@@ -38,14 +45,15 @@ def dice(notation: str) -> tuple[int, list[int]]:
     n = int(m.group(1)) if m.group(1) else 1
     s = int(m.group(2))
     mod = int(m.group(3)) if m.group(3) else 0
-    rolls = roll(n, s)
+    rolls = roll(n, s, rng)
     return sum(rolls) + mod, rolls
 
 
-def initiative_order(combatants: list[dict]) -> list[dict]:
+def initiative_order(combatants: list[dict], rng=None) -> list[dict]:
     """Roll d20+dex_mod for each combatant, sort descending."""
+    rng = rng or _RNG
     for c in combatants:
-        raw = random.randint(1, 20)
+        raw = rng.randint(1, 20)
         c["initiative_roll"] = raw
         c["initiative"] = raw + c.get("dex_mod", 0)
         c["conditions"] = []
@@ -67,8 +75,10 @@ def print_tracker(combatants: list[dict], round_num: int = 1):
     print(f"{'='*68}\n")
 
 
-def resolve_attack(atk_bonus: int, target_ac: int, dmg_notation: str, is_crit: bool = False) -> dict:
-    raw = random.randint(1, 20)
+def resolve_attack(atk_bonus: int, target_ac: int, dmg_notation: str, is_crit: bool = False,
+                   rng=None) -> dict:
+    rng = rng or _RNG
+    raw = rng.randint(1, 20)
     total_atk = raw + atk_bonus
     hit = raw == 20 or (raw != 1 and total_atk >= target_ac)
     crit = raw == 20
@@ -84,10 +94,10 @@ def resolve_attack(atk_bonus: int, target_ac: int, dmg_notation: str, is_crit: b
     }
 
     if hit:
-        dmg, rolls = dice(dmg_notation)
+        dmg, rolls = dice(dmg_notation, rng)
         if crit:
             # Double the dice rolls on crit
-            extra, extra_rolls = dice(dmg_notation.split("+")[0].split("-")[0])
+            extra, extra_rolls = dice(dmg_notation.split("+")[0].split("-")[0], rng)
             dmg += extra
             rolls += extra_rolls
         result["damage"] = dmg
@@ -117,38 +127,68 @@ def format_attack(r: dict) -> str:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
+    argv = sys.argv[1:]
+    if not argv:
         print(__doc__)
         sys.exit(1)
 
-    cmd = sys.argv[1]
+    # --seed is stripped from argv before the positional arguments are read, so
+    # it can appear anywhere: `init '<JSON>' --seed 7` and `init --seed 7 '<JSON>'`
+    # are the same fight.
+    seed = None
+    if "--seed" in argv:
+        i = argv.index("--seed")
+        if i + 1 >= len(argv):
+            print("--seed needs an integer: --seed 7")
+            sys.exit(1)
+        try:
+            seed = int(argv[i + 1])
+        except ValueError:
+            print(f"--seed needs an integer, got '{argv[i + 1]}'")
+            sys.exit(1)
+        del argv[i:i + 2]
+    rng = random.Random(seed) if seed is not None else _RNG
+
+    cmd = argv[0]
+    rest = argv[1:]
 
     if cmd == "init":
-        combatants = json.loads(sys.argv[2])
+        combatants = json.loads(rest[0])
         # Store max_hp
         for c in combatants:
             c["max_hp"] = c["hp"]
-        ordered = initiative_order(combatants)
+        ordered = initiative_order(combatants, rng)
         print_tracker(ordered)
         print("Initiative rolls:")
         for c in ordered:
             print(f"  {c['name']}: d20({c['initiative_roll']}) + {c.get('dex_mod',0)} = {c['initiative']}")
         print()
         print("STATE_JSON:", json.dumps(ordered))
+        if seed is not None:
+            # rest[0] is the combatants JSON, whichever side of --seed it was
+            # typed on, so the hint names the argument that actually held it.
+            # shlex.quote rather than hand-rolled single quotes: a combatant
+            # named "Grigor's Wraith" would otherwise break the paste.
+            print(f"(seed {seed} - replay: python3 scripts/combat.py init "
+                  f"{shlex.quote(rest[0])} --seed {seed})")
 
     elif cmd == "tracker":
-        state = json.loads(sys.argv[2])
-        round_num = int(sys.argv[3]) if len(sys.argv) > 3 else 1
+        state = json.loads(rest[0])
+        round_num = int(rest[1]) if len(rest) > 1 else 1
         print_tracker(state, round_num)
 
     elif cmd == "attack":
-        args = sys.argv[2:]
+        args = rest
         atk = int(args[args.index("--atk") + 1])
         ac = int(args[args.index("--ac") + 1])
         dmg = args[args.index("--dmg") + 1]
         crit = "--crit" in args
-        result = resolve_attack(atk, ac, dmg, crit)
+        result = resolve_attack(atk, ac, dmg, crit, rng)
         print(format_attack(result))
+        if seed is not None:
+            crit_flag = " --crit" if crit else ""
+            print(f"(seed {seed} - replay: python3 scripts/combat.py attack --atk {atk} --ac {ac} "
+                  f"--dmg {dmg}{crit_flag} --seed {seed})")
 
     else:
         print(f"Unknown command: {cmd}")
