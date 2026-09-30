@@ -63,31 +63,46 @@ THE OUTER SIDE, WHICH IS NOT IN THIS REPO
 into `~/.opencode/agents/` or `~/.claude/agents/`. It is the only path by
 which these briefs reach a CLI agent, so the generation has to be invoked
 from there for the two-repo workflow to be safe by hand rather than by
-memory. It is not edited here, because this repo cannot change the outer
-repo, and a script in one repo cannot edit another. The change belongs in the
-outer repo, next to `install_agents.py`, and is one line of behaviour:
-resolve the sibling checkout, run this module first, then install. Proposed
-shape, for whoever takes that half:
+memory. It was not edited here, because this repo cannot change the outer
+repo, and a script in one repo cannot edit another. The change belonged in the
+outer repo, next to `install_agents.py`, and was one line of behaviour:
+resolve the sibling checkout, run this module first, then install. The shape
+that landed:
 
     subprocess.run([sys.executable,
                     str(code_repo / "scripts/localdm/briefs_sync.py"),
                     "--agents-dir", str(agents_dir)], check=True)
 
-Without it the mechanism is still sound, because `--check` is a test and a
-test is the thing that stops being optional. With it, the outer copy is
-regenerated as a side effect of installing, so nobody has to remember.
+`install_agents.py` also globs both directory levels, so the five dev briefs in
+`agents/dev/` install too. They install by basename, because the framework
+agent directories only discover files at their top level: mirroring the
+subdirectory there would have made all five invisible in both OpenCode and
+Claude Code while still printing a success line.
+
+Without the pre-install hook the mechanism would still be sound, because
+`--check` is a test and a test is the thing that stops being optional. With it,
+the outer copy is regenerated as a side effect of installing, so nobody has to
+remember.
 
 WHAT IS NOT SYNCHRONISED, AND WHY
 ---------------------------------
-`agents/` also holds the dev-council half: `DEV-ADVISORS.md` plus
-architect, engineer, security, steward and verifier. Those advise the
-development process, they are not in `advisor.ADVISORS`, and nothing at
-runtime reads them. Copying them here would make them look like runtime
-advisors, and deleting them from the outer repo would drop content that
+`agents/dev/` holds the dev-council half: a README plus architect,
+engineer, security, steward and verifier. Those advise the development
+process, they are not in `advisor.ADVISORS`, and nothing at runtime reads
+them. Copying them here would make them look like runtime advisors, and
+deleting them from the outer repo would drop content that
 `install_agents.py` installs as real CLI agents. They are declared in
-`DEV_COUNCIL` instead, and a file in `agents/` that is neither a brief nor a
-declared dev-council brief is a failure, so a new play-facing advisor cannot
-be added on one side only.
+`DEV_COUNCIL` instead, and a file in `agents/` that is neither a brief, a declared
+dev-council brief, nor one of `OUTER_DOCS` is a failure, so a new play-facing
+advisor cannot be added on one side only.
+
+The subdirectory is the same argument applied to the filesystem. Flat in
+`agents/`, the two councils were distinguished only by `DEV-ADVISORS.md`
+saying so in prose, which is why "advisor" meant two unrelated things
+depending on which of them you had opened. `agents/README.md` is the index;
+`agents/dev/` is the directory that makes the split a fact rather than a
+claim. `DEV_COUNCIL` holds repo-relative paths (`dev/engineer.md`) for the
+same reason: the declaration and the layout cannot drift apart silently.
 """
 
 from __future__ import annotations
@@ -117,8 +132,19 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 MANIFEST = BRIEFS.parent / "advisors.outer.json"
 
 #: The engineering half of the council, outer-repo only by design (see above).
-DEV_COUNCIL = ("DEV-ADVISORS.md", "architect.md", "engineer.md", "security.md",
-               "steward.md", "verifier.md")
+#: Repo-relative, and relative means it stays correct if the split moves again.
+DEV_COUNCIL = ("dev/README.md", "dev/architect.md", "dev/engineer.md",
+               "dev/security.md", "dev/steward.md", "dev/verifier.md")
+
+#: The subdirectory the dev council lives in, derived from DEV_COUNCIL so a
+#: brief added to one and not the other is a failure rather than a surprise.
+DEV_DIR = DEV_COUNCIL[0].split("/")[0]
+
+#: Outer-repo documents that are neither a brief nor a dev-council brief. Listed
+#: so `compare()` can tell "a file that documents the council" from "a brief
+#: somebody forgot to register", which are the same bytes and very different bugs.
+#: `agents/README.md` is the index explaining both halves.
+OUTER_DOCS = ("README.md",)
 
 #: Prepended to every brief by `advisor.brief()`; it drifts like any other.
 SHARED = "_shared"
@@ -140,6 +166,20 @@ def brief_names(briefs: pathlib.Path = BRIEFS) -> tuple[str, ...]:
     fix; a hand-kept list of brief filenames would be the same bug again.
     """
     return tuple(sorted(p.name for p in briefs.glob("*.md")))
+
+
+def outer_names(agents_dir: pathlib.Path) -> tuple[str, ...]:
+    """Every `.md` in the outer `agents/`, repo-relative, both levels deep.
+
+    `dev/` is included on purpose. The dev council is declared in
+    `DEV_COUNCIL` and is never generated, so the only way a brief can land
+    there by accident is by hand -- and `compare()` reporting it as
+    "unrecognised" is the whole point of the check.
+    """
+    return tuple(sorted(
+        [p.name for p in agents_dir.glob("*.md")]
+        + [f"{DEV_DIR}/{p.name}" for p in agents_dir.glob(f"{DEV_DIR}/*.md")]
+    ))
 
 
 def outer_agents_dir(agents_dir: str | pathlib.Path | None = None) -> pathlib.Path | None:
@@ -182,6 +222,10 @@ def write_manifest(agents_dir: pathlib.Path, path: pathlib.Path = MANIFEST) -> d
     data = {
         "agents_dir": "dnd-gm/agents",
         "briefs": {n: sha256(agents_dir / n) for n in names},
+        # `agents_dir / n` with n = "dev/engineer.md" is the brief inside the
+        # subdirectory, which is why DEV_COUNCIL is repo-relative and why the
+        # manifest keys change when the split moves. That is the intent: the
+        # manifest records where the file is, not only what it is.
         "dev_council": {n: sha256(agents_dir / n) for n in DEV_COUNCIL
                         if (agents_dir / n).exists()},
     }
@@ -214,7 +258,9 @@ def compare(briefs: pathlib.Path, agents_dir: pathlib.Path) -> list[str]:
     in `agents/` that is neither a brief nor declared dev-council.
     """
     problems: list[str] = []
-    outer = {p.name for p in agents_dir.glob("*.md")}
+    # Both levels, repo-relative. Only the top level is generated; `dev/` is
+    # hand-maintained, so an unrecognised file there is the likely mistake.
+    outer = set(outer_names(agents_dir))
     for name in brief_names(briefs):
         target = agents_dir / name
         if not target.exists():
@@ -222,7 +268,7 @@ def compare(briefs: pathlib.Path, agents_dir: pathlib.Path) -> list[str]:
         elif target.read_bytes() != (briefs / name).read_bytes():
             problems.append(f"drifted: {name} differs from the brief in {briefs}")
     for name in sorted(outer - set(brief_names(briefs))):
-        if name not in DEV_COUNCIL:
+        if name not in DEV_COUNCIL and name not in OUTER_DOCS:
             problems.append(f"unrecognised file in {agents_dir}: {name}")
     for name in DEV_COUNCIL:
         if name not in outer:
@@ -249,7 +295,8 @@ def check_manifest(briefs: pathlib.Path = BRIEFS, path: pathlib.Path = MANIFEST)
         problems.append(f"{path.name} records {name}, which is not a brief any more")
     for name in sorted(data.get("dev_council", {})):
         if name not in DEV_COUNCIL:
-            problems.append(f"{path.name} blesses {name} as dev-council, which is not declared")
+            problems.append(f"{path.name} blesses {name} as dev-council, which is not declared "
+                            f"at {DEV_DIR}/ (paths are repo-relative: dev/engineer.md)")
     for name in DEV_COUNCIL:
         if name not in data.get("dev_council", {}):
             problems.append(f"{name} is declared dev-council but absent from {path.name}")

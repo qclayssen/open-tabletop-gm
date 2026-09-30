@@ -42,8 +42,12 @@ def _scratch(tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
         (briefs / src.name).write_bytes(src.read_bytes())
     agents = tmp_path / "agents"
     agents.mkdir()
+    # The dev council sits in a subdirectory, so creating it exercises the
+    # parent-mkdir that a flat fixture would never need.
     for name in briefs_sync.DEV_COUNCIL:
-        (agents / name).write_text(f"# {name}\n", encoding="utf-8")
+        target = agents / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(f"# {name}\n", encoding="utf-8")
     for src in briefs.glob("*.md"):
         (agents / src.name).write_bytes(src.read_bytes())
     return briefs, agents
@@ -134,10 +138,16 @@ def test_sync_regenerates_the_outer_copy_and_never_deletes(tmp_path):
     assert any("bard.md" in p for p in briefs_sync.compare(briefs, agents))
     # The dev-council briefs and anything unrecognised survive: pruning would
     # delete a brief someone has not classified yet, which is the destructive
-    # failure mode of a generator that owns its output directory.
+    # failure mode of a generator that owns its output directory. A dev brief
+    # that moved is the same case one level down.
     assert (agents / "bard.md").exists()
     for name in briefs_sync.DEV_COUNCIL:
         assert (agents / name).exists()
+    (agents / briefs_sync.DEV_DIR / "programmer.md").write_text(
+        "# Undeclared\n", encoding="utf-8")
+    written = briefs_sync.sync(briefs, agents, tmp_path / "manifest.json")
+    assert written == []
+    assert (agents / briefs_sync.DEV_DIR / "programmer.md").exists()
 
 
 def test_sync_without_an_agents_dir_says_so_instead_of_guessing(tmp_path):
@@ -164,13 +174,61 @@ def test_declared_dev_council_is_the_set_the_outer_repo_actually_carries():
     agents = briefs_sync.outer_agents_dir()
     if agents is None:
         pytest.skip("outer agents/ is not beside this checkout")
-    present = {p.name for p in agents.glob("*.md")}
+    present = set(briefs_sync.outer_names(agents))
     briefs = set(briefs_sync.brief_names())
-    assert present - briefs == set(briefs_sync.DEV_COUNCIL)
+    known = set(briefs_sync.DEV_COUNCIL) | set(briefs_sync.OUTER_DOCS)
+    assert present - briefs == known
+
+
+def test_an_unrecognised_file_in_the_dev_directory_is_reported(tmp_path):
+    """`dev/` is hand-maintained, so a brief can land there without being declared.
+
+    The top-level equivalent of this is covered above; the subdirectory is the
+    likelier place for it to happen, because nothing generates that directory and
+    the declaration lives in another repo.
+    """
+    briefs, agents = _scratch(tmp_path)
+    assert briefs_sync.compare(briefs, agents) == []
+
+    (agents / briefs_sync.DEV_DIR / "programmer.md").write_text(
+        "# A dev brief nobody declared\n", encoding="utf-8")
+    assert any("unrecognised" in p and "programmer.md" in p
+               for p in briefs_sync.compare(briefs, agents))
+
+
+def test_outer_names_covers_both_levels(tmp_path):
+    """The dev subdirectory is included, or the install and the check both miss it."""
+    agents = tmp_path / "agents"
+    (agents / briefs_sync.DEV_DIR).mkdir(parents=True)
+    (agents / "arbiter.md").write_text("x", encoding="utf-8")
+    (agents / briefs_sync.DEV_DIR / "engineer.md").write_text("x", encoding="utf-8")
+
+    assert set(briefs_sync.outer_names(agents)) == {
+        "arbiter.md", f"{briefs_sync.DEV_DIR}/engineer.md"}
 
 
 def test_the_two_live_copies_are_in_sync_when_both_checkouts_are_present():
     agents = briefs_sync.outer_agents_dir()
     if agents is None:
         pytest.skip("outer agents/ is not beside this checkout")
-    assert briefs_sync.compare(briefs_sync.BRIEFS, agents) == []
+    problems = briefs_sync.compare(briefs_sync.BRIEFS, agents)
+    assert problems == [], (
+        "the outer copy has drifted from the briefs. Do not fix this by editing "
+        "agents/ -- it is generated. Run briefs_sync.py, and check first whether "
+        "the outer copy holds someone's unsynced work: a hand-edit there is the "
+        f"failure this module was built to make visible.\n  {problems}")
+
+
+def test_an_outer_document_is_not_reported_as_an_unregistered_brief(tmp_path):
+    """`agents/README.md` documents the council; it is not a brief nobody asked for.
+
+    Without this, the index for the two halves would itself be a drift report on
+    every sync, which is the fastest way to get a check people learn to ignore.
+    """
+    briefs, agents = _scratch(tmp_path)
+    (agents / "README.md").write_text("# The advisor council\n", encoding="utf-8")
+    assert briefs_sync.compare(briefs, agents) == []
+
+    (agents / "NOTES.md").write_text("# Not declared anywhere\n", encoding="utf-8")
+    assert any("unrecognised" in p and "NOTES.md" in p
+               for p in briefs_sync.compare(briefs, agents))
