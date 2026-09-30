@@ -16,6 +16,7 @@ _SCRIPTS = str(pathlib.Path(__file__).resolve().parents[2] / "scripts")
 if _SCRIPTS not in sys.path:
     sys.path.insert(0, _SCRIPTS)
 
+from tactics.roller import split_crit  # noqa: E402
 from tactics.state import Token  # noqa: E402
 
 ABILITIES = ("str", "dex", "con", "int", "wis", "cha")
@@ -79,7 +80,17 @@ def _attack(row: list):
     notes = row[4] if len(row) > 4 else ""
     if not name or not dice:
         return None
-    damage = [{"dice": dice.replace(" ", ""), "type": dtype.lower()}]
+    # A sheet writes its crit the way the SRD does -- "1d6 (1d8 crit)" -- and
+    # that is correct as written. The annotation used to be flattened into the
+    # dice string by the same replace(" ", "") that tidies "2d6 + 1", giving
+    # "1d6(1d8crit)", which no dice parser accepts: the engine raised
+    # "Cannot parse dice notation" while picking an opportunity attack, and
+    # that killed the session. Split it off into its own field instead.
+    base, crit = split_crit(dice)
+    part = {"dice": base.replace(" ", ""), "type": dtype.lower()}
+    if crit:
+        part["crit_dice"] = crit.replace(" ", "")
+    damage = [part]
     low = notes.lower()
     source = "spell" if ("cantrip" in low or "spell" in low) else "weapon"
     if bonus.upper().startswith("DC"):

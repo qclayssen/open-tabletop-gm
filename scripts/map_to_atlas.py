@@ -65,6 +65,9 @@ import zlib
 from pathlib import Path
 
 _MAPS = pathlib.Path(__file__).resolve().parents[1] / "display" / "maps"
+_SCRIPTS = pathlib.Path(__file__).resolve().parent
+if str(_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS))
 
 ATLAS_SCHEMA = "atlas-vtt"
 # MapPersistence.ts: ATLAS_VERSION. Written into the file so a future Atlas
@@ -171,6 +174,82 @@ def disc_png(hex_colour: str, px: int = TOKEN_PX, rim: float = 0.06) -> bytes:
             + _png_chunk(b"IHDR", ihdr)
             + _png_chunk(b"IDAT", zlib.compress(bytes(rows), 9))
             + _png_chunk(b"IEND", b""))
+
+
+# ─── formations ───────────────────────────────────────────────────────────────
+
+def apply_formations(spec: dict, camp_dir: Path, names, *,
+                     at=None, centre: bool = False) -> tuple:
+    """`(spec_with_creatures, report)`. Formations are the creatures; the map is
+    the room.
+
+    This is the seam that unblocks BV9, and it is worth being precise about why.
+    BV9's blocker was recorded as "the blocker is pixels, not code": every map
+    with artwork had no creatures to link a statblock to, and every map with
+    creatures was gridless and hand-written, so no scene could carry a
+    `statblockPath` and the link path — though proven against the real 372-note
+    bestiary — had nothing to attach to. Importing artwork was the stated fix.
+
+    A formation is the other fix, and it does not need a single pixel. A
+    formation is campaign data that applies to *any* map, so it breaks the
+    disjointness: give `biblioplex-stacks` (terrain, grid, no art) a formation of
+    kobolds, and the scene has creatures, and every kobold links to a real note.
+    What it costs is stated plainly: the scene sits on Atlas's placeholder
+    background, because the one thing a formation cannot supply is a picture.
+
+    The placement is `tactics.formations.positions` — **the engine's own
+    function, not a second implementation of it.** A preview that placed tokens
+    differently from the fight would be worse than no preview, and the way to
+    guarantee they cannot differ is to have exactly one placement function with
+    two callers. That is also why this takes a formation's creatures rather than
+    re-deriving anything: `build_scene` is left completely untouched, and its 38
+    existing tests still describe it exactly.
+
+    The returned spec is a **copy**; the map file on disk is never written, and
+    the formation store is never written. Both directions of this project stay
+    one-way.
+    """
+    if not names:
+        return spec, []
+    from tactics import formations as F
+    from tactics.grid import Grid
+    from tactics.maps import compile_map
+
+    # The grid the *engine* would build from this map, not a re-read of the
+    # JSON: if the two ever disagreed, the preview would place tokens on squares
+    # the fight does not have.
+    board = Grid.from_dict(compile_map(spec)["grid"])
+    out = dict(spec)
+    spawns = list(spec.get("spawns") or [])
+    used = {str(s.get("id")) for s in spawns}
+    report = []
+
+    for name in names:
+        f = F.load(camp_dir, name)
+        plan = F.positions(f, board, at=at, centre=centre)
+        for i, p in enumerate(plan["placements"], start=1):
+            tid = f"{F.slug(f['name'])}-{i}"
+            while tid in used:                       # Atlas keys tokens by id
+                tid = f"{tid}x"
+            used.add(tid)
+            # `label` is what the token was called on the board ("Kobold 2") and
+            # makes a better nameplate; `name` is the bare creature ("Kobold") and
+            # is what the statblock fold needs. Prefer the label, fall back for a
+            # member saved before v2.
+            spawns.append({"id": tid, "name": p.get("label") or p["name"],
+                           "color": p["color"], "x": p["x"], "y": p["y"]})
+        report.append({
+            "formation": f["name"],
+            "mode": plan["mode"],
+            "tokens": len(plan["placements"]),
+            "blocked": [f"{b['name']} at {b['x']},{b['y']}" for b in plan["blocked"]],
+            "off_map": [f"{b['name']} wanted {b['was'][0]},{b['was'][1]}"
+                        for b in plan["off_map"]],
+            "separated": [f"{b['name']} wanted {b['was'][0]},{b['was'][1]}, which "
+                          f"another monster had" for b in plan["separated"]],
+        })
+    out["spawns"] = spawns
+    return out, report
 
 
 # ─── the scene ───────────────────────────────────────────────────────────────
@@ -598,6 +677,17 @@ def main(argv: list[str] | None = None) -> int:
                         help="folder of token images named after the spawn "
                              "(`Quandrix guard.png`); a map's `token_art` block "
                              "overrides this. Anything unmatched gets a colour disc")
+    parser.add_argument("--formation", action="append", metavar="NAME", default=[],
+                        help="replay a saved monster arrangement onto this map "
+                             "(repeatable). The formation supplies the creatures, so "
+                             "a map with terrain but no spawns still exports a "
+                             "scene with tokens and working statblock links")
+    parser.add_argument("--campaign", default=os.environ.get("GM_CAMPAIGN", ""),
+                        help="campaign holding the formations (default: $GM_CAMPAIGN)")
+    parser.add_argument("--at", metavar="SQ",
+                        help="pin the formations' anchor to this square (cell offsets)")
+    parser.add_argument("--centre", action="store_true",
+                        help="drop the formations in the middle of the map, scaled to it")
     parser.add_argument("--allow-no-image", action="store_true",
                         help="write the layout even without artwork (Atlas shows a "
                              "placeholder background, so this is for tokens only)")
@@ -608,9 +698,37 @@ def main(argv: list[str] | None = None) -> int:
     vault: Path = args.vault
     reports, failed = [], 0
 
+    # Formations live in a campaign, not in the map file, so they need a campaign
+    # to look in. Resolved once, and only when one was actually asked for --
+    # `--formation` on a machine with no campaign is a clear error, and a
+    # `--campaign` nobody used is not.
+    camp_dir: Path | None = None
+    if args.formation:
+        if not args.campaign:
+            print("map_to_atlas: --formation needs --campaign (or $GM_CAMPAIGN) to "
+                  "find the formations in", file=sys.stderr)
+            return 1
+        from paths import find_campaign
+        camp_dir = find_campaign(args.campaign, migrate=False)
+        if not camp_dir.is_dir():
+            print(f"map_to_atlas: campaign folder {camp_dir} not found", file=sys.stderr)
+            return 1
+    at = None
+    if args.at:
+        from tactics.grid import parse_square
+        try:
+            at = parse_square(args.at)
+        except ValueError as exc:
+            print(f"map_to_atlas: --at {args.at!r}: {exc}", file=sys.stderr)
+            return 1
+
     for map_id in args.maps:
         try:
             spec = load_map(map_id, args.maps_dir)
+            formations_report = []
+            if args.formation:
+                spec, formations_report = apply_formations(
+                    spec, camp_dir, args.formation, at=at, centre=args.centre)
             if args.dry_run:
                 # Validate everything except the writes, so a dry run that
                 # succeeds means the real run will too.
@@ -646,6 +764,8 @@ def main(argv: list[str] | None = None) -> int:
                                   link_statblocks=not args.no_statblocks,
                                   allow_no_image=args.allow_no_image,
                                   art_dir=args.token_art))
+            if formations_report:
+                reports[-1]["formations"] = formations_report
         except (ValueError, FileNotFoundError, KeyError) as exc:
             print(f"{map_id}: {exc}", file=sys.stderr)
             failed += 1
@@ -666,6 +786,21 @@ def main(argv: list[str] | None = None) -> int:
             for c in r["unknown_colours"]:
                 print(f"  warning no colour is defined for {c!r}; drew a neutral disc",
                       file=sys.stderr)
+            for fr in r.get("formations", []):
+                print(f"  formation {fr['formation']!r} ({fr['mode']}): "
+                      f"{fr['tokens']} token(s)")
+                # A formation replayed onto a map it does not fit is a preview
+                # that lies. Said here rather than left for someone to spot in
+                # Atlas, where the symptom is a token standing in a bookcase.
+                for b in fr["blocked"]:
+                    print(f"           warning {b} is not standable on this map",
+                          file=sys.stderr)
+                for b in fr["off_map"]:
+                    print(f"           warning {b}, off the edge of this map",
+                          file=sys.stderr)
+                for b in fr["separated"]:
+                    print(f"           warning {b}; moved to the nearest free square",
+                          file=sys.stderr)
             if r.get("art_matched"):
                 print(f"  art     {r['art_matched']} real image(s), "
                       f"{r['art_discs']} colour disc(s) standing in")

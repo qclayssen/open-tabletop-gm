@@ -150,6 +150,31 @@ $T rate --monsters "goblin x4, hobgoblin"
 - `rate` shows the whole calculation — each monster's CR and XP, the raw total, the multiplier, the per-character share and the thresholds it was measured against. Below the first threshold it says `TRIVIAL`: not a fight, and not "Easy".
 - Monster names come from the SRD. A name that is not there comes back with near matches.
 
+## Formations: a monster arrangement you set up once
+
+Setting a fight up is real work — two kobolds in the aisle, one behind the desk.
+Today that work is thrown away at the end of the fight, because it only ever
+lived in `combat/encounter.json`. A **formation** is that arrangement, saved
+under `<campaign>/encounters/`, and replayable onto any map.
+
+```bash
+$T formation save "Stacks Ambush"              # with a fight running
+$T formation list
+$T formation show stacks-ambush
+$T formation place stacks-ambush biblioplex-stacks --at W10   # look, start nothing
+$T start biblioplex-stacks --formation stacks-ambush --at W10
+$T start enrollment-ledger-rotunda --formation stacks-ambush    # a different map
+```
+
+- `formation save` reads the board **as it stands**. It keeps the monsters' names, sides and squares — and nothing else. No HP, no AC, no conditions: those belong to the fight, and a formation saved from a fight where the kobolds were at 1 HP is not a formation, it is a corpse layout. Replaying one re-rolls every monster from the SRD.
+- The party is **not** saved unless you pass `--include-pcs`. The opposition is the reusable part; the party is placed with `--pc` as always.
+- `--at SQUARE` pins the formation and uses its exact cell offsets. That is the right answer on the map it was captured on, and the only one that is guaranteed exact.
+- With no `--at`, the formation is placed **proportionally**: each monster lands on the same *fraction* of the new map, so a 30×20 formation on a 24×18 one keeps its shape and its position. Two monsters a square apart on a wide map can round onto the same column on a narrow one, so the second is moved to the nearest free square and **the output says so** — a nudged monster is a changed distance, and only you can say whether it is the one you wanted.
+- Anything the replay could not do is reported, not smoothed over: a monster landing in a bookcase is left there and named (`blocked` — the fight will not start, which is correct), a pinned formation running off the edge is named with the square it wanted, and a monster with nowhere to go is named rather than dropped.
+- `--info TEXT` saves a note for whoever plays this next — what the formation is for and what you change about it. Worth it; you will not remember.
+
+`formation place` starts nothing and is the safe way to try a formation on a map you are thinking about. Use it before `start`.
+
 ## Other
 
 - `$T status`: round, whose turn, everyone's square, HP, conditions (with the exhaustion level), concentration and readied actions.

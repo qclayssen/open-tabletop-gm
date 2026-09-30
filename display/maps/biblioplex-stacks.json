@@ -1,0 +1,250 @@
+{
+ "name": "Biblioplex Stacks, Restricted Wing",
+ "width": 30,
+ "height": 20,
+ "diagonals": "5",
+ "info": "Shelving runs, sight-blocking to the ceiling. Most of this wing cannot be seen from anywhere in it, which is why the Ninefold burned a card here rather than a page. The reading desk is the one open square in the middle run.",
+ "base": "floor",
+ "grid": {
+  "cell_px": 100,
+  "offset_x": 0,
+  "offset_y": 0
+ },
+ "features": [
+  {
+   "type": "wall",
+   "x": 0,
+   "y": 0,
+   "w": 30,
+   "h": 1
+  },
+  {
+   "type": "wall",
+   "x": 0,
+   "y": 19,
+   "w": 30,
+   "h": 1
+  },
+  {
+   "type": "wall",
+   "x": 0,
+   "y": 0,
+   "w": 1,
+   "h": 20
+  },
+  {
+   "type": "wall",
+   "x": 29,
+   "y": 0,
+   "w": 1,
+   "h": 20
+  },
+  {
+   "type": "wall",
+   "x": 4,
+   "y": 1,
+   "w": 1,
+   "h": 8
+  },
+  {
+   "type": "wall",
+   "x": 4,
+   "y": 10,
+   "w": 1,
+   "h": 9
+  },
+  {
+   "type": "wall",
+   "x": 9,
+   "y": 1,
+   "w": 1,
+   "h": 11
+  },
+  {
+   "type": "wall",
+   "x": 9,
+   "y": 13,
+   "w": 1,
+   "h": 6
+  },
+  {
+   "type": "wall",
+   "x": 14,
+   "y": 1,
+   "w": 1,
+   "h": 6
+  },
+  {
+   "type": "wall",
+   "x": 14,
+   "y": 8,
+   "w": 1,
+   "h": 11
+  },
+  {
+   "type": "wall",
+   "x": 19,
+   "y": 1,
+   "w": 1,
+   "h": 9
+  },
+  {
+   "type": "wall",
+   "x": 19,
+   "y": 11,
+   "w": 1,
+   "h": 8
+  },
+  {
+   "type": "wall",
+   "x": 24,
+   "y": 1,
+   "w": 1,
+   "h": 4
+  },
+  {
+   "type": "wall",
+   "x": 24,
+   "y": 6,
+   "w": 1,
+   "h": 13
+  },
+  {
+   "type": "wall",
+   "x": 1,
+   "y": 5,
+   "w": 2,
+   "h": 1
+  },
+  {
+   "type": "wall",
+   "x": 5,
+   "y": 4,
+   "w": 3,
+   "h": 1
+  },
+  {
+   "type": "wall",
+   "x": 6,
+   "y": 11,
+   "w": 3,
+   "h": 1
+  },
+  {
+   "type": "wall",
+   "x": 10,
+   "y": 6,
+   "w": 3,
+   "h": 1
+  },
+  {
+   "type": "wall",
+   "x": 10,
+   "y": 14,
+   "w": 2,
+   "h": 1
+  },
+  {
+   "type": "wall",
+   "x": 15,
+   "y": 3,
+   "w": 3,
+   "h": 1
+  },
+  {
+   "type": "wall",
+   "x": 16,
+   "y": 12,
+   "w": 3,
+   "h": 1
+  },
+  {
+   "type": "wall",
+   "x": 20,
+   "y": 7,
+   "w": 3,
+   "h": 1
+  },
+  {
+   "type": "wall",
+   "x": 21,
+   "y": 14,
+   "w": 3,
+   "h": 1
+  },
+  {
+   "type": "wall",
+   "x": 25,
+   "y": 9,
+   "w": 3,
+   "h": 1
+  },
+  {
+   "type": "wall",
+   "x": 26,
+   "y": 13,
+   "w": 3,
+   "h": 1
+  },
+  {
+   "type": "feature",
+   "x": 16,
+   "y": 8,
+   "w": 3,
+   "h": 2,
+   "label": "Reading desk"
+  },
+  {
+   "type": "feature",
+   "x": 17,
+   "y": 9,
+   "w": 1,
+   "h": 1,
+   "label": "KAIROS PROTOCOL card, burned"
+  }
+ ],
+ "spawns": [
+  {
+   "id": "K",
+   "name": "Kairos",
+   "color": "quan",
+   "x": 2,
+   "y": 2
+  },
+  {
+   "id": "J",
+   "name": "Juno",
+   "color": "with",
+   "x": 2,
+   "y": 3
+  },
+  {
+   "id": "M",
+   "name": "Mabli",
+   "color": "lore",
+   "x": 3,
+   "y": 2
+  },
+  {
+   "id": "k1",
+   "name": "Kobold",
+   "color": "danger",
+   "x": 22,
+   "y": 11
+  },
+  {
+   "id": "k2",
+   "name": "Kobold",
+   "color": "danger",
+   "x": 23,
+   "y": 12
+  },
+  {
+   "id": "k3",
+   "name": "Kobold",
+   "color": "danger",
+   "x": 22,
+   "y": 13
+  }
+ ]
+}

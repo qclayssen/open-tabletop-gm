@@ -41,7 +41,33 @@ A map is a grid of 5 ft squares. You paint it with rectangles, in order, over a 
 | `terrain` | no | Extra terrain types for this map (see below) |
 | `zones` | no | x positions of dashed vertical lines across the board (the Mage Tower halfway line) |
 | `spawns` | no | Suggested token positions; `color` is a college (`quan`, `lore`, `pris`, `silv`, `with`), `danger` or `brass` |
+| `grid` | no | `cell_px`, `offset_x`, `offset_y` — the grid aligned to the map's artwork in pixels. See below |
 | `token_art` | no | Per-spawn token portraits for `scripts/map_to_atlas.py`: `{"<spawn id>": "<path>"}`. See below |
+
+### `grid`: the pixel size of a square
+
+`"grid": {"cell_px": 100, "offset_x": 0, "offset_y": 0}` says how big a 5 ft
+square is in the map's own image, so the display can draw the grid over the art
+and Atlas can place a token on it. It is **display-only** and the engine never
+reads it: the engine reads `rows` and computes every distance from those.
+
+Two reasons to write it by hand on a map with no artwork. It is what
+`scripts/map_to_atlas.py` needs to export a scene at all — Atlas places tokens
+in world pixels, and a scene with no background still has tokens — and it is
+also simply *true*: the engine has always assumed a 5 ft square, and 100px says
+so out loud. What it is not is a claim that there is a picture. A map declaring
+`cell_px` and having no `image` exports to Atlas over a placeholder background,
+which is a legible layout preview and not a battle map. See the workflow guide.
+
+### Formations are not in the map file
+
+A map's `spawns` are that map's residents. A **formation** — a saved monster
+arrangement you replay onto any map — is campaign data and lives in
+`<campaign>/encounters/<slug>.json`, not here. Putting one in a map file would
+make it one map per encounter, which is the thing formations exist to avoid.
+`compile_map` has no formation field and never will; the store is
+`scripts/tactics/formations.py` and the commands are `combat.py formation
+save|list|show|place`.
 
 ### Token portraits
 
@@ -109,6 +135,17 @@ python3 -c "import sys; sys.path.insert(0, 'scripts'); from tactics import maps;
 ```
 
 It prints the map as text (`.` floor, `#` wall, `,` difficult, `~` water, `^` hazard, `o` feature, `_` void), or a clear error naming the rectangle that is wrong. `python3 -m pytest tests/test_tactics_cli.py` also checks that every map in this folder loads.
+
+**Loading is not the same as being playable.** `compile_map` raises on a bad
+rectangle; it cannot see a map that is *sealed*. Two early drafts of
+`biblioplex-stacks` had shelving runs that walled off a third and then two thirds
+of the map, and both compiled cleanly — a sealed room is a perfectly valid set
+of rectangles. The test that catches this is `tests/test_campaign_maps.py`, which
+flood-fills from the party and asserts every standable square is reachable. Add
+a new map to `WORKLIST` in that file and it is checked from then on. The same
+test measures how much of the map one creature can see from the middle, because
+"a shelving maze you can see across" is not a shelving maze and only a number
+says so.
 
 `training-yard.json` is the tutorial map (`scripts/tactics/play.py tutorial`, see `docs/TUTORIAL.md`). The other five maps are ported from the player-facing tabs of `display/static/reference/strixhaven_map_table.html`, which is kept in step by `scripts/campus_extract.py --check`.
 

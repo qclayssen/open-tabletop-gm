@@ -19,6 +19,7 @@ and discard it, so nothing is half-applied; the CLI then asks for the roll.
 from __future__ import annotations
 
 import random
+import re
 from dataclasses import dataclass, field
 
 import dice as _dice   # scripts/dice.py (put on sys.path by tactics/__init__)
@@ -54,9 +55,36 @@ class BadFace(ValueError):
         return f"{self.count}-{self.count * self.sides}"
 
 
+# The SRD writes a monster's crit in parentheses: "1d6(1d8crit)" is 1d6 on a hit
+# and 1d8 on a crit, not 2d6. dice.py's parser -- the one /gm roll shares -- does
+# not accept the annotation, so anything that fed the whole string to it raised
+# "Cannot parse dice notation". That was not a bad statblock: a character sheet
+# naming a crit the way the SRD does is correct, and it reached here verbatim.
+_CRIT_ANNOTATION = re.compile(r"\(\s*([^()]*?)\s*crit\s*\)", re.I)
+
+
+def split_crit(notation: str) -> tuple:
+    """(base, crit) for a damage string.
+
+    "1d6(1d8crit)" -> ("1d6", "1d8"). No annotation -> (notation, None), which
+    is the ordinary case: the crit is then the dice doubled, as it always was.
+    """
+    text = str(notation)
+    m = _CRIT_ANNOTATION.search(text)
+    if not m:
+        return text, None
+    base = _CRIT_ANNOTATION.sub("", text).replace("(", "").replace(")", "").strip()
+    return base, m.group(1).strip() or None
+
+
 def parse(notation: str) -> tuple:
-    """(count, sides, modifier). Plain integers ("1") are flat damage."""
-    text = str(notation).replace(" ", "").lower()
+    """(count, sides, modifier). Plain integers ("1") are flat damage.
+
+    A parenthesised crit annotation is stripped rather than rejected, so the
+    SRD's own notation is readable anywhere a damage string is. Only the base
+    is returned; roll() is what applies the crit dice.
+    """
+    text = split_crit(notation)[0].replace(" ", "").lower()
     if text.lstrip("+-").isdigit():
         return 0, 0, int(text)
     count, sides, mod, keep_mode, _keep, adv, dis = _dice.parse_notation(text)
@@ -66,8 +94,19 @@ def parse(notation: str) -> tuple:
 
 
 def average(notation: str) -> float:
-    """Mean result of plain NdS+M notation (or a flat number)."""
-    n, sides, mod = parse(notation)
+    """Mean result of plain NdS+M notation (or a flat number).
+
+    Never raises. Every caller is an AI heuristic -- "which of these attacks is
+    worth the opportunity attack", "what is this rider worth" -- and a
+    ValueError from one unreadable damage string used to propagate up through
+    them and kill the REPL, ending the session and losing the fight. An
+    unparseable string has no usable mean, so it contributes 0 and the choice
+    falls to the attacks that can be read; that is a worse pick, not a crash.
+    """
+    try:
+        n, sides, mod = parse(notation)
+    except (ValueError, TypeError):
+        return 0.0
     return n * (sides + 1) / 2 + mod
 
 
@@ -133,10 +172,20 @@ class Roller:
              advantage: str = "normal", crit: bool = False) -> Roll:
         """Roll notation. player=True means the player rolls this one (roll_mode
         players, not "Roll for me"). advantage applies to a single d20.
-        crit doubles the dice, not the modifier."""
-        count, sides, mod = parse(notation)
+
+        crit doubles the dice, not the modifier -- unless the notation carries
+        the SRD's own crit in parentheses, in which case that is what gets
+        rolled. "1d6(1d8crit)" crits for 1d8, not 2d6: doubling it would have
+        made every annotated crit stronger than the statblock says, which is
+        the sort of error the table cannot check for itself.
+        """
+        base, crit_notation = split_crit(notation)
+        count, sides, mod = parse(base)
         if crit:
-            count *= 2
+            if crit_notation:
+                count, sides, _ = parse(crit_notation)
+            else:
+                count *= 2
         shown = f"{count}d{sides}{mod:+d}" if count else str(mod)
         if shown.endswith("+0"):
             shown = shown[:-2]

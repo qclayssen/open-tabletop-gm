@@ -1,0 +1,16 @@
+{
+ "name": "Artwork Fixture",
+ "width": 4,
+ "height": 3,
+ "diagonals": "5",
+ "info": "fixture",
+ "image": "images/_artwork_fixture.jpg",
+ "grid": {
+  "cell_px": 100,
+  "offset_x": 0,
+  "offset_y": 0
+ },
+ "base": "floor",
+ "features": [],
+ "spawns": []
+}

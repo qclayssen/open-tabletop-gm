@@ -49,6 +49,15 @@ display/maps/images/.thumbs/
 systems/dnd5e/data/dnd5e_srd.json
 systems/dnd5e/data/dnd5e_supplemental.json
 
+# The Atlas bestiary (generated — run export_bestiary.py --out .). 334 notes,
+# 1.3MB, and the script's own words are that it is "DERIVED OUTPUT. It is
+# regenerated wholesale and never read back by the engine". The scenes in
+# atlas-vtt/ DO reference these notes by path, and that reference is a real
+# file check on export rather than a guess — so a clone without them still has
+# valid scene files, they just have no statblocks to open. Rebuild with:
+#   python3 scripts/export_bestiary.py --out .
+Bestiary/
+
 # Python
 __pycache__/
 *.pyc
