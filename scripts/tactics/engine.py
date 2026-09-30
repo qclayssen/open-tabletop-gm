@@ -570,6 +570,17 @@ def _find_attack(attacker, name):
                       f"Attacks: {', '.join(a['name'] for a in attacker.attacks)}.")
 
 
+def _threatens(enc: Encounter, mover, h) -> bool:
+    """Whether leaving h's reach would provoke it: it can react, has an opportunity
+    attack, reaches the mover's square now, and the mover has not Disengaged."""
+    R = rules_for(enc)
+    if enc.turn.disengaged and enc.current and enc.current.id == mover.id:
+        return False
+    if not (h.active and R.can_react(h) and R.opportunity_attack(h)):
+        return False
+    return enc.board().distance(mover.pos, h.pos) <= R.reach(h)
+
+
 def attack_options(enc: Encounter, attacker_ref) -> list:
     """Every (attack, hostile target) pair with legality, hit chance and expected
     damage, best first. Drives target highlighting and the enemy option list."""
@@ -589,7 +600,11 @@ def attack_options(enc: Encounter, attacker_ref) -> list:
                 hc = R.hit_chance(a, t, atk, ctx)
                 row.update(hit_percent=hc["percent"], advantage=hc["advantage"],
                            reasons=hc["reasons"], cover=ctx.cover,
-                           expected_damage=round(hc["chance"] * average_damage(atk), 1))
+                           expected_damage=round(hc["chance"] * average_damage(atk), 1),
+                           attack_bonus=hc["bonus"], target_ac=hc["ac"], need=hc["need"],
+                           # Moving away from this target would draw its opportunity
+                           # attack: the engine's own test (_provokers), not a guess.
+                           provokes=_threatens(enc, a, t))
             out.append(row)
     out.sort(key=lambda r: (not r["legal"], -r.get("expected_damage", 0)))
     return out

@@ -541,3 +541,26 @@ def test_the_exhaustion_level_can_be_set_with_a_flag(camp, capsys):
     saved = json.loads((camp / "combat" / "encounter.json").read_text(encoding="utf-8"))
     assert saved["tokens"]["kairos"]["extra"]["exhaustion_level"] == 2
     assert saved["tokens"]["kairos"]["conditions"] == ["exhaustion"]
+
+
+# ─── the breakdown behind a chance ────────────────────────────────────────────
+
+def test_hit_chance_carries_the_numbers_it_was_made_from():
+    """A display says why a percentage is what it is from these fields alone."""
+    prone = with_("prone", side="enemy", ac=11)
+    bolt = {"name": "Fire Bolt", "bonus": 5, "damage": [{"dice": "1d10"}]}
+    covered = AttackContext(distance=5, melee=True, cover=2)
+    hc = RULES.hit_chance(kairos(), prone, bolt, covered)
+    # AC 11 + 2 cover - 5 bonus: an 8 hits. 13/20 = 65%; advantage vs prone: 88%.
+    assert (hc["bonus"], hc["ac"], hc["cover"], hc["need"]) == (5, 11, 2, 8)
+    assert hc["percent"] == 88 and hc["advantage"] == "advantage" and hc["reasons"]
+
+
+def test_save_chance_carries_the_dc_bonus_cover_and_reasons():
+    t = with_("restrained")
+    sc = RULES.save_chance(t, "dex", 14, cover=2)
+    assert sc["dc"] == 14 and sc["cover"] == 2 and sc["bonus"] == 2 + 2
+    assert sc["advantage"] == "disadvantage" and sc["reasons"]
+    assert RULES.save_chance(t, "str", 14, cover=2)["cover"] == 0     # cover only helps Dex saves
+    auto = RULES.save_chance(with_("stunned"), "dex", 15)
+    assert auto["percent_fail"] == 100 and auto["reasons"] and auto["need"] is None
