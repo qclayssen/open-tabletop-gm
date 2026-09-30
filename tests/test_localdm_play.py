@@ -1,6 +1,7 @@
 """Milestone 6: the local DM session loop, with a fake model and fake engine."""
 from __future__ import annotations
 
+import random
 import re
 import sys
 
@@ -83,6 +84,169 @@ def test_the_task_survives_the_escalate_retry(tmp_path):
     s.handle("I try to sneak past the guard.")
     assert len(sent) > 1, "the escalate retry never happened"
     assert "## Your task" in sent[-1]
+
+
+# ─── a turn cut off at the cap must not be silently voided ───────────────────
+
+# Long, confident prose with the JSON line never finished. This is the real shape of
+# the failure: `reply.parse` returns the narration and all four directive fields None,
+# which is indistinguishable from a DM that chose not to ask, so the turn applied
+# nothing and said nothing about it.
+CUT_OFF = ("The archive stretches away into the dark, shelf after shelf, and the "
+           "dust rises around your boots as you step further in. Somewhere below "
+           "the floor a door grinds on its hinge and the sound goes on longer "
+           "than a door should. The light behind you seems dimmer than it was.")
+
+
+def test_a_reply_cut_off_at_the_cap_is_re_drafted_and_the_turn_proceeds(tmp_path):
+    """finish_reason: length used to void the turn silently. The DM asks for
+    narration and then one JSON line, in that order, so a reply the endpoint cut
+    short arrives as prose with no directive in it: no check, no command, and no
+    error. The player watched a long paragraph happen and nothing did."""
+    c = FakeClient(lambda m, msgs, role: CUT_OFF if len(c.dm_calls()) == 1
+                   else "Kairos eases along the shelf." + NULLS,
+                   finish_reason=["length", "stop"])
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path), bridge=FakeBridge())
+    assert s.handle("I look for the door.") == ["Kairos eases along the shelf."]
+    assert len(c.dm_calls()) == 2, "one re-draft, then the turn is played"
+
+
+def test_the_re_draft_is_asked_for_a_shorter_reply_and_keeps_its_directive(tmp_path):
+    """The retry names the cap and asks for the JSON line first, and it is rebuilt
+    from the same task plus that instruction, never from a bare re-ask."""
+    sent = []
+
+    def fake(m, msgs, role):
+        sent.append("\n".join(x["content"] for x in msgs if x["role"] == "user"))
+        return CUT_OFF if len(sent) == 1 else "Kairos eases along the shelf." + NULLS
+
+    c = FakeClient(fake, finish_reason=["length", "stop"])
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path), bridge=FakeBridge())
+    s.handle("I look for the door.")
+    assert len(sent) == 2
+    assert "cut off" in sent[1] and "JSON line" in sent[1]
+    assert "## Your task" in sent[1] and "check" in sent[1].lower(), "the task survives"
+
+
+def test_a_check_in_a_truncated_draft_is_never_rolled(tmp_path):
+    """The safety property a reviewer will look for: a retry cannot double-apply.
+
+    Nothing in `_dm` applies engine state. The check is rolled afterwards, in
+    `_player_turn` -> `_ability_check`, off the DMReply this returns. So throwing a
+    truncated draft away discards prose and nothing else, and a draft that was cut
+    off can never have had its directive acted on. Here the truncated draft does
+    carry a `check`, which is the worst case: if the retry were additive rather than
+    a replacement, this would roll twice.
+    """
+    camp = camp_dir(tmp_path)
+    (camp / "characters").mkdir()
+    (camp / "characters" / "Kairos.md").write_text(
+        "## Skills\n| Skill | Ability | Bonus |\n|---|---|---|\n"
+        "| Stealth | Dex | +4 |\n| Perception | Wis | +3 |\n", encoding="utf-8")
+
+    rolled = []
+
+    def fake(m, msgs, role):
+        # The two drafts deliberately ask for DIFFERENT checks, so a retry that
+        # merged the cut-off draft's directive into the re-draft's would show up as
+        # two rolls or as the wrong skill. An identical directive on both would hide
+        # exactly the bug this test exists to catch.
+        return (CUT_OFF + '\n{"escalate": null, "command": null, "check": "Perception 10"}'
+                if len(c.dm_calls()) == 1
+                else 'Kairos edges along the shelf.\n'
+                     '{"escalate": null, "command": null, "check": "Stealth 13"}')
+
+    c = FakeClient(fake, finish_reason=["length", "stop"])
+    s = Session("demo", c, MODELS, camp_dir=camp, bridge=FakeBridge())
+    orig = random.randint
+    try:
+        random.randint = lambda a, b: rolled.append((a, b)) or 14
+        out = s.handle("I try to sneak past the guard.")
+    finally:
+        random.randint = orig
+    text = "\n".join(out)
+    assert len(rolled) == 1, f"the check was rolled {len(rolled)} times, not once"
+    assert text.count("against DC 13") == 1, "one roll reported to the player"
+    assert "Perception" not in text, "the truncated draft's check was not carried over"
+    assert "Kairos edges along the shelf." in text, "the truncated draft was discarded"
+
+
+def test_a_command_in_a_truncated_draft_runs_on_the_engine_exactly_once(tmp_path):
+    """The other half of the safety argument, and the sharper half: a `command:` is
+    not a dice roll the loop decides, it is an instruction to the engine, and the
+    engine mutates. It is executed by `_player_turn` -> `_engine`, after `_dm` has
+    returned, so a discarded draft's command is never reached. This pins that the
+    re-draft runs one command, not two, in a fight where the player's turn is
+    parsed into the engine rather than rolled locally."""
+    c = FakeClient(lambda m, msgs, role: CUT_OFF
+                   if len(c.dm_calls()) == 1
+                   else 'Kairos steps forward.\n'
+                        '{"escalate": null, "command": "dodge"}',
+                   finish_reason=["length", "stop"])
+    b = FakeBridge([fight(), fight()], {"dodge": lambda a: Result(0, "Kairos dodges."),
+                                        "end-turn": lambda a: Result(0, "ok")})
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path, "council: off"),
+                bridge=b, combat="model")
+    s.handle("I hold my ground.")
+    # `status` is a read-only probe _engine_context makes to build the context, not
+    # a command the DM asked for, so only the mutating ones are counted.
+    mutating = [c[0] for c in b.ran if c[0] not in ("status", "snapshot")]
+    assert mutating == ["dodge"], f"the engine ran {b.ran}, and only the re-draft may act"
+
+
+def test_a_truncated_turn_that_keeps_overrunning_surfaces_an_error(tmp_path):
+    """Never silence. A second overrun is a cap the prompt cannot live inside, so
+    the operator is told what happened and the turn is voided on the record rather
+    than quietly played with no directive."""
+    c = FakeClient(lambda m, msgs, role: CUT_OFF, finish_reason="length")
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path), bridge=FakeBridge())
+    with pytest.raises(llm.LLMError) as err:
+        s.handle("I look for the door.")
+    msg = str(err.value)
+    assert "cut off" in msg and "finish_reason: length" in msg
+    assert "600" in msg and "voided" in msg, "the message is actionable, not a shrug"
+    assert len(c.dm_calls()) == 2, "one re-draft, then it stops asking"
+
+
+def test_an_overrunning_narration_still_reports_what_the_engine_already_resolved(tmp_path):
+    """The engine has already run by the time the loop narrates it, so a narration
+    that cannot be drafted must not swallow the attack that landed. Same bargain as
+    `_close_fight`, which already drops a failed fight summary rather than the
+    engine's own end-of-fight text."""
+    c = FakeClient(lambda m, msgs, role: CUT_OFF, finish_reason="length")
+    b = FakeBridge([fight(current="frog-1", controller="gm"), fight()], {
+        "end-turn": lambda a: Result(0, "ok"),
+        "options": lambda a: Result(0, "Frog\n1. Bite Kairos"),
+        "choose": lambda a: Result(0, "1. Bite: miss.")})
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path, "council: off"),
+                bridge=b, combat="model")
+    out = s.handle("/c end-turn")
+    assert any("Bite" in chunk for chunk in out), out
+
+
+def test_a_truncated_guardrail_rewrite_keeps_the_first_draft_instead_of_voiding(tmp_path):
+    """The guardrail rewrites are corrections to a draft already in hand, and their
+    rule is "a flag means worth rewriting once, not keep asking". So a rewrite that
+    cannot be drafted is not a reason to discard a usable first draft. Before this,
+    a runaway rewrite raised and took a perfectly good turn down with it."""
+    # The first draft trips the agency guardrail (it writes the player's speech), so
+    # the loop asks for a rewrite. That rewrite is what overruns.
+    first = ('"So," you say to the student, "what is this about?"\n' + NULLS)
+    c = FakeClient(lambda m, msgs, role: first if len(c.dm_calls()) == 1 else CUT_OFF,
+                   finish_reason=["stop", "length"])
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path), bridge=FakeBridge())
+    out = s.handle("I go up to the student.")
+    assert "cut off" not in "\n".join(out), "no error was surfaced to the player"
+    assert '"So," you say' in out[0], "the first draft was kept"
+
+
+def test_a_normal_reply_never_costs_a_second_call(tmp_path):
+    """The default must stay one call. An endpoint that reports finish_reason
+    normally, or omits it, is never retried."""
+    c = FakeClient(lambda m, msgs, role: "The reeds whisper." + NULLS)
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path), bridge=FakeBridge())
+    s.handle("I listen.")
+    assert len(c.dm_calls()) == 1
 
 
 def test_a_skill_the_sheet_does_not_list_is_not_rolled(tmp_path):

@@ -59,6 +59,18 @@ from localdm import notes as notes_mod                          # noqa: E402
 from localdm.summarizer import Summarizer                       # noqa: E402
 from localdm import canon as canon_mod                         # noqa: E402
 
+# The narration cap, in sentences. dm.md carries the same number: the prompt and the
+# length retry below have to agree, or the retry is asking the model to break a rule
+# the system prompt just set. A turn cut off at the cap loses its JSON directive line
+# and applies nothing to the engine, so the cap is load-bearing rather than stylistic
+# (see Session._dm).
+NARRATION_SENTENCES = 4
+# The token cap on a DM draft, and how many times a length-truncated draft is re-asked.
+# One retry is the same bargain every other corrective retry in _dm makes: a second
+# overrun is a real cap problem, not bad luck, and is answered by raising rather than
+# by asking again.
+DM_MAX_TOKENS = 600
+LENGTH_RETRIES = 1
 ENEMY_PICK = ("You choose actions for monsters in a tabletop fight. Reply with only the "
               "number of the best option for this creature.\n/no_think")
 FIGHT_SUMMARY = ("The fight is over. The Engine section is its full log. In 2 to 5 sentences, "
@@ -89,8 +101,9 @@ PLAYER_TURN = ("First decide the outcome. If what the player is attempting has a
                "only the character beginning the attempt, revealing nothing the roll "
                'decides, and end with the check: {"check": "<Skill from the sheet> <DC>"}. '
                "Use DC 10 (easy), 13 (moderate) or 16 (hard). If the outcome is not "
-               "uncertain, set check to null and narrate what happens instead. Then 2 to 5 "
-               "sentences of narration, and the JSON line with null for every other field.")
+               "uncertain, set check to null and narrate what happens instead. Then at "
+               f"most {NARRATION_SENTENCES} sentences of narration, and the JSON line with "
+               "null for every other field.")
 CHECK_OK = ("Narrate what the check found in 1 to 4 sentences. Do not mention the number "
             "or the DC. Then the JSON line with null for every field.")
 CHECK_FAIL = ("Narrate this failure in 1 to 4 sentences, and make the world move. Let the "
@@ -293,6 +306,16 @@ class Session:
                    "it: narrate only the character starting the attempt and what the world "
                    "does in response. Never say they found, spotted, succeeded or failed at "
                    "anything the check decides, and keep the check field in the JSON line.")
+    # The turn that was cut off before its JSON line. Names the cap because a model that
+    # overruns once will happily overrun again without being told where the wall is, and
+    # it asks for the JSON line FIRST: the directive is the load-bearing part of the
+    # reply, so when the budget runs out it must be the narration that is sacrificed,
+    # not the last line of the output.
+    LENGTH_FIX = ("Your last reply was cut off at the token limit before its JSON line "
+                  "was finished, so the turn arrived with no directive in it at all. "
+                  f"Write at most {NARRATION_SENTENCES} sentences of narration, shorter if "
+                  "you can, and then the JSON line. If you are running long, end the "
+                  "narration early; never leave the JSON line unfinished.")
     # D3. Names the rule the draft broke; CAST_BEAT says how to write the beat.
     CAST_FIX = ("Your last draft stated a mechanical result for a spell — an AC, a slot "
                 "count, a duration — that nothing in this exchange produced. That number "
@@ -316,15 +339,69 @@ class Session:
         digest = self._digest()
         block = self._canon(player)
 
-        def call(extra_task):
-            if self.directives:
-                extra_task = _join(extra_task, "Table settings: " + " ".join(self.directives))
-            msgs = context.build_messages(context.dm_prompt(), digest,
-                                          self.memory.summary(), self.memory.unsummarized(),
-                                          engine=engine, notes=notes, player=player,
-                                          task=extra_task, canon=block, budget=self.budget)
-            return reply.parse(self.local.chat(self.models.dm, msgs, max_tokens=600, role="dm",
-                                               reasoning=self.reasoning).text)
+        def call(extra_task, *, retries=LENGTH_RETRIES, strict=True):
+            """One draft, retried while the model overruns the cap.
+
+            `finish_reason: length` is the whole reason this is here. The DM prompt
+            asks for narration and then one JSON line, in that order, so a reply cut
+            off at `max_tokens` arrives as prose with the directive missing. Nothing
+            downstream can tell that from a DM that chose not to ask: `reply.parse`
+            has no partial recovery for it (`_CUT_JSON` strips a cut-off JSON line
+            rather than reading a directive out of it), so `r.check` and `r.command`
+            come back None and the turn ends having applied nothing to the engine.
+            The player sees a long, confident paragraph and no roll, and the game
+            looks stuck. Measured on qwen3.5:9b at 2629+ tokens under a 3000-token cap
+            (arbiter report, 2026-09-28): finish_reason: length, no JSON line, and no
+            directive of any kind surviving.
+
+            Safe to retry, and this is the load-bearing property rather than an
+            accident of the call graph: **nothing in this loop applies engine state.**
+            `_dm` only talks to the model and parses the text. The check is rolled
+            later, in `_player_turn` -> `_ability_check`; the command runs later, in
+            `_player_turn` -> `_engine`; the cast resolves later, in `_cast_spell`.
+            All three read fields off the DMReply that comes back from here, so
+            throwing a truncated draft away discards prose and nothing else. A retry
+            cannot double-apply a check or re-run a command, because the first draft's
+            directive was never acted on and never will be.
+
+            A second overrun raises instead of asking again: the model has now been
+            told the cap twice, so this is a cap the prompt cannot live inside, and
+            the operator needs to see that. The message names the spend, following the
+            reasoning-budget report in llm.Client.chat.
+
+            `strict=False` returns None instead of raising, for the guardrail rewrites
+            below. Those are corrections to a draft that is already in hand, and the
+            rule they follow is "a flag means worth rewriting once, not keep asking", so
+            a rewrite that cannot be drafted is not a reason to throw the usable first
+            draft away. None keeps the caller on its existing keep-the-first-draft path.
+            """
+            while True:
+                if self.directives:
+                    extra_task = _join(extra_task, "Table settings: " + " ".join(self.directives))
+                msgs = context.build_messages(context.dm_prompt(), digest,
+                                              self.memory.summary(), self.memory.unsummarized(),
+                                              engine=engine, notes=notes, player=player,
+                                              task=extra_task, canon=block, budget=self.budget)
+                got = self.local.chat(self.models.dm, msgs, max_tokens=DM_MAX_TOKENS, role="dm",
+                                      reasoning=self.reasoning)
+                if got.finish_reason != "length":
+                    return reply.parse(got.text)
+                if retries <= 0 and not strict:
+                    self._say_status("[dm] the rewrite overran the cap too, keeping the "
+                                     "earlier draft")
+                    return None
+                if retries <= 0:
+                    raise llm.LLMError(
+                        f"reply cut off at the {DM_MAX_TOKENS}-token cap "
+                        f"({got.completion_tokens} tokens, finish_reason: length), twice: the "
+                        f"turn's JSON line never arrived, so the turn was voided rather than "
+                        f"played without its directive. Shorten the narration (see NARRATION_"
+                        f"SENTENCES in play.py and the cap in prompts/dm.md) or raise "
+                        f"DM_MAX_TOKENS.")
+                retries -= 1
+                self._say_status(f"[dm] reply hit the {DM_MAX_TOKENS}-token cap with no "
+                                 f"JSON line, re-drafting")
+                extra_task = _join(extra_task, self.LENGTH_FIX)
 
         r = call(task)
         # Two independent guardrails, one corrective retry each. A retry is adopted only
@@ -339,12 +416,14 @@ class Session:
         # the same question, which is why the agency retry historically had nothing
         # new to work with.
         if reply.speaks_for_player(r.narration):          # guardrail: one corrective retry
-            retry = call(f"{task}\n{self.AGENCY_FIX}\n{self._guardrail('agency')}".strip())
-            if not reply.speaks_for_player(retry.narration):
+            retry = call(f"{task}\n{self.AGENCY_FIX}\n{self._guardrail('agency')}".strip(),
+                         strict=False)
+            if retry is not None and not reply.speaks_for_player(retry.narration):
                 r = retry
         if reply.grants_injection(r.narration):           # D1: one corrective retry
-            retry = call(f"{task}\n{self.INJECTION_FIX}\n{self._guardrail('injection')}".strip())
-            if not reply.grants_injection(retry.narration):
+            retry = call(f"{task}\n{self.INJECTION_FIX}\n{self._guardrail('injection')}".strip(),
+                         strict=False)
+            if retry is not None and not reply.grants_injection(retry.narration):
                 r = retry
         return r
 
@@ -518,7 +597,15 @@ class Session:
         if self.combat == "engine":
             return self._template(engine_text)
         notes = _join(self._take_notes(), self._trigger_notes())
-        r = self._dm(engine=engine_text, notes=notes, task=NARRATE)
+        # The engine has already run by the time this narrates it, so a narration that
+        # cannot be drafted must not swallow the result. Same bargain as _close_fight:
+        # report the engine's own words and let the error stand, rather than losing a
+        # resolved attack because the prose would not come.
+        try:
+            r = self._dm(engine=engine_text, notes=notes, task=NARRATE)
+        except llm.LLMError as e:
+            self._say_status(f"[dm] no narration: {e}")
+            return self._notes_out(notes) + [engine_text]
         if r.narration:
             self._say(r.narration)
         return self._notes_out(notes) + ([r.narration] if r.narration else [])
