@@ -513,3 +513,22 @@ class Accessibility(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(NODE, "node is not installed")
+class PendingBanner(unittest.TestCase):
+    """pendingBanner: what the panel says while the engine waits on the party."""
+
+    def banner(self, p, who):
+        import json as _j
+        return _run(f"return {{v: pendingBanner({_j.dumps(p)}, {_j.dumps(who)})}};")["v"]
+
+    def test_roll(self):
+        self.assertEqual(self.banner("roll:1d20", "Kairos"), "Waiting on Kairos: roll 1d20")
+
+    def test_reaction(self):
+        self.assertEqual(self.banner("react:shield", "Kairos"), "Waiting on Kairos: shield? yes/no")
+
+    def test_nothing_pending_or_death_save_is_silent(self):
+        self.assertEqual(self.banner("", "Kairos"), "")
+        self.assertEqual(self.banner("death_save", "Kairos"), "")

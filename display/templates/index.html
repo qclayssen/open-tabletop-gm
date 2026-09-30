@@ -1580,7 +1580,15 @@
     display: flex; flex-direction: column; gap: 9px;
   }
   #input-panel.collapsed #input-body { display: none; }
-  body:not(.input-only) #input-body { max-height: 60vh; overflow-y: auto; }
+  #input-error {
+    font-family: 'Cinzel', serif; font-size: 9px; line-height: 1.4;
+    color: rgba(230,150,120,0.95); border: 1px solid rgba(210,110,80,0.45);
+    border-radius: 3px; padding: 5px 8px;
+  }
+  /* Expanded, the panel must stay clear of the settings rows above it (they end
+     near y=363). Its top is 100vh - 22px - header (~34px) - body, so capping the
+     body at 100vh - 440px keeps the top at or below 384px; the body scrolls. */
+  body:not(.input-only) #input-body { max-height: min(60vh, calc(100vh - 440px)); min-height: 0; overflow-y: auto; }
   /* backdrop-filter makes the panel a containing block for fixed children; drop
      it while the dice pad is floated so the pad anchors to the viewport. */
   body.dice-pad-open #input-panel { backdrop-filter: none; }
@@ -3173,6 +3181,7 @@
     </div>
     <textarea id="player-input-text" rows="2" placeholder="Enter action or dialogue…" maxlength="500"
               data-tab-section="move"></textarea>
+    <div id="input-error" data-tab-section="move" role="alert" style="display:none"></div>
     <div id="input-footer" data-tab-section="move">
       <button id="skip-turn-btn" style="display:none" title="Skip this character's turn">Skip Turn</button>
       <button id="send-btn">Send</button>
@@ -6458,6 +6467,24 @@ function _renderQueueStatus(chars) {
   _waitingEl.style.display = 'block';
 }
 
+// Server refusals on /player-input/send and /skip come back as JSON
+// {error, message} (409 no_roster, 403 not_in_party). Show the message in the
+// panel; never fail silently. Pass null to clear.
+function _showInputError(msg) {
+  const el = document.getElementById('input-error');
+  if (!el) return;
+  el.textContent = msg || '';
+  el.style.display = msg ? 'block' : 'none';
+}
+async function _refusalMessage(res) {
+  try {
+    const j = await res.clone().json();
+    if (j && j.message) return String(j.message);
+    if (j && j.error) return String(j.error);
+  } catch (_) { /* not JSON */ }
+  return '';
+}
+
 // ── Send an action ────────────────────────────────────────────────
 // One tap straight into the DM-gated queue. No staging, no Ready step.
 async function _sendAction() {
@@ -6473,6 +6500,8 @@ async function _sendAction() {
   let attempts = 0;
   let sent = false;
   let lastStatus = 0;
+  let refusal = '';
+  _showInputError(null);
   while (attempts < 3) {
     attempts++;
     try {
@@ -6496,7 +6525,8 @@ async function _sendAction() {
         sent = true;
         break;
       }
-      // Non-retriable error (403, 400, etc.)
+      // Non-retriable error (403, 400, 409, etc.)
+      refusal = await _refusalMessage(res);
       break;
     } catch (_) {
       if (attempts < 3) {
@@ -6506,6 +6536,7 @@ async function _sendAction() {
     }
   }
   _sendBtn.disabled = false;
+  if (refusal) _showInputError(refusal);
   if (sent) {
     _sendBtn.textContent = 'Send';
   } else {
@@ -6528,8 +6559,15 @@ async function _recallAction(char, btn) {
       body: JSON.stringify({ character: char }),
     });
     if (res.status === 409) {
-      // The DM already consumed it — no pretending the recall worked.
-      if (btn) { btn.disabled = false; btn.textContent = 'Delivered'; }
+      // Not in the queue any more. The server cannot tell "consumed" from
+      // "lost", so never claim "Delivered"; use its own wording.
+      let msg = 'No longer queued';
+      try { const t = (await res.text()).trim(); if (t) msg = t; } catch (_) {}
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = 'No longer queued';
+        btn.title = msg;
+      }
       return;
     }
   } catch (_) {
@@ -6541,12 +6579,14 @@ async function _recallAction(char, btn) {
 // ── Skip a character's turn ───────────────────────────────────────
 async function _skipTurn(char) {
   try {
-    await fetch('/player-input/skip', {
+    _showInputError(null);
+    const res = await fetch('/player-input/skip', {
       method: 'POST',
       headers: _authHeaders(),
       body: JSON.stringify({ character: char }),
     });
-  } catch (_) { /* silently ignore */ }
+    if (!res.ok && res.status !== 202) _showInputError(await _refusalMessage(res));
+  } catch (_) { /* network error: nothing to show */ }
 }
 
 _sendBtn.addEventListener('click', _sendAction);
