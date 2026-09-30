@@ -259,7 +259,11 @@ def _write_xp(path: pathlib.Path, new_xp: int, current_level: int) -> bool:
             f"{new_xp} XP was NOT written",
             file=sys.stderr,
         )
-    path.write_text(updated, encoding="utf-8")
+    scripts = str(_SKILL_BASE / "scripts")
+    if scripts not in sys.path:
+        sys.path.insert(0, scripts)
+    import safeio
+    safeio.atomic_write_text(path, updated)
     return leveled
 
 
