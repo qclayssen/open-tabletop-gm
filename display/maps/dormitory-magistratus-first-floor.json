@@ -1,0 +1,18 @@
+{
+ "name": "Dormitory Magistratus First Floor",
+ "width": 32,
+ "height": 25,
+ "diagonals": "5",
+ "info": "160 by 125 feet (32x25 squares of 5 ft). Artwork by Ekrahir. Terrain is unpainted: open /maps/dormitory-magistratus-first-floor/edit and paint walls, water and cover before running a fight here.",
+ "image": "images/dormitory-magistratus-first-floor.jpg",
+ "grid": {
+  "cell_px": 128,
+  "offset_x": 0,
+  "offset_y": 0
+ },
+ "credit": "Ekrahir",
+ "source": "Free - Dormitory Magistratus First Floor - 4096x3200 - 32x25 - 128px - gridless.jpg",
+ "base": "floor",
+ "features": [],
+ "spawns": []
+}

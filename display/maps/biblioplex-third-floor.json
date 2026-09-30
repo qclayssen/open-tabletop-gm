@@ -1,0 +1,18 @@
+{
+ "name": "Biblioplex Third Floor",
+ "width": 56,
+ "height": 42,
+ "diagonals": "5",
+ "info": "280 by 210 feet (56x42 squares of 5 ft). Artwork by Ekrahir. Terrain is unpainted: open /maps/biblioplex-third-floor/edit and paint walls, water and cover before running a fight here.",
+ "image": "images/biblioplex-third-floor.jpg",
+ "grid": {
+  "cell_px": 100,
+  "offset_x": 0,
+  "offset_y": 0
+ },
+ "credit": "Ekrahir",
+ "source": "Free - Biblioplex Third Floor - 5600x4200 - 56x42 - 100px - gridless.jpg",
+ "base": "floor",
+ "features": [],
+ "spawns": []
+}

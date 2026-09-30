@@ -1,0 +1,18 @@
+{
+ "name": "The Detention Bog",
+ "width": 32,
+ "height": 45,
+ "diagonals": "5",
+ "info": "160 by 225 feet (32x45 squares of 5 ft). Artwork by Ekrahir. Terrain is unpainted: open /maps/the-detention-bog/edit and paint walls, water and cover before running a fight here.",
+ "image": "images/the-detention-bog.jpg",
+ "grid": {
+  "cell_px": 100,
+  "offset_x": 0,
+  "offset_y": 0
+ },
+ "credit": "Ekrahir",
+ "source": "Free - The Detention Bog - 3200x4500 - 32x45 - 100px - gridless.jpg",
+ "base": "floor",
+ "features": [],
+ "spawns": []
+}
