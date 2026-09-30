@@ -25,6 +25,7 @@ Do NOT run `git init` or any git commands in campaign directories.
 | `/gm combat grid <map>` | Start grid combat (the engine runs the rules). Follow `/gm combat grid` branch. |
 | `/gm rest <short\|long>` | Process a rest. Follow `/gm rest` branch. |
 | `/gm recap` | Read session-log.md; deliver 3-5 sentence in-character recap. |
+| `/gm prep` | Player-facing pre-session checklist (spells prepared, consumables, marching and watch order, open threads). Local DM: `/prep`, and `/recap` for the stored-state recap (shown on resume after a gap; `--no-recap`, `--no-prep`). |
 | `/gm pin [<fact> \| list \| remove <fact-or-number>]` | Manage `state.md → ## Pinned Facts` — the stable soft canon read at every `/gm load`. See `/gm pin` procedure below. |
 | `/gm world` | Read and display world.md for the current campaign. |
 | `/gm quests` | Read and display active quests from state.md. |
