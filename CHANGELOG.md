@@ -12,6 +12,11 @@ This project is the LLM-agnostic, system-flexible fork of [claude-dnd-skill](htt
 
 ## [Unreleased]
 
+### Added: random-event oracle and the World Queue (E0, E1)
+- `scripts/oracle.py`: chaos factor (`## Session Flags`), yes/no, and Random Event Focus, ported from the mature tree without `scene_meaning()` (unanchored word pairs dilute an authored world). Rolls go through `scripts/dice.py`; `--seed` replays them. `/gm oracle` documented.
+- `scripts/world_queue.py` and `## World Queue` in `templates/state.md`: off-screen events stored as decisions (`ask`, `if_ignored`, `expires_by`) with an optional `demands:` pressure claim. `roll` seeds at most one entry while fewer than 3 are pending and never sets `demands`; nothing auto-fires; fired entries are kept; three dismissals of one id surface at start; `validate` reports expired entries; there is no date field. The section is optional and is in `DIGEST_SECTIONS` (fired entries in full, pending ones marked do-not-reveal).
+- `campaign_lint.py` no longer treats the first yaml fence in `state.md` as the Campaign Arc; it reads the fence under `## Campaign Arc`.
+
 ### Fixed: the off-screen world is written where the DM reads it, not left to memory
 - **The gap.** `world.py` ticked the faction clocks, printed the result GM-only, and told the GM to "record it under `## Faction Moves`" in `state.md`. `scripts/localdm/context.py`'s `DIGEST_SECTIONS` reads that section. So the loop closed only if the GM remembered: a GM who forgot left `state.md` without the section, the digest without the content, and the DM unable to put the consequence in front of the player. The off-screen world that faction clocks exist to create was computed and then dropped.
 - **A tick now writes the move itself.** `append_faction_moves()` appends one line per faction that actually moved, plus a line when a clock fires, under `## Faction Moves` in `state.md`. Party interference via `clock` writes there too, since the DM reads the same section either way. Rolls that changed nothing write nothing: they are GM bookkeeping, `faction_log.md` already keeps them, and a daily "nothing happened" line would drown the moves that mattered.
