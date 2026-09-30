@@ -12,18 +12,33 @@ parser and the parser had only ever seen the fixture. The lesson recorded in
 `docs/guides/handoff-obsidian-atlas.md` §4.7 is to build a fixture from the source you
 just read, not from the shape you assumed.
 
-So the first test here reads a REAL `.atlasmap` written by the installed Atlas plugin and
-asserts the converter agrees with it about the envelope. The rest pin the one piece of
-arithmetic that can be silently wrong: Chartdown line coordinates are 1-based, Atlas
-pixels are 0-based, and getting it wrong shifts every wall by one cell without failing
-anything visible.
+So one test here reads a REAL `.atlasmap` written by the installed Atlas plugin and treats it
+as the reference for the envelope shape, and the next asserts the converter agrees with it.
+The rest pin the one piece of arithmetic that can be silently wrong: Chartdown line coordinates
+are 1-based, Atlas pixels are 0-based, and getting it wrong shifts every wall by one cell
+without failing anything visible.
+
+THE OPTIONAL DEPENDENCY
+-----------------------
+`chartdown_to_atlas.mjs` is ours, but the Chartdown parser it drives is not: `@chartdown/core`
+and `@chartdown/render-svg` are npm packages, they are the thing that computes the wall
+geometry, and reimplementing them here is out of the question. So every test that shells out to
+the converter carries `@requires_chartdown` and skips when Chartdown is not installed.
+
+That marker is not decoration. CI installs no npm packages, and every one of these tests
+except `test_envelope_is_the_zustand_envelope` was already wearing it, which is why one test
+was red and the rest green: the envelope test was written without the marker and ran straight
+into `ERR_MODULE_NOT_FOUND`. The rule this file now follows is that any test touching the
+converter wears the marker, and the probe tests below keep the marker honest.
 """
 
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -31,24 +46,105 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "chartdown_to_atlas.mjs"
 
-pytestmark = pytest.mark.skipif(
-    shutil.which("node") is None, reason="Chartdown conversion is a Node script"
-)
+# The npm packages `chartdown_to_atlas.mjs` imports at the top of the file. Every one of
+# them has to resolve, because a missing one is a hard `ERR_MODULE_NOT_FOUND` at converter
+# startup, not a degraded run. This is a Node/ESM dependency that the Python engine does
+# not need, exactly like the gitignored battle-map artwork, so it is optional here: these
+# tests run for anyone who has run `npm install` and skip cleanly for everyone else.
+CHARTDOWN_PACKAGES = ("@chartdown/core", "@chartdown/render-svg")
+
+
+def _node_on_path() -> bool:
+    return shutil.which("node") is not None
 
 
 def _chartdown_installed() -> bool:
-    probe = subprocess.run(
-        ["node", "-e", "import('@chartdown/core').then(()=>process.exit(0),()=>process.exit(1))"],
-        cwd=ROOT,
-        capture_output=True,
-        check=False,
-    )
-    return probe.returncode == 0
+    """Is the converter actually runnable here? Never raises, so collection cannot fail.
 
+    The `shutil.which` guard is load-bearing. This function is called at import time, before
+    any skipif is evaluated, so spawning `node` unconditionally raised FileNotFoundError on a
+    checkout with no Node. That is a collection ERROR, not a skip, and one bad module
+    interrupts the whole suite: a machine without Node ran zero tests instead of all of them.
+    """
+    if not _node_on_path():
+        return False
+    for package in CHARTDOWN_PACKAGES:
+        probe = subprocess.run(
+            ["node", "-e", f"import('{package}').then(()=>process.exit(0),()=>process.exit(1))"],
+            cwd=ROOT,
+            capture_output=True,
+            check=False,
+        )
+        if probe.returncode != 0:
+            return False
+    return True
+
+
+CHARTDOWN_INSTALLED = _chartdown_installed()
 
 requires_chartdown = pytest.mark.skipif(
-    not _chartdown_installed(), reason="run `npm install` in open-tabletop-gm first"
+    not CHARTDOWN_INSTALLED,
+    reason=(
+        "Chartdown is not installed here. Run `npm install` in open-tabletop-gm "
+        "(needs node plus @chartdown/core and @chartdown/render-svg)."
+    ),
 )
+
+
+# --- the probe itself ---------------------------------------------------------
+#
+# These guard the guard. `requires_chartdown` is the only thing standing between a clone
+# without Node and a red suite, so it gets tested as carefully as the converter.
+
+
+def test_probe_reports_not_installed_when_node_is_missing(monkeypatch):
+    """No Node means not installed. It must not raise on the way to that answer."""
+    monkeypatch.setattr(shutil, "which", lambda _name: None)
+
+    def explode(*_args, **_kwargs):
+        raise AssertionError("the probe spawned node with no node on PATH")
+
+    monkeypatch.setattr(subprocess, "run", explode)
+    assert _chartdown_installed() is False
+
+
+def _chartdown_imports() -> set:
+    """The @chartdown/* specifiers the converter imports at the top of the script."""
+    return set(re.findall(r'from "(@chartdown/[^"]+)"', SCRIPT.read_text(encoding="utf-8")))
+
+
+def test_probe_covers_every_package_the_converter_imports():
+    """The probe list and the script's imports must not drift apart.
+
+    This is the invariant that was violated when this suite went red: the script imported
+    `@chartdown/render-svg` too, and the probe only asked about `@chartdown/core`. So it
+    reported 'installed' for a tree that could not import the script, and the test failed with
+    the ERR_MODULE_NOT_FOUND the probe existed to pre-empt. Deriving both sides makes the
+    omission impossible to reintroduce by editing one list and forgetting the other.
+    """
+    imported = _chartdown_imports()
+    assert imported, "the converter no longer imports @chartdown/*; has this test outlived it?"
+    assert imported == set(CHARTDOWN_PACKAGES), (
+        f"the script imports {sorted(imported)} but the probe checks {sorted(CHARTDOWN_PACKAGES)}"
+    )
+
+
+@pytest.mark.parametrize("missing", CHARTDOWN_PACKAGES)
+def test_probe_rejects_a_partial_install(monkeypatch, missing):
+    """One import present and one absent is not 'installed'.
+
+    Every test below shells out to the converter, so a probe that is too generous turns the
+    whole file red on a clone that simply has not run `npm install`.
+    """
+    real_run = subprocess.run
+
+    def fake_run(cmd, **kwargs):
+        code = "raise SystemExit(1)" if missing in cmd[2] else "pass"
+        return real_run([sys.executable, "-c", code], **kwargs)
+
+    monkeypatch.setattr(shutil, "which", lambda _name: "/usr/bin/node")
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    assert _chartdown_installed() is False
 
 
 def run_converter(tmp_path: Path, source: str, *args: str) -> dict:
@@ -91,6 +187,7 @@ building b "B" : C3..F6
 # --- the envelope ------------------------------------------------------------
 
 
+@requires_chartdown
 def test_envelope_is_the_zustand_envelope(tmp_path):
     """Atlas stores `{state, version}`. A bare state is what Atlas never writes."""
     scene = run_converter(tmp_path, SIMPLE)
