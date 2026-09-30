@@ -51,6 +51,10 @@ COLLEGES = ("quandrix", "witherbloom", "silverquill", "prismari", "lorhold")
 # figure's art only: no name label beneath, no lore panel beside.
 # Verified by rendering the output and looking at it, not by assuming.
 SHEET_SIZE = (2295, 5940)
+# A lore panel is near-white and near-grey; a painting is saturated. Used to
+# trim a measured box away from the paper beside the figure.
+PANEL_SAT_MAX = 45
+PAPER_LUM_MIN = 190
 BOXES: dict[str, list[tuple[str, tuple[int, int, int, int]]]] = {
     "quandrix": [
         ("kainne", (0, 200, 1160, 1010)),
@@ -68,6 +72,53 @@ BOXES: dict[str, list[tuple[str, tuple[int, int, int, int]]]] = {
     "lorhold": [],
 }
 
+# Measured, NOT verified. A first pass over the other four colleges found 24
+# boxes and roughly six of them were wrong: two portraits had a lore panel
+# inside them, one caught the wrong figure, and several carried the name label
+# across the chest. They are kept here so the work is not lost, and are NOT in
+# BOXES, so nothing ships from them.
+#
+# The obvious fix -- mask the panel by colour, it is bright and low-chroma --
+# does not work on these pages. Measured on the Silverquill sheet, a lore panel
+# and the figure beside it are sat 13 vs 14 and lum 161 vs 167: the same
+# colour. These pages are washed-out pink, and the paintings are as pale as the
+# paper. There is no colour signature to separate them, which is why this has to
+# be eyeballed per figure.
+UNVERIFIED_BOXES: dict[str, list[tuple[str, tuple[int, int, int, int]]]] = {
+    "witherbloom": [
+        ("lisette", (90, 90, 1170, 990)),
+        ("valentin", (1110, 1110, 2295, 1950)),
+        ("willowdusk", (60, 1980, 1110, 2790)),
+        ("verelda", (1140, 2850, 2280, 3690)),
+        ("tivash", (90, 3720, 1140, 4560)),
+        ("yedora", (1140, 4620, 2280, 5490)),
+    ],
+    "silverquill": [
+        ("ambrose", (90, 120, 1170, 900)),
+        ("shaile", (1110, 1170, 2295, 1860)),
+        ("breena", (0, 2000, 1290, 2750)),
+        ("nils", (1080, 2310, 2280, 3630)),
+        ("fain", (0, 3960, 990, 4710)),
+        ("mavinda", (1080, 4500, 2220, 5640)),
+    ],
+    "prismari": [
+        ("uvilda", (60, 90, 1170, 1020)),
+        ("nassari", (1140, 1140, 2280, 1800)),
+        ("veyran", (30, 2040, 1260, 2725)),
+        ("zaffai", (1200, 2850, 2250, 3660)),
+        ("arkin", (60, 3900, 1200, 4560)),
+        ("nivall", (840, 4530, 2280, 5700)),
+    ],
+    "lorhold": [
+        ("augusta", (60, 120, 1170, 1020)),
+        ("plargg", (1080, 1110, 2280, 1800)),
+        ("hofri", (60, 2040, 1200, 2730)),
+        ("osgir", (1110, 2870, 2280, 3540)),
+        ("losheel", (30, 3960, 1170, 4470)),
+        ("alibou", (1140, 4590, 2280, 5715)),
+    ],
+}
+
 
 class Refused(Exception):
     """A condition that stops the run rather than being worked around."""
@@ -79,6 +130,40 @@ def slug(name: str) -> str:
 
 def college_of(sheet: pathlib.Path) -> str:
     return re.sub(r"teachers?$", "", sheet.stem, flags=re.IGNORECASE).lower() or sheet.stem.lower()
+
+
+def trim_panels(im, box):
+    """Shrink `box` away from any lore panel it overlaps.
+
+    Hand-measured boxes are generous by nature, and a generous box on these
+    sheets reaches the paper panel beside the figure -- the first pass put a
+    whole page of prose inside two portraits. The panel is bright *and*
+    low-chroma, which no figure is: a painting is saturated, a page of text on
+    cream paper is not. So a column or row of the box that is more than half
+    panel is dropped, which trims the paper off the edge and stops well short
+    of the figure next to it.
+    """
+    import numpy as np
+    x0, y0, x1, y1 = box
+    a = np.asarray(im).astype(float)[y0:y1, x0:x1]
+    mx, mn = a.max(2), a.min(2)
+    sat, lum = mx - mn, a.mean(2)
+    panel = (sat < PANEL_SAT_MAX) & (lum > PAPER_LUM_MIN)
+    if not panel.any():
+        return box
+    keep_c = panel.mean(0) <= 0.5
+    keep_r = panel.mean(1) <= 0.5
+    if not keep_c.any() or not keep_r.any():
+        return box
+    cx0 = x0 + int(np.argmax(keep_c))
+    cx1 = x0 + int(len(keep_c) - np.argmax(keep_c[::-1]))
+    ry0 = y0 + int(np.argmax(keep_r))
+    ry1 = y0 + int(len(keep_r) - np.argmax(keep_r[::-1]))
+    # Keep at least a third of each axis, so a mostly-panel box is left alone
+    # rather than collapsing to a sliver of someone's chin.
+    if cx1 - cx0 < (x1 - x0) // 3 or ry1 - ry0 < (y1 - y0) // 3:
+        return box
+    return (cx0, ry0, cx1, ry1)
 
 
 def square_box(box: tuple[int, int, int, int], size: tuple[int, int]) -> tuple[int, int, int, int]:
@@ -122,7 +207,7 @@ def run(sheet: pathlib.Path, out: pathlib.Path) -> dict:
     written, manifest = [], {"source": sheet.name, "college": college,
                              "token_px": TOKEN_PX, "figures": {}}
     for name, box in boxes:
-        sq = square_box(box, im.size)
+        sq = square_box(trim_panels(im, box), im.size)
         fname = f"{college}-{slug(name)}.png"
         im.crop(sq).resize((TOKEN_PX, TOKEN_PX), Image.LANCZOS).save(out / fname)
         written.append(fname)
