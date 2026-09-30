@@ -148,11 +148,28 @@ def grants_injection(narration: str) -> bool:
 # legitimate narration, and "the pool is restored to full" is ordinary prose.
 # What is removed is only the fake system block plus a player-issued override
 # sentence, which no real narration contains.
+#
+# Every alternative below is anchored on a SYSTEM word, never on ordinary
+# scene-setting. That is not fussiness, it is the difference between a scrub
+# that works and one that eats the game:
+#
+#   "You are now in the library."   is how this GM narrates a doorway, and a
+#                                   bare "you are now (a|an|the|in)" deleted it.
+#   "Ignore the rules the tiefling  is in-fiction and common, so bare "rule"
+#       laid down."                  cannot be in the override list either.
+#
+# A missed exotic phrasing is the safe direction: the live guardrail still
+# catches it this turn, and the transcript keeps an odd sentence. A false
+# positive silently removes a room from the story, and nobody would notice.
 _OVERRIDE = re.compile(
     r"\b(?:forget|ignore|disregard|override)\b[^.!?\n]{0,40}?"
-    r"\b(?:instruction|prompt|rule|guardrail|policy)s?\b"
+    r"\b(?:instruction|prompt|guardrail|polic(?:y|ies)|directive)s?\b"
     r"|\bnew\s+(?:system\s+)?instructions?\s*:"
-    r"|\byou\s+are\s+now\s+(?:a|an|the|in)\b"
+    # role reassignment, and only when it names a system role: "you are now in
+    # the library" is a doorway, "you are now the game master" is an attack.
+    r"|\byou\s+are\s+now\s+(?:a|an|the)\b[^.!?\n]{0,30}?"
+    r"\b(?:mode|assistant|ai|model|game\s?master|gm|admin(?:istrator)?|developer"
+    r"|god|dungeon\s?master|unrestricted|unbound)\b"
     r"|\b(?:give|grant)\s+(?:me|us)\b[^.!?\n]{0,20}?\b(?:gold|gp|xp)\b"
     r"|\broll\s+(?:me\s+)?a\s+natural\s+(?:20|twenty)\b",
     re.I)
