@@ -1,7 +1,7 @@
 # Keeps the automation and dependency surfaces current.
 #
 # Two surfaces exist: the GitHub Actions CI uses, and the display companion's
-# requirements.txt (flask, flask-cors, pygame, numpy). The probe tool imports
+# requirements.txt (flask, flask-cors; numpy is optional and commented out). The probe tool imports
 # only the standard library and ships no manifest, so it needs no entry — a
 # directory without a manifest would only make Dependabot error.
 version: 2
