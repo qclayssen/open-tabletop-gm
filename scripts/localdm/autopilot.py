@@ -203,6 +203,29 @@ def _retreat_square(enc, pc):
     return best if safety(best)[0] > here else None
 
 
+# Class features the engine has no rules for. A player naming one gets an ordinary attack or
+# move, so they are told plainly rather than left to think it applied.
+UNSUPPORTED_FEATURES = ("sneak attack", "divine smite", "smite", "rage", "raging", "reckless attack",
+                        "action surge", "second wind", "cunning action", "flurry of blows",
+                        "stunning strike", "lay on hands", "wild shape", "bardic inspiration",
+                        "channel divinity", "turn undead", "extra attack", "battle master",
+                        "maneuver", "superiority die")
+
+
+def unapplied_feature(line: str, pc) -> str:
+    """The first feature the player named that the engine will not apply, or "".
+
+    A name that is also one of the character's attacks or spells is theirs to use, so
+    it is never reported ("Smite" the spell, a weapon called "Rage")."""
+    text = " " + re.sub(r"[^a-z0-9' -]+", " ", line.lower()) + " "
+    owned = " ".join(a.get("name", "") for a in pc.attacks).lower()
+    owned += " " + " ".join(str(s) for s in pc.extra.get("spells", [])).lower()
+    for f in UNSUPPORTED_FEATURES:
+        if f" {f} " in text and f not in owned:
+            return f
+    return ""
+
+
 def plan(line: str, enc, pc_id: str, last_target: str = "") -> Plan | None:
     """Engine commands for the player's line on their own turn, a question, or
     None when the line is not a combat action (it goes to the model)."""

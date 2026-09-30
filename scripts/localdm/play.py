@@ -229,6 +229,47 @@ def _waiting(pending) -> str:
             else "Still waiting on your roll: type the number on the die (no modifier).")
 
 
+def check_margin_note(margin: int) -> str:
+    """How far a check landed from its DC, in words, for the narration task.
+
+    The engine owns the numbers: this only turns the margin it computed into a scale
+    the prose must respect, so a miss by 1 and a miss by 9 do not read the same and
+    the model is told the price rather than left to invent one. The figures
+    themselves are never to be quoted (the check tasks already forbid that)."""
+    if margin >= 10:
+        return "The roll beat the DC by a wide margin: a clean, impressive success."
+    if margin >= 0:
+        return ("The roll only just made it." if margin <= 2 else "The roll cleared the DC.")
+    if margin >= -2:
+        return ("The roll missed by a hair: a small cost, a near thing. The intent mostly "
+                "lands.")
+    if margin >= -6:
+        return "The roll missed clearly: a real cost, and the intent only half lands."
+    return ("The roll missed badly: a serious cost or a complication that is hard to "
+            "undo. The intent does not land.")
+
+
+def combat_consequences(engine_text: str) -> str:
+    """What the engine decided about the fight, as a line for the narration task.
+
+    Read from the engine's own wording (damage() results reach here only as text), so the
+    prose is told who dropped, died or lost concentration instead of inventing it."""
+    facts = []
+    if "killed outright" in engine_text:
+        facts.append("someone was killed outright by massive damage")
+    if re.search(r"\bdies\b", engine_text):
+        facts.append("someone died")
+    if "drops to 0 HP" in engine_text:
+        facts.append("someone dropped to 0 HP and is down")
+    if "loses concentration" in engine_text:
+        facts.append("a spell ended because concentration broke")
+    if "All enemies are down" in engine_text:
+        facts.append("the last enemy fell")
+    if not facts:
+        return ""
+    return ("Engine consequences, to be narrated and not changed: " + "; ".join(facts) + ".")
+
+
 def _join(*parts) -> str:
     return "\n\n".join(p for p in parts if p)
 
@@ -673,7 +714,8 @@ class Session:
         # report the engine's own words and let the error stand, rather than losing a
         # resolved attack because the prose would not come.
         try:
-            r = self._dm(engine=engine_text, notes=notes, task=NARRATE)
+            r = self._dm(engine=engine_text, notes=notes,
+                         task=_join(NARRATE, combat_consequences(engine_text)))
         except llm.LLMError as e:
             self._say_status(f"[dm] no narration: {e}")
             return self._notes_out(notes) + [engine_text]
@@ -878,13 +920,13 @@ class Session:
         result = (f"{who or 'The player'} rolled {article} {skill} check: {total} against DC "
                   f"{dc}: {'success' if ok else 'failure'}.")
         self.memory.add("engine", result)
-        r = self._check_narration(result, ok)
+        r = self._check_narration(result, ok, margin=total - dc)
         if r.narration:
             self._say(r.narration)
             return [f"({result})", r.narration]
         return [f"({result})"]
 
-    def _check_narration(self, result: str, ok: bool) -> reply.DMReply:
+    def _check_narration(self, result: str, ok: bool, margin: int = 0) -> reply.DMReply:
         """Narrate a check outcome, then make sure it is one.
 
         Applied Standard 16 is a rule about the fiction, so it is enforced here
@@ -893,10 +935,11 @@ class Session:
         only when the model actually stalled, and leaves the success path with a
         shorter task, since it never carries the failure instructions.
         """
-        r = self._dm(engine=result, task=CHECK_OK if ok else CHECK_FAIL)
+        base = _join(CHECK_OK if ok else CHECK_FAIL, check_margin_note(margin))
+        r = self._dm(engine=result, task=base)
         if not ok and reply.is_dead_stop(r.narration):
             retry = self._dm(engine=result,
-                             task=f"{CHECK_FAIL}\n{self.FAIL_FORWARD_FIX}".strip())
+                             task=f"{base}\n{self.FAIL_FORWARD_FIX}".strip())
             if not reply.is_dead_stop(retry.narration):
                 return retry
         return r
@@ -990,16 +1033,21 @@ class Session:
             out = []
         # And never claim a consult that did not happen. Saying so while every
         # advisor was 504ing left the player with notes that did not exist (B2).
+        # The player sees who answered and whether anything was saved, never the note
+        # body (notes can spoil; --show-gm-notes is the only way to print them).
+        down = {f.lower() for f in failed}
+        answered = [n for n in names if n.lower() not in down]
+        who = ", ".join(answered)
         if failed and not notes:
-            out.append(f"(No notes: {', '.join(failed)} could not be reached. Carrying on "
-                       f"without them.)")
+            out.append(f"(Advise FAILED: {', '.join(failed)} could not be reached. No notes "
+                       f"were saved. Carrying on without them.)")
         elif failed:
-            out.append(f"(The advisors have been consulted, but {', '.join(failed)} could "
-                       f"not be reached.)")
+            out.append(f"(Advise partly worked: notes saved from {who}; {', '.join(failed)} "
+                       f"could not be reached. The saved notes will guide the next scene.)")
         elif notes:
-            out.append("(The advisors have been consulted. Their notes will guide the next "
-                       "scene.)")
-        return out or ["(The advisors had nothing to add.)"]
+            out.append(f"(Advise OK: notes saved from {who}. They will guide the next scene; "
+                       f"/notes shows them to a GM.)")
+        return out or ["(The advisors answered but had nothing to add. No notes were saved.)"]
 
     def _notes_cmd(self, rest: str) -> list:
         """/notes [n]: the advisor notes kept in <campaign>/localdm/notes.md.
@@ -1052,11 +1100,16 @@ class Session:
             return None
         self.turn += 1
         self.memory.add("player", line)
+        # A named feature the engine has no rules for is said out loud, not dropped:
+        # "sneak attack it" used to resolve as a plain shot with no word about it.
+        feature = autopilot.unapplied_feature(line, enc.tokens[enc.current.id])
+        note = ([f"(The engine has no {feature.title()}, so it is not applied. "
+                 f"Resolving what you asked as an ordinary action.)"] if feature else [])
         if p.ask:
-            return [p.ask]
+            return note + [p.ask]
         self.last_target = p.target or self.last_target
         self.queue = [list(c) for c in p.cmds[1:]]
-        return self._engine(p.cmds[0])
+        return note + self._engine(p.cmds[0])
 
     def _player_turn(self, line: str) -> list:
         auto = self._autopilot(line)
