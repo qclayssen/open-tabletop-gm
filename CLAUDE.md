@@ -68,6 +68,9 @@ scripts/tactics/             grid combat engine (stdlib only)
 scripts/tactics.md           the GM loop (loaded only at /gm combat grid)
 scripts/localdm/             local DM loop: one small-model call per turn, advisors on a
                              smarter model (play.py REPL; see docs/milestones/06-local-dm.md)
+  briefs_sync.py             the advisor briefs have one source of truth: this repo's
+                              prompts/advisors/. The outer dnd-gm agents/ copy is generated
+                              from it, and briefs_sync.py --check fails when they differ
 systems/dnd5e/
   tactics_rules.py           5e rules: advantage, crits, cover, resistances, 0 HP,
                              death saves, saves and save chance, SRD monster -> Token
