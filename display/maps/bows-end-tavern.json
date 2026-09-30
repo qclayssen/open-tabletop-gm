@@ -14,82 +14,541 @@
  "source": "Free - Bow's End Tavern - 4000x3000 - 40x30 - 100px - gridless.jpg",
  "base": "floor",
  "features": [
-  { "type": "wall", "x": 5, "y": 4, "w": 29, "h": 2, "label": "North wall of Bow's End" },
-  { "type": "wall", "x": 5, "y": 4, "w": 2, "h": 19, "label": "West wall (onto the yard)" },
-  { "type": "wall", "x": 33, "y": 4, "w": 1, "h": 19, "label": "East wall" },
-  { "type": "wall", "x": 5, "y": 22, "w": 29, "h": 1, "label": "South wall (onto the quay)" },
-  { "type": "wall", "x": 7, "y": 20, "w": 1, "h": 2, "label": "Splayed south-west corner" },
-  { "type": "wall", "x": 8, "y": 21, "w": 2, "h": 1, "label": "Splayed south-west corner" },
-  { "type": "wall", "x": 31, "y": 21, "w": 2, "h": 1, "label": "Splayed south-east corner" },
-
-  { "type": "water", "x": 0, "y": 26, "w": 18, "h": 4, "label": "The Cut (the canal)" },
-  { "type": "water", "x": 24, "y": 26, "w": 3, "h": 4, "label": "The Cut (the canal)" },
-  { "type": "water", "x": 29, "y": 26, "w": 4, "h": 4, "label": "The Cut (the canal)" },
-
-  { "type": "floor", "x": 5, "y": 14, "w": 2, "h": 1, "label": "The small green door - out to the back lot where the duels are fought" },
-  { "type": "floor", "x": 20, "y": 22, "w": 1, "h": 1, "label": "Front door, south face - out onto the quay" },
-
-  { "type": "difficult", "x": 11, "y": 9, "w": 10, "h": 1, "label": "Long timber beam lying across the north end of the hall" },
-  { "type": "difficult", "x": 12, "y": 12, "w": 17, "h": 1, "label": "Ladder lying the length of the hall" },
-  { "type": "difficult", "x": 8, "y": 13, "w": 4, "h": 2, "label": "Ladder lying diagonally along the west side of the hall" },
-  { "type": "difficult", "x": 28, "y": 13, "w": 4, "h": 2, "label": "Ladder lying diagonally along the east side of the hall" },
-
-  { "type": "feature", "x": 7, "y": 6, "w": 3, "h": 2, "label": "Duel Square (West) - chequered floor inside low timber rails" },
-  { "type": "feature", "x": 30, "y": 6, "w": 3, "h": 2, "label": "Duel Square (East) - chequered floor inside low timber rails" },
-  { "type": "feature", "x": 13, "y": 6, "w": 13, "h": 4, "label": "The Bar - casks, back-bar shelves and the serving counter" },
-  { "type": "feature", "x": 27, "y": 6, "w": 2, "h": 3, "label": "Cheese and produce racks stacked round the great hearth" },
-
-  { "type": "feature", "x": 7, "y": 8, "w": 3, "h": 1, "label": "Long table" },
-  { "type": "feature", "x": 8, "y": 9, "w": 1, "h": 2, "label": "Long table" },
-  { "type": "feature", "x": 9, "y": 10, "w": 2, "h": 2, "label": "Long table, laid diagonally" },
-  { "type": "feature", "x": 7, "y": 12, "w": 2, "h": 2, "label": "Round table with stools" },
-  { "type": "feature", "x": 10, "y": 14, "w": 2, "h": 2, "label": "Round table with stools" },
-  { "type": "feature", "x": 14, "y": 14, "w": 1, "h": 2, "label": "Long table" },
-  { "type": "feature", "x": 17, "y": 13, "w": 1, "h": 3, "label": "Long table" },
-  { "type": "feature", "x": 16, "y": 10, "w": 2, "h": 1, "label": "Gilt-topped chest" },
-  { "type": "feature", "x": 20, "y": 10, "w": 2, "h": 1, "label": "The music - keyboard by the wall" },
-
-  { "type": "feature", "x": 31, "y": 8, "w": 2, "h": 1, "label": "Round table" },
-  { "type": "feature", "x": 30, "y": 9, "w": 2, "h": 2, "label": "Long table" },
-  { "type": "feature", "x": 32, "y": 9, "w": 1, "h": 3, "label": "Long table" },
-  { "type": "feature", "x": 29, "y": 11, "w": 2, "h": 2, "label": "Long table, laid diagonally" },
-  { "type": "feature", "x": 32, "y": 12, "w": 1, "h": 2, "label": "Round table" },
-  { "type": "feature", "x": 24, "y": 10, "w": 2, "h": 1, "label": "Gilt-topped chest" },
-
-  { "type": "feature", "x": 20, "y": 13, "w": 3, "h": 3, "label": "Laden side table" },
-  { "type": "feature", "x": 25, "y": 13, "w": 1, "h": 3, "label": "Long table" },
-  { "type": "feature", "x": 27, "y": 13, "w": 2, "h": 3, "label": "Long table" },
-  { "type": "feature", "x": 28, "y": 14, "w": 2, "h": 2, "label": "Round table with stools" },
-
-  { "type": "feature", "x": 8, "y": 16, "w": 1, "h": 1, "label": "Round table" },
-  { "type": "feature", "x": 11, "y": 17, "w": 1, "h": 1, "label": "Round table" },
-  { "type": "feature", "x": 11, "y": 19, "w": 1, "h": 1, "label": "Round table" },
-  { "type": "feature", "x": 8, "y": 18, "w": 2, "h": 2, "label": "Long table, laid diagonally" },
-  { "type": "feature", "x": 13, "y": 17, "w": 1, "h": 2, "label": "Long table" },
-  { "type": "feature", "x": 13, "y": 19, "w": 1, "h": 2, "label": "Long table" },
-  { "type": "feature", "x": 16, "y": 15, "w": 2, "h": 2, "label": "Long table" },
-  { "type": "feature", "x": 16, "y": 17, "w": 2, "h": 2, "label": "Long table, laid diagonally" },
-  { "type": "feature", "x": 18, "y": 15, "w": 2, "h": 1, "label": "Long table" },
-  { "type": "feature", "x": 17, "y": 17, "w": 7, "h": 1, "label": "The long bench and table on the north side of the Circle's rug" },
-  { "type": "feature", "x": 15, "y": 20, "w": 3, "h": 2, "label": "Long table on the south side of the Circle's rug" },
-
-  { "type": "feature", "x": 20, "y": 15, "w": 3, "h": 1, "label": "Long bench" },
-  { "type": "feature", "x": 24, "y": 16, "w": 2, "h": 2, "label": "Long table, laid diagonally" },
-  { "type": "feature", "x": 27, "y": 16, "w": 1, "h": 3, "label": "Long table" },
-  { "type": "feature", "x": 27, "y": 19, "w": 1, "h": 3, "label": "Long table" },
-  { "type": "feature", "x": 28, "y": 17, "w": 2, "h": 1, "label": "Round table" },
-  { "type": "feature", "x": 29, "y": 19, "w": 2, "h": 2, "label": "Round table" },
-  { "type": "feature", "x": 32, "y": 16, "w": 1, "h": 2, "label": "Round table" },
-  { "type": "feature", "x": 31, "y": 18, "w": 2, "h": 2, "label": "Long table, laid diagonally" },
-  { "type": "feature", "x": 23, "y": 20, "w": 3, "h": 1, "label": "Long table" },
-  { "type": "feature", "x": 22, "y": 19, "w": 1, "h": 1, "label": "Iron-bound chest by the rug" },
-
-  { "type": "feature", "x": 11, "y": 23, "w": 2, "h": 2, "label": "Quay table, outside the south door" },
-  { "type": "feature", "x": 15, "y": 23, "w": 4, "h": 2, "label": "Quay table, outside the south door" },
-  { "type": "feature", "x": 22, "y": 23, "w": 4, "h": 2, "label": "Quay table, outside the south door" },
-  { "type": "feature", "x": 26, "y": 23, "w": 3, "h": 2, "label": "Quay table, outside the south door" },
-
-  { "type": "hazard", "x": 28, "y": 8, "w": 1, "h": 1, "label": "The great hearth - lit. The chequered floor and produce racks sit all round it." }
+  {
+   "type": "wall",
+   "x": 5,
+   "y": 4,
+   "w": 29,
+   "h": 2,
+   "label": "North wall of Bow's End"
+  },
+  {
+   "type": "wall",
+   "x": 5,
+   "y": 4,
+   "w": 2,
+   "h": 19,
+   "label": "West wall (onto the yard)"
+  },
+  {
+   "type": "wall",
+   "x": 33,
+   "y": 4,
+   "w": 1,
+   "h": 19,
+   "label": "East wall"
+  },
+  {
+   "type": "wall",
+   "x": 5,
+   "y": 22,
+   "w": 29,
+   "h": 1,
+   "label": "South wall (onto the quay)"
+  },
+  {
+   "type": "wall",
+   "x": 7,
+   "y": 20,
+   "w": 1,
+   "h": 2,
+   "label": "Splayed south-west corner"
+  },
+  {
+   "type": "wall",
+   "x": 8,
+   "y": 21,
+   "w": 2,
+   "h": 1,
+   "label": "Splayed south-west corner"
+  },
+  {
+   "type": "wall",
+   "x": 31,
+   "y": 21,
+   "w": 2,
+   "h": 1,
+   "label": "Splayed south-east corner"
+  },
+  {
+   "type": "water",
+   "x": 0,
+   "y": 26,
+   "w": 18,
+   "h": 4,
+   "label": "The Cut (the canal)"
+  },
+  {
+   "type": "water",
+   "x": 24,
+   "y": 26,
+   "w": 3,
+   "h": 4,
+   "label": "The Cut (the canal)"
+  },
+  {
+   "type": "water",
+   "x": 29,
+   "y": 26,
+   "w": 4,
+   "h": 4,
+   "label": "The Cut (the canal)"
+  },
+  {
+   "type": "floor",
+   "x": 5,
+   "y": 14,
+   "w": 2,
+   "h": 1,
+   "label": "The small green door - out to the back lot where the duels are fought"
+  },
+  {
+   "type": "floor",
+   "x": 20,
+   "y": 22,
+   "w": 1,
+   "h": 1,
+   "label": "Front door, south face - out onto the quay"
+  },
+  {
+   "type": "difficult",
+   "x": 11,
+   "y": 9,
+   "w": 10,
+   "h": 1,
+   "label": "Long timber beam lying across the north end of the hall"
+  },
+  {
+   "type": "difficult",
+   "x": 12,
+   "y": 12,
+   "w": 17,
+   "h": 1,
+   "label": "Ladder lying the length of the hall"
+  },
+  {
+   "type": "difficult",
+   "x": 8,
+   "y": 13,
+   "w": 4,
+   "h": 2,
+   "label": "Ladder lying diagonally along the west side of the hall"
+  },
+  {
+   "type": "difficult",
+   "x": 28,
+   "y": 13,
+   "w": 4,
+   "h": 2,
+   "label": "Ladder lying diagonally along the east side of the hall"
+  },
+  {
+   "type": "feature",
+   "x": 7,
+   "y": 6,
+   "w": 3,
+   "h": 2,
+   "label": "Duel Square (West) - chequered floor inside low timber rails"
+  },
+  {
+   "type": "feature",
+   "x": 30,
+   "y": 6,
+   "w": 3,
+   "h": 2,
+   "label": "Duel Square (East) - chequered floor inside low timber rails"
+  },
+  {
+   "type": "feature",
+   "x": 13,
+   "y": 6,
+   "w": 13,
+   "h": 4,
+   "label": "The Bar - casks, back-bar shelves and the serving counter"
+  },
+  {
+   "type": "feature",
+   "x": 27,
+   "y": 6,
+   "w": 2,
+   "h": 3,
+   "label": "Cheese and produce racks stacked round the great hearth"
+  },
+  {
+   "type": "feature",
+   "x": 7,
+   "y": 8,
+   "w": 3,
+   "h": 1,
+   "label": "Long table"
+  },
+  {
+   "type": "feature",
+   "x": 8,
+   "y": 9,
+   "w": 1,
+   "h": 2,
+   "label": "Long table"
+  },
+  {
+   "type": "feature",
+   "x": 9,
+   "y": 10,
+   "w": 2,
+   "h": 2,
+   "label": "Long table, laid diagonally"
+  },
+  {
+   "type": "feature",
+   "x": 7,
+   "y": 12,
+   "w": 2,
+   "h": 2,
+   "label": "Round table with stools"
+  },
+  {
+   "type": "feature",
+   "x": 10,
+   "y": 14,
+   "w": 2,
+   "h": 2,
+   "label": "Round table with stools"
+  },
+  {
+   "type": "feature",
+   "x": 14,
+   "y": 14,
+   "w": 1,
+   "h": 2,
+   "label": "Long table"
+  },
+  {
+   "type": "feature",
+   "x": 17,
+   "y": 13,
+   "w": 1,
+   "h": 3,
+   "label": "Long table"
+  },
+  {
+   "type": "feature",
+   "x": 16,
+   "y": 10,
+   "w": 2,
+   "h": 1,
+   "label": "Gilt-topped chest"
+  },
+  {
+   "type": "feature",
+   "x": 20,
+   "y": 10,
+   "w": 2,
+   "h": 1,
+   "label": "The music - keyboard by the wall"
+  },
+  {
+   "type": "feature",
+   "x": 31,
+   "y": 8,
+   "w": 2,
+   "h": 1,
+   "label": "Round table"
+  },
+  {
+   "type": "feature",
+   "x": 30,
+   "y": 9,
+   "w": 2,
+   "h": 2,
+   "label": "Long table"
+  },
+  {
+   "type": "feature",
+   "x": 32,
+   "y": 9,
+   "w": 1,
+   "h": 3,
+   "label": "Long table"
+  },
+  {
+   "type": "feature",
+   "x": 29,
+   "y": 11,
+   "w": 2,
+   "h": 2,
+   "label": "Long table, laid diagonally"
+  },
+  {
+   "type": "feature",
+   "x": 32,
+   "y": 12,
+   "w": 1,
+   "h": 2,
+   "label": "Round table"
+  },
+  {
+   "type": "feature",
+   "x": 24,
+   "y": 10,
+   "w": 2,
+   "h": 1,
+   "label": "Gilt-topped chest"
+  },
+  {
+   "type": "feature",
+   "x": 20,
+   "y": 13,
+   "w": 3,
+   "h": 3,
+   "label": "Laden side table"
+  },
+  {
+   "type": "feature",
+   "x": 25,
+   "y": 13,
+   "w": 1,
+   "h": 3,
+   "label": "Long table"
+  },
+  {
+   "type": "feature",
+   "x": 27,
+   "y": 13,
+   "w": 2,
+   "h": 3,
+   "label": "Long table"
+  },
+  {
+   "type": "feature",
+   "x": 28,
+   "y": 14,
+   "w": 2,
+   "h": 2,
+   "label": "Round table with stools"
+  },
+  {
+   "type": "feature",
+   "x": 8,
+   "y": 16,
+   "w": 1,
+   "h": 1,
+   "label": "Round table"
+  },
+  {
+   "type": "feature",
+   "x": 11,
+   "y": 17,
+   "w": 1,
+   "h": 1,
+   "label": "Round table"
+  },
+  {
+   "type": "feature",
+   "x": 11,
+   "y": 19,
+   "w": 1,
+   "h": 1,
+   "label": "Round table"
+  },
+  {
+   "type": "feature",
+   "x": 8,
+   "y": 18,
+   "w": 2,
+   "h": 2,
+   "label": "Long table, laid diagonally"
+  },
+  {
+   "type": "feature",
+   "x": 13,
+   "y": 17,
+   "w": 1,
+   "h": 2,
+   "label": "Long table"
+  },
+  {
+   "type": "feature",
+   "x": 13,
+   "y": 19,
+   "w": 1,
+   "h": 2,
+   "label": "Long table"
+  },
+  {
+   "type": "feature",
+   "x": 16,
+   "y": 15,
+   "w": 2,
+   "h": 2,
+   "label": "Long table"
+  },
+  {
+   "type": "feature",
+   "x": 16,
+   "y": 17,
+   "w": 2,
+   "h": 2,
+   "label": "Long table, laid diagonally"
+  },
+  {
+   "type": "feature",
+   "x": 18,
+   "y": 15,
+   "w": 2,
+   "h": 1,
+   "label": "Long table"
+  },
+  {
+   "type": "feature",
+   "x": 17,
+   "y": 17,
+   "w": 7,
+   "h": 1,
+   "label": "The long bench and table on the north side of the Circle's rug"
+  },
+  {
+   "type": "feature",
+   "x": 15,
+   "y": 20,
+   "w": 3,
+   "h": 2,
+   "label": "Long table on the south side of the Circle's rug"
+  },
+  {
+   "type": "feature",
+   "x": 20,
+   "y": 15,
+   "w": 3,
+   "h": 1,
+   "label": "Long bench"
+  },
+  {
+   "type": "feature",
+   "x": 24,
+   "y": 16,
+   "w": 2,
+   "h": 2,
+   "label": "Long table, laid diagonally"
+  },
+  {
+   "type": "feature",
+   "x": 27,
+   "y": 16,
+   "w": 1,
+   "h": 3,
+   "label": "Long table"
+  },
+  {
+   "type": "feature",
+   "x": 27,
+   "y": 19,
+   "w": 1,
+   "h": 3,
+   "label": "Long table"
+  },
+  {
+   "type": "feature",
+   "x": 28,
+   "y": 17,
+   "w": 2,
+   "h": 1,
+   "label": "Round table"
+  },
+  {
+   "type": "feature",
+   "x": 29,
+   "y": 19,
+   "w": 2,
+   "h": 2,
+   "label": "Round table"
+  },
+  {
+   "type": "feature",
+   "x": 32,
+   "y": 16,
+   "w": 1,
+   "h": 2,
+   "label": "Round table"
+  },
+  {
+   "type": "feature",
+   "x": 31,
+   "y": 18,
+   "w": 2,
+   "h": 2,
+   "label": "Long table, laid diagonally"
+  },
+  {
+   "type": "feature",
+   "x": 23,
+   "y": 20,
+   "w": 3,
+   "h": 1,
+   "label": "Long table"
+  },
+  {
+   "type": "feature",
+   "x": 22,
+   "y": 19,
+   "w": 1,
+   "h": 1,
+   "label": "Iron-bound chest by the rug"
+  },
+  {
+   "type": "feature",
+   "x": 11,
+   "y": 23,
+   "w": 2,
+   "h": 2,
+   "label": "Quay table, outside the south door"
+  },
+  {
+   "type": "feature",
+   "x": 15,
+   "y": 23,
+   "w": 4,
+   "h": 2,
+   "label": "Quay table, outside the south door"
+  },
+  {
+   "type": "feature",
+   "x": 22,
+   "y": 23,
+   "w": 4,
+   "h": 2,
+   "label": "Quay table, outside the south door"
+  },
+  {
+   "type": "feature",
+   "x": 26,
+   "y": 23,
+   "w": 3,
+   "h": 2,
+   "label": "Quay table, outside the south door"
+  },
+  {
+   "type": "hazard",
+   "x": 28,
+   "y": 8,
+   "w": 1,
+   "h": 1,
+   "label": "The great hearth - lit. The chequered floor and produce racks sit all round it."
+  },
+  {
+   "type": "wood",
+   "x": 0,
+   "y": 0,
+   "w": 40,
+   "h": 4
+  }
  ],
- "spawns": []
+ "spawns": [],
+ "terrain": {
+  "wood": {
+   "cost": null,
+   "blocks_sight": true,
+   "cover": 0,
+   "color": "wood"
+  }
+ }
 }

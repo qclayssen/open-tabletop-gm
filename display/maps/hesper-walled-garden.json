@@ -1,0 +1,166 @@
+{
+ "name": "Hesper's Walled Garden",
+ "width": 20,
+ "height": 14,
+ "diagonals": "5",
+ "info": "Three potsherd-edged herb beds, difficult to push through. The lintel makes a bench. The sphinx head has lost its nose and holds rainwater. The green door is the way out; the gap north of it is how Ninefold's people come and go. Two stone slots, and no cover worth the name.",
+ "base": "floor",
+ "grid": {
+  "cell_px": 100,
+  "offset_x": 0,
+  "offset_y": 0
+ },
+ "features": [
+  {
+   "type": "wall",
+   "x": 0,
+   "y": 0,
+   "w": 20,
+   "h": 1
+  },
+  {
+   "type": "wall",
+   "x": 0,
+   "y": 13,
+   "w": 20,
+   "h": 1
+  },
+  {
+   "type": "wall",
+   "x": 0,
+   "y": 0,
+   "w": 1,
+   "h": 14
+  },
+  {
+   "type": "wall",
+   "x": 19,
+   "y": 0,
+   "w": 1,
+   "h": 14
+  },
+  {
+   "type": "feature",
+   "x": 2,
+   "y": 2,
+   "w": 7,
+   "h": 5
+  },
+  {
+   "type": "difficult",
+   "x": 3,
+   "y": 3,
+   "w": 5,
+   "h": 3,
+   "label": "Herb bed"
+  },
+  {
+   "type": "feature",
+   "x": 10,
+   "y": 2,
+   "w": 7,
+   "h": 5
+  },
+  {
+   "type": "difficult",
+   "x": 11,
+   "y": 3,
+   "w": 5,
+   "h": 3,
+   "label": "Herb bed"
+  },
+  {
+   "type": "feature",
+   "x": 2,
+   "y": 7,
+   "w": 7,
+   "h": 5
+  },
+  {
+   "type": "difficult",
+   "x": 3,
+   "y": 8,
+   "w": 5,
+   "h": 3,
+   "label": "Herb bed"
+  },
+  {
+   "type": "feature",
+   "x": 8,
+   "y": 1,
+   "w": 4,
+   "h": 1,
+   "label": "Lintel bench"
+  },
+  {
+   "type": "feature",
+   "x": 8,
+   "y": 9,
+   "w": 3,
+   "h": 3,
+   "label": "Sphinx head"
+  },
+  {
+   "type": "water",
+   "x": 9,
+   "y": 10,
+   "w": 1,
+   "h": 1,
+   "label": "Rainwater basin"
+  },
+  {
+   "type": "wall",
+   "x": 15,
+   "y": 1,
+   "w": 1,
+   "h": 12
+  },
+  {
+   "type": "floor",
+   "x": 15,
+   "y": 6,
+   "w": 1,
+   "h": 1,
+   "label": "Green door"
+  },
+  {
+   "type": "feature",
+   "x": 7,
+   "y": 6,
+   "w": 1,
+   "h": 1,
+   "label": "Stone slot"
+  },
+  {
+   "type": "feature",
+   "x": 16,
+   "y": 5,
+   "w": 1,
+   "h": 1,
+   "label": "Stone slot"
+  }
+ ],
+ "spawns": [
+  {
+   "id": "K",
+   "name": "Kairos",
+   "color": "quan",
+   "x": 17,
+   "y": 11
+  },
+  {
+   "id": "J",
+   "name": "Juno",
+   "color": "with",
+   "x": 18,
+   "y": 11
+  },
+  {
+   "id": "M",
+   "name": "Mabli",
+   "color": "lore",
+   "x": 17,
+   "y": 12
+  }
+ ]
+}

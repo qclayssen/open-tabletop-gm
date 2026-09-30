@@ -18,6 +18,12 @@ _BARE = re.compile(r"(\{.*\})\s*$", re.S)
 
 _CUT_JSON = re.compile(r'\s*\{\s*"(?:escalate|command|check|cast)"[^{}]*\Z')
 _PROMPT_TAIL = re.compile(r"\s*(?:\n|^)\s*What (?:do|would) you (?:do|like to do)(?: next)?\?\s*\Z", re.I)
+# Last resort when the directive is not the final thing in the reply -- a stray
+# tag, a trailing aside, anything. Without it the JSON stays in the narration and
+# the player reads the engine's own instruction sheet as prose. Keyed on one of
+# the four directive names so an ordinary brace in the prose cannot match.
+_LAST_OBJECT = re.compile(
+    r'\{\s*"(?:escalate|command|check|cast)"[^{}]*\}', re.S)
 
 
 @dataclass
@@ -31,7 +37,22 @@ class DMReply:
 
 
 def strip_think(text: str) -> str:
-    return _THINK.sub("", text or "").strip()
+    """Remove reasoning tags, including one left unpaired.
+
+    _THINK only matches a balanced <think>...</think>. A model that opens a
+    turn mid-thought and closes without opening -- which qwen does often enough
+    that it happened on 2 turns in 11 of a plain test session -- leaves a bare
+    "</think>" sitting AFTER the JSON directive line. That is the worst place for
+    it: parse() anchors its JSON search to the end of the text, so the directive
+    stopped being found, and the player was shown a literal
+    {"check": "Persuasion 13"} in the middle of the narration. Any leftover
+    opening or closing tag is removed on its own.
+    """
+    text = _THINK.sub("", text or "")
+    return _STRAY_THINK.sub("", text).strip()
+
+
+_STRAY_THINK = re.compile(r"</?think>", re.I)
 
 
 def _text_field(data: dict, key: str):
@@ -76,7 +97,7 @@ def parse(text: str) -> DMReply:
     text = strip_think(text)
     data = {}
     text = _CUT_JSON.sub("", text)                       # reply cut off inside the JSON line
-    m = _FENCED.search(text) or _BARE.search(text)
+    m = _FENCED.search(text) or _BARE.search(text) or _LAST_OBJECT.search(text)
     if m:
         try:
             data = json.loads(m.group(1))

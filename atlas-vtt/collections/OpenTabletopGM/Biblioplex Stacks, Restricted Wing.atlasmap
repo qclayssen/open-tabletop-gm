@@ -1,0 +1,160 @@
+{
+ "state": {
+  "schema": "atlas-vtt",
+  "version": 4,
+  "name": "Biblioplex Stacks, Restricted Wing",
+  "background": null,
+  "grid": {
+   "enabled": true,
+   "visible": true,
+   "snapToGrid": true,
+   "type": "square",
+   "size": 100.0,
+   "offsetX": 0.0,
+   "offsetY": 0.0,
+   "color": "#000000",
+   "opacity": 0.35,
+   "lineType": "solid",
+   "lineWidth": 1,
+   "unitType": "feet",
+   "unitDistance": 5,
+   "measurementType": "units"
+  },
+  "objects": {
+   "tokens": {
+    "K": {
+     "id": "K",
+     "kind": "character",
+     "name": "Kairos",
+     "x": 250.0,
+     "y": 250.0,
+     "imagePath": "atlas-vtt/collections/OpenTabletopGM/tokens/quan.png",
+     "size": 1,
+     "showRing": true,
+     "ringColor": "#1E7F74",
+     "showNameplate": true
+    },
+    "J": {
+     "id": "J",
+     "kind": "character",
+     "name": "Juno",
+     "x": 250.0,
+     "y": 350.0,
+     "imagePath": "atlas-vtt/collections/OpenTabletopGM/tokens/with.png",
+     "size": 1,
+     "showRing": true,
+     "ringColor": "#5E7A3A",
+     "showNameplate": true
+    },
+    "M": {
+     "id": "M",
+     "kind": "character",
+     "name": "Mabli",
+     "x": 350.0,
+     "y": 250.0,
+     "imagePath": "atlas-vtt/collections/OpenTabletopGM/tokens/lore.png",
+     "size": 1,
+     "showRing": true,
+     "ringColor": "#B8752E",
+     "showNameplate": true
+    },
+    "k1": {
+     "id": "k1",
+     "kind": "character",
+     "name": "Kobold",
+     "x": 2250.0,
+     "y": 1150.0,
+     "imagePath": "atlas-vtt/collections/OpenTabletopGM/tokens/danger.png",
+     "size": 1,
+     "showRing": true,
+     "ringColor": "#A33A3A",
+     "showNameplate": true,
+     "statblockPath": "Bestiary/Kobold.md",
+     "statblockName": "Kobold"
+    },
+    "k2": {
+     "id": "k2",
+     "kind": "character",
+     "name": "Kobold",
+     "x": 2350.0,
+     "y": 1250.0,
+     "imagePath": "atlas-vtt/collections/OpenTabletopGM/tokens/danger.png",
+     "size": 1,
+     "showRing": true,
+     "ringColor": "#A33A3A",
+     "showNameplate": true,
+     "statblockPath": "Bestiary/Kobold.md",
+     "statblockName": "Kobold"
+    },
+    "k3": {
+     "id": "k3",
+     "kind": "character",
+     "name": "Kobold",
+     "x": 2250.0,
+     "y": 1350.0,
+     "imagePath": "atlas-vtt/collections/OpenTabletopGM/tokens/danger.png",
+     "size": 1,
+     "showRing": true,
+     "ringColor": "#A33A3A",
+     "showNameplate": true,
+     "statblockPath": "Bestiary/Kobold.md",
+     "statblockName": "Kobold"
+    },
+    "stacks-ambush-1": {
+     "id": "stacks-ambush-1",
+     "kind": "character",
+     "name": "Kobold 1",
+     "x": 2250.0,
+     "y": 1050.0,
+     "imagePath": "atlas-vtt/collections/OpenTabletopGM/tokens/danger.png",
+     "size": 1,
+     "showRing": true,
+     "ringColor": "#A33A3A",
+     "showNameplate": true,
+     "statblockPath": "Bestiary/Kobold.md",
+     "statblockName": "Kobold 1"
+    },
+    "stacks-ambush-2": {
+     "id": "stacks-ambush-2",
+     "kind": "character",
+     "name": "Kobold 2",
+     "x": 2350.0,
+     "y": 1050.0,
+     "imagePath": "atlas-vtt/collections/OpenTabletopGM/tokens/danger.png",
+     "size": 1,
+     "showRing": true,
+     "ringColor": "#A33A3A",
+     "showNameplate": true,
+     "statblockPath": "Bestiary/Kobold.md",
+     "statblockName": "Kobold 2"
+    },
+    "stacks-ambush-3": {
+     "id": "stacks-ambush-3",
+     "kind": "character",
+     "name": "Kobold 3",
+     "x": 2250.0,
+     "y": 1150.0,
+     "imagePath": "atlas-vtt/collections/OpenTabletopGM/tokens/danger.png",
+     "size": 1,
+     "showRing": true,
+     "ringColor": "#A33A3A",
+     "showNameplate": true,
+     "statblockPath": "Bestiary/Kobold.md",
+     "statblockName": "Kobold 3"
+    }
+   },
+   "fog": {},
+   "pins": {},
+   "texts": {},
+   "drawings": {},
+   "walls": {},
+   "lights": {}
+  },
+  "camera": {
+   "x": 0,
+   "y": 0,
+   "scale": 1
+  }
+ },
+ "version": 4
+}

@@ -1,0 +1,288 @@
+{
+ "name": "Enrollment Ledger Rotunda",
+ "width": 24,
+ "height": 18,
+ "diagonals": "5",
+ "info": "The Registrar's round hall, and the omenpath gate in its south wall. The ledger itself is the low desk at the centre. The gate is shut until the campaign's last chapter and the omenpath beyond it is only a rumour until then.",
+ "base": "floor",
+ "grid": {
+  "cell_px": 100,
+  "offset_x": 0,
+  "offset_y": 0
+ },
+ "features": [
+  {
+   "type": "wall",
+   "x": 0,
+   "y": 0,
+   "w": 24,
+   "h": 1
+  },
+  {
+   "type": "wall",
+   "x": 0,
+   "y": 17,
+   "w": 24,
+   "h": 1
+  },
+  {
+   "type": "wall",
+   "x": 0,
+   "y": 0,
+   "w": 1,
+   "h": 18
+  },
+  {
+   "type": "wall",
+   "x": 23,
+   "y": 0,
+   "w": 1,
+   "h": 18
+  },
+  {
+   "type": "wall",
+   "x": 12,
+   "y": 1,
+   "w": 1,
+   "h": 1
+  },
+  {
+   "type": "wall",
+   "x": 8,
+   "y": 3,
+   "w": 1,
+   "h": 1
+  },
+  {
+   "type": "wall",
+   "x": 16,
+   "y": 3,
+   "w": 1,
+   "h": 1
+  },
+  {
+   "type": "wall",
+   "x": 7,
+   "y": 4,
+   "w": 1,
+   "h": 1
+  },
+  {
+   "type": "wall",
+   "x": 17,
+   "y": 4,
+   "w": 1,
+   "h": 1
+  },
+  {
+   "type": "wall",
+   "x": 6,
+   "y": 5,
+   "w": 1,
+   "h": 1
+  },
+  {
+   "type": "wall",
+   "x": 18,
+   "y": 5,
+   "w": 1,
+   "h": 1
+  },
+  {
+   "type": "wall",
+   "x": 6,
+   "y": 6,
+   "w": 1,
+   "h": 1
+  },
+  {
+   "type": "wall",
+   "x": 18,
+   "y": 6,
+   "w": 1,
+   "h": 1
+  },
+  {
+   "type": "wall",
+   "x": 6,
+   "y": 7,
+   "w": 1,
+   "h": 1
+  },
+  {
+   "type": "wall",
+   "x": 18,
+   "y": 7,
+   "w": 1,
+   "h": 1
+  },
+  {
+   "type": "wall",
+   "x": 5,
+   "y": 8,
+   "w": 2,
+   "h": 1
+  },
+  {
+   "type": "wall",
+   "x": 18,
+   "y": 8,
+   "w": 2,
+   "h": 1
+  },
+  {
+   "type": "wall",
+   "x": 6,
+   "y": 9,
+   "w": 1,
+   "h": 1
+  },
+  {
+   "type": "wall",
+   "x": 18,
+   "y": 9,
+   "w": 1,
+   "h": 1
+  },
+  {
+   "type": "wall",
+   "x": 6,
+   "y": 10,
+   "w": 1,
+   "h": 1
+  },
+  {
+   "type": "wall",
+   "x": 18,
+   "y": 10,
+   "w": 1,
+   "h": 1
+  },
+  {
+   "type": "wall",
+   "x": 6,
+   "y": 11,
+   "w": 1,
+   "h": 1
+  },
+  {
+   "type": "wall",
+   "x": 18,
+   "y": 11,
+   "w": 1,
+   "h": 1
+  },
+  {
+   "type": "wall",
+   "x": 7,
+   "y": 12,
+   "w": 1,
+   "h": 1
+  },
+  {
+   "type": "wall",
+   "x": 17,
+   "y": 12,
+   "w": 1,
+   "h": 1
+  },
+  {
+   "type": "wall",
+   "x": 8,
+   "y": 13,
+   "w": 1,
+   "h": 1
+  },
+  {
+   "type": "wall",
+   "x": 16,
+   "y": 13,
+   "w": 1,
+   "h": 1
+  },
+  {
+   "type": "wall",
+   "x": 12,
+   "y": 15,
+   "w": 1,
+   "h": 1
+  },
+  {
+   "type": "floor",
+   "x": 11,
+   "y": 15,
+   "w": 3,
+   "h": 1,
+   "label": "Omenpath"
+  },
+  {
+   "type": "floor",
+   "x": 12,
+   "y": 16,
+   "w": 1,
+   "h": 1,
+   "label": "Omenpath gate"
+  },
+  {
+   "type": "feature",
+   "x": 11,
+   "y": 8,
+   "w": 3,
+   "h": 1,
+   "label": "The Enrollment Ledger"
+  },
+  {
+   "type": "feature",
+   "x": 7,
+   "y": 4,
+   "w": 2,
+   "h": 1,
+   "label": "Registrar's desk"
+  },
+  {
+   "type": "feature",
+   "x": 16,
+   "y": 4,
+   "w": 2,
+   "h": 1,
+   "label": "Queue desk"
+  }
+ ],
+ "spawns": [
+  {
+   "id": "K",
+   "name": "Kairos",
+   "color": "quan",
+   "x": 12,
+   "y": 12
+  },
+  {
+   "id": "J",
+   "name": "Juno",
+   "color": "with",
+   "x": 11,
+   "y": 12
+  },
+  {
+   "id": "M",
+   "name": "Mabli",
+   "color": "lore",
+   "x": 13,
+   "y": 12
+  },
+  {
+   "id": "g1",
+   "name": "Guard",
+   "color": "danger",
+   "x": 12,
+   "y": 5
+  },
+  {
+   "id": "g2",
+   "name": "Guard",
+   "color": "danger",
+   "x": 10,
+   "y": 4
+  }
+ ]
+}

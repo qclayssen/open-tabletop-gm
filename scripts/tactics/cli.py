@@ -70,8 +70,8 @@ import sys
 
 from paths import find_campaign            # scripts/paths.py (on sys.path via tactics/__init__)
 
-from . import (actions, ai, effects, encounter, engine, maps, policy, receipts, rest, roller,
-                 sight, spells, slots, state, sync)
+from . import (actions, ai, effects, encounter, engine, formations, maps, policy, receipts,
+                 rest, roller, sight, spells, slots, state, sync)
 from .core import rules_for
 from .grid import label, parse_square
 from .roller import PendingRoll, Roller
@@ -85,7 +85,13 @@ _DISPLAY_CAMPAIGN = _SCRIPTS.parent / "display" / ".campaign"
 # is an encounter to save, so they must work with nothing running and must not
 # touch combat/pending.json.
 READ_ONLY = ("status", "options", "preview", "reachable", "targets", "log", "spells",
-             "preview-area", "sight", "budget", "rate", "receipts")
+             "preview-area", "sight", "budget", "rate", "receipts", "formation")
+# `formation` is here even though `formation save` writes a file: pending.json
+# exists to replay the *same* engine dice after a decision, and nothing under
+# `formation` rolls. Saving a formation is a deliberate act, and making it
+# consume a pending roll would let an unrelated interrupted attack change what
+# gets written. `formation save` is also the one member that needs a running
+# fight, and says so itself rather than being a read-only command.
 # Flags that do not change what a command means: a re-run with them added is
 # the same command, so it replays the same engine dice (see _pending).
 OLD_FORM = "*"     # decision key for a --react given up front (opportunity attacks)
@@ -300,6 +306,7 @@ def cmd_start(args, camp_dir, roller=None):
     if roller is not None:
         roller.state_fn = lambda: receipts.state_hash(enc)
     R = engine.rules_for(enc)
+    noted = ""
     pc_specs = list(args.pc or [])
     placed_by_hand = bool(pc_specs)
     if not pc_specs:
@@ -338,6 +345,7 @@ def cmd_start(args, camp_dir, roller=None):
             raise Stop(str(e)) from None
         t.side = side
         enc.tokens[t.id] = t
+    noted += _place_formations(args, enc, camp_dir, R, m)
     if not any(t.side == "pc" for t in enc.tokens.values()):
         raise Stop("Add at least one --pc NAME@SQUARE, or add a sheet to "
                    f"{camp_dir / 'characters'} for it to place.")
@@ -350,7 +358,165 @@ def cmd_start(args, camp_dir, roller=None):
                                      "`scripts/tactics.md`, then run `combat.py status`. "
                                      "`combat/encounter.json` holds HP, positions and turn order.")
     opened = "" if placed_by_hand else f" Placed {', '.join(_slug(n) for n in _pc_names(enc))}."
-    return enc, f"Grid combat on {m['meta']['name']}.{opened} {res['text']}"
+    return enc, f"Grid combat on {m['meta']['name']}.{opened}{noted} {res['text']}"
+
+
+def _place_formations(args, enc, camp_dir, R, m) -> str:
+    """Replay `--formation`s onto this map, and say what the replay had to do.
+
+    A formation is placed *after* the hand-placed `--monster`/`--ally` tokens, so
+    a GM who types a monster explicitly gets the square they asked for, and the
+    formation fills in the rest.
+
+    Every effect the replay had is returned as text rather than logged quietly,
+    because all three of them are rules-relevant and the GM should not have to
+    diff two files to find out: a clamped square puts two monsters adjacent that
+    were two squares apart, a blocked square is a monster inside a wall, and an
+    off-map anchor means the formation does not fit where it was pinned.
+    """
+    notes = []
+    for name in (getattr(args, "formation", None) or []):
+        try:
+            spec = formations.load(camp_dir, name)
+        except (FileNotFoundError, ValueError) as e:
+            raise Stop(str(e)) from None
+        at = None
+        if getattr(args, "at", None):
+            try:
+                at = parse_square(args.at)
+            except ValueError as e:
+                raise Stop(str(e)) from None
+        try:
+            plan = formations.positions(spec, enc.board(), at=at,
+                                        centre=bool(getattr(args, "centre", False)))
+        except ValueError as e:
+            raise Stop(str(e)) from None
+        totals: dict[str, int] = {}
+        for p in spec["members"]:
+            key = p["name"].lower()
+            totals[key] = totals.get(key, 0) + 1
+        seen: dict[str, int] = {}
+        for p in plan["placements"]:
+            key = p["name"].lower()
+            seen[key] = seen.get(key, 0) + 1
+            base, n = _slug(p["name"].split()[-1]), seen[key]
+            tid = f"{base}-{n}"
+            while tid in enc.tokens:
+                n += 1
+                tid = f"{base}-{n}"
+            display = p["name"].title() + (f" {seen[key]}" if totals[key] > 1 else "")
+            try:
+                t = R.token_from_monster(p["name"], tid, display, (p["x"], p["y"]))
+            except ValueError as e:
+                # A formation that names a creature this system does not have is
+                # the one error worth stopping for: replaying it would silently
+                # drop a monster the GM expects to be there.
+                raise Stop(f"formation {spec['name']!r}: {e}") from None
+            t.side = p["side"]
+            enc.tokens[t.id] = t
+        where = f" at {label(plan['anchor'])}" if plan["mode"] == "at" else " centred"
+        notes.append(f" Formation {spec['name']!r}{where}: "
+                     f"{len(plan['placements'])} token(s).")
+        for p in plan["blocked"]:
+            notes.append(f" {p['name']} is on {label((p['x'], p['y']))}, which "
+                         f"{m['meta']['name']} does not let a creature stand on.")
+        for p in plan["off_map"]:
+            notes.append(f" {p['name']} would have been at {label((p['was'][0], p['was'][1]))}, "
+                         f"off this {enc.board().width}x{enc.board().height} map; moved to "
+                         f"{label((p['x'], p['y']))}.")
+        for p in plan["separated"]:
+            notes.append(f" {p['name']} and another monster both wanted "
+                         f"{label((p['was'][0], p['was'][1]))}; moved the second to "
+                         f"{label((p['x'], p['y']))}.")
+    return "".join(notes)
+
+
+def cmd_formation(args, camp_dir, enc=None) -> tuple:
+    """`formation save|list|show|place`. Returns (text, data) for --json."""
+    data: dict = {}
+    action = args.formation_action
+    if action == "list":
+        names = formations.available(camp_dir)
+        data = {"formations": names}
+        if not names:
+            return ("No formations saved yet. Set a fight up, then run "
+                    "`combat.py formation save NAME`.", data)
+        rows = []
+        for n in names:
+            spec = formations.load(camp_dir, n)
+            rows.append(f"  {n}: {len(spec['members'])} token(s), captured "
+                        f"{spec.get('captured') or '?'} on "
+                        f"{spec.get('from_map') or 'an unnamed map'}")
+        data["detail"] = {n: formations.load(camp_dir, n) for n in names}
+        return "Formations in this campaign:\n" + "\n".join(rows), data
+
+    if action == "show":
+        spec = formations.load(camp_dir, args.name)
+        data = {"formation": spec}
+        rows = [f"{m.get('label') or m['name']} ({m['side']}) at +{m['dx']},{+m['dy']} from the anchor "
+                f"— {m['nx']:.3f}, {m['ny']:.3f} of the map"
+                for m in spec["members"]]
+        head = (f"Formation {spec['name']!r}"
+                + (f", captured on {spec['from_map']}" if spec.get("from_map") else "")
+                + (f" ({spec['from_size']['width']}x{spec['from_size']['height']})"
+                   if spec.get("from_size") else ""))
+        if spec.get("info"):
+            head += f"\n{spec['info']}"
+        return head + "\n  anchor " + label(spec["anchor"]) + "\n" + "\n".join(
+            "  " + r for r in rows), data
+
+    if action == "save":
+        if enc is None:
+            raise Stop("No fight is running, so there is no arrangement to save. "
+                       "`formation save` reads the board as it stands.")
+        spec = formations.capture(enc, args.name, include_pcs=args.include_pcs,
+                                  colour_from=enc.meta.get("spawns") or (),
+                                  info=args.info or "")
+        try:
+            path = formations.save(camp_dir, spec)
+        except ValueError as e:
+            raise Stop(str(e)) from None
+        data = {"formation": spec, "path": str(path)}
+        return (f"Saved formation {spec['name']!r}: {len(spec['members'])} token(s) "
+                f"to {path}. Play it with `combat.py start MAP --formation "
+                f"{formations.slug(spec['name'])} --at SQUARE`, or --centre to drop it "
+                f"in the middle of another map.", data)
+
+    # place: show where a formation would land, without starting a fight
+    if enc is None:
+        spec = formations.load(camp_dir, args.name)
+        try:
+            m = maps.load(args.map)
+        except (FileNotFoundError, ValueError) as e:
+            raise Stop(str(e)) from None
+        enc = Encounter(campaign="preview", grid=m["grid"], meta=m["meta"])
+        at = None
+        if args.at:
+            try:
+                at = parse_square(args.at)
+            except ValueError as e:
+                raise Stop(str(e)) from None
+        try:
+            plan = formations.positions(spec, enc.board(), at=at, centre=args.centre)
+        except ValueError as e:
+            raise Stop(str(e)) from None
+        data = {"plan": plan, "map": args.map}
+        rows = [f"  {p['name']} ({p['side']}) at {label((p['x'], p['y']))}"
+                + ("  <- moved, the square was taken" if p["moved"] else "")
+                for p in plan["placements"]]
+        head = (f"{spec['name']!r} on {m['meta']['name']}"
+                + (f", anchored at {args.at}" if args.at else ", centred"))
+        warn = []
+        for p in plan["blocked"]:
+            warn.append(f"  {p['name']} is on {label((p['x'], p['y']))}, which "
+                        f"{m['meta']['name']} does not let a creature stand on")
+        for p in plan["off_map"]:
+            warn.append(f"  {p['name']} wanted {label((p['was'][0], p['was'][1]))}, "
+                        f"off this map; moved to {label((p['x'], p['y']))}")
+        for p in plan["separated"]:
+            warn.append(f"  {p['name']} wanted {label((p['was'][0], p['was'][1]))}, "
+                        f"which another monster had; moved to {label((p['x'], p['y']))}")
+        return "\n".join([head, *rows, *([""] + warn if warn else [])]), data
 
 
 def _pc_names(enc) -> list:
@@ -511,6 +677,19 @@ def run(args) -> int:
             text, data = encounter.cmd_budget(args, camp_dir, _campaign(args))
         else:
             text, data = encounter.cmd_rate(args, camp_dir, _campaign(args))
+    elif args.cmd == "formation":
+        # `save` reads the board as it stands, so it needs the running encounter;
+        # the other three must work with nothing running, which is exactly when
+        # you want to ask what formations exist.
+        live = None
+        if args.formation_action == "save":
+            live = _load(camp_dir)
+        text, data = cmd_formation(args, camp_dir, live)
+        if args.json:
+            print(json.dumps(data, indent=1))
+        else:
+            print(text)
+        return 0
     else:
         enc = _load(camp_dir)
         # Two things the engine cannot know by itself: where this fight's
@@ -717,6 +896,14 @@ def parser() -> argparse.ArgumentParser:
     c = [_common(True)]
     s = sub.add_parser("start", parents=c, help="start grid combat on a map")
     s.add_argument("map")
+    s.add_argument("--formation", action="append", metavar="NAME",
+                   help="replay a saved monster arrangement (repeatable). By "
+                        "default its anchor goes wherever --at says, or to the "
+                        "middle of the map with --centre")
+    s.add_argument("--at", metavar="SQ", help="pin the formation's anchor to this square")
+    s.add_argument("--centre", action="store_true",
+                   help="drop the formation in the middle of the map, scaled to it. "
+                        "This is how a formation crosses to a different-sized map")
     s.add_argument("--pc", action="append", metavar="NAME@SQ")
     s.add_argument("--monster", action="append", metavar="'SRD NAME@SQ'")
     s.add_argument("--ally", action="append", metavar="'SRD NAME@SQ'")
@@ -822,6 +1009,28 @@ def parser() -> argparse.ArgumentParser:
                    help="'auto' (default) is every character sheet in the campaign")
     s.add_argument("--ruleset", choices=list(encounter.RULESETS),
                    help="defaults to the campaign's own system version")
+    s = sub.add_parser("formation", parents=c,
+                       help="save and replay a monster arrangement across maps")
+    fs = s.add_subparsers(dest="formation_action", required=True, metavar="action")
+    g = fs.add_parser("list", parents=c, help="every formation in this campaign")
+    g = fs.add_parser("show", parents=c, help="one formation's members and offsets")
+    g.add_argument("name")
+    g = fs.add_parser("save", parents=c,
+                      help="save the monsters on the board right now, as a formation")
+    g.add_argument("name")
+    g.add_argument("--include-pcs", action="store_true",
+                   help="also save the party. Off by default: the opposition is the "
+                        "reusable part, and the party is placed with --pc")
+    g.add_argument("--info", metavar="TEXT",
+                   help="a note for whoever plays this later (what it is for, what "
+                        "the GM changes about it)")
+    g = fs.add_parser("place", parents=c,
+                      help="show where a formation would land on a map, start nothing")
+    g.add_argument("name")
+    g.add_argument("map")
+    g.add_argument("--at", metavar="SQ", help="pin the anchor to this square")
+    g.add_argument("--centre", action="store_true",
+                   help="drop it in the middle of the map, scaled to it")
     s = sub.add_parser("condition", parents=c, help="GM: add or remove a condition")
     s.add_argument("token")
     s.add_argument("action", choices=["add", "remove"])

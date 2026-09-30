@@ -230,9 +230,34 @@ def set_active_combat(camp_dir, body: str) -> None:
 # ─── end of combat ────────────────────────────────────────────────────────────
 
 def find_sheet(camp_dir, name: str):
+    """The sheet for a character name, or None.
+
+    Filename first, because that is the convention every campaign follows and it
+    costs one comparison. Then the sheet's own "# Name" heading, which is what
+    the character is actually called.
+
+    The second pass exists because the filename is not the name. A sheet called
+    tamsin.md whose title is "Tamsin Underbough" -- the shape a character creator
+    produces, since a person has two names and a file usually gets one -- matched
+    nothing, and the caller then said "no sheet in characters/, nothing written."
+    That sentence was false: the sheet was there. It just meant the fight's
+    damage, spent hit dice and death saves were dropped on the floor, and the
+    sheet still showed full HP. A wrong filename is a naming slip; losing a
+    fight's results to one is not the same size of thing.
+    """
     folder = pathlib.Path(camp_dir) / "characters"
-    for p in sorted(folder.glob("*.md")) if folder.is_dir() else []:
+    paths = sorted(folder.glob("*.md")) if folder.is_dir() else []
+    for p in paths:
         if p.stem.lower() == name.lower():
+            return p
+    want = name.lower()
+    for p in paths:
+        try:
+            head = p.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        m = re.search(r"^#\s+(.+?)\s*$", head, re.M)
+        if m and m.group(1).strip().lower() == want:
             return p
     return None
 
