@@ -22,7 +22,7 @@ def test_python_floor():
 
 def test_flask_hint(monkeypatch):
     monkeypatch.setattr(start.importlib.util, "find_spec", lambda name: None)
-    assert "pip3 install flask flask-cors" in start.check_flask()
+    assert "pip3 install flask" in start.check_flask()
     monkeypatch.setattr(start.importlib.util, "find_spec", lambda name: object())
     assert start.check_flask() is None
 
@@ -70,7 +70,7 @@ def test_play_campaign_conflict_and_missing(gm_play):
 def test_display_requirements_are_flask_only():
     live = [ln.strip() for ln in (ROOT / "display" / "requirements.txt").read_text(
         encoding="utf-8").splitlines() if ln.strip() and not ln.startswith("#")]
-    assert live == ["flask", "flask-cors"]
+    assert live == ["flask"]
     assert not re.search(r"^\s*(import|from)\s+pygame", "".join(
         p.read_text(encoding="utf-8") for p in ROOT.rglob("*.py")
         if "node_modules" not in p.parts), re.M)
