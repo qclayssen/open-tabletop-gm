@@ -73,3 +73,7 @@ docs/DISCUSSION-DRAFT.md
 docs/PR-DRAFT.md
 display/.port
 display/.preflight
+
+# Chartdown tooling (scripts/chartdown_to_atlas.mjs); the Python engine does not need these
+node_modules/
+package-lock.json
