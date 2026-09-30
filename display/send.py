@@ -188,7 +188,8 @@ def _validate_payload(payload: dict, endpoint: str) -> "list[str]":
         text = payload.get("text", "")
         has_text = bool(text and str(text).strip())
         has_award = bool(payload.get("milestone_award") or payload.get("milestone_spend"))
-        if not has_text and not has_award and not payload.get("campaign"):
+        if (not has_text and not has_award and not payload.get("campaign")
+                and not payload.get("gm_log")):
             issues.append("chunk payload has no text, no award flag, and no campaign tag")
         content_tags = [k for k in ("player", "npc", "dice", "tutor", "action") if payload.get(k)]
         if len(content_tags) > 1:
@@ -377,6 +378,56 @@ def _build_stats_payload(args) -> "dict | None":
 
 
 
+def _author_url() -> str:
+    return f"{BASE_URL}/author"
+
+
+def _author_call(method: str, body: "dict | None" = None) -> dict:
+    headers = {"Content-Type": "application/json"}
+    token = _read_token()
+    if token:
+        headers["X-DND-Token"] = token
+    data = json.dumps(body).encode("utf-8") if body is not None else None
+    req = urllib.request.Request(_author_url(), data=data, headers=headers, method=method)
+    with urllib.request.urlopen(req, timeout=TIMEOUT, context=_SSL_CTX) as resp:
+        return json.loads(resp.read().decode("utf-8") or "{}")
+
+
+def _author_admin(args) -> None:
+    """--expect-author / --author-report. Always exits."""
+    try:
+        if args.expect_author:
+            info = _author_call("POST", {"author": args.expect_author.strip()})
+            print(f"send.py: display now expects author {info.get('expected')!r}",
+                  file=sys.stderr)
+        if args.author_report:
+            info = _author_call("GET")
+            bad = info.get("violations") or []
+            for v in bad:
+                print(f"send.py: AUTHOR VIOLATION [{v.get('kind')}] expected "
+                      f"{v.get('expected')!r}, got {v.get('author') or '(none)'!r}: "
+                      f"{v.get('text')}", file=sys.stderr)
+            if bad:
+                sys.exit(5)
+            print("send.py: no author violations", file=sys.stderr)
+    except (urllib.error.URLError, OSError, ValueError) as e:
+        print(f"send.py: author call failed: {e}", file=sys.stderr)
+        sys.exit(1)
+    sys.exit(0)
+
+
+def _stamp(payload: dict, args) -> dict:
+    """Add the author (and GM-only fields) to a chunk payload."""
+    author = (args.author or os.environ.get("GM_DISPLAY_AUTHOR", "")).strip()
+    if author:
+        payload["author"] = author
+    if args.gm_log:
+        payload["gm_log"] = args.gm_log
+    if args.hide_dc and args.dice:
+        payload["hide_dc"] = True
+    return payload
+
+
 def utf8_stdout() -> None:
     """Print UTF-8 whatever the console codepage. On Windows the GM's shell reads
     stdout through a cp1252 pipe, where "→" in a roll would raise.
@@ -478,6 +529,23 @@ def main() -> None:
         help='Optional label for the milestone type (default: "Milestone"). '
              'Use the system-specific name: "Inspiration", "Bennie", "Hero Point", "Fate Point", etc.')
 
+    # ── Authorship and the GM-side record ─────────────────────────────────────
+    parser.add_argument("--author", metavar="NAME",
+        help="Stamp this author on every chunk (default: $GM_DISPLAY_AUTHOR). The "
+             "display records it in the transcript so a block's writer is known.")
+    parser.add_argument("--expect-author", metavar="NAME",
+        help="Tell the display which author to expect. Chunks from any other author "
+             "are refused (this script then exits 3); unstamped chunks are flagged. "
+             "Sends nothing else.")
+    parser.add_argument("--author-report", action="store_true",
+        help="Print the display's author violations and exit 5 if there are any.")
+    parser.add_argument("--gm-log", metavar="TEXT",
+        help="GM-only adjudication note (DCs, dial, floor, mark state). Stored beside "
+             "the display, never shown to players. Use it instead of putting the "
+             "bookkeeping in the --dice line.")
+    parser.add_argument("--hide-dc", action="store_true",
+        help="With --dice: strip 'vs DC N' from the player-facing line (kept in the GM log).")
+
     # ── Diagnostics ───────────────────────────────────────────────────────────
     parser.add_argument("--verify", action="store_true",
         help="After sending, GET /health and confirm the broadcast was received. "
@@ -485,6 +553,9 @@ def main() -> None:
 
     args = parser.parse_args()
     utf8_stdout()
+
+    if args.expect_author or args.author_report:
+        _author_admin(args)     # exits
 
     # Three categories of flags drive whether to read stdin:
     #   1. Content flags (--player/--npc/--dice/--tutor/--action): body REQUIRED.
@@ -690,6 +761,7 @@ def main() -> None:
                 payload["dice"] = True
             elif args.tutor:
                 payload["tutor"] = True
+        _stamp(payload, args)
         issues = _validate_payload(payload, "chunk")
         if issues:
             print(f"send.py: chunk payload validation failed: {'; '.join(issues)}",
@@ -713,6 +785,7 @@ def main() -> None:
             elif args.tutor:
                 payload["tutor"] = True
 
+            _stamp(payload, args)
             issues = _validate_payload(payload, "chunk")
             if issues:
                 print(f"send.py: chunk payload validation failed: {'; '.join(issues)}",
@@ -720,6 +793,11 @@ def main() -> None:
                 sys.exit(2)
             if _post(FLASK_URL, json.dumps(payload).encode("utf-8"), token):
                 chunks_sent += 1
+
+    # A GM-only note with no player-facing text still goes to the display's GM log.
+    if args.gm_log and not text.strip() and not args.set_campaign:
+        if _post(FLASK_URL, json.dumps(_stamp({}, args)).encode("utf-8"), token):
+            chunks_sent += 1
 
     # ── Stat send (bundled) ───────────────────────────────────────────────────
     stats_payload = _build_stats_payload(args)
