@@ -3290,6 +3290,15 @@
   <div id="text-content"></div>
 </div>
 <button id="new-content-pill" type="button" aria-label="Jump to newest narration">New ↓</button>
+<style>
+  #conn-status { position: fixed; top: 8px; right: 8px; z-index: 900; padding: 3px 10px;
+    border-radius: 999px; font: 12px/1.4 sans-serif; pointer-events: none;
+    background: rgba(20,16,10,0.85); color: #e8d9b0; border: 1px solid rgba(180,140,60,0.5);
+    transition: opacity 0.4s; }
+  #conn-status[data-state="connected"] { opacity: 0; }
+  #conn-status[data-state="reconnecting"] { opacity: 1; border-color: #d9822b; color: #ffcf8a; }
+</style>
+<div id="conn-status" role="status" aria-live="polite" data-state="connected"></div>
 
 <script>
 'use strict';
@@ -4650,8 +4659,8 @@ function _renderMilestoneBlockNow(name, label, reason, isReplay) {
   const header = document.createElement('div');
   header.className = 'milestone-header';
   header.innerHTML = `<span class="milestone-icon">✦</span>` +
-                     `<span class="milestone-name">${name}</span>` +
-                     `<span class="milestone-label">${label}</span>`;
+                     `<span class="milestone-name">${_escHtml(name)}</span>` +
+                     `<span class="milestone-label">${_escHtml(label)}</span>`;
   block.appendChild(header);
   if (reason) {
     const detail = document.createElement('div');
@@ -4960,8 +4969,8 @@ function _wBar(card, p, w) {
   row.className = w.row_class || 'sb-hp-row';
   const maxLabel = (w.max === 'next') ? (max ?? '?') : (max ?? '—');
   row.innerHTML =
-    `${w.icon ? `<img src="${w.icon}" class="sb-row-icon" alt="">` : ''}<span class="sb-label">${w.label || ''}</span>
-    <span class="${w.num_class || 'sb-hp-nums'}">${cur ?? '—'} / ${maxLabel}</span>`;
+    `${w.icon ? `<img src="${w.icon}" class="sb-row-icon" alt="">` : ''}<span class="sb-label">${_escHtml(w.label || '')}</span>
+    <span class="${w.num_class || 'sb-hp-nums'}">${_escHtml(cur ?? '—')} / ${_escHtml(maxLabel)}</span>`;
   card.appendChild(row);
   const track = document.createElement('div');
   track.className = 'sb-bar-track';
@@ -4988,9 +4997,9 @@ function _wStatLines(card, p, w) {
   (w.lines || []).forEach(ln => {
     const v = _bind(p, ln.bind);
     if (ln.format === 'hd') {
-      if (v) out.push(`${ln.label} <span class="val">${v.remaining ?? '?'}/${v.max ?? '?'} ${v.die || ''}</span>`);
+      if (v) out.push(`${_escHtml(ln.label)} <span class="val">${_escHtml(v.remaining ?? '?')}/${_escHtml(v.max ?? '?')} ${_escHtml(v.die || '')}</span>`);
     } else if (v != null) {
-      out.push(`${ln.label} <span class="val">${v}</span>`);
+      out.push(`${_escHtml(ln.label)} <span class="val">${_escHtml(v)}</span>`);
     }
   });
   if (!out.length) return;
@@ -5101,7 +5110,7 @@ function _wFeatureFlags(card, p, w) {
   el.dataset.role = 'features';
   el.innerHTML = feats.map(f => {
     const dim = f.endsWith('✗');
-    return `<span style="color:${dim ? 'rgba(200,185,150,0.25)' : 'rgba(140,190,140,0.6)'}">${f}</span>`;
+    return `<span style="color:${dim ? 'rgba(200,185,150,0.25)' : 'rgba(140,190,140,0.6)'}">${_escHtml(f)}</span>`;
   }).join('<br>');
   card.appendChild(el);
 }
@@ -5161,8 +5170,8 @@ function _buildPlayerCard(p, solo) {
   const line1 = [];
   if (p.race)    line1.push(p.race);
   if (baseClass) line1.push(baseClass + (p.level ? ' ' + p.level : ''));
-  identEl.innerHTML = (line1.join(' · ') || '—') +
-    (subLine ? `<br><span style="opacity:0.7">${subLine}</span>` : '');
+  identEl.innerHTML = _escHtml(line1.join(' · ') || '—') +
+    (subLine ? `<br><span style="opacity:0.7">${_escHtml(subLine)}</span>` : '');
   card.appendChild(identEl);
 
   // Stat widgets — driven by the active system's UI manifest (systems/<system>/ui.json
@@ -5239,7 +5248,7 @@ function openSheet(name) {
   const _stripCell = (label, val) => {
     const cell = document.createElement('div');
     cell.className = 'sm-stat-cell';
-    cell.innerHTML = `<span class="sm-stat-label">${label}</span><span class="sm-stat-val">${val}</span>`;
+    cell.innerHTML = `<span class="sm-stat-label">${_escHtml(label)}</span><span class="sm-stat-val">${_escHtml(val)}</span>`;
     strip.appendChild(cell);
   };
   _stripDef.forEach(entry => {
@@ -5288,9 +5297,9 @@ function openSheet(name) {
       else { score = raw; }
       const cell = document.createElement('div');
       cell.className = 'sm-ab-cell';
-      cell.innerHTML = `<div class="sm-ab-name">${st.label || String(st.key).toUpperCase()}</div>
-        <div class="sm-ab-score">${score ?? '—'}</div>` +
-        (showMod ? `<div class="sm-ab-mod">${mod ?? '—'}</div>` : '');
+      cell.innerHTML = `<div class="sm-ab-name">${_escHtml(st.label || String(st.key).toUpperCase())}</div>
+        <div class="sm-ab-score">${_escHtml(score ?? '—')}</div>` +
+        (showMod ? `<div class="sm-ab-mod">${_escHtml(mod ?? '—')}</div>` : '');
       grid.appendChild(cell);
     });
     content.appendChild(grid);
@@ -5327,8 +5336,8 @@ function openSheet(name) {
       if (a.name) { nameCell.dataset.srdName = a.name; nameCell.dataset.srdCategory = 'item'; }
       tr.appendChild(nameCell);
       tr.insertAdjacentHTML('beforeend',
-        `<td>${a.bonus||'—'}</td><td>${a.damage||'—'}</td>
-         <td>${a.type||'—'}</td><td class="atk-notes">${a.notes||''}</td>`);
+        `<td>${_escHtml(a.bonus||'—')}</td><td>${_escHtml(a.damage||'—')}</td>
+         <td>${_escHtml(a.type||'—')}</td><td class="atk-notes">${_escHtml(a.notes||'')}</td>`);
       tbody.appendChild(tr);
     });
     table.appendChild(tbody);
@@ -5803,7 +5812,7 @@ function updateStats(stats) {
         el.className = 'sb-turn-item sb-turn-has-icon' + (name === merged.current ? ' sb-turn-current' : '');
         const isPC = name in _playerData;
         const iconSrc = isPC ? '/icons/helmet.png' : '/icons/enemy.png';
-        el.innerHTML = `<img src="${iconSrc}" class="sb-turn-icon" alt="">${name}`;
+        el.innerHTML = `<img src="${iconSrc}" class="sb-turn-icon" alt="">${_escHtml(name)}`;
         list.appendChild(el);
       });
     }
@@ -6480,7 +6489,7 @@ function _renderQueueStatus(chars) {
     _waitingEl.innerHTML = '';
     return;
   }
-  const checks = chars.map(c => `<span class="queue-check">✓ ${c}</span>`).join('');
+  const checks = chars.map(c => `<span class="queue-check">✓ ${_escHtml(c)}</span>`).join('');
   _waitingEl.innerHTML = `<span class="queue-label">⏳ Queued — fires on DM Enter</span>${checks}`;
   _waitingEl.style.display = 'block';
 }
@@ -6891,6 +6900,25 @@ if (_controlsBtn) {
 
 let evtSource = null;
 let reconnectDelay = 1000;
+let _lastSeq = 0;          // highest server seq rendered; sent as ?since= on reconnect
+let _sseEpoch = null;      // server run id; a change means the server restarted
+let _reconnectAttempts = 0;
+
+// Connection status pill (connected / reconnecting), announced politely.
+function _setConnStatus(state, attempt) {
+  const el = document.getElementById('conn-status');
+  if (!el) return;
+  el.dataset.state = state;
+  el.textContent = state === 'connected' ? 'Connected'
+    : 'Reconnecting' + (attempt > 1 ? ' (attempt ' + attempt + ')' : '') + '\u2026';
+}
+
+function _sseHello(h) {
+  _sseEpoch = h.epoch;
+  // Resumed: the missed narration follows, each with its own seq. Otherwise the
+  // full text replay follows, so start counting from the server's current seq.
+  if (!h.resumed) _lastSeq = h.seq;
+}
 
 // Phones append ?char=<name> (or ?character=<name>) so the server can route
 // dice-requests to the phone bound to that PC. The TV view passes neither and
@@ -6899,141 +6927,213 @@ const _sp = new URLSearchParams(location.search);
 const _streamChar = (_sp.get('char') || _sp.get('character') || '').trim();
 
 function connect() {
-  evtSource = new EventSource(_streamChar ? `/stream?character=${encodeURIComponent(_streamChar)}` : '/stream');
+  const _qs = [];
+  if (_streamChar) _qs.push('character=' + encodeURIComponent(_streamChar));
+  if (_sseEpoch !== null) _qs.push('since=' + _lastSeq, 'epoch=' + encodeURIComponent(_sseEpoch));
+  evtSource = new EventSource('/stream' + (_qs.length ? '?' + _qs.join('&') : ''));
 
   evtSource.onopen = () => {
     reconnectDelay = 1000;
+    _reconnectAttempts = 0;
+    _setConnStatus('connected');
   };
 
   evtSource.onmessage = (e) => {
     let payload;
-    try { payload = JSON.parse(e.data); } catch { return; }
+    try { payload = JSON.parse(e.data); } catch (err) { console.warn('SSE: bad JSON', err); return; }
 
-    if (payload.dice_request && typeof window._onDiceRequest === 'function') {
-      window._onDiceRequest(payload.dice_request);
+    // Sequencing: the server stamps every broadcast with a seq. Drop anything at
+    // or below what we already rendered (a replay racing a live payload).
+    if (payload.hello) {
+      _sseHello(payload.hello);
+      return;
     }
-    if (payload.dice_request_cancelled && typeof window._onDiceRequestCancelled === 'function') {
-      window._onDiceRequestCancelled(payload.dice_request_cancelled);
-    }
-    if (payload.dice_pending !== undefined) {
-      _updateDicePendingBadge(payload.dice_pending);
+    if (payload.seq !== undefined) {
+      if (payload.seq <= _lastSeq) return;
+      _lastSeq = payload.seq;
     }
 
-    if (payload.stats) {
-      updateStats(payload.stats);
-      if (payload.stats.players && payload.stats.players.length > 0) {
-        _sidebarBtn.classList.add('visible');
-        _buildCharTabs(payload.stats.players);
-        _modeSwitcherCachePlayers(payload.stats.players);
+    // One failing branch must not abort the rest of the payload.
+    const _try = (name, fn) => {
+      try { fn(); } catch (err) { console.error('SSE handler failed:', name, err); }
+    };
+    _try('payload.dice_request && typeof window._o', () => {
+      if (payload.dice_request && typeof window._onDiceRequest === 'function') {
+        window._onDiceRequest(payload.dice_request);
       }
-      if (payload.stats.world_time) {
-        updateWorldClock(payload.stats.world_time);
+    });
+    _try('payload.dice_request_cancelled && typeof', () => {
+      if (payload.dice_request_cancelled && typeof window._onDiceRequestCancelled === 'function') {
+        window._onDiceRequestCancelled(payload.dice_request_cancelled);
       }
-      if (payload.stats.ruleset) {
-        updateRulesetBadge(payload.stats.ruleset);
+    });
+    _try('payload.dice_pending !== undefined', () => {
+      if (payload.dice_pending !== undefined) {
+        _updateDicePendingBadge(payload.dice_pending);
       }
-    }
-    if (payload.clocks !== undefined) {
-      renderRevealedClocks(payload.clocks);
-    }
-    if (payload.sent_log !== undefined) {
-      _renderSentLog(payload.sent_log);
-    }
-    if (payload.queue_status !== undefined) {
-      _renderQueueStatus(payload.queue_status);
-    }
-    if (payload.dm_processing) {
-      _showProcessingIndicator();
-    }
-    if (payload.autorun_threshold !== undefined) {
-      // Accepted for compatibility; sends no longer wait on a threshold.
-    }
-    if (payload.autorun_cycle) {
-      const el = document.getElementById('autorun-indicator');
-      if (el) el.style.display = 'flex';
-      _startAutorunCountdown(payload.autorun_cycle.interval, payload.autorun_cycle.ts);
-    }
-    if (payload.autorun_waiting !== undefined) {
-      const el = document.getElementById('autorun-indicator');
-      const fill = document.querySelector('.autorun-fill');
-      if (payload.autorun_waiting) {
+    });
+    _try('payload.stats', () => {
+  
+      if (payload.stats) {
+        updateStats(payload.stats);
+        if (payload.stats.players && payload.stats.players.length > 0) {
+          _sidebarBtn.classList.add('visible');
+          _buildCharTabs(payload.stats.players);
+          _modeSwitcherCachePlayers(payload.stats.players);
+        }
+        if (payload.stats.world_time) {
+          updateWorldClock(payload.stats.world_time);
+        }
+        if (payload.stats.ruleset) {
+          updateRulesetBadge(payload.stats.ruleset);
+        }
+      }
+    });
+    _try('payload.clocks !== undefined', () => {
+      if (payload.clocks !== undefined) {
+        renderRevealedClocks(payload.clocks);
+      }
+    });
+    _try('payload.sent_log !== undefined', () => {
+      if (payload.sent_log !== undefined) {
+        _renderSentLog(payload.sent_log);
+      }
+    });
+    _try('payload.queue_status !== undefined', () => {
+      if (payload.queue_status !== undefined) {
+        _renderQueueStatus(payload.queue_status);
+      }
+    });
+    _try('payload.dm_processing', () => {
+      if (payload.dm_processing) {
+        _showProcessingIndicator();
+      }
+    });
+    _try('payload.autorun_threshold !== undefined', () => {
+      if (payload.autorun_threshold !== undefined) {
+        // Accepted for compatibility; sends no longer wait on a threshold.
+      }
+    });
+    _try('payload.autorun_cycle', () => {
+      if (payload.autorun_cycle) {
+        const el = document.getElementById('autorun-indicator');
         if (el) el.style.display = 'flex';
-        if (fill) fill.classList.add('waiting');
-      } else {
-        if (el) el.style.display = 'none';
-        _stopAutorunCountdown();
+        _startAutorunCountdown(payload.autorun_cycle.interval, payload.autorun_cycle.ts);
       }
-    }
-    if (payload.effect_expired) {
-      const ev = payload.effect_expired;
-      renderEffectExpiredBlock(ev.owner, ev.name, ev.was_concentration);
-    }
-    if (payload.device_request) {
-      _showDeviceRequest(payload.device_request);
-    }
+    });
+    _try('payload.autorun_waiting !== undefined', () => {
+      if (payload.autorun_waiting !== undefined) {
+        const el = document.getElementById('autorun-indicator');
+        const fill = document.querySelector('.autorun-fill');
+        if (payload.autorun_waiting) {
+          if (el) el.style.display = 'flex';
+          if (fill) fill.classList.add('waiting');
+        } else {
+          if (el) el.style.display = 'none';
+          _stopAutorunCountdown();
+        }
+      }
+    });
+    _try('payload.effect_expired', () => {
+      if (payload.effect_expired) {
+        const ev = payload.effect_expired;
+        renderEffectExpiredBlock(ev.owner, ev.name, ev.was_concentration);
+      }
+    });
+    _try('payload.device_request', () => {
+      if (payload.device_request) {
+        _showDeviceRequest(payload.device_request);
+      }
+    });
     // Grid combat: the tactics engine's snapshot (display/static/tactics.js).
-    if (payload.combat !== undefined && window.Tactics) {
-      window.Tactics.update(payload.combat);
-    }
-    if (payload.device_approved) {
-      _onDeviceApproved(payload.device_approved);
-    }
-    if (payload.device_denied) {
-      _onDeviceDenied(payload.device_denied);
-    }
-    if (payload.clear) {
-      // Wipe sidebar player data and DOM
-      for (const key of Object.keys(_playerData)) delete _playerData[key];
-      document.querySelectorAll('.sb-player').forEach(el => el.remove());
-      const sbEl = document.getElementById('sidebar');
-      if (sbEl) sbEl.classList.remove('has-data');
-      const turnSectionEl = document.getElementById('sb-turn-section');
-      if (turnSectionEl) turnSectionEl.style.display = 'none';
-      _sidebarBtn.classList.remove('visible');
-      _setSidebarVisible(true);   // reset to visible for next campaign
-      clearDisplay();
-    }
-    if (payload.replay_batch) {
-      renderReplayBatch(payload.replay_batch);
-    }
-    if (payload.replay) {
-      renderReplay(payload.replay);  // legacy fallback
-    }
-    if (payload.scene) {
-      applyScene(payload.scene);
-    }
-    if (payload.sfx) {
-      _playSfx(payload.sfx);
-    }
-    if (payload.inspiration_award) {
-      renderInspirationBlock(payload.inspiration_award, payload.reason || '');
-    }
-    if (payload.milestone_award) {
-      renderMilestoneBlock(payload.milestone_award, payload.label || 'Milestone', payload.reason || '');
-    }
-    // milestone_spend: server processes the counter decrement; no feed block
-    if (payload.xp_award) {
-      renderXpBlock(payload.xp_award);
-    }
-    if (payload.text && !payload.inspiration_award && !payload.milestone_award && !payload.milestone_spend && !payload.xp_award) {
-      if (payload.action) {
-        renderActionBlock(payload.action, payload.text);
-      } else if (payload.player) {
-        renderPlayerBlock(payload.player, payload.text);
-      } else if (payload.npc) {
-        renderNPCBlock(payload.npc, payload.text);
-      } else if (payload.dice) {
-        renderDiceBlock(payload.text);
-      } else if (payload.tutor) {
-        renderTutorBlock(payload.text);
-      } else {
-        handleIncomingText(payload.text);
+    _try('payload.combat !== undefined && window.T', () => {
+      if (payload.combat !== undefined && window.Tactics) {
+        window.Tactics.update(payload.combat);
       }
-    }
+    });
+    _try('payload.device_approved', () => {
+      if (payload.device_approved) {
+        _onDeviceApproved(payload.device_approved);
+      }
+    });
+    _try('payload.device_denied', () => {
+      if (payload.device_denied) {
+        _onDeviceDenied(payload.device_denied);
+      }
+    });
+    _try('payload.clear', () => {
+      if (payload.clear) {
+        // Wipe sidebar player data and DOM
+        for (const key of Object.keys(_playerData)) delete _playerData[key];
+        document.querySelectorAll('.sb-player').forEach(el => el.remove());
+        const sbEl = document.getElementById('sidebar');
+        if (sbEl) sbEl.classList.remove('has-data');
+        const turnSectionEl = document.getElementById('sb-turn-section');
+        if (turnSectionEl) turnSectionEl.style.display = 'none';
+        _sidebarBtn.classList.remove('visible');
+        _setSidebarVisible(true);   // reset to visible for next campaign
+        clearDisplay();
+      }
+    });
+    _try('payload.replay_batch', () => {
+      if (payload.replay_batch) {
+        renderReplayBatch(payload.replay_batch);
+      }
+    });
+    _try('payload.replay', () => {
+      if (payload.replay) {
+        renderReplay(payload.replay);  // legacy fallback
+      }
+    });
+    _try('payload.scene', () => {
+      if (payload.scene) {
+        applyScene(payload.scene);
+      }
+    });
+    _try('payload.sfx', () => {
+      if (payload.sfx) {
+        _playSfx(payload.sfx);
+      }
+    });
+    _try('payload.inspiration_award', () => {
+      if (payload.inspiration_award) {
+        renderInspirationBlock(payload.inspiration_award, payload.reason || '');
+      }
+    });
+    _try('payload.milestone_award', () => {
+      if (payload.milestone_award) {
+        renderMilestoneBlock(payload.milestone_award, payload.label || 'Milestone', payload.reason || '');
+      }
+    });
+    // milestone_spend: server processes the counter decrement; no feed block
+    _try('payload.xp_award', () => {
+      if (payload.xp_award) {
+        renderXpBlock(payload.xp_award);
+      }
+    });
+    _try('payload.text && !payload.inspiration_awa', () => {
+      if (payload.text && !payload.inspiration_award && !payload.milestone_award && !payload.milestone_spend && !payload.xp_award) {
+        if (payload.action) {
+          renderActionBlock(payload.action, payload.text);
+        } else if (payload.player) {
+          renderPlayerBlock(payload.player, payload.text);
+        } else if (payload.npc) {
+          renderNPCBlock(payload.npc, payload.text);
+        } else if (payload.dice) {
+          renderDiceBlock(payload.text);
+        } else if (payload.tutor) {
+          renderTutorBlock(payload.text);
+        } else {
+          handleIncomingText(payload.text);
+        }
+      }
+    });
   };
 
   evtSource.onerror = () => {
     evtSource.close();
+    _reconnectAttempts += 1;
+    _setConnStatus('reconnecting', _reconnectAttempts);
     setTimeout(() => {
       reconnectDelay = Math.min(reconnectDelay * 1.5, 3000);
       connect();
@@ -7543,9 +7643,9 @@ function _initDicePad() {
     lockTo(displayFace);
 
     const line = document.getElementById('dp-result-line');
-    line.innerHTML = `${result.spec}${result.modifier ? (result.modifier > 0 ? '+' : '') + result.modifier : ''}` +
-                     ` &nbsp;→&nbsp; <span class="total">${result.total}</span>` +
-                     (result.both ? ` &nbsp;<span style="opacity:.7">(${result.both.join(' / ')} ${result.advantage})</span>` : '');
+    line.innerHTML = `${_escHtml(result.spec)}${result.modifier ? (result.modifier > 0 ? '+' : '') + _escHtml(result.modifier) : ''}` +
+                     ` &nbsp;→&nbsp; <span class="total">${_escHtml(result.total)}</span>` +
+                     (result.both ? ` &nbsp;<span style="opacity:.7">(${result.both.map(_escHtml).join(' / ')} ${_escHtml(result.advantage)})</span>` : '');
     if (navigator.vibrate) navigator.vibrate(30);
     rollBtn.classList.remove('pulse');
     if (boundEl) {
