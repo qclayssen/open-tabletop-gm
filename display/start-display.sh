@@ -50,9 +50,9 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Flask is required; fail here with the fix, not later with a traceback in app.log.
-if ! python3 -c "import flask, flask_cors" 2>/dev/null; then
-  echo "Error: Flask (and flask-cors) are not installed for $(command -v python3 || echo python3)."
-  echo "Install them with:  pip3 install -r \"$DISPLAY_DIR/requirements.txt\""
+if ! python3 -c "import flask" 2>/dev/null; then
+  echo "Error: Flask is not installed for $(command -v python3 || echo python3)."
+  echo "Install it with:  pip3 install -r \"$DISPLAY_DIR/requirements.txt\""
   echo "(numpy is optional and only adds audio.)"
   exit 1
 fi

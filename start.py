@@ -37,7 +37,7 @@ def check_flask():
     """A hint when Flask is missing, else None."""
     if importlib.util.find_spec("flask") is None:
         return ("Flask is not installed. The tutorial does not need it, but the display "
-                "and the GM do. Install it with:\n    pip3 install flask flask-cors\n"
+                "and the GM do. Install it with:\n    pip3 install flask\n"
                 "(numpy is optional: it only adds display audio.)")
     return None
 
