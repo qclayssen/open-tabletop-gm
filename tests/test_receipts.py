@@ -73,11 +73,11 @@ def _lines(path):
 
 def test_an_attack_writes_one_receipt_per_roll(tmp_path):
     enc = _fight(tmp_path)
-    _attack(enc, supplied=[14, 7])                  # hit, then 1d10+5 damage
+    _attack(enc, supplied=[14, 7])                  # hit, then 1d10 damage
     recs = _receipts(tmp_path)
     assert [r["seq"] for r in recs] == [1, 2]
-    assert [r["roll"]["notation"] for r in recs] == ["1d20+5", "1d10"]
-    assert recs[0]["roll"]["total"] == 19
+    assert [r["roll"]["notation"] for r in recs] == ["1d20+6", "1d10"]
+    assert recs[0]["roll"]["total"] == 20
     assert recs[0]["roll"]["dice"] == [14]         # the face, not just the total
     assert recs[0]["actor"] == "kairos" and recs[0]["kind"] == "attack"
     assert recs[0]["at"].endswith("+00:00")        # ISO-8601 UTC, seconds
@@ -397,7 +397,7 @@ def test_a_lost_key_still_leaves_the_record_readable(tmp_path):
     _attack(enc, supplied=[14, 7])
     receipts.key_path(tmp_path / "camp").unlink()
     recs = _receipts(tmp_path)
-    assert recs[0]["roll"]["total"] == 19           # the roll is still on record
+    assert recs[0]["roll"]["total"] == 20           # the roll is still on record
     assert recs[0]["seq"] == 1
 
 
