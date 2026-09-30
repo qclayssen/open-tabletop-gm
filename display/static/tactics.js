@@ -144,6 +144,21 @@
     }
     return out.join(' · ');
   }
+  // The banner for a roll or reaction the engine is waiting on (turn.pending is
+  // "roll:<dice>" or "react:<key>"; "death_save" is handled by its own line).
+  // `who` is the name of the token whose turn it is. Returns '' when there is
+  // nothing to wait on.
+  function pendingBanner(p, who) {
+    if (!p || p === 'death_save') return '';
+    const w = who || 'the party';
+    if (p.startsWith('roll:')) return `Waiting on ${w}: roll ${p.slice(5)}`;
+    if (p.startsWith('react:')) {
+      const parts = p.slice(6).split(':');
+      const what = parts[parts.length - 1];
+      return `Waiting on ${w}: ${what}? yes/no`;
+    }
+    return `Waiting on ${w}: ${p}`;
+  }
   /* end pure helpers */
 
   // Nudge a text element back inside the board, horizontally and vertically.
@@ -979,25 +994,18 @@
   function renderInfo() {
     const t = current();
     if (!t) { el.info.innerHTML = snap.unseen_turn ? 'A creature you cannot see is acting. The GM narrates.' : ''; return; }
-    if (!myTurn()) { el.info.innerHTML = `<strong>${esc(t.name)}</strong> is acting. The GM narrates their turn.` + statusLine(t) + sightLine(); return; }
+    if (!myTurn()) { el.info.innerHTML = `<strong>${esc(t.name)}</strong> is acting. The GM narrates their turn.` + pendingLine() + statusLine(t) + sightLine(); return; }
     if (snap.turn && snap.turn.pending === 'death_save') { el.info.innerHTML = `<strong>${esc(t.name)}</strong> is dying: roll a death save.`; return; }
     el.info.innerHTML = infoText(t) + pendingLine() + (ui.mode ? '' : sightLine());
   }
 
   function pendingLine() {
     // A roll or reaction the engine is waiting on (cli.py mirrors it into
-    // turn.pending): spectators otherwise see only "Kairos's turn".
-    const p = snap.turn && snap.turn.pending;
-    if (!p) return '';
-    const name = id => { const t = tokenById(id); return t ? t.name : id; };
-    let text;
-    if (p.startsWith('roll:')) text = `Waiting on a roll (${p.slice(5)}).`;
-    else if (p.startsWith('react:')) {
-      const rest = p.slice(6).split(':');
-      const who = rest.length > 1 ? `${name(rest[0])} — ` : '';
-      text = `Waiting on a reaction: ${who}${rest[rest.length - 1]} (yes / no).`;
-    } else text = `Waiting: ${p}.`;
-    return `<br><span class="tx-warn">${esc(text)}</span>`;
+    // turn.pending): shown on every turn, so spectators and the party do not
+    // see a bare "Kairos's turn" while the engine is paused.
+    const t = current();
+    const text = pendingBanner(snap.turn && snap.turn.pending, t && t.name);
+    return text ? `<br><span class="tx-warn">${esc(text)}</span>` : '';
   }
 
   function economy() {
