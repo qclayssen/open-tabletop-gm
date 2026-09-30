@@ -288,9 +288,9 @@ def test_an_unknown_monster_with_no_near_match_says_how_to_build_the_data(camp, 
     assert code == 1 and "build_srd.py" in out and "Traceback" not in out
 
 
-def test_rate_needs_monsters(camp):
-    with pytest.raises(SystemExit):
-        cli.main(["-c", "demo", "rate"])
+def test_rate_needs_monsters(camp, capsys):
+    assert cli.main(["-c", "demo", "rate"]) == 1          # a friendly refusal, not argparse usage
+    assert "not complete" in capsys.readouterr().out
 
 
 # ─── a finished fight feeds the XP ledger ─────────────────────────────────────

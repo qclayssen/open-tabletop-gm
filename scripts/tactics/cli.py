@@ -61,6 +61,8 @@ Output is 1 to 4 plain lines for the GM; --json prints the full result.
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import json
 import os
 import pathlib
@@ -84,7 +86,7 @@ _DISPLAY_CAMPAIGN = _SCRIPTS.parent / "display" / ".campaign"
 # cleared. `budget` and `rate` are design tools — a fight is built before there
 # is an encounter to save, so they must work with nothing running and must not
 # touch combat/pending.json.
-READ_ONLY = ("status", "options", "preview", "reachable", "targets", "log", "spells",
+READ_ONLY = ("status", "options", "preview", "reachable", "approach", "targets", "log", "spells",
              "preview-area", "sight", "budget", "rate", "receipts", "formation")
 # `formation` is here even though `formation save` writes a file: pending.json
 # exists to replay the *same* engine dice after a decision, and nothing under
@@ -708,6 +710,9 @@ def run(args) -> int:
         elif cmd == "reachable":
             data = engine.reachable(enc, args.token)
             text = f"{len(data['walk'])} squares walking, {len(data['dash'])} more with Dash."
+        elif cmd == "approach":
+            data = engine.approach(enc, args.token, args.target)
+            text = data["text"]
         elif cmd == "targets":
             data = {"targets": engine.attack_options(enc, args.token)}
             legal = [t for t in data["targets"] if t["legal"]]
@@ -926,7 +931,10 @@ def parser() -> argparse.ArgumentParser:
     for name in ("move", "preview"):
         s = sub.add_parser(name, parents=c)
         s.add_argument("token")
-        s.add_argument("square")
+        s.add_argument("square", help="a square like D5, or a creature to walk toward")
+    s = sub.add_parser("approach", parents=c, help="where a move toward a creature would end")
+    s.add_argument("token")
+    s.add_argument("target")
     s = sub.add_parser("attack", parents=c)
     s.add_argument("token")
     s.add_argument("target")
@@ -1056,9 +1064,32 @@ def parser() -> argparse.ArgumentParser:
     return top
 
 
+def _parse(argv: list):
+    """parse_args, but a malformed command prints one friendly line, not argparse's usage
+    block. --help still prints normally. Returns None after such a refusal."""
+    err = io.StringIO()
+    try:
+        with contextlib.redirect_stderr(err):
+            return parser().parse_args(argv)
+    except SystemExit as e:
+        if not e.code:
+            raise                                   # -h / --help: argparse already printed it
+        lines = [ln for ln in err.getvalue().splitlines() if "error:" in ln]
+        why = lines[-1].split("error:", 1)[1].strip() if lines else "that command is not complete"
+        verb = next((a for a in argv if not a.startswith("-") and a in _verbs()), "")
+        print(f"That command is not complete: {why}." + (f" Try `{verb} --help`." if verb else ""))
+        return None
+
+
+def _verbs() -> set:
+    return set(parser()._subparsers._group_actions[0].choices)
+
+
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
-    args = parser().parse_args(argv)
+    args = _parse(argv)
+    if args is None:
+        return 1
     if isinstance(getattr(args, "attack", None), list):
         args.attack = " ".join(args.attack) or None
     if getattr(args, "cmd", "") == "ready" and args.kind == "move" and args.what and not args.target:
@@ -1120,6 +1151,11 @@ def main(argv=None) -> int:
         print(f"{e.prompt} Nothing has happened yet.\n"
               f"Re-run the same command with {_prior(args)}--react yes or --react no.")
         return 2
+    except ValueError as e:
+        # A bad square or number typed by a player (move kairos frog-1) is a refusal,
+        # not a crash: uncaught, it killed the REPL mid-fight (test report pt3, B1).
+        print(f"{e}.".replace("..", "."))
+        return 1
 
 
 def _prior(args, drop_last_roll: bool = False) -> str:
