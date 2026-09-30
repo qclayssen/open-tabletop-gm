@@ -152,7 +152,7 @@
     position: fixed; inset: 0;
     overflow-y: auto;
     overflow-x: hidden;
-    padding: 72px max(340px, 18vw) 80px 230px;  /* left: sidebar+gap; right: clears the settings column */
+    padding: 72px max(340px, 18vw) 48px 230px;  /* left: sidebar+gap; right: clears the settings column */
     z-index: 4;
     scroll-behavior: smooth;
     transition: padding 0.4s ease;
@@ -169,7 +169,9 @@
        narration has arrived below. Tap to jump back to the newest text. ── */
   #new-content-pill {
     position: fixed;
-    left: calc(50% + 106px);   /* nudge right to center over the reading column past the sidebar */
+    /* centred over the reading column: midpoint of the left padding (sidebar)
+       and right padding (settings rail) of #text-scroll */
+    left: calc(50% + (230px - max(340px, 18vw)) / 2);
     bottom: 96px;
     transform: translateX(-50%) translateY(8px);
     z-index: 20;
@@ -192,7 +194,9 @@
     background: rgba(60, 42, 12, 0.96);
     border-color: rgba(230, 200, 110, 0.85);
   }
-  #text-scroll.sidebar-hidden ~ #new-content-pill { left: 50%; }
+  #text-scroll.sidebar-hidden ~ #new-content-pill { left: calc(50% + (60px - max(340px, 18vw)) / 2); }
+  #text-scroll.controls-hidden ~ #new-content-pill { left: calc(50% + (230px - 160px) / 2); }
+  #text-scroll.sidebar-hidden.controls-hidden ~ #new-content-pill { left: calc(50% + (60px - 160px) / 2); }
   :root[data-theme="light"] #new-content-pill {
     color: rgb(70, 50, 18);
     background: rgba(245, 238, 222, 0.96);
@@ -1539,12 +1543,13 @@
 
   /* ── Player input panel ── */
   #input-panel {
+    /* Lives in the right-hand rail (under Phone mode / settings) so it never
+       paints over the reading column. */
     position: fixed;
     bottom: 22px;
-    left: 50%;
-    transform: translateX(-50%);
+    right: 28px;
     z-index: 6;
-    width: min(540px, 80vw);
+    width: min(300px, calc(100vw - 56px));
     background: rgba(10, 7, 3, 0.92);
     border: 1px solid rgba(180,140,60,0.28);
     border-radius: 6px;
@@ -1575,6 +1580,10 @@
     display: flex; flex-direction: column; gap: 9px;
   }
   #input-panel.collapsed #input-body { display: none; }
+  body:not(.input-only) #input-body { max-height: 60vh; overflow-y: auto; }
+  /* backdrop-filter makes the panel a containing block for fixed children; drop
+     it while the dice pad is floated so the pad anchors to the viewport. */
+  body.dice-pad-open #input-panel { backdrop-filter: none; }
   #char-tabs { display: flex; gap: 5px; flex-wrap: wrap; }
   .char-tab {
     font-family: 'Cinzel', serif; font-size: 7.5px;
@@ -6553,33 +6562,8 @@ _inputText.addEventListener('keydown', e => {
   }
 });
 
-// ── Keep the reading column clear of the fixed PARTY INPUT panel ──────
-// #input-panel is position:fixed at the bottom; when it expands (or the
-// editorial drawer slides open, or the mobile keyboard raises the viewport)
-// it overlaps the last lines of narration. Reserve #text-scroll bottom padding
-// equal to the panel's live on-screen footprint so the text always clears it.
-function _reserveInputSpace() {
-  const panel  = document.getElementById('input-panel');
-  const scroll = document.getElementById('text-scroll');
-  if (!panel || !scroll) return;
-  // Phone input-only mode: #text-scroll isn't the reading surface there.
-  if (document.body.classList.contains('input-only')) { scroll.style.paddingBottom = ''; return; }
-  // Panel hidden (display:none → 0 rect) or fully below the fold (closed drawer) → CSS baseline stands.
-  // NB: don't use offsetParent for visibility here — it is always null for position:fixed elements.
-  const rect = panel.getBoundingClientRect();
-  if (rect.height === 0 || rect.top >= window.innerHeight) { scroll.style.paddingBottom = ''; return; }
-  const reserve = Math.round(window.innerHeight - rect.top) + 16;
-  scroll.style.paddingBottom = Math.max(40, reserve) + 'px';
-}
-
-(function _initReserveInputSpace() {
-  const panel = document.getElementById('input-panel');
-  if (window.ResizeObserver && panel) new ResizeObserver(_reserveInputSpace).observe(panel);
-  if (panel) panel.addEventListener('transitionend', _reserveInputSpace); // drawer slide / collapse
-  window.addEventListener('resize', _reserveInputSpace);
-  if (window.visualViewport) window.visualViewport.addEventListener('resize', _reserveInputSpace);
-  _reserveInputSpace();
-})();
+// The Party Input panel lives in the right-hand rail, outside the reading
+// column, so #text-scroll no longer reserves bottom space for it.
 
 // Initialise with no extra chars (populated when stats arrive)
 _buildCharTabs([]);
@@ -7167,6 +7151,7 @@ async function _loadCharacterSheet() {
 
 // Minimal markdown → HTML for character sheets. Supports the subset used in
 // the campaign template: # ## ### headers, **bold**, *italic*, - bullet lists,
+// 1. ordered lists, single newlines kept as <br> inside a paragraph,
 // and GitHub-style pipe tables. Not a full CommonMark implementation; deliberately
 // small so we don't drag in a dependency for one read-only viewer.
 function _renderMarkdown(md) {
@@ -7209,17 +7194,29 @@ function _renderMarkdown(md) {
       out.push('<ul>' + items.map(t => `<li>${t}</li>`).join('') + '</ul>');
       continue;
     }
+    // Ordered list (1. 2. 3.)
+    if (/^\s*\d+[.)]\s+/.test(line)) {
+      const items = [];
+      while (i < lines.length && /^\s*\d+[.)]\s+/.test(lines[i])) {
+        items.push(inline(lines[i].replace(/^\s*\d+[.)]\s+/, '')));
+        i++;
+      }
+      out.push('<ol>' + items.map(t => `<li>${t}</li>`).join('') + '</ol>');
+      continue;
+    }
     // Blank line → paragraph break
     if (line.trim() === '') { i++; continue; }
     // Otherwise paragraph (collect consecutive non-blank, non-special lines)
     const para = [line];
     i++;
     while (i < lines.length && lines[i].trim() !== '' && !/^#{1,3}\s/.test(lines[i])
-           && !/^\s*-\s+/.test(lines[i]) && !lines[i].includes('|')
+           && !/^\s*-\s+/.test(lines[i]) && !/^\s*\d+[.)]\s+/.test(lines[i])
+           && !lines[i].includes('|')
            && !/^---+\s*$/.test(lines[i])) {
       para.push(lines[i]); i++;
     }
-    out.push('<p>' + inline(para.join(' ')) + '</p>');
+    // A single newline inside a paragraph is a line break, not a space.
+    out.push('<p>' + para.map(inline).join('<br>') + '</p>');
   }
   return out.join('\n');
 }
@@ -7317,10 +7314,20 @@ function _initDicePad() {
       boundEl.textContent = _bound;
     }
   } else {
-    nameEl.value = localStorage.getItem('gm_player_name') || '';
-    nameEl.addEventListener('input', () => {
-      localStorage.setItem('gm_player_name', nameEl.value.trim().slice(0, 24));
-    });
+    // B8: the main (DM/TV) view has no player identity. Falling back to the
+    // last phone's remembered name labelled the DM's pad with a stale player,
+    // so only input-only (phone) views restore the remembered name; the main
+    // view starts blank and the placeholder says the name is a choice.
+    const _phoneView = document.body.classList.contains('input-only');
+    if (_phoneView) {
+      nameEl.value = localStorage.getItem('gm_player_name') || '';
+      nameEl.addEventListener('input', () => {
+        localStorage.setItem('gm_player_name', nameEl.value.trim().slice(0, 24));
+      });
+    } else {
+      nameEl.value = '';
+      nameEl.setAttribute('placeholder', 'Roller name (choose)');
+    }
   }
 
   let spec = '1d20';
