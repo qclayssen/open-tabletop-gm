@@ -241,6 +241,65 @@
     for (const k of keys.slice(0, Math.max(0, keys.length - CAMERA_MAX))) delete next[k];
     return next;
   }
+
+  // The action economy of the creature whose turn it is, as pips. Every value is
+  // the engine's own (snap.turn); nothing is worked out here. Spent is told by
+  // the glyph and the word as well as the grey, so it survives greyscale.
+  function economyPips(turn) {
+    const tn = turn || {};
+    if (!('action_used' in tn) && !('movement_left' in tn)) return [];
+    const ft = Math.max(0, Math.round(Number(tn.movement_left) || 0));
+    return [
+      { key: 'action', word: 'Action', short: 'A', spent: !!tn.action_used },
+      { key: 'bonus', word: 'Bonus action', short: 'B', spent: !!tn.bonus_used },
+      { key: 'reaction', word: 'Reaction', short: 'R', spent: tn.reaction === false },
+      { key: 'move', word: ft + ' ft of movement', short: ft + ' ft', spent: ft <= 0 },
+    ];
+  }
+
+  // Why a number is what it is, from the fields the engine returned with it
+  // (hit_chance and save_chance, through attack_options and the spell preview).
+  // A field the engine did not send produces no chip: nothing is inferred.
+  function coverWord(n) {
+    return n >= 5 ? 'three-quarters cover +5 AC' : n > 0 ? 'half cover +' + n + ' AC' : '';
+  }
+  function whyChips(row) {
+    const out = [], r = row || {};
+    const num = v => typeof v === 'number' && isFinite(v);
+    const sg = n => (n < 0 ? '-' : '+') + Math.abs(n);
+    if ('hit_percent' in r) {
+      if (num(r.attack_bonus)) out.push({ kind: 'num', text: sg(r.attack_bonus) + ' to hit' });
+      if (num(r.target_ac)) out.push({ kind: 'num', text: 'AC ' + r.target_ac });
+      if (num(r.cover) && r.cover > 0) out.push({ kind: 'cover', text: coverWord(r.cover) });
+      if (num(r.need)) out.push({ kind: 'num', text: 'needs ' + r.need + '+ on the d20' });
+    } else if ('fail_percent' in r) {
+      if (num(r.dc)) out.push({ kind: 'num', text: 'DC ' + r.dc });
+      if (num(r.save_bonus)) out.push({ kind: 'num', text: sg(r.save_bonus) + ' to the save' });
+      if (num(r.cover) && r.cover > 0) out.push({ kind: 'cover', text: 'cover +' + r.cover + ' (in that bonus)' });
+    }
+    const adv = r.advantage;
+    if (adv && adv !== 'normal') {
+      const kind = adv === 'advantage' ? 'adv' : 'dis';
+      const glyph = kind === 'adv' ? '\u25B2 ' : '\u25BC ';
+      const why = (r.reasons || []).filter(x => typeof x === 'string' && x);
+      if (!why.length) out.push({ kind, glyph, text: adv });
+      for (const w of why) out.push({ kind, glyph, text: adv + ': ' + w });
+    }
+    return out;
+  }
+
+  // One target's forecast: the chance in the engine's own direction, the expected
+  // damage, the chips behind them and whether walking away provokes it.
+  function forecast(row) {
+    const r = row || {};
+    let pct = null, phrase = '';
+    if (typeof r.hit_percent === 'number') { pct = r.hit_percent; phrase = pct + '% to hit'; }
+    else if (typeof r.fail_percent === 'number') { pct = r.fail_percent; phrase = pct + '% to fail the save'; }
+    if (pct === null) return null;
+    const exp = typeof r.expected_damage === 'number' ? r.expected_damage
+              : typeof r.expected === 'number' ? r.expected : null;
+    return { percent: pct, phrase, expected: exp, chips: whyChips(r), provokes: r.provokes === true };
+  }
   /* end pure helpers */
 
   // Nudge a text element back inside the board, horizontally and vertically.
@@ -312,6 +371,7 @@
       'Escape cancels. Home goes to the creature whose turn it is. C shades cover.</p>' +
       '<div id="tx-say" class="tx-sr" aria-live="polite"></div>' +
       '<div class="tx-side"><div id="tx-info" class="tx-info" aria-live="polite"></div>' +
+      '<div id="tx-forecast" class="tx-forecast-slot"></div>' +
       '<div id="tx-actions" class="tx-actions" role="toolbar" aria-label="Actions">' +
       '<div id="tx-leads" class="tx-leads"></div></div>' +
       '<div id="tx-prompt" class="tx-prompt" hidden></div>' +
@@ -319,7 +379,7 @@
       '<div id="tx-toast" class="tx-toast" role="status" hidden></div>';
     document.body.appendChild(p);
     for (const id of ['map', 'round', 'banner', 'cover', 'min', 'strip', 'board', 'info', 'actions',
-                      'leads', 'prompt', 'log', 'toast', 'say'])
+                      'leads', 'prompt', 'log', 'toast', 'say', 'forecast'])
       el[id] = document.getElementById('tx-' + id);
     el.panel = p;
     el.min.addEventListener('click', () => {
@@ -457,10 +517,23 @@
       c.innerHTML = `<span class="tx-chip-top"><i class="tx-side-glyph" aria-hidden="true">${side.glyph}</i>` +
         `<span class="tx-sr">${side.word}.</span><span class="tx-chip-name">${esc(t.name)}</span>` +
         `<span class="tx-ac" title="Armor Class">AC ${ac}</span></span>` +
+        (id === snap.current ? econPips() : '') +
         `<span class="tx-hpbar" role="img" aria-label="${t.hp} of ${t.max_hp} HP"><i class="${pct <= 25 ? 'tx-low' : ''}" style="width:${pct}%"></i></span>` +
         `<span>${t.dead ? 'dead' : t.hp + '/' + t.max_hp + ' HP'}${tg.length ? ' · ' + esc(tg.join(', ')) : ''}</span>${pips}`;
       el.strip.appendChild(c);
     }
+  }
+
+  // Action, bonus action, reaction and movement left on the chip of whoever's
+  // turn it is. Filled and "ready" until spent, then hollow, struck through and
+  // "used": the state is in the glyph and the word, and the grey only repeats it.
+  function econPips() {
+    const pips = economyPips(snap.turn);
+    if (!pips.length) return '';
+    const bits = pips.map(p => `<span class="tx-pip${p.spent ? ' tx-spent' : ''}" title="${esc(p.word)}: ${p.spent ? 'used' : 'ready'}">` +
+      `<i aria-hidden="true">${p.spent ? '\u25CB' : '\u25CF'}</i>${esc(p.short)}` +
+      `<span class="tx-sr"> ${esc(p.word)} ${p.spent ? 'used' : 'ready'}.</span></span>`);
+    return `<div class="tx-econ" role="group" aria-label="Action economy">${bits.join('')}</div>`;
   }
 
   function slotPips(t) {
@@ -558,6 +631,7 @@
     s.setAttribute('aria-hidden', 'true');          // the board itself speaks: see describe()
     s.addEventListener('pointerleave', () => {
       if ((ui.mode === 'move' || ui.mode === 'aim') && ui.armed !== ui.hover) { ui.hover = null; drawOverlay(); renderInfo(); }
+      else if (ui.mode === 'attack' || ui.mode === 'spell') { ui.hover = null; renderInfo(); }
     });
     let keepL = el.board.scrollLeft, keepT = el.board.scrollTop;
     // A map that has just mounted (page load, or a new battle) opens where the
@@ -606,8 +680,10 @@
     if (!me || t.dead) return null;
     if (ui.mode === 'attack') {
       const r = bestTarget(t.id);
+      const why = r && r.legal ? whyChips(r).map(c => c.text).join(', ') : '';
       return r ? { cls: 'tx-target', badge: r.legal ? r.hit_percent + '%' : null,
-                   say: r.legal ? `${r.hit_percent}% to hit` : '' } : null;
+                   say: r.legal ? `${r.hit_percent}% to hit` + (why ? ` (${why})` : '') +
+                                  (r.provokes ? ', moving away provokes' : '') : '' } : null;
     }
     if (ui.mode === 'spell' && ui.singles && t.id in ui.singles) {
       const pv = ui.singles[t.id];
@@ -1176,10 +1252,49 @@
 
   function renderInfo() {
     const t = current();
+    el.forecast.innerHTML = '';
     if (!t) { el.info.innerHTML = snap.unseen_turn ? 'A creature you cannot see is acting. The GM narrates.' : ''; return; }
     if (!myTurn()) { el.info.innerHTML = `<strong>${esc(t.name)}</strong> is acting. The GM narrates their turn.` + pendingLine() + statusLine(t) + sightLine(); return; }
     if (snap.turn && snap.turn.pending === 'death_save') { el.info.innerHTML = `<strong>${esc(t.name)}</strong> is dying: roll a death save.`; return; }
     el.info.innerHTML = infoText(t) + pendingLine() + (ui.mode ? '' : sightLine());
+    el.forecast.innerHTML = forecastHtml();
+  }
+
+  // The hover forecast for one target: hit or fail chance, expected damage, the
+  // reasons behind them and the provokes flag. Only engine-provided fields are
+  // rendered. Chips carry a glyph for advantage and disadvantage, not colour alone.
+  function forecastCard(row, name) {
+    const f = forecast(row);
+    if (!f) return '';
+    const chips = f.chips.map(c => `<li class="tx-why tx-why-${c.kind}">${c.glyph ? `<i aria-hidden="true">${c.glyph}</i>` : ''}${esc(c.text)}</li>`);
+    if (f.provokes) chips.push('<li class="tx-why tx-why-warn"><i aria-hidden="true">\u26A0 </i>moving away provokes an opportunity attack</li>');
+    return `<div class="tx-forecast" role="group" aria-label="Forecast against ${esc(name)}">` +
+      `<div class="tx-fc-head"><strong>${esc(name)}</strong> <span class="tx-fc-pct">${esc(f.phrase)}</span>` +
+      (f.expected !== null ? ` <span class="tx-fc-exp">about ${f.expected} damage</span>` : '') + '</div>' +
+      (chips.length ? `<ul class="tx-whys">${chips.join('')}</ul>` : '') + '</div>';
+  }
+
+  // The token under the pointer or the keyboard cursor, in a mode that targets one.
+  function forecastHtml() {
+    if (!ui.hover || !myTurn()) return '';
+    if (ui.mode === 'aim') {                       // an area: one card per creature it would catch
+      const pv = ui.preview[ui.hover];
+      return pv && pv.legal ? (pv.affected || []).map(a => forecastCard(a, a.name)).join('') : '';
+    }
+    const t = living().find(k => sqOf(k) === ui.hover);
+    if (!t || t.id === current().id) return '';
+    if (ui.mode === 'attack' && ui.attack) {
+      const row = bestTarget(t.id);
+      if (!row) return '';
+      return row.legal ? forecastCard(row, t.name)
+        : `<div class="tx-forecast"><strong>${esc(t.name)}</strong> <span class="tx-why tx-why-warn">not a valid target: ${esc(row.reason || '')}</span></div>`;
+    }
+    if (ui.mode === 'spell' && ui.singles && t.id in ui.singles) {
+      const pv = ui.singles[t.id];
+      const row = pv && pv.legal && (pv.affected || []).find(a => a.id === t.id);
+      return row ? forecastCard(row, t.name) : '';
+    }
+    return '';
   }
 
   function pendingLine() {
@@ -1513,6 +1628,11 @@
       drawOverlay();
       if (ui.preview[sq]) renderInfo();
       else ui.hoverTimer = setTimeout(() => previewAim(sq), 90);
+      return;
+    }
+    if ((ui.mode === 'attack' && ui.attack) || (ui.mode === 'spell' && ui.singles)) {
+      if (sq === ui.hover) return;
+      ui.hover = sq; renderInfo();
       return;
     }
     if (ui.mode !== 'move' || !ui.reach) return;

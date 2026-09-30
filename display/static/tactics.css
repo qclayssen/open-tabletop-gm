@@ -128,6 +128,28 @@ body.tx-min #tx-panel { max-height: 132px; overflow: hidden; }
 .tx-leads { display: contents; }
 .tx-attacks { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; }
 .tx-status { color: var(--tx-ink); }
+
+/* Action-economy pips on the current creature's chip. Ready is a filled dot,
+   spent is a hollow dot with struck-through text: the grey only repeats it. */
+.tx-econ { display: flex; flex-wrap: wrap; gap: 2px 8px; font-size: 12px; color: var(--tx-ink); }
+.tx-pip { white-space: nowrap; font-weight: 600; }
+.tx-pip i { font-style: normal; margin-right: 2px; color: var(--tx-brass); }
+.tx-pip.tx-spent { color: var(--tx-muted); font-weight: 400; text-decoration: line-through; opacity: .7; }
+.tx-pip.tx-spent i { color: var(--tx-muted); }
+
+/* Hover forecast card: chance, expected damage and the reasons behind them. */
+.tx-forecast-slot:empty { display: none; }
+.tx-forecast { border: 1px solid var(--tx-line); border-left: 4px solid var(--tx-brass); border-radius: 6px;
+  background: var(--tx-paper); padding: 6px 8px; font-size: 13px; color: var(--tx-ink); margin-bottom: 4px; }
+.tx-fc-pct { font-weight: 700; }
+.tx-fc-exp { color: var(--tx-muted); }
+.tx-whys { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px; }
+.tx-why { border: 1px solid var(--tx-line); border-radius: 10px; padding: 1px 7px; font-size: 12px; background: var(--tx-panel); }
+.tx-why i { font-style: normal; }
+.tx-why-adv { border-color: var(--tx-heal); }
+.tx-why-dis, .tx-why-warn { border-color: var(--tx-danger); }
+.tx-why-warn { font-weight: 600; }
+.tx-why-cover { border-style: dashed; }
 .tx-ff { display: inline-block; margin-top: 2px; }
 
 /* ── spell list, reactions toggle ── */
