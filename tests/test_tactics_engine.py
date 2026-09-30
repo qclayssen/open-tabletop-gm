@@ -336,3 +336,22 @@ def test_a_readied_move_uses_the_movers_speed_not_the_current_creatures():
     f.speed = 10
     res = actions.trigger(enc, roller(), "kairos")
     assert k.square == "A5", res["text"]
+
+
+def _rows(enc):
+    return {(o["attack"], o["target"]): o for o in engine.attack_options(enc, "kairos")}
+
+
+def test_attack_options_carry_the_breakdown_and_the_provokes_flag():
+    enc = start(encounter([kairos(), frog("frog-1", (1, 0)), frog("frog-2", (7, 7))]),
+                ["kairos", "frog-1", "frog-2"])
+    rows = _rows(enc)
+    bolt = rows[("Fire Bolt", "frog-2")]
+    assert (bolt["attack_bonus"], bolt["target_ac"], bolt["cover"], bolt["need"]) == (6, 11, 0, 5)
+    assert bolt["provokes"] is False                        # far away: nothing to leave
+    assert rows[("Dagger", "frog-1")]["provokes"] is True   # adjacent, and it can react
+    enc.tokens["frog-1"].reaction_used = True
+    assert _rows(enc)[("Dagger", "frog-1")]["provokes"] is False   # its reaction is spent
+    enc.tokens["frog-1"].reaction_used = False
+    enc.turn.disengaged = True
+    assert _rows(enc)[("Dagger", "frog-1")]["provokes"] is False   # Disengage
