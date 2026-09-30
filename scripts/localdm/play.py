@@ -507,7 +507,10 @@ class Session:
             self._say_status("[dm] already asked that, narrating on its own notes")
             return ""
         self._asked.add(key)
-        ctx = "combat" if self.bridge.is_combat_active() else "social"
+        # The bridge answers "is a fight running" and nothing else: it does not
+        # know the room, so a non-combat ask gets the neutral pool rather than a
+        # line that invents a tavern (stall.NEUTRAL_CONTEXT).
+        ctx = "combat" if self.bridge.is_combat_active() else stall.NEUTRAL_CONTEXT
         self.on_stall(stall.get_stall_line(ctx))    # shown now: the ask blocks next
         notes, _failed = self._ask(advisor.pick(question, limit=HELP_ADVISORS),
                                    HELP.format(n=advisor.MAX_WORDS) + f"\n\n{question}",
@@ -895,7 +898,10 @@ class Session:
             names, question, council = advisor.parse_advise(rest)
         except ValueError as e:
             return [str(e)]
-        ctx = "combat" if self.bridge.is_combat_active() else "social"
+        # The bridge answers "is a fight running" and nothing else: it does not
+        # know the room, so a non-combat ask gets the neutral pool rather than a
+        # line that invents a tavern (stall.NEUTRAL_CONTEXT).
+        ctx = "combat" if self.bridge.is_combat_active() else stall.NEUTRAL_CONTEXT
         self.on_stall(stall.get_stall_line(ctx))    # shown now: the ask blocks next
         notes, failed = self._ask(names, question, "its notes",
                                   self.models.council if council else None)
