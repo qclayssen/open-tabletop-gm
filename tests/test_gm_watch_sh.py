@@ -33,7 +33,7 @@ WATCH = (REPO / "display" / "gm-watch.sh").read_text(encoding="utf-8")
 class WatcherDoesNotLoseActions(unittest.TestCase):
     def test_the_exit_status_is_captured(self):
         """Without `RC=$?` immediately after the run, every failure reads as success."""
-        self.assertRegex(WATCH, r"opencode run[^\n]*\n\s*RC=\$\?",
+        self.assertRegex(WATCH, r'wait "\$_turn_pid"; RC=\$\?',
                          "gm-watch.sh does not capture the GM turn's exit status")
 
     def test_a_failed_or_timed_out_turn_restores_the_action(self):
@@ -84,7 +84,7 @@ class WatcherDoesNotLoseActions(unittest.TestCase):
 
 # Tools the watcher shells out to. Deliberately NOT `timeout` / `gtimeout`.
 _TOOLS = ("bash", "python3", "cat", "date", "sleep", "grep", "rm", "kill",
-          "dirname", "env")
+          "dirname", "env", "mkdir", "mv", "ps")
 
 
 @unittest.skipIf(os.name == "nt", "the watcher is a bash script run in its own session (os.killpg)")
@@ -168,6 +168,156 @@ class WatcherWithoutCoreutilsTimeout(unittest.TestCase):
         self.assertIn("FAILED", text)
         self.assertTrue(self.queue.exists() and "open the door" in self.queue.read_text(encoding="utf-8"),
                         "a failed turn must put the action back")
+
+
+@unittest.skipIf(os.name == "nt", "bash watcher")
+class WatcherProcessLifecycle(unittest.TestCase):
+    """B9/B10/B11 exercised for real with a fake `opencode` on a minimal PATH."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        root = pathlib.Path(self._tmp.name)
+        self.display = root / "display"
+        self.display.mkdir()
+        for name in ("gm-watch.sh", "drain_queue.py", "queue_claim.py"):
+            shutil.copy2(REPO / "display" / name, self.display / name)
+        self.bin = root / "bin"
+        self.bin.mkdir()
+        for tool in _TOOLS:
+            (self.bin / tool).symlink_to(shutil.which(tool))
+        self.started = root / "turn.started"
+        self.pidout = root / "turn.pid"
+        self.termed = root / "turn.termed"
+        self.stub("#!/bin/sh\necho $$ > \"%s\"\ntrap 'echo t > \"%s\"; exit 143' TERM\n"
+                  "while :; do sleep 1; done\n" % (self.pidout, self.termed))
+        self.queue = self.display / ".input_queue"
+        self.log = self.display / ".gm-watch.log"
+        self.procs = []
+
+    def tearDown(self):
+        for p in self.procs:
+            if p.poll() is None:
+                p.kill()
+                p.wait()
+        if self.pidout.exists():
+            try:
+                os.kill(int(self.pidout.read_text(encoding="utf-8").strip()), signal.SIGKILL)
+            except (ValueError, OSError):
+                pass
+        self._tmp.cleanup()
+
+    def stub(self, body):
+        f = self.bin / "opencode"
+        f.write_text(body, encoding="utf-8")
+        f.chmod(0o755)
+
+    def start(self, *args, **extra):
+        env = {"PATH": str(self.bin), "HOME": self._tmp.name, "GM_WATCH_STARTUP_DELAY": "0",
+               "GM_WATCH_KILL_GRACE": "2"}
+        env.update(extra)
+        p = subprocess.Popen(["bash", str(self.display / "gm-watch.sh"), *args],
+                             env=env, cwd=self.display, stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE, text=True, encoding="utf-8", start_new_session=True)
+        self.procs.append(p)
+        return p
+
+    def wait_for(self, pred, timeout=20):
+        end = time.monotonic() + timeout
+        while time.monotonic() < end:
+            if pred():
+                return True
+            time.sleep(0.1)
+        return False
+
+    def queue_action(self):
+        self.queue.write_text(json.dumps([{"character": "Mira", "text": "I open the door"}]),
+                              encoding="utf-8")
+
+    def alive(self, pid):
+        try:
+            os.kill(pid, 0)
+            return True
+        except OSError:
+            return False
+
+    def test_signal_stops_the_inflight_turn_immediately_and_restores_action(self):
+        self.queue_action()
+        p = self.start("sess", "--interval", "1")
+        self.assertTrue(self.wait_for(self.pidout.exists), "the turn never started")
+        time.sleep(0.3)
+        turn = int(self.pidout.read_text(encoding="utf-8").strip())
+        t0 = time.monotonic()
+        p.terminate()
+        p.wait(timeout=15)
+        self.assertLess(time.monotonic() - t0, 8, "trap was deferred until the turn returned")
+        self.assertTrue(self.wait_for(lambda: not self.alive(turn), 5), "turn left orphaned")
+        self.assertTrue(self.termed.exists(), "turn was not sent TERM")
+        self.assertIn("open the door", self.queue.read_text(encoding="utf-8"))
+        self.assertFalse((self.display / ".gm-watch.pid").exists())
+        self.assertFalse((self.display / ".gm-watch.lock").exists())
+
+    def test_a_turn_that_ignores_term_is_killed_after_the_grace(self):
+        self.stub("#!/bin/sh\necho $$ > \"%s\"\ntrap '' TERM\nwhile :; do sleep 1; done\n"
+                  % self.pidout)
+        self.queue_action()
+        p = self.start("sess", "--interval", "1")
+        self.assertTrue(self.wait_for(self.pidout.exists))
+        time.sleep(0.3)
+        turn = int(self.pidout.read_text(encoding="utf-8").strip())
+        p.terminate()
+        p.wait(timeout=15)
+        self.assertTrue(self.wait_for(lambda: not self.alive(turn), 5))
+        self.assertIn("KILL", self.log.read_text(encoding="utf-8"))
+
+    def test_second_start_is_refused_while_first_runs(self):
+        a = self.start("sess", "--interval", "1")
+        self.assertTrue(self.wait_for((self.display / ".gm-watch.pid").exists))
+        b = self.start("sess", "--interval", "1")
+        b.wait(timeout=10)
+        self.assertEqual(b.returncode, 1)
+        self.assertIn("already running", b.stderr.read())
+        self.assertIsNone(a.poll())
+
+    def test_simultaneous_starts_yield_exactly_one_watcher(self):
+        ps = [self.start("sess", "--interval", "1") for _ in range(6)]
+        time.sleep(4)
+        running = [p for p in ps if p.poll() is None]
+        self.assertEqual(len(running), 1, [p.poll() for p in ps])
+
+    def test_recycled_pid_does_not_block_startup(self):
+        # A live process that is NOT a gm-watch owns the pid in a stale lock.
+        stranger = subprocess.Popen(["sleep", "60"])
+        self.procs.append(stranger)
+        (self.display / ".gm-watch.lock").mkdir()
+        (self.display / ".gm-watch.pid").write_text(str(stranger.pid), encoding="utf-8")
+        p = self.start("sess", "--interval", "1")
+        time.sleep(2)
+        self.assertIsNone(p.poll(), "false 'already running' from a recycled pid")
+        self.assertEqual((self.display / ".gm-watch.pid").read_text(encoding="utf-8").strip(), str(p.pid))
+        self.assertIsNone(stranger.poll(), "the stranger must not be signalled")
+
+    def test_stop_stops_watcher_then_server_and_removes_pidfiles(self):
+        w = self.start("sess", "--interval", "1")
+        self.assertTrue(self.wait_for((self.display / ".gm-watch.pid").exists))
+        # fake server: a process whose command line contains gm-display-app.py
+        fake_app = self.display / "gm-display-app.py"
+        fake_app.write_text("import time\ntime.sleep(60)\n", encoding="utf-8")
+        srv = subprocess.Popen(["python3", str(fake_app)])
+        self.procs.append(srv)
+        (self.display / "app-5999.pid").write_text(str(srv.pid), encoding="utf-8")
+        other = subprocess.Popen(["python3", str(fake_app)])
+        self.procs.append(other)
+        (self.display / "app-5998.pid").write_text(str(other.pid), encoding="utf-8")
+        r = subprocess.run(["bash", str(self.display / "gm-watch.sh"), "stop", "--port", "5999"],
+                           env={"PATH": str(self.bin), "HOME": self._tmp.name},
+                           capture_output=True, text=True, encoding="utf-8", timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertLess(r.stdout.index("watcher"), r.stdout.index("server"))
+        w.wait(timeout=10)
+        srv.wait(timeout=10)
+        self.assertIsNone(other.poll(), "stop must only touch the requested port")
+        self.assertFalse((self.display / "app-5999.pid").exists())
+        self.assertFalse((self.display / ".gm-watch.pid").exists())
 
 
 if __name__ == "__main__":
