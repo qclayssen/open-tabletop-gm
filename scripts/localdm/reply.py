@@ -111,6 +111,12 @@ def speaks_for_player(narration: str) -> bool:
 # sheet or the Engine section.
 _SYSTEM_LOG = re.compile(
     r"system\s*log|narrative.?injection|#[A-Z_]*INJECTION", re.I)
+# The unbacked shapes above are all engine-speak: a signed total, a named
+# advantage token, a heal. Every one of them needs a DIGIT, which is the defect.
+# The shapes that actually reach the player are prose, and prose spells numbers:
+# "ten gold pieces materialize into your palm" is the same grant as "+100 gp" and
+# a numeral-only pattern never sees it. So a second pass below reads the spelled
+# forms, and the digit requirement stops being the gate.
 _ECONOMY_GRANT = re.compile(
     r"\+\s*\d+\s*(?:gp|gold|xp|experience)"
     r"|\bgive\s+you\s+\d+\s*gold\b"
@@ -119,6 +125,101 @@ _ECONOMY_GRANT = re.compile(
     r"|\bfully?\s+heal(?:ed|s)?\b|\brestored to full\b"
     r"|\bbypassing standard procedural\b", re.I)
 
+# Spelled-out amounts, folded to digits before the transfer patterns run.
+#
+# A pre-pass rather than a longer pattern, and the reason is that it adds no
+# false positives of its own. Every risk the folding seems to carry is a risk the
+# digit pattern already had, because the digits are only ever read NEXT TO A
+# MONEY WORD:
+#
+#   "ten feet of rope", "room 12", "one level 1 slot", "you have ten hit points"
+#       -> folded to 10, 12, 1, 10, and matched against no currency word, so
+#          nothing fires. Only the words in this table move, and only the money
+#          words downstream can see the result.
+#   a PC called Four, a quoted line, a spell slot count
+#       -> likewise invisible: a name or a count is not a money word, and
+#          \b keeps "Tenacity" and "twentyish" out of the table.
+#
+# Upper bound only, on purpose. These are the amounts a grant is written with;
+# going higher buys phrasings nobody uses and costs pattern surface.
+_NUMBER_WORDS = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7,
+    "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12,
+    "thirteen": 13, "fourteen": 14, "fifteen": 15, "sixteen": 16,
+    "seventeen": 17, "eighteen": 18, "nineteen": 19, "twenty": 20,
+    "thirty": 30, "forty": 40, "fifty": 50, "sixty": 60, "seventy": 70,
+    "eighty": 80, "ninety": 90, "hundred": 100, "thousand": 1000,
+    "dozen": 12,
+}
+_NUMBER_WORD = re.compile(r"\b(?:" + "|".join(sorted(_NUMBER_WORDS, key=len, reverse=True))
+                           + r")\b", re.I)
+
+
+def _spell_digits(text: str) -> str:
+    """The narration with spelled-out small numbers written as digits.
+
+    Read only by the guardrails below. The narration the player sees, the
+    transcript on disk and every other detector keep the model's own words, so
+    this is a lens over the text rather than an edit to it.
+    """
+    return _NUMBER_WORD.sub(lambda m: str(_NUMBER_WORDS[m.group(0).lower()]), text or "")
+
+
+# A grant the player is the RECIPIENT of. Currency plus direction, in either
+# order, within one sentence.
+#
+# The direction requirement is what bounds the false positives, and it is the
+# same boundary states_an_unbacked_cast_result draws for the player's own AC:
+# second person and a transfer into the player's hands, nothing wider. Currency
+# in a scene is not a grant. "The vault holds three hundred gold pieces behind
+# the third lock", "the guard counts out a hundred gold pieces for the widow"
+# and "the ledger lists debts of five gold pieces" are all money, all
+# unremarkable, and none of them change the sheet. A grant does, and it cannot
+# do it without naming the player.
+_MONEY = r"gold|coins?|gp|xp|experience"
+# silver, copper and bronze are a colour and a metal as often as they are a
+# currency, so they count only in the piece forms ("ten silver pieces"). Bare
+# "three silver" is left to the scene.
+_PIECED = r"(?:silver|copper|bronze)\s+(?:pieces?|coins?)"
+# an amount: a number and a money word, or an open container of money, which is
+# the unbounded form ("a pouch of gold", "a few coins") a numeral cannot match.
+_AMOUNT = (rf"(?:\d+\s*(?:{_MONEY}|{_PIECED})\b"
+           rf"|\ba\s+(?:small\s+|little\s+|heavy\s+|full\s+)?"
+           rf"(?:pouch|purse|handful|fistful|scoop|stack|pile|bundle|sack|bag|cupful)\s+of\s+"
+           rf"(?:gold|coins?|silver|copper|xp|experience)\b"
+           rf"|\ba\s+(?:few|couple)\s+(?:of\s+)?(?:gold|coins?|silver)\b)")
+# into your palm / in your purse / at your feet: the money arriving, or waiting
+# to be picked up.
+_TO_PLAYER = (r"(?:into|in|onto|to|at)\s+your\b"
+              r"|your\s+(?:palm|hands?|pockets?|purses?|pouches?|grasp|belly|boots?|feet)")
+# the player on the receiving end of a verb: "you gain", "you are handed".
+_GAINED = (r"(?:you|your)\b[^.!?\n]{0,16}?\b(?:gain|gains|receives?|acquires?|acquired|"
+           r"obtains?|are\s+(?:handed|given|presented)|now\s+has|now\s+have|loots?|"
+           r"pockets?|picks?\s+up|collects?|claims?|finds?|scoops?\s+up|now\s+carries?)")
+# someone else handing it over. "offers" is absent on purpose: a price agreed at
+# the table is the player's own transaction, and the engine does not own it.
+_GIVEN = (r"(?:hands?|handed|gives?|given|passes?|passed|presses?|pressed|thrusts?|"
+          r"pours?|shoves?|tosses?|drops?|dropped|falls?|fell|slips?|palms?|palm(?:ed)?|"
+          r"pockets?|materiali[sz]es?|materiali[sz]ed|converges?|converge|settles?|"
+          r"arrives?|lands?)")
+# Bounded to one sentence, and to 40 characters, which is about as far apart as a
+# grant puts the money and the hand it lands in. A wide window would let one
+# sentence's subject lend itself to the next.
+_NEAR = r"[^.!?\n]{0,40}?"
+_ECONOMY_TRANSFER = re.compile(
+    rf"(?:{_AMOUNT}){_NEAR}(?:{_TO_PLAYER})"
+    rf"|(?:{_TO_PLAYER}){_NEAR}(?:{_AMOUNT})"
+    rf"|(?:{_GAINED}){_NEAR}(?:{_AMOUNT})"
+    rf"|(?:{_AMOUNT}){_NEAR}(?:{_GIVEN}){_NEAR}(?:to\s+)?you\b"
+    # "the clerk hands you ten gold pieces": the hand verb, then the player, then
+    # the money. The second gap is short on purpose. Widened, it reaches "hands
+    # you a note and asks for ten gold pieces", which is a demand, not a grant.
+    rf"|(?:{_GIVEN})[^.!?\n]{{0,6}}?(?:to\s+)?you\b[^.!?\n]{{0,20}}?(?:{_AMOUNT})"
+    # money with no number at all, which only ever arrives: "coins clink into your
+    # palm". A number is the one thing this shape cannot rely on.
+    rf"|\b(?:{_MONEY}|{_PIECED}){_NEAR}(?:{_TO_PLAYER})"
+    rf"|(?:{_TO_PLAYER}){_NEAR}\b(?:{_MONEY}|{_PIECED})\b", re.I)
+
 
 def fakes_system_log(narration: str) -> bool:
     """True when the narration emits a fake system block."""
@@ -126,8 +227,21 @@ def fakes_system_log(narration: str) -> bool:
 
 
 def grants_economy(narration: str) -> bool:
-    """True when the narration grants gold/XP/heals/crits by prose."""
-    return bool(_ECONOMY_GRANT.search(narration or ""))
+    """True when the narration grants gold/XP/heals/crits by prose.
+
+    Two passes, because a grant is written two ways. The engine-speak pass is
+    the old one and is unchanged. The transfer pass reads the same amount of
+    money as prose, which is the form a model actually produces: "ten gold
+    pieces materialize into your palm" is a grant, and it is the one the
+    numeral-only pattern had no way to see.
+
+    A heuristic, not a proof, and the caller treats a flag as "worth rewriting
+    once": the retry is adopted only if it comes back clean, and the first draft
+    is kept otherwise (see Session._dm). So a false positive costs one model
+    call and nothing else, which is the same bargain every guardrail here makes.
+    """
+    return bool(_ECONOMY_GRANT.search(narration or "")
+                or _ECONOMY_TRANSFER.search(_spell_digits(narration or "")))
 
 
 def grants_injection(narration: str) -> bool:
