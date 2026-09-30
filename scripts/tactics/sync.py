@@ -313,9 +313,26 @@ def summary_lines(enc, meta: dict) -> list:
 
 
 def append_session_log(camp_dir, lines: list) -> bool:
+    """Write the combat summary into session-log.md, above the blank template.
+
+    templates/session-log.md ends with a `## Session Template` block (and its
+    `---` rules) that /gm end copies from. Appending at end of file put real
+    combat history under that heading, so the summary is inserted just above
+    the template instead. A log with no template block is appended to.
+    """
     path = pathlib.Path(camp_dir) / "session-log.md"
     if not path.exists():
         return False
-    with open(path, "a", encoding="utf-8") as f:
-        f.write("\n" + "\n".join(lines) + "\n")
+    text = path.read_text(encoding="utf-8")
+    block = "\n".join(lines).strip("\n") + "\n"
+    m = re.search(r"^(?:---[ \t]*\n\s*)?## Session Template[^\n]*$", text, re.M)
+    if m:
+        head = text[:m.start()].rstrip("\n")
+        new = head + "\n\n" + block + "\n" + text[m.start():]
+    else:
+        new = text.rstrip("\n") + "\n\n" + block
+    tmp = path.with_name(path.name + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(new)
+    os.replace(tmp, path)
     return True

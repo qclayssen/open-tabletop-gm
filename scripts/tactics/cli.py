@@ -822,21 +822,28 @@ def run(args) -> int:
             name = args.condition.lower()
             if args.level is not None:
                 name = f"exhaustion {args.level}"
-            if args.action == "add":
-                more = R.set_condition(t, name)
+            # The statblock's condition immunities bind a GM-typed add too, not
+            # only rider saves: the engine owns the rule, the GM cannot forget it.
+            base = name.split()[0]
+            immune = {c.lower() for c in t.condition_immunities}
+            if args.action == "add" and base in immune:
+                text = f"{t.name} is immune to being {base}; nothing added."
             else:
-                more = R.clear_condition(t, name)
-            said = name
-            if t.has("exhaustion") and _exhaustion_label(t):
-                said = f"exhaustion {_exhaustion_label(t)}"
-            text = f"{t.name}: {said} {'added' if args.action == 'add' else 'removed'}."
-            if args.action == "add":
-                # What the condition is doing to this creature, so nobody has to
-                # remember which of fourteen it is.
-                text += " " + " ".join(more + R.condition_notes(t))
-                text += " " + " ".join(effects.check_incapacitated(enc, t))
-            else:
-                text += (" " + " ".join(more)) if more else ""
+                if args.action == "add":
+                    more = R.set_condition(t, name)
+                else:
+                    more = R.clear_condition(t, name)
+                said = name
+                if t.has("exhaustion") and _exhaustion_label(t):
+                    said = f"exhaustion {_exhaustion_label(t)}"
+                text = f"{t.name}: {said} {'added' if args.action == 'add' else 'removed'}."
+                if args.action == "add":
+                    # What the condition is doing to this creature, so nobody has to
+                    # remember which of fourteen it is.
+                    text += " " + " ".join(more + R.condition_notes(t))
+                    text += " " + " ".join(effects.check_incapacitated(enc, t))
+                else:
+                    text += (" " + " ".join(more)) if more else ""
             engine._log(enc, "condition", t.id, f"GM: {text}")
         elif cmd == "adjust":
             text = _adjust(enc, args)

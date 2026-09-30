@@ -294,6 +294,11 @@ d6 per faction per tick interval (1–3 nothing, 4–5 one segment, 6 two). Hour
 and rests do not tick: a tense one-hour crawl is not unattended time. Set the
 campaign to `--interval week` for slow-burn arcs.
 
+Every move that changes a clock (a tick or `clock`) is also written for you into
+state.md's `## Faction Moves` as a one-line, number-free entry (who moved toward
+what goal, stamped in world time); it is atomic and never written twice. Do not
+record it by hand. Narrate the visible consequence in your own words.
+
 Every tick is **GM-only**. Nothing here is pushed to the player display, and
 neither roll values nor clock positions are ever shown to players — a clock they
 can read is bookkeeping, not pressure.

@@ -560,6 +560,28 @@ class FactionMovesStateWriteTests(unittest.TestCase):
         self.assertEqual(before, self._state(),
                          "state.md must be left byte-identical when no clock moved")
 
+    def test_the_written_move_never_carries_clock_numbers(self):
+        """Clocks are GM-only: state.md is read back into the DM digest."""
+        self._tick_until_moved()
+        self._world("clock", "Red Hand", "3")
+        self._fire()
+        self.assertNotRegex(self._moves(), r"\d+/\d+")
+        self.assertNotIn("d6", self._moves())
+
+    def test_recording_the_same_entry_twice_writes_it_once(self):
+        sys.path.insert(0, str(REPO / "scripts"))
+        import world
+        import paths
+        os.environ["GM_CAMPAIGN_ROOT"] = str(self.root)
+        try:
+            entry = "- *1 Harvestmoon 1247*: Red Hand moved closer to *x* (off-screen)."
+            self.assertTrue(world.append_faction_moves(self.campaign, [entry]))
+            once = self._state()
+            self.assertFalse(world.append_faction_moves(self.campaign, [entry]))
+            self.assertEqual(once, self._state())
+        finally:
+            os.environ.pop("GM_CAMPAIGN_ROOT", None)
+
     # ── append, do not clobber ──────────────────────────────────────────────
 
     def test_a_second_tick_appends_rather_than_replaces(self):
