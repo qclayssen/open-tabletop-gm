@@ -59,7 +59,9 @@ Checks:
   persuade, deceive, read whether someone lies, climb, notice, recall lore, track),
   ask for a roll instead of deciding it. Write only the first beat (1 or 2 sentences,
   revealing nothing the roll decides) and end the JSON line with a check:
-  {"check": "Stealth 13"}. Use a skill from the sheet and DC 10, 13 or 16. Never write
+  {"check": {"skill": "Stealth", "tier": "moderate", "stakes": "the guard turns", "target": "guard"}}.
+  Use a skill from the sheet and a tier (easy, moderate, hard, very hard); the engine
+  sets the DC, and stakes says what failure costs. Never write
   "make a Stealth check" in the narration; the roll prompt appears by itself. Only
   trivial or impossible actions skip the roll.
 - A failed check must change the world and cost something concrete: let the intent

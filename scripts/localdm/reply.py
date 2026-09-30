@@ -34,6 +34,7 @@ class DMReply:
     check: str | None = None        # "Investigation 13": skill and DC for an ability check
     cast: str | None = None         # "Mage Armor": a spell with a lasting stat effect, cast
                                      # outside a fight (B4: resolved on the engine, not guessed)
+    check_meta: dict | None = None  # structured check keys: stakes, target, time_pressure, changed
 
 
 def strip_think(text: str) -> str:
@@ -58,6 +59,24 @@ _STRAY_THINK = re.compile(r"</?think>", re.I)
 def _text_field(data: dict, key: str):
     value = data.get(key)
     return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+def _check_field(data: dict):
+    """(check string, meta) for `check`: the legacy string, or the structured object
+    {"skill": "Perception", "tier": "moderate", "stakes": "...", "target": "..."}.
+    The object is folded into the same "Skill tier-or-DC" string the engine already
+    parses, and its other keys ride along as meta."""
+    value = data.get("check")
+    if isinstance(value, dict):
+        skill = value.get("skill")
+        if not (isinstance(skill, str) and skill.strip()):
+            return None, None
+        level = value.get("tier") or value.get("dc") or ""
+        meta = {k: value[k] for k in ("stakes", "target", "time_pressure", "changed")
+                if k in value and value[k] is not None}
+        meta.setdefault("stakes", "")
+        return f"{skill.strip()} {str(level).strip()}".strip(), meta
+    return _text_field(data, "check"), None
 
 
 def _cast_field(data: dict):
@@ -108,8 +127,9 @@ def parse(text: str) -> DMReply:
         else:
             data = {}
     text = _PROMPT_TAIL.sub("", text).rstrip()
+    check, meta = _check_field(data)
     return DMReply(text, _text_field(data, "escalate"), _text_field(data, "command"),
-                   _text_field(data, "check"), _cast_field(data))
+                   check, _cast_field(data), meta)
 
 
 # Guardrail: the DM may not put words, thoughts or feelings in the player's mouth.
