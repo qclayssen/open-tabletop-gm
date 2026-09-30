@@ -319,11 +319,10 @@ body.tx-min #tx-panel { max-height: none; }
   /* No room beside the sidebar and settings here: sit above them (they are
      z-index 6 to 8) and below dialogs and device approvals (10 and up). */
   #tx-panel { z-index: 9; left: 6px; right: 6px; top: 6px; max-height: calc(100dvh - 84px); }
-  /* The narration starts below a panel that can fill the screen. The folded
-     panel is 132px tall and keeps its own padding (see body.tx-min above). */
-  /* Same measured inset as everywhere else: the panel is a screen's worth minus
-     its own margins, and the old 100dvh - 72px ignored that the panel is also
-     bounded by 100dvh - 84px, which put the story 12px under the panel's edge. */
+  /* The narration starts below a panel that can fill the screen, by the same
+     measured inset as everywhere else: the panel is a screen's worth minus its
+     own margins, and the old 100dvh - 72px ignored that the panel is also
+     bounded by 100dvh - 84px, which put the story 12px under its edge. */
   body.tx-on #text-scroll { padding-top: calc(var(--tx-bottom, 100dvh - 84px) + 28px); }
   /* One column, and the panel fits. It is a scroll box with a ceiling, and on a
      short window the board plus the action bar were taller than the box: 907px

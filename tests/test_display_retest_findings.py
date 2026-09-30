@@ -396,8 +396,11 @@ class Panel(unittest.TestCase):
         rule and stacking would not make it fit, so only the no-clip case is
         asserted.
         """
-        cases = ((DESKTOP, 12, 9, True),      # 606px inner: 346 beside a column, so stack
-                 ((1440, 900), 12, 9, False),  # 846px inner: 586 beside it, so keep it
+        # 12 squares at the 40px floor needs 480px of board. At 1200 the panel's
+        # inner width is 606, so the split would leave 346 and the map is
+        # clipped; at 1440 it is 846 and the split leaves 586, which fits.
+        cases = ((DESKTOP, 12, 9, True),
+                 ((1440, 900), 12, 9, False),
                  ((1920, 1080), 12, 9, False))
         for size, w, h, stacked in cases:
             with self.subTest(size=size, map=(w, h)):
