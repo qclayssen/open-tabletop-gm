@@ -91,18 +91,18 @@ def test_small_length_directive_is_a_cap_and_the_default_is_ignored(tmp_path):
 
 def test_ability_check_rolls_then_the_dm_narrates_the_outcome(tmp_path, monkeypatch):
     replies = iter(['You start to search the shed.\n{"escalate": null, "command": null, '
-                    '"check": "Investigation 13"}', "Behind the crates, a torn sleeve." + NULLS])
+                    '"check": "Investigation 16"}', "Behind the crates, a torn sleeve." + NULLS])
     c, s = session(tmp_path, lambda m, msgs, role: next(replies))
     monkeypatch.setattr("localdm.play.random.randint", lambda a, b: 12)
     out = s.handle("I search the shed.")
     assert out[0] == "You start to search the shed."
-    assert "17 against DC 13: success" in out[1]
-    assert "Kairos rolled an Investigation check: 17 against DC 13" in last_user(c)
+    assert "17 against DC 16: success" in out[1]
+    assert "Kairos rolled an Investigation check: 17 against DC 16" in last_user(c)
     assert out[-1] == "Behind the crates, a torn sleeve."
 
 
 def test_check_is_rolled_in_the_browser_when_a_display_is_up(tmp_path):
-    replies = iter(['You watch her face.\n{"check": "Insight 10"}', "Her eyes flick away." + NULLS])
+    replies = iter(['You watch her face.\n{"check": "Insight 16"}', "Her eyes flick away." + NULLS])
     c, s = session(tmp_path, lambda m, msgs, role: next(replies))
 
     class Display:
@@ -118,8 +118,8 @@ def test_check_is_rolled_in_the_browser_when_a_display_is_up(tmp_path):
 
     s.display = Display()
     out = s.handle("I read her face.")
-    assert Display.asked == [("narrate", "You watch her face."), ("roll", "Kairos", 3, "Insight check", 10)]
-    assert "4 against DC 10: failure" in out[1]
+    assert Display.asked == [("narrate", "You watch her face."), ("roll", "Kairos", 3, "Insight check", 16)]
+    assert "4 against DC 16: failure" in out[1]
 
 
 def test_a_new_campaign_resumes_from_the_scene_the_display_showed(tmp_path):

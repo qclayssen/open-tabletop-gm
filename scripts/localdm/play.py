@@ -52,7 +52,7 @@ if __package__ in (None, ""):                        # run as a script
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
     import localdm                                    # noqa: F401  (puts scripts/ on sys.path)
 
-from localdm import advisor, autopilot, context, display_bridge, llm, reply, stall, triggers  # noqa: E402
+from localdm import advisor, autopilot, checks, context, display_bridge, llm, reply, stall, triggers  # noqa: E402
 from localdm.bridge import Bridge, parse_player_command, resolve_names          # noqa: E402
 import safeio                                                   # noqa: E402
 from localdm.memory import Memory                               # noqa: E402
@@ -115,8 +115,9 @@ PLAYER_TURN = ("First decide the outcome. If what the player is attempting has a
                "outcome (search, sneak, persuade, deceive, read someone, climb, notice, "
                "recall lore, track, anything that might not work), do not decide it: narrate "
                "only the character beginning the attempt, revealing nothing the roll "
-               'decides, and end with the check: {"check": "<Skill from the sheet> <DC>"}. '
-               "Use DC 10 (easy), 13 (moderate) or 16 (hard). If the outcome is not "
+               'decides, and end with the check: {"check": {"skill": "<Skill from the sheet>", '
+               '"tier": "easy|moderate|hard|very hard", "stakes": "<what failure costs>", '
+               '"target": "<what it is aimed at>"}}. If the outcome is not '
                "uncertain, set check to null and narrate what happens instead. Then at "
                f"most {NARRATION_SENTENCES} sentences of narration, and the JSON line with "
                "null for every other field.")
@@ -132,6 +133,9 @@ CHECK_BEAT = ("You are asking for a check, so this beat is what happens BEFORE t
               "roll. Narrate only the character starting the attempt and the world's "
               "response to the attempt. Keep the check in the JSON line, with null for "
               "every other field.")
+NO_STAKES = ("The attempt was asked for with no stakes, so no roll happens. Narrate it in "
+             "1 to 3 sentences as succeeding at a small cost, or as turning up a new clue. "
+             "Do not say a check was made. Then the JSON line with null for every field.")
 CAST_TASK = ("Narrate the casting in 1 to 3 sentences, using only the numbers the Engine "
              "section gives (never a different AC, duration or slot count). Then the JSON "
              "line with null for every field.")
@@ -313,6 +317,8 @@ class Session:
         self.saved_notes = ""          # from /advise, used by the next DM call
         self.notes = notes_mod.Notes(self.camp_dir)   # the same notes, kept on disk
         self.turn = 0
+        self.check_mode = os.environ.get("GM_CHECK_POLICY", "on").strip().lower()
+        self.check_ledger = checks.Ledger()   # failed attempts this scene (checks.py)
         self.display = None            # set by main(): the browser display, if any
         # called with a stall line right before a blocking advisor call, so the
         # terminal shows it during the wait, not glued to the answer afterwards.
@@ -781,6 +787,7 @@ class Session:
         # bridge again, which would cost a snapshot call on the hot path.
         if args and args[0] in ("start", "end") and res.code == 0:
             self.names.begin()
+            self.check_ledger.begin()
         if res.needs_roll or res.needs_react:
             self.pending = {"args": list(args), "rolls": list(rolls), "reacts": list(reacts),
                             "react": res.needs_react}
@@ -894,11 +901,11 @@ class Session:
             return [f"(engine) {_waiting(self.pending)}"]
         return self._player_turn(line)
 
-    def _ability_check(self, spec: str, line: str) -> list:
+    def _ability_check(self, spec: str, line: str, meta: dict | None = None) -> list:
         """The DM asked for a check: the player rolls in the browser (or it is rolled here
         with no display), then the DM narrates the outcome."""
-        m = re.match(r"\s*([A-Za-z ]+?)\s*(?:DC\s*)?(\d+)?\s*$", spec)
-        skill, dc = (m.group(1), int(m.group(2) or 12)) if m else (spec, 12)
+        req = checks.parse_request(spec, meta, strict=self.check_mode == "strict")
+        skill, dc = req.skill, req.dc
         found = context.skill_bonus(self.camp_dir, skill)
         if found is None and context.first_sheet_path(self.camp_dir) is not None:
             # The sheet exists and does not list this skill. Rolling it anyway made a
@@ -910,6 +917,21 @@ class Session:
             return [f"(engine) {skill.title()} is not a skill on this sheet, so nothing was "
                     f"rolled. Skills on the sheet: {listed}."]
         who, skill, bonus = found or ("", skill.title(), 0)
+        req.skill = skill
+        verdict = checks.decide(req, actor=who, bonus=bonus, ledger=self.check_ledger,
+                                mode=self.check_mode)
+        if verdict.kind == "refused":
+            self.memory.add("engine", verdict.text)
+            return [verdict.text]
+        if verdict.kind in ("auto_success", "no_stakes"):
+            self.memory.add("engine", verdict.text)
+            ok = verdict.kind == "auto_success"
+            r = (self._check_narration(verdict.text, True, margin=0) if ok
+                 else self._dm(engine=verdict.text, task=NO_STAKES))
+            if r.narration:
+                self._say(r.narration)
+                return [f"({verdict.text})", r.narration]
+            return [f"({verdict.text})"]
         total = None
         if self.display is not None and self.display.registered:
             self.display.narrate(self.take_narration())      # the scene first, then the roll prompt
@@ -918,6 +940,8 @@ class Session:
             total = random.randint(1, 20) + bonus
         article = "an" if skill[:1] in "AEIOU" else "a"
         ok = total >= dc
+        if not ok:
+            self.check_ledger.record_failure(who, skill, req.target)
         result = (f"{who or 'The player'} rolled {article} {skill} check: {total} against DC "
                   f"{dc}: {'success' if ok else 'failure'}.")
         self.memory.add("engine", result)
@@ -1186,7 +1210,7 @@ class Session:
             # stall lines ask, and it is read here only when a check is actually present.
             out.append(CHECK_MID_FIGHT.format(spec=r.check))
         elif r.check and not self._players_turn():
-            out += self._ability_check(r.check, line)
+            out += self._ability_check(r.check, line, r.check_meta)
         if r.cast and not self._players_turn():
             out += self._cast_spell(r.cast)
         args = parse_player_command(r.command) if r.command else None
