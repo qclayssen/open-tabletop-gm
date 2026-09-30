@@ -344,13 +344,15 @@ def adventuring_day(levels=None, ruleset: str = "2014", plan=None, lookup=None,
     """What a party can be handed in a whole day, as opposed to one fight.
 
     2014 ONLY, and deliberately so. There is no 2024 counterpart here, and the
-    reason is not the one this function used to give. 2024 removed the adventuring
-    day outright: Jeremy Crawford and Perkins both describe the concept as having
-    been dropped rather than redefined, and 2024 rates each encounter against the
-    party's whole day. So there is nothing to divide and nothing to port, and the
-    honest reason is simply "2024 has no adventuring day". An earlier draft
-    rationalised it as "2024's three tiers are a whole day's share, not an
-    encounter cost", which is a true observation standing in for a false reason,
+    reason is not the one this function used to give. The 2024 rules have no
+    adventuring-day table at all, and 2024 rates each encounter against the
+    party's whole day rather than spending a day's budget across several, so there
+    is nothing to divide and nothing to port. The honest reason is simply "2024
+    has no adventuring day".
+
+    An earlier draft rationalised the refusal as "2024's three tiers are a whole
+    day's share, not an encounter cost", which is a true observation standing in
+    for a false reason,
     and this function does not tell a GM a reason it has not checked.
 
     `plan` is the optional part that makes this worth having: a list of planned
