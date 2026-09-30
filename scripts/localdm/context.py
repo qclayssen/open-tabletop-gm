@@ -293,6 +293,63 @@ def sheet_skills(camp_dir):
             re.finditer(r"^\|\s*([A-Za-z][A-Za-z ]*?)\s*\|[^|]*\|\s*[+-]?\d+\s*\|", text, re.M)]
 
 
+def _inventory_line(text: str) -> str:
+    """The "Equipment & Inventory" section's filled-in entries as one line, else ""."""
+    m = re.search(r"^##\s*Equipment[^\n]*\n(.*?)(?=^##\s|\Z)", text, re.M | re.S)
+    if not m:
+        return ""
+    items = []
+    for ln in m.group(1).splitlines():
+        ln = re.sub(r"\*\*([^*]+):\*\*", "", ln).strip().lstrip("-*").strip()
+        if ln and not re.fullmatch(r"0gp 0sp 0cp|[-_ ]*", ln):
+            items.append(ln.rstrip("."))
+    return "; ".join(items)
+
+
+def _sheet_hp(text: str):
+    """The sheet's own "**HP:** 6/8" as (current, max), or None when it states no HP.
+
+    Deliberately not party_stats: that fills 1/1 in for a sheet with no HP line, and a
+    question the player asked deserves "the sheet says nothing" over a confident 1/1."""
+    m = re.search(r"\*\*HP:\*\*\s*(\d+)\s*/\s*(\d+)", text)
+    return (int(m.group(1)), int(m.group(2))) if m else None
+
+
+def _sheet_ac(camp_dir, name: str, text: str):
+    """The sheet's own "**AC:** 12", or a still-active AC override (Mage Armor), else None.
+
+    Same reason as the HP: party_stats defaults a missing AC to 10, which is a bare-
+    skinned guess wearing the sheet's authority."""
+    override = _active_ac(camp_dir, name)
+    if override is not None:
+        return override
+    m = re.search(r"\*\*AC:\*\*\s*(\d+)", text)
+    return int(m.group(1)) if m else None
+
+
+def sheet_facts(camp_dir) -> dict | None:
+    """Sheet numbers for an out-of-character question, or None with no sheet.
+
+    Plain reads of what the sheet says (HP, AC, both None when the sheet states neither,
+    with a still-active AC override winning so an active Mage Armor shows) plus the passive
+    scores the check policy already uses (10 + skill bonus)."""
+    from localdm import checks
+    sheet = first_sheet_path(camp_dir)
+    if sheet is None:
+        return None
+    try:
+        text = sheet.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    passive = {}
+    for skill in ("perception", "insight", "investigation"):
+        found = skill_bonus(camp_dir, skill)
+        if found:
+            passive[skill] = checks.passive_score(found[2])
+    return {"name": sheet.stem, "hp": _sheet_hp(text), "ac": _sheet_ac(camp_dir, sheet.stem, text),
+            "passive": passive, "inventory": _inventory_line(text)}
+
+
 def council_setting(state_md: str) -> str:
     m = _COUNCIL.search(state_md or "")
     return "off" if m and m.group(1).lower() == "off" else "auto"

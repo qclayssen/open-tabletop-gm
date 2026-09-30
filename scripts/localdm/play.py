@@ -53,7 +53,8 @@ if __package__ in (None, ""):                        # run as a script
     import localdm                                    # noqa: F401  (puts scripts/ on sys.path)
 
 from localdm import advisor, autopilot, checks, context, display_bridge, llm, reply, stall, triggers  # noqa: E402
-from localdm.bridge import Bridge, parse_player_command, resolve_names          # noqa: E402
+from localdm.bridge import Bridge, PLAYER_VERBS, normalize, parse_player_command, resolve_names  # noqa: E402
+from tactics import fightq                                     # noqa: E402
 import safeio                                                   # noqa: E402
 from localdm.memory import Memory                               # noqa: E402
 from localdm import notes as notes_mod                          # noqa: E402
@@ -1110,6 +1111,10 @@ class Session:
     def _autopilot(self, line: str):
         """Output for a combat action parsed without a model, or None."""
         if not self.bridge.is_combat_active():
+            # A sheet question goes first: "how many hit points do I have" contains "hit".
+            sheet = self._sheet_answer(line)
+            if sheet is not None:
+                return sheet
             # B2: the player declared an attack but no fight is running. Left alone,
             # this reaches the model as ordinary narration, and a small model
             # improvises a whole ruleset — bolded "**Attack Roll:** d20 + 6 vs AC
@@ -1128,6 +1133,12 @@ class Session:
             return None
         from tactics import state
         enc = state.load(state.encounter_path(self.camp_dir))
+        asked = fightq.classify(line, PLAYER_VERBS, scope="fight")
+        if asked is not None:            # a question: answered from the engine, no model call
+            self.memory.add("player", line)
+            out = fightq.answer(enc, enc.current.id, asked)
+            self.memory.add("engine", "\n".join(out))
+            return out
         p = autopilot.plan(line, enc, enc.current.id, self.last_target)
         if p is None:
             return None
@@ -1143,6 +1154,43 @@ class Session:
         self.last_target = p.target or self.last_target
         self.queue = [list(c) for c in p.cmds[1:]]
         return note + self._engine(p.cmds[0])
+
+    def _run_command(self, args: list) -> list:
+        """Run a player command the model suggested: ids for names, tactics-REPL phrasing
+        ("attack at the frog", "move toward the frog"), and a friendly line for a command
+        too short to run instead of an engine refusal."""
+        snap = self.bridge.snapshot()
+        if snap:
+            args = resolve_names(args, snap["tokens"])
+        enc = None
+        if args[0] == "move":
+            from tactics import state
+            try:
+                enc = state.load(state.encounter_path(self.camp_dir))
+            except (OSError, ValueError, KeyError, TypeError, AttributeError):
+                enc = None
+        args, problem = normalize(args, enc)
+        if problem:
+            return [f"(engine) {problem}"]
+        return self._engine(args)
+
+    def _sheet_answer(self, line: str):
+        """Out of a fight: a question the character sheet can answer (HP, AC, passive
+        scores, inventory) is answered by the engine with no model call, or None.
+
+        Same classifier as the fight questions (tactics.fightq), "explore" scope.
+        TODO(narrative review 4.2): rules-claim refusal ("house rule", "from now on",
+        "give me", "developer mode") hooks in here, before the line reaches the model."""
+        asked = fightq.classify(line, PLAYER_VERBS, scope="explore")
+        if asked is None:
+            return None
+        facts = context.sheet_facts(self.camp_dir)
+        if facts is None:                # no sheet to read: leave it to the story
+            return None
+        self.memory.add("player", line)
+        out = fightq.answer_sheet(asked, facts)
+        self.memory.add("engine", "\n".join(out))
+        return out
 
     def _player_turn(self, line: str) -> list:
         auto = self._autopilot(line)
@@ -1164,8 +1212,7 @@ class Session:
             args = parse_player_command(r.command) if r.command else None
             if not args:
                 return refused + [NO_ACTION]
-            snap = self.bridge.snapshot()
-            return refused + self._engine(resolve_names(args, snap["tokens"]) if snap else args)
+            return refused + self._run_command(args)
         self.turn += 1
         r = self._dm(player=line, engine=engine, notes=notes, task=PLAYER_TURN)
         # The DM may ask a smarter advisor for help on any turn, and is never
@@ -1223,8 +1270,7 @@ class Session:
             out += self._cast_spell(r.cast)
         args = parse_player_command(r.command) if r.command else None
         if args and self._players_turn():
-            snap = self.bridge.snapshot()
-            out += self._engine(resolve_names(args, snap["tokens"]) if snap else args)
+            out += self._run_command(args)
         if not notes:                        # nobody advised this turn: review it
             self._start_shadow(line, r.narration)
         self.summarizer.maybe_start()

@@ -32,6 +32,19 @@ TOPICS = (
     ("position", r"\bwhere am i\b|\bwhere (do|am) i stand\b|\bmy position\b|\bwhere (is|are) (everyone|everybody)\b"
                  r"|\bwho'?s? (is )?(here|left|alive)\b"),
 )
+# Questions about the character sheet. Only claimed when the line is about the speaker
+# ("my", "I", "me"), so "what is the guard's AC" is never answered with the player's.
+_SELF = re.compile(r"\b(my|i|me|mine|am|do i|have i)\b")
+SELF_TOPICS = (
+    ("passive", r"\bpassive\b|\bhow (perceptive|observant)\b"),
+    # "armou?r class" but not bare "armou?r": "how much armor do I need" and "can I see
+    # the goblin's armor" are story questions, and answering either with the player's own
+    # AC would be a confident non-sequitur. Bare "armou?r" was tried and claimed both.
+    ("ac", r"\b(ac|armou?r class)\b"),
+    ("hp", r"\b(hp|hit points?|health|hurt|wounded|how (badly|healthy))\b"),
+    ("inventory", r"\b(inventory|equipment|gear|backpack|pack|carrying|what do i (have|carry|own)|"
+                  r"what('?s| is) (in )?my (bag|pack|things))\b"),
+)
 _QUESTION_START = re.compile(
     r"^(where|how|what|whats|what's|can|could|who|which|whose|am|is|are|do|does|any)\b")
 # Words that only frame the question, never name a creature.
@@ -54,11 +67,17 @@ def is_questionish(line: str) -> bool:
     return low.endswith("?") or bool(_QUESTION_START.match(low))
 
 
-def classify(line: str, verbs=()) -> Question | None:
+def classify(line: str, verbs=(), scope: str = "fight") -> Question | None:
     """A Question when `line` asks for information, else None (a command, or chatter).
 
     `verbs` are the words the caller treats as commands; a line starting with one is
-    left to the command parser."""
+    left to the command parser. `scope` is "fight" (the grid topics, plus "what is my AC")
+    or "explore" (only the sheet topics: hp, ac, passive scores, inventory; nothing
+    about a map that is not there).
+
+    TODO(narrative review 4.2): a `rules_claim` tag ("house rule", "from now on", "give
+    me", "developer mode") belongs here, answered with a fixed refusal and never sent to
+    the model. Not built yet; see docs/design/NARRATIVE-expert-review-2026-09-30.md."""
     text = (line or "").strip()
     if not text:
         return None
@@ -68,11 +87,20 @@ def classify(line: str, verbs=()) -> Question | None:
         return None
     if not is_questionish(low):
         return None
+    if scope == "explore":
+        if not _SELF.search(low):
+            return None
+        for topic, pat in SELF_TOPICS:
+            if re.search(pat, low):
+                return Question(topic, text=text)
+        return None
     for topic, pat in TOPICS:
         if re.search(pat, low):
             subject = " ".join(w for w in re.findall(r"[a-z0-9'-]+", low) if w not in _NOISE)
             return Question(topic, subject, nearest=bool(re.search(r"\b(nearest|closest)\b", low)),
                             text=text)
+    if _SELF.search(low) and re.search(SELF_TOPICS[1][1], low):     # "what is my AC" mid-fight
+        return Question("ac", text=text)
     return None
 
 
@@ -174,13 +202,38 @@ def answer(enc, pc_id: str, q: Question, symbols: dict | None = None) -> list:
         return _distance_lines(enc, pc, q, symbols)[:4]
     if q.topic == "movement":
         return _movement_lines(enc, pc)
-    if q.topic == "hp":
+    if q.topic in ("hp", "ac"):
         return _hp_lines(enc, pc)[:4]
     if q.topic == "targets":
         return _targets_lines(enc, pc)
     if q.topic == "options":
         return _options_lines(enc, pc)
     return _position_lines(enc, pc)[:4]
+
+
+# ── exploration: the sheet answers ───────────────────────────────────────────
+
+def answer_sheet(q: Question, facts: dict) -> list:
+    """Lines for a sheet question, from `facts` the caller read off the character sheet:
+    {"name", "hp": (cur, max) | None, "ac": int | None, "passive": {skill: int},
+    "inventory": str}. Nothing is computed here but the wording; an absent fact is said
+    to be absent, never guessed."""
+    who = facts.get("name") or "Your character"
+    if q.topic == "hp":
+        hp = facts.get("hp")
+        return [f"{who}: {hp[0]}/{hp[1]} HP."] if hp else [f"The sheet has no HP for {who}."]
+    if q.topic == "ac":
+        ac = facts.get("ac")
+        return [f"{who}: AC {ac}."] if ac is not None else [f"The sheet has no AC for {who}."]
+    if q.topic == "passive":
+        scores = facts.get("passive") or {}
+        if not scores:
+            return [f"The sheet lists no skill bonuses for {who}, so no passive scores."]
+        return [f"{who}: " + ", ".join(f"passive {k.title()} {v}" for k, v in scores.items()) + "."]
+    if q.topic == "inventory":
+        inv = (facts.get("inventory") or "").strip()
+        return [f"{who} carries: {inv}"] if inv else [f"The sheet has no inventory line for {who}."]
+    return []
 
 
 # ── move toward a creature ───────────────────────────────────────────────────
