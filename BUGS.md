@@ -50,17 +50,43 @@ An observed turn ran ~4 minutes with no bound. A hang would wedge the serial loo
 
 **Fix applied:** only `QUEUE_FILE` is touched.
 
-### B6 — four unsynchronised consumers of `.input_queue` — **OPEN (accepted)**
+### B6 — four unsynchronised consumers of `.input_queue` — **FIXED**
+
+All four now share one implementation, `display/queue_claim.py`:
+
 | Consumer | Primitive | Safe? |
 |---|---|---|
-| `check_input.py:112` | `os.replace` claim-then-read | yes |
-| `wrapper.py:206` | read + `unlink` | **no** (pre-existing) |
-| `autorun_wait.py:33` | reads `QFILE` | needs review |
-| `drain_queue.py` | `os.replace` claim-then-read | yes (fixed) |
+| `check_input.py` | `queue_claim.claim_and_read` | yes |
+| `wrapper.py` | `queue_claim.claim_and_read` | yes (was read + `unlink`) |
+| `autorun_wait.py` | `queue_claim.claim_and_read` | yes (was read + `unlink`) |
+| `drain_queue.py` | `queue_claim.claim_and_read` | yes |
 
-`_queue_lock` (`gm-display-app.py:317`) serialises the *writer* only. `wrapper.py:206-228` has the same read-then-unlink defect as B1 and predates this work. `drain_queue.py` originally copied the buggy pattern rather than the correct one sitting beside it.
+`wrapper.py` had carried the same read-then-unlink defect as B1 for the life of
+the file, and its error path was worse: it unlinked the queue on *any* exception,
+including a failed read, so a decode error destroyed queued actions outright.
+`autorun_wait.py` lost the same race and, on a read error, broke out of its
+9-minute wait with the actions still queued and undelivered.
 
-**Note:** only one consumer is active in this deployment (the watcher), so this is latent, not firing.
+**One implementation rather than four.** Three consumers already did the claim by
+hand, correctly. The reason the bug spread is that `drain_queue.py` copied the
+pattern out of its neighbour instead of out of the two correct lines beside it in
+`check_input.py`, so a private second copy was always going to happen again. The
+shared helper also closes a gap the hand-rolled versions left: `check_input.py`
+caught only `OSError`, so a `UnicodeDecodeError` after its claim stranded the
+actions in the `.taken` file. The helper catches `UnicodeError` too and restores.
+
+The restore is the part worth stating. Claiming opens a *narrower* loss window:
+once `os.replace` has run the actions exist only in `.taken`, so anything that
+throws afterwards leaves them where no later poll will look. On failure the
+helper puts the file back and reports `delivered=False`, and the caller must
+deliver nothing, because delivering and restoring would hand the same action to
+the GM twice. If the restore itself fails, `.taken` is named loudly and left in
+place: it holds the actions, and a human can still recover them from a named file.
+
+`tests/test_queue_claim.py` (12 tests) covers the primitive, including a control
+that models the read-then-unlink race and asserts the concurrent action *is*
+destroyed, so the real test cannot pass by accident. Six of the twelve fail
+against the old pattern.
 
 ---
 

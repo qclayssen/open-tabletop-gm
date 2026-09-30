@@ -22,7 +22,9 @@ import time
 import urllib.request
 
 DISPLAY_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, DISPLAY_DIR)
 sys.path.insert(0, os.path.join(DISPLAY_DIR, "..", "scripts"))
+import queue_claim  # (needs the sys.path lines above it)
 PUSH = os.path.join(DISPLAY_DIR, "push_stats.py")
 
 try:
@@ -83,18 +85,24 @@ def _print_entries(entries):
 # Poll loop — exit when queue appears, session changes, or 9 minutes pass
 content = ""
 for _ in range(1800):  # 0.3s * 1800 = 9 min
+    # Claim-then-read, via the shared primitive. This used to read QFILE and then
+    # unlink it, which lost a player's action whenever Send was tapped in the gap
+    # between the two, because the app replaces the file atomically. A read error
+    # also used to set raw = "" and leave the actions in the queue undelivered for
+    # the rest of the run; the file is now restored and retried next run.
+    #
+    # The existence test stays outside the claim, because the original control flow
+    # breaks on "the file was there" rather than "we got text out of it": a queue
+    # that exists but is empty ends the wait, and a claim that fails to read must
+    # not spin this loop for the full nine minutes.
     if os.path.exists(QFILE):
-        try:
-            raw = open(QFILE, encoding="utf-8").read()
-            os.unlink(QFILE)
-        except Exception:
-            raw = ""
-        if raw:
+        text, delivered = queue_claim.claim_and_read(QFILE)
+        if delivered and text:
             try:
-                entries = json.loads(raw)
-                content = _print_entries(entries) if isinstance(entries, list) else raw
+                entries = json.loads(text)
+                content = _print_entries(entries) if isinstance(entries, list) else text
             except Exception:
-                content = raw
+                content = text
         break
     try:
         if open(SESSION_FILE, encoding="utf-8").read().strip() != my_session:
