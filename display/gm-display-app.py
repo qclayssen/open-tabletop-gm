@@ -1294,6 +1294,29 @@ def _broadcast(payload: dict) -> None:
             _client_chars.pop(q, None)
 
 
+_last_clocks = None  # last revealed-clock payload pushed, to broadcast only on change
+
+
+def _clocks_payload() -> list:
+    """Revealed faction clocks for the active campaign (hidden ones are absent)."""
+    name = _active_campaign_name()
+    if not name:
+        return []
+    try:
+        import world as _world
+        return _world.revealed_clocks(name)
+    except Exception:
+        return []
+
+
+def _push_clocks_if_changed() -> None:
+    global _last_clocks
+    clocks = _clocks_payload()
+    if clocks != _last_clocks:
+        _last_clocks = clocks
+        _broadcast({"clocks": clocks})
+
+
 # ─── Routes ──────────────────────────────────────────────────────────────────
 
 _SYSTEMS_DIR = pathlib.Path(__file__).resolve().parent.parent / "systems"
@@ -3209,6 +3232,11 @@ def stream():
         if _current_combat:
             q.put_nowait({"combat": dict(_current_combat)})
 
+    # Revealed faction clocks only; hidden clocks never leave the server.
+    _clk = _clocks_payload()
+    if _clk:
+        q.put_nowait({"clocks": _clk})
+
     # Send current input queue so the pending indicator is accurate on reconnect.
     with _input_lock:
         if _input_queue:
@@ -3274,6 +3302,10 @@ def stream():
                     # showing QUEUED. Broadcasts only when something changed.
                     try:
                         _reconcile_queue_state()
+                    except Exception:
+                        pass
+                    try:
+                        _push_clocks_if_changed()  # picks up reveal/hide/tick from world.py
                     except Exception:
                         pass
                     yield ": keepalive\n\n"   # prevent proxy timeout

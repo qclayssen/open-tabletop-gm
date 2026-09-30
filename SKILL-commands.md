@@ -42,7 +42,7 @@ Do NOT run `git init` or any git commands in campaign directories.
 | `/gm lint [<campaign>\|--all] [--strict]` | Check the campaign markdown: required `state.md` sections, the machine-parsed header, unfilled `<placeholder>` lines, npcs.md index drift, sheet fields, and the arc YAML. Maps to `python3 <skill-base>/scripts/campaign_lint.py`. See `scripts/general.md`. |
 | `/gm update [--check]` | Pull the latest skill changes from origin/main. Follow `/gm update` branch. |
 | `/gm graph <subcommand>` | Campaign relationship graph: `init`, `add-node`, `add-edge`, `set-disposition`, `close-edge`, `supersede-edge`, `list`, `show`, `subgraph`, `scene-context`, `extract`, `extract-apply`. See `/gm graph` procedure below. |
-| `/gm factions <subcommand>` | Off-screen faction clocks: `add`, `status`, `clock`, `lean`, `hold`, `release`, `complete`, `set-interval`, `clear`. Ticks themselves come from `calendar.py advance`. See `/gm factions` procedure below. |
+| `/gm factions <subcommand>` | Off-screen faction clocks: `add`, `status`, `clock`, `lean`, `hold`, `release`, `reveal`, `hide`, `complete`, `set-interval`, `clear`. Ticks themselves come from `calendar.py advance`. See `/gm factions` procedure below. |
 
 ---
 
@@ -283,6 +283,7 @@ to `<campaign>/faction_log.md`.
 | `clock "<name>" <±1..3> [--notes "..."]` | The party interferes — a direct segment change. |
 | `lean "<name>" <±1..2>` | A one-shot nudge to the **next** tick's roll (helped +1, hurt -1). Spent by that tick. |
 | `hold "<name>"` / `release "<name>"` | Veto a clock that must not move yet ("not yet", never "I don't like the outcome"). |
+| `reveal "<name>"` / `hide "<name>"` | Show one clock to the players as a segmented dial on the display (name and filled segments only, never the goal). Hidden is the default; use it when the party has learned the threat exists. |
 | `complete "<name>" [--outcome "..."]` | Acknowledge a fired clock, log how it landed, reset it. |
 | `set-interval day\|week` | How often a tick happens (default `day`). |
 | `clear --yes` | End of arc: drop every clock. Lists them first and refuses without `--yes`. |
