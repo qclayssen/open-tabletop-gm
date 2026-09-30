@@ -229,11 +229,17 @@ def run(sheet: pathlib.Path, out: pathlib.Path) -> dict:
 
 def contact_sheet(colleges: list[str], out: pathlib.Path) -> None:
     """One image showing every crop, so the boxes can actually be checked."""
-    from PIL import Image
     tiles = [p for c in colleges for p in sorted(out.glob(f"{c}-*.png"))
              if p.name != "_contact-sheet.png"]
     if not tiles:
+        # Same ordering fix as run(), applied here too. "There are no crops to
+        # compose" is a question about a directory, and the directory does not
+        # need Pillow. Pillow is deliberately absent on CI, so with the import
+        # above this refusal the GM is told on their own machine and handed a
+        # ModuleNotFoundError on ours, which is the exact split #119 just closed
+        # for run() and left open here.
         raise Refused(f"nothing to check in {out}")
+    from PIL import Image
     cols = min(len(tiles), 6)
     rows = (len(tiles) + cols - 1) // cols
     sheet = Image.new("RGB", (cols * TOKEN_PX, rows * TOKEN_PX), (25, 25, 25))
