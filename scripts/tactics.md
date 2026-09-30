@@ -143,11 +143,13 @@ Design-time only — no combat running, no dice.
 ```bash
 $T budget                       # what this party can be handed, per difficulty
 $T rate --monsters "goblin x4, hobgoblin"
+$T day --plan "goblin x4 | orc x2"   # is a planned set of fights a day, or three?
 ```
 
 - `--party auto` (the default) is every character sheet in the campaign; `--party "Kairos,Vesper"` picks. Levels are read off the sheets, and a mixed party is measured at its average level — the output says so when it does.
 - `--ruleset 2014` (Easy/Medium/Hard/Deadly, with the monster-count multiplier) or `2024` (Low/Moderate/High, no multiplier). Defaults to the campaign's own `**System Version:**` in `state.md`.
 - `rate` shows the whole calculation — each monster's CR and XP, the raw total, the multiplier, the per-character share and the thresholds it was measured against. Below the first threshold it says `TRIVIAL`: not a fight, and not "Easy".
+- `day` is the session-planning question rather than the fight one. The DMG puts an adventuring day at about six to eight medium or hard encounters, and `--plan` costs a day you have already designed against that budget, fight by fight, with `|` between fights and `,` between monsters in one. It reports the share of the day used and whether that is under, about right, or over. It is 2014 only: 2024 has no adventuring day, and `day --ruleset 2024` says so rather than dividing something that is not there. Use it before a session, not mid-fight.
 - Monster names come from the SRD. A name that is not there comes back with near matches.
 
 ## Formations: a monster arrangement you set up once

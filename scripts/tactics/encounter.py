@@ -172,6 +172,100 @@ def cmd_budget(args, camp_dir, campaign: str) -> tuple[str, dict]:
     return budget_text(party_levels, data), data
 
 
+# ── day ───────────────────────────────────────────────────────────────────────
+
+def day_text(party_levels, data: dict) -> str:
+    """The day as a plan: what it holds, and what a proposed day costs against it.
+
+    The budget leads because it is the fixed side. A plan, when given, is rated
+    fight by fight so the arithmetic is checkable, and the headroom line closes it
+    because "over" is the only word that changes what a GM does.
+    """
+    low, high = data["per_day"]
+    width = max(len(t) for t in data["tiers"]) + 3
+    party_size = len(party_levels)
+    lines = [(f"Adventuring day: party of {party_size} at average level "
+              f"{data['average_level']} ({_who(party_levels)}).")]
+    for index, tier in enumerate(data["tiers"]):
+        lines.append(f"  {tier:<{width}}{data['encounters'][tier]:>3} encounters, "
+                     f"at {data['thresholds'][index]} XP each")
+    lines.append("")
+    if data["mixed"]:
+        # Each character's own day, by name. The previous version printed
+        # `party_total // party_size` as "XP each", which is the arithmetic mean
+        # of the party's days: a figure belonging to no character, printed
+        # directly beneath a table built from the *average level's* row. Two
+        # different averages presented as one table, both called "the average".
+        # A GM quoting that number back at a level-1 character has been quoted a
+        # number their own sheet does not contain.
+        own = ", ".join(f"{name} {day}" for (name, _lvl), day
+                        in zip(party_levels, data["day_per_character"]))
+        lines.append(f"  A day is {data['party_total']} XP for the party: {own}.")
+    else:
+        lines.append(f"  A day is {data['party_total']} XP for the party, "
+                     f"{data['party_total'] // max(1, party_size)} XP each.")
+    lines.append(f"  The DMG puts an adventuring day at about {low} to {high} "
+                 f"medium or hard encounters, so that is the target rather than a "
+                 f"ceiling to fill.")
+    if not data["planned"]:
+        lines.append("")
+        lines.append("  No plan given. Pass --plan to cost a day you have already "
+                     "designed, e.g. --plan \"goblin x4 | orc x2 | goblin x4\".")
+        return "\n".join(lines)
+    lines.append("")
+    lines.append("  Planned:")
+    for fight in data["planned"]:
+        names = ", ".join(f"{n} x{c}" if c > 1 else n
+                          for n, c, _cr, _xp, _tot in fight["groups"])
+        # The multiplier is spelled out rather than written after the number,
+        # because "400 XP x2" reads as a unit and not as arithmetic. It is also
+        # the number the GM is least likely to have in their head, so it is the
+        # one worth making unambiguous.
+        mult = (f", x{fight['multiplier']:g} for {fight['count']} monsters"
+                if fight["multiplier"] and fight["multiplier"] != 1 else "")
+        lines.append(f"    {fight['index']}. {names}: {fight['adjusted']} XP{mult}, "
+                     f"{fight['per_character']} each, {fight['difficulty'].upper()}")
+    lines.append("")
+    lines.append(f"  {data['planned_xp']} XP planned against {data['party_total']} "
+                 f"available.")
+    lines.append(f"  That is {data['headroom']}.")
+    return "\n".join(lines)
+
+
+def _parse_plan(spec: str) -> list:
+    """"goblin x4 | orc x2" -> [[("goblin", 4)], [("orc", 2)]]: one entry per fight.
+
+    `|` separates fights rather than commas, because commas already separate
+    monsters inside a fight and reusing the character for both levels would make
+    "goblin x4, orc x2" ambiguously one fight or two.
+    """
+    fights = []
+    for chunk in (spec or "").split("|"):
+        if not chunk.strip():
+            continue
+        # A chunk is passed through verbatim, including a bad one: `parse_monsters`
+        # raises a message that already names the `rate` syntax, and rewriting it
+        # here to talk about `--plan` would mean maintaining two wordings of the
+        # same error. An empty plan is handled before this is ever called.
+        fights.append(parse_monsters(chunk))
+    return fights
+
+
+def cmd_day(args, camp_dir, campaign: str) -> tuple[str, dict]:
+    rules = _rules_for(campaign)
+    party_levels = party(camp_dir, rules, getattr(args, "party", "auto") or "auto")
+    version = ruleset(campaign, getattr(args, "ruleset", "") or "")
+    plan = _parse_plan(getattr(args, "plan", "") or "")
+    if getattr(args, "plan", "") and not plan:
+        raise CombatError("No fights in --plan. Write them as "
+                          "\"goblin x4 | orc x2\", with '|' between fights.")
+    try:
+        data = rules.adventuring_day([lvl for _, lvl in party_levels], version, plan=plan)
+    except ValueError as e:
+        raise CombatError(str(e)) from None
+    return day_text(party_levels, data), data
+
+
 # ── rate ──────────────────────────────────────────────────────────────────────
 
 def _advice(difficulty: str) -> str:
