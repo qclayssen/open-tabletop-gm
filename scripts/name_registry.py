@@ -44,6 +44,7 @@ import re
 import sys
 
 from paths import campaigns_dir, characters_dir, _root
+import safeio
 
 
 def _registry_path() -> pathlib.Path:
@@ -71,18 +72,14 @@ def _load() -> dict:
     p = _registry_path()
     if not p.exists():
         return {"version": 1, "updated": _today(), "entries": {}}
-    try:
-        return json.loads(p.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        sys.stderr.write(f"name_registry: {p} is corrupt; starting fresh\n")
-        return {"version": 1, "updated": _today(), "entries": {}}
+    return safeio.load_json_safe(
+        p, default={"version": 1, "updated": _today(), "entries": {}})
 
 
 def _save(data: dict) -> None:
     data["updated"] = _today()
     p = _registry_path()
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    safeio.atomic_write_json(p, data, ensure_ascii=False)
 
 
 # ── Scanners ──────────────────────────────────────────────────────────────

@@ -54,6 +54,7 @@ if __package__ in (None, ""):                        # run as a script
 
 from localdm import advisor, autopilot, context, display_bridge, llm, reply, stall, triggers  # noqa: E402
 from localdm.bridge import Bridge, parse_player_command, resolve_names          # noqa: E402
+import safeio                                                   # noqa: E402
 from localdm.memory import Memory                               # noqa: E402
 from localdm import notes as notes_mod                          # noqa: E402
 from localdm.summarizer import Summarizer                       # noqa: E402
@@ -972,8 +973,8 @@ class Session:
         else:
             if lv:
                 caster.extra["slots"][lv]["used"] += 1
-            sheet.write_text(R.write_back(sheet.read_text(encoding="utf-8"), caster),
-                             encoding="utf-8")
+            safeio.atomic_write_text(
+                sheet, R.write_back(sheet.read_text(encoding="utf-8"), caster))
             # The sheet's AC field is left as-is (write_back never touches it: see
             # tactics_sheet.py), so the new AC is recorded here instead, for the
             # sidebar to pick up (context.party_stats) until the effect expires.

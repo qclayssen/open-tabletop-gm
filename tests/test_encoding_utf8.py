@@ -129,6 +129,9 @@ def test_a_russian_calendar_round_trips_with_the_default_encoding_armed():
     rather than quietly returning mojibake.
     """
     root = Path(tempfile.mkdtemp())
+    # A campaign must exist (state.md) before calendar.py will write into it.
+    (root / "campaigns" / "russian-test").mkdir(parents=True)
+    (root / "campaigns" / "russian-test" / "state.md").write_text("# ru\n", encoding="utf-8")
     env = {
         "GM_CAMPAIGN_ROOT": str(root),
         "PATH": os.environ.get("PATH", "/usr/bin:/bin:/usr/local/bin"),

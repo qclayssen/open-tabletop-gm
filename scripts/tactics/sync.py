@@ -24,6 +24,8 @@ import re
 import shutil
 import urllib.parse
 
+import safeio   # scripts/safeio.py (on sys.path via tactics/__init__)
+
 from . import slots as slots_mod
 from .grid import SQUARE_FT
 _SKILL = pathlib.Path(__file__).resolve().parents[2]
@@ -65,10 +67,7 @@ def _post(path: str, payload: dict) -> None:
 def sync_tracker(camp_dir, enc, drop_monsters: bool = False) -> None:
     """Write each token's conditions and death saves in tracker.py's format."""
     path = pathlib.Path(camp_dir) / "tracker.json"
-    try:
-        state = json.loads(path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, ValueError):
-        state = {}
+    state = safeio.load_json_safe(path)
     for t in enc.tokens.values():
         key = t.name.lower()
         if t.side != "pc" and (t.dead or drop_monsters):
@@ -80,7 +79,7 @@ def sync_tracker(camp_dir, enc, drop_monsters: bool = False) -> None:
         ent["concentration"] = t.concentration
         ent["death_saves"] = {"successes": t.death_saves["successes"],
                               "failures": t.death_saves["failures"], "stable": t.stable}
-    path.write_text(json.dumps(state, indent=2), encoding="utf-8")
+    safeio.atomic_write_json(path, state)
 
 
 # ─── display ──────────────────────────────────────────────────────────────────
@@ -228,7 +227,7 @@ def set_active_combat(camp_dir, body: str) -> None:
         text = section.sub(lambda m: m.group(1) + body.rstrip() + "\n\n", text, count=1)
     else:
         text = text.rstrip() + "\n\n## Active Combat\n" + body.rstrip() + "\n"
-    path.write_text(text, encoding="utf-8")
+    safeio.atomic_write_text(path, text)
 
 
 # ─── end of combat ────────────────────────────────────────────────────────────
@@ -289,8 +288,7 @@ def write_sheets(camp_dir, enc, rules) -> list:
         new = rules.write_back(old, t)
         diff = ""
         if new != old:
-            shutil.copy2(path, path.with_name(path.name + ".bak"))
-            path.write_text(new, encoding="utf-8")
+            safeio.atomic_write_text(path, new)   # keeps the .bak
             diff = short_diff(old, new)
         out.append((t.name, path, diff))
     return out

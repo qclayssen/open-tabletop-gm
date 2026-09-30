@@ -48,9 +48,8 @@ import sys
 import subprocess
 import argparse
 
-from paths import campaigns_dir as _campaigns_dir
-
-_CAMPAIGNS_DIR = _campaigns_dir()
+from paths import require_campaign as _require_campaign, CampaignNotFound
+import safeio
 
 _SCRIPTS_DIR = pathlib.Path(__file__).parent
 SEND_PY = str(_SCRIPTS_DIR.parent / "display" / "send.py")
@@ -78,22 +77,20 @@ HOURS_PER_TIME = {
 
 
 def _cal_path(campaign: str) -> str:
-    d = str(_CAMPAIGNS_DIR / campaign)
-    os.makedirs(d, exist_ok=True)
-    return os.path.join(d, "calendar.json")
+    try:
+        d = _require_campaign(campaign)
+    except CampaignNotFound as e:
+        print(f"calendar.py: {e}", file=sys.stderr)
+        raise SystemExit(2)
+    return os.path.join(str(d), "calendar.json")
 
 
 def _load(campaign: str) -> dict:
-    try:
-        with open(_cal_path(campaign), encoding="utf-8") as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {}
+    return safeio.load_json_safe(_cal_path(campaign))
 
 
 def _save(campaign: str, cal: dict) -> None:
-    with open(_cal_path(campaign), "w", encoding="utf-8") as f:
-        json.dump(cal, f, indent=2)
+    safeio.atomic_write_json(_cal_path(campaign), cal)
 
 
 def _month_length(cal: dict) -> int:

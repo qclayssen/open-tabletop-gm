@@ -147,6 +147,46 @@ def find_campaign(name: str, migrate: bool = True) -> pathlib.Path:
     return configured
 
 
+class CampaignNotFound(Exception):
+    """Raised by `require_campaign` when a name does not resolve to a campaign."""
+
+
+def list_campaigns() -> list:
+    """Names of real campaigns (directories with state.md) in the configured
+    root, plus the legacy default root when GM_CAMPAIGN_ROOT points elsewhere."""
+    found = set()
+    roots = [campaigns_dir()]
+    if os.environ.get("GM_CAMPAIGN_ROOT", "").strip():
+        roots.append(_default_root() / "campaigns")
+    for root in roots:
+        try:
+            for child in root.iterdir():
+                if _is_campaign(child):
+                    found.add(child.name)
+        except OSError:
+            continue
+    return sorted(found)
+
+
+def require_campaign(name: str, migrate: bool = True) -> pathlib.Path:
+    """Resolve a campaign through `find_campaign`, or raise CampaignNotFound.
+
+    Never creates a directory: a campaign root is made only by an explicit
+    campaign-creation step, so a typo or wrong root cannot conjure an empty
+    shell campaign. The error names the root searched and lists campaigns found.
+    """
+    path = find_campaign(name, migrate=migrate)
+    if _is_campaign(path):
+        return path
+    names = list_campaigns()
+    listing = ", ".join(names) if names else "(none found)"
+    raise CampaignNotFound(
+        f"campaign '{name}' not found (looked in {campaigns_dir()}; a campaign "
+        f"needs a state.md). Campaigns found: {listing}. "
+        f"Set GM_CAMPAIGN_ROOT if your campaigns live elsewhere."
+    )
+
+
 # ── System version selection (system-agnostic) ────────────────────────────
 # A campaign declares an optional version string for its game system on the
 # state.md header line, e.g.:
@@ -247,8 +287,15 @@ if __name__ == "__main__":
         filename = sys.argv[4] if len(sys.argv) >= 5 else ""
         print(system_data_path(system, version, filename))
         sys.exit(0)
+    if len(sys.argv) >= 2 and sys.argv[1] == "campaigns":
+        # `paths.py campaigns [list]`
+        names = list_campaigns()
+        print(f"root: {campaigns_dir()}")
+        print("\n".join(names) if names else "(no campaigns found)")
+        sys.exit(0)
     print(
         "usage:\n"
+        "  python3 paths.py campaigns list\n"
         "  python3 paths.py campaign-system-version <campaign-name> [default]\n"
         "  python3 paths.py system-data-path <system> [version] [filename]",
         file=sys.stderr,
