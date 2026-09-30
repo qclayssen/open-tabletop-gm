@@ -173,7 +173,12 @@ _OVERRIDE = re.compile(
     r"|\b(?:give|grant)\s+(?:me|us)\b[^.!?\n]{0,20}?\b(?:gold|gp|xp)\b"
     r"|\broll\s+(?:me\s+)?a\s+natural\s+(?:20|twenty)\b",
     re.I)
-_SENTENCE = re.compile(r"(?<=[.!?])[ \t]+")
+# Splits AFTER sentence punctuation and keeps it. NameLedger below has its own
+# boundary pattern, which splits ON the punctuation and consumes it; these two
+# are opposites, and when both were called _SENTENCE the second definition won
+# at import time, so every scrubbed DM turn silently lost its full stops and
+# doubled its spaces. Distinct names, because a rebase cannot see this.
+_SENTENCE_SPLIT = re.compile(r"(?<=[.!?])[ \t]+")
 REMOVED = "[a turn that granted a player-typed instruction was removed]"
 
 
@@ -193,13 +198,14 @@ def scrub_injection(text: str) -> str:
         return text
     lines, removed = [], False
     for line in text.split("\n"):
+        sentences = _SENTENCE_SPLIT.split(line)
         kept = []
-        for sentence in _SENTENCE.split(line):
+        for sentence in sentences:
             if _SYSTEM_LOG.search(sentence) or _OVERRIDE.search(sentence):
                 removed = True
             else:
                 kept.append(sentence)
-        if len(kept) < len(_SENTENCE.split(line)):
+        if len(kept) < len(sentences):
             kept = [s for s in kept if s.strip()]   # a removed sentence leaves a gap
         lines.append(" ".join(kept))
     if not removed:
@@ -466,8 +472,9 @@ _NAME_WORD = re.compile(r"[A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})?")
 # "Marcus the guard" yields "the guard".
 _FOLLOWER = re.compile(r"\s+(?:(?:the|a|an)\s+[a-z]+|[A-Z][a-z]{2,})")
 # A sentence boundary, for the same "is this the first word of a sentence"
-# question the follower needs.
-_SENTENCE = re.compile(r"[.!?\n]")
+# question the follower needs. This one splits ON the punctuation and consumes
+# it, which is what the ledger wants and the opposite of _SENTENCE_SPLIT above.
+_SENTENCE_BREAK = re.compile(r"[.!?\n]")
 
 # Capitalised words that are not people: function words, numerals, and the
 # common nouns a small model puts at the head of a sentence. The nouns matter as
@@ -523,7 +530,7 @@ def _mentions(text: str, known: set) -> dict:
         given = m.group(0).split(" ", 1)[0]
         if given.lower() in _NOT_NAMES:
             continue
-        tail = _SENTENCE.split(text[m.end():], maxsplit=1)[0]
+        tail = _SENTENCE_BREAK.split(text[m.end():], maxsplit=1)[0]
         follower = _FOLLOWER.match(tail)
         # Four ways in, because a capitalised word at the head of a sentence and
         # a name look identical. It recurs in this text; it is not the first
