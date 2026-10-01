@@ -1,4 +1,7 @@
-"""The front door (start.py), the play.py campaign argument, and the display dependency list."""
+"""The front door (start.py) and the play.py campaign argument.
+
+The display's dependency manifests are asserted in tests/test_display_requirements.py.
+"""
 from __future__ import annotations
 
 import importlib.util
@@ -67,10 +70,15 @@ def test_play_campaign_conflict_and_missing(gm_play):
         gm_play.main([])
 
 
-def test_display_requirements_are_flask_only():
-    live = [ln.strip() for ln in (ROOT / "display" / "requirements.txt").read_text(
-        encoding="utf-8").splitlines() if ln.strip() and not ln.startswith("#")]
-    assert live == ["flask"]
+def test_pygame_is_imported_nowhere():
+    """Kept from when the front door dropped pygame (ff59a75).
+
+    What display/requirements.txt contains is asserted in
+    tests/test_display_requirements.py, which owns the base-vs-optional split.
+    The check here stayed because it is about the front door, not the manifest:
+    pygame is a heavyweight that buys nothing, and the cheapest way to be sure
+    is that no file in the tree asks for it.
+    """
     assert not re.search(r"^\s*(import|from)\s+pygame", "".join(
         p.read_text(encoding="utf-8") for p in ROOT.rglob("*.py")
         if "node_modules" not in p.parts), re.M)

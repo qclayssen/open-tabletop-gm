@@ -7,7 +7,7 @@ Architecture:
   fetches synthesized WAV files from /audio/sfx/<name> and plays them via
   Web Audio API — works on any device with the browser tab open.
 
-Requires: numpy  (pip install numpy)
+Requires: numpy  (pip3 install -r requirements-audio.txt)
 If numpy is missing the module degrades silently — WAV endpoints return 404.
 """
 
