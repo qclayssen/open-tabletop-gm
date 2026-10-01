@@ -16,48 +16,16 @@ The board-key rule itself (fogKey / boardKey) is pure in tactics.js, so it is
 run under node and pinned without a browser, in the same way
 test_display_tactics_ui.py runs boardCell and octagon. The DOM behaviour needs
 a real browser and is skipped when playwright or its Chromium is missing.
+
+The browser and the static server come from tests/_browser.py (W15).
 """
-import http.server
 import pathlib
-import socketserver
-import threading
 import unittest
 
+from tests._browser import BrowserTestCase
 from tests.test_display_tactics_ui import CSS, JS, NODE, _run
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
-HARNESS = REPO / "display" / "evidence-panel.html"
-
-try:
-    from playwright.sync_api import sync_playwright
-    HAVE_PLAYWRIGHT = True
-except ImportError:                                        # pragma: no cover
-    HAVE_PLAYWRIGHT = False
-
-
-class _Quiet(http.server.SimpleHTTPRequestHandler):
-    def log_message(self, *args):
-        pass
-
-
-def _serve():
-    """A static server for display/, on a port the OS picks.
-
-    Port 0 rather than a hardcoded one: this file has three browser classes and
-    CI runs pytest -n 4, which can put two of them on two workers at the same
-    moment. A fixed port is then already bound, the bind raises, and setUpClass
-    skips the whole class, which is exactly the silent green the playwright CI
-    step was added to stop.
-    """
-    handler = lambda *a, **k: _Quiet(*a, directory=str(REPO / "display"), **k)
-    socketserver.TCPServer.allow_reuse_address = True
-    httpd = socketserver.TCPServer(("127.0.0.1", 0), handler)
-    threading.Thread(target=httpd.serve_forever, daemon=True).start()
-    return httpd
-
-
-def _port(httpd):
-    return httpd.server_address[1]
 
 
 # A grid to test the key against: 6x3, two walls.
@@ -249,8 +217,7 @@ class TheBoardIsOnlyEmptiedWhenItIsRebuilt(unittest.TestCase):
             self.assertIn(layer, cleared, f"{layer} is filled but never emptied")
 
 
-@unittest.skipUnless(HAVE_PLAYWRIGHT, "playwright is not installed")
-class StaticBoardLayers(unittest.TestCase):
+class StaticBoardLayers(BrowserTestCase):
     """W12, measured: the same DOM objects, and a full teardown when they differ.
 
     Identity is the assertion, not a count. A board that happens to draw the
@@ -258,48 +225,11 @@ class StaticBoardLayers(unittest.TestCase):
     and the terrain group are tagged and compared by reference.
     """
 
-    server = None
-    port = 0
-    playwright = None
-    browser = None
-
-    @classmethod
-    def setUpClass(cls):
-        if not HARNESS.exists():
-            raise unittest.SkipTest("display/evidence-panel.html is missing")
-        try:
-            cls.server = _serve()
-            cls.port = _port(cls.server)
-        except OSError as exc:
-            raise unittest.SkipTest(f"cannot serve {REPO / 'display'}: {exc}") from exc
-        try:
-            cls.playwright = sync_playwright().start()
-            cls.browser = cls.playwright.chromium.launch()
-        except Exception as exc:
-            cls.tearDownClass()
-            raise unittest.SkipTest(f"chromium is not available: {exc}") from exc
-
-    @classmethod
-    def tearDownClass(cls):
-        if cls.browser:
-            cls.browser.close()
-        if cls.playwright:
-            cls.playwright.stop()
-        if cls.server:
-            cls.server.shutdown()
-            # shutdown() stops the serve loop; it does NOT close the listening
-            # socket, so without server_close() the port stays bound and the next
-            # run's bind fails with Errno 48.
-            cls.server.server_close()
-            cls.server = None
+    server_kind = "static"
+    ready_js = "window.__ready === true"
 
     def setUp(self):
-        self.page = self.browser.new_page(viewport={"width": 1440, "height": 900})
-        self.page.goto(f"http://127.0.0.1:{self.port}/evidence-panel.html", wait_until="load")
-        self.page.wait_for_function("window.__ready === true", timeout=15000)
-
-    def tearDown(self):
-        self.page.close()
+        self.page = self.open_page(size=(1440, 900), wait=0)
 
     # ── helpers ─────────────────────────────────────────────────────────────
 
@@ -581,8 +511,7 @@ WHERE = """() => {
 }"""
 
 
-@unittest.skipUnless(HAVE_PLAYWRIGHT, "playwright is not installed")
-class KeyboardAndFocus(unittest.TestCase):
+class KeyboardAndFocus(BrowserTestCase):
     """W13: the panel is playable from the keyboard, and keeps the keyboard.
 
     Three separate things. The keyboard survives a rebuild, found by data-key
@@ -592,46 +521,12 @@ class KeyboardAndFocus(unittest.TestCase):
     every control in the panel draws a ring when the keyboard is on it.
     """
 
-    server = None
-    port = 0
-    playwright = None
-    browser = None
-
-    @classmethod
-    def setUpClass(cls):
-        if not HARNESS.exists():
-            raise unittest.SkipTest("display/evidence-panel.html is missing")
-        try:
-            cls.server = _serve()
-            cls.port = _port(cls.server)
-        except OSError as exc:
-            raise unittest.SkipTest(f"cannot serve {REPO / 'display'}: {exc}") from exc
-        try:
-            cls.playwright = sync_playwright().start()
-            cls.browser = cls.playwright.chromium.launch()
-        except Exception as exc:
-            cls.tearDownClass()
-            raise unittest.SkipTest(f"chromium is not available: {exc}") from exc
-
-    @classmethod
-    def tearDownClass(cls):
-        if cls.browser:
-            cls.browser.close()
-        if cls.playwright:
-            cls.playwright.stop()
-        if cls.server:
-            cls.server.shutdown()
-            cls.server.server_close()
-            cls.server = None
+    server_kind = "static"
+    ready_js = "window.__ready === true"
 
     def setUp(self):
-        self.page = self.browser.new_page(viewport={"width": 1440, "height": 900})
-        self.page.goto(f"http://127.0.0.1:{self.port}/evidence-panel.html", wait_until="load")
-        self.page.wait_for_function("window.__ready === true", timeout=15000)
+        self.page = self.open_page(size=(1440, 900), wait=0)
         self.page.evaluate(ENGINE)
-
-    def tearDown(self):
-        self.page.close()
 
     def snap(self, **changes):
         snap = self.page.evaluate("() => JSON.parse(JSON.stringify(window.__SNAP))")

@@ -3,32 +3,20 @@
 Server tests use the Flask test client and module internals. The XSS test loads
 the real index.html in Chromium and is skipped when playwright or Chromium is
 absent; a static check covers the same sinks without a browser.
+
+The browser and the display server come from tests/_browser.py (W15).
 """
-import importlib.util
 import json
-import pathlib
 import queue
 import re
-import threading
 import unittest
 
+from tests._browser import BrowserTestCase, load_display_app
 from tests.display_sources import read_display_sources
-
-REPO = pathlib.Path(__file__).resolve().parent.parent
-
-try:
-    from playwright.sync_api import sync_playwright
-    HAVE_PLAYWRIGHT = True
-except ImportError:                                        # pragma: no cover
-    HAVE_PLAYWRIGHT = False
 
 
 def _load_app(name):
-    spec = importlib.util.spec_from_file_location(
-        name, str(REPO / "display" / "gm-display-app.py"))
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+    return load_display_app(name)
 
 
 class StaticSinks(unittest.TestCase):
@@ -174,31 +162,18 @@ class SseSequencing(unittest.TestCase):
         self.assertRegex(body, r"id: \d+\n")
 
 
-@unittest.skipUnless(HAVE_PLAYWRIGHT, "playwright is not installed")
-class XssInBrowser(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        from werkzeug.serving import make_server
-        mod = _load_app("gm_display_hardening_xss")
-        try:
-            cls.httpd = make_server("127.0.0.1", 0, mod.app)
-        except OSError as exc:
-            raise unittest.SkipTest(f"cannot bind: {exc}") from exc
-        cls.port = cls.httpd.server_port
-        threading.Thread(target=cls.httpd.serve_forever, daemon=True).start()
-        try:
-            cls.pw = sync_playwright().start()
-            cls.browser = cls.pw.chromium.launch()
-        except Exception as exc:
-            cls.httpd.shutdown()
-            raise unittest.SkipTest(f"chromium is not available: {exc}") from exc
+class XssInBrowser(BrowserTestCase):
+    module_name = "gm_display_hardening_xss"
 
-    @classmethod
-    def tearDownClass(cls):
-        cls.browser.close()
-        cls.pw.stop()
-        cls.httpd.shutdown()
-        cls.httpd.server_close()
+    def setUp(self):
+        # gm-display-app.py replays its saved roster to a page as it connects,
+        # so a roster left in display/stats.json by whichever display test ran
+        # last is rendered before this test's own updateStats() call. The stale
+        # card and this test's card differ only by name, and the assertion below
+        # reads the FIRST .sb-identity in the document, so the two together made
+        # this file order-dependent: it passed alone and failed behind
+        # test_display_xss.py on clean main. Wipe first.
+        self.clear_display_state()
 
     def test_hostile_names_do_not_execute(self):
         evil = '<img src=x onerror="window.__pwned=(window.__pwned||0)+1">'
@@ -208,9 +183,7 @@ class XssInBrowser(unittest.TestCase):
                          "hp": {"current": 5, "max": 9}}],
             "turn_order": {"order": [evil, "Goblin"], "current": "Goblin", "round": 1},
         }
-        page = self.browser.new_page()
-        page.goto(f"http://127.0.0.1:{self.port}/", wait_until="load")
-        page.wait_for_timeout(500)
+        page = self.open_page(wait=500)
         page.evaluate("s => updateStats(s)", stats)
         page.wait_for_timeout(500)
         self.assertIsNone(page.evaluate("window.__pwned"))
@@ -219,17 +192,13 @@ class XssInBrowser(unittest.TestCase):
         ident = page.evaluate("document.querySelector('.sb-identity').innerHTML")
         self.assertIn("&lt;img", ident)
         self.assertEqual(page.evaluate("document.querySelectorAll('.sb-identity img').length"), 0)
-        page.close()
 
     def test_connection_pill_reflects_reconnect(self):
-        page = self.browser.new_page()
-        page.goto(f"http://127.0.0.1:{self.port}/", wait_until="load")
-        page.wait_for_timeout(500)
+        page = self.open_page(wait=500)
         self.assertEqual(page.get_attribute("#conn-status", "data-state"), "connected")
         page.evaluate("_setConnStatus('reconnecting', 2)")
         self.assertIn("Reconnecting (attempt 2)", page.inner_text("#conn-status"))
         self.assertEqual(page.get_attribute("#conn-status", "aria-live"), "polite")
-        page.close()
 
 
 if __name__ == "__main__":

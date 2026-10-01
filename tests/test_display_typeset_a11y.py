@@ -2,22 +2,20 @@
 floor, accessibility basics. Browser tests load the real index.html through the
 Flask app on an ephemeral port and are skipped when playwright or Chromium is
 absent. The font-size scan is static and always runs.
+
+The browser and the display server come from tests/_browser.py (W15).
 """
-import importlib.util
-import pathlib
 import re
-import threading
 import unittest
 
+from tests._browser import (
+    LAYOUT_PROBE,
+    MIN_READING_COLUMN,
+    VIEWPORT_MATRIX,
+    BrowserTestCase,
+    assert_viewport_matrix,
+)
 from tests.display_sources import read_display_sources
-
-REPO = pathlib.Path(__file__).resolve().parent.parent
-
-try:
-    from playwright.sync_api import sync_playwright
-    HAVE_PLAYWRIGHT = True
-except ImportError:                                        # pragma: no cover
-    HAVE_PLAYWRIGHT = False
 
 SIZES = ((1440, 900), (1024, 768), (768, 1024), (1200, 784))
 
@@ -59,42 +57,11 @@ class TypeFloor(unittest.TestCase):
                                          read_display_sources().template, re.S).group(0))
 
 
-@unittest.skipUnless(HAVE_PLAYWRIGHT, "playwright is not installed")
-class Browser(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        from werkzeug.serving import make_server
-        spec = importlib.util.spec_from_file_location(
-            "gm_display_app_typeset", str(REPO / "display" / "gm-display-app.py"))
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        try:
-            cls.httpd = make_server("127.0.0.1", 0, mod.app, threaded=True)
-        except OSError as exc:
-            raise unittest.SkipTest(f"cannot bind: {exc}") from exc
-        cls.port = cls.httpd.server_port
-        threading.Thread(target=cls.httpd.serve_forever, daemon=True).start()
-        try:
-            cls.pw = sync_playwright().start()
-            cls.browser = cls.pw.chromium.launch()
-        except Exception as exc:
-            cls.httpd.shutdown()
-            raise unittest.SkipTest(f"chromium is not available: {exc}") from exc
-
-    @classmethod
-    def tearDownClass(cls):
-        cls.browser.close()
-        cls.pw.stop()
-        cls.httpd.shutdown()
-        cls.httpd.server_close()
+class Browser(BrowserTestCase):
+    module_name = "gm_display_app_typeset"
 
     def open(self, w, h, **ctx):
-        context = self.browser.new_context(viewport={"width": w, "height": h}, **ctx)
-        page = context.new_page()
-        page.goto(f"http://127.0.0.1:{self.port}/", wait_until="load")
-        page.wait_for_timeout(500)
-        self.addCleanup(context.close)
-        return page
+        return self.open_page(size=(w, h), wait=500, **ctx)
 
     def narrate(self, page, text=SAMPLE):
         page.evaluate("t => { handleIncomingText(t); instantFlush(); }", text)
@@ -356,7 +323,7 @@ class Browser(unittest.TestCase):
           window.requestAnimationFrame = function (cb) { window.__raf++; return o.call(window, cb); };""" +
                                 page_args.get("init", ""))
         page = context.new_page()
-        page.goto(f"http://127.0.0.1:{self.port}/", wait_until="load")
+        page.goto(self.url(), wait_until="load")
         page.wait_for_timeout(settle)
         return page.evaluate("window.__raf")
 
@@ -367,6 +334,44 @@ class Browser(unittest.TestCase):
         self.assertLessEqual(reduced, 3, f"reduced motion still animates: {reduced}")
         hidden = self._raf_count({"init": "Object.defineProperty(Document.prototype, 'hidden', {get: () => true});"})
         self.assertLessEqual(hidden, 3, f"hidden tab still animates: {hidden}")
+
+    # 5. the viewport matrix (W15) --------------------------------------------
+    #
+    # The audit's three widths, measured as one thing rather than three: no
+    # horizontal overflow, a reading column of at least MIN_READING_COLUMN, and
+    # no rail painted over the party input panel or the new-content pill. 768 is
+    # the one that matters most: it is where the story column used to collapse to
+    # an 84px ribbon, and it is the width the re-test report measured. The
+    # matrix is here rather than in the audit's own words because W9 extends it,
+    # and a second copy of these three assertions is how they stop being run.
+    def test_the_viewport_matrix_holds_at_every_width_that_matters(self):
+        for name, w, h in VIEWPORT_MATRIX:
+            for expanded in (False, True):
+                with self.subTest(viewport=name, input_panel="expanded" if expanded else "collapsed"):
+                    self.clear_display_state()
+                    page = self.open(w, h)
+                    self.narrate(page)
+                    if expanded:
+                        page.click("#input-panel-header")
+                        page.wait_for_timeout(250)
+                    assert_viewport_matrix(self, page.evaluate(LAYOUT_PROBE),
+                                           where=f"{name} {w}x{h} input "
+                                                 f"{'expanded' if expanded else 'collapsed'}")
+
+    def test_the_viewport_matrix_agrees_with_the_narrow_width_scan(self):
+        """The matrix floor is the same fact the NARROW scan above asserts, at
+        the three widths the audit names. It is stated a second time because the
+        two are measured at different widths and a reader who finds one failing
+        should not have to know which file owns it."""
+        for name, w, h in VIEWPORT_MATRIX:
+            with self.subTest(viewport=name):
+                self.clear_display_state()
+                page = self.open(w, h)
+                self.narrate(page)
+                m = page.evaluate(self.COLUMN)
+                self.assertGreaterEqual(m["w"], MIN_READING_COLUMN, f"{name}: {m}")
+                self.assertGreaterEqual(m["w"], 0.5 * m["vw"], f"{name}: {m}")
+                self.assertLessEqual(m["overflowX"], 0, f"{name}: {m}")
 
 
 if __name__ == "__main__":

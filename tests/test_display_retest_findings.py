@@ -7,6 +7,8 @@ the Flask app on an ephemeral port, hand the panel a snapshot in the shape
 scripts/tactics/sync.py produces, and measure what a browser actually did.
 Skipped when playwright or Chromium is absent.
 
+The browser and the display server come from tests/_browser.py (W15).
+
   N-1  the reading column collapses to a ribbon at narrow widths
   N-2  the map panel covers the story, and the folded panel clips its chips
   N-3  the board opens on the hero with the enemies off-screen, and a re-render
@@ -15,24 +17,16 @@ Skipped when playwright or Chromium is absent.
   N-5  the roll banner omits the advantage the engine is rolling under
   N-6  a refusal is unreadable, contradicts the banner, and covers the log
 """
-import importlib.util
 import itertools
 import json
 import pathlib
 import re
-import threading
 import unittest
 
+from tests._browser import BrowserTestCase
 from tests.display_sources import read_display_sources
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
-HARNESS = REPO / "display" / "evidence-panel.html"
-
-try:
-    from playwright.sync_api import sync_playwright
-    HAVE_PLAYWRIGHT = True
-except ImportError:                                        # pragma: no cover
-    HAVE_PLAYWRIGHT = False
 
 # The viewports the re-test used: 1200x784 (its window), 768x780 and 1024x768
 # (its same-origin iframes) and 390x844 (a phone).
@@ -95,38 +89,10 @@ def snapshot(w=12, h=9, **turn):
     return base
 
 
-@unittest.skipUnless(HAVE_PLAYWRIGHT, "playwright is not installed")
-class Panel(unittest.TestCase):
+class Panel(BrowserTestCase):
     """The real page, with the combat panel driven by Tactics.update()."""
 
-    port = None
-
-    @classmethod
-    def setUpClass(cls):
-        from werkzeug.serving import make_server
-        spec = importlib.util.spec_from_file_location(
-            "gm_display_app_retest", str(REPO / "display" / "gm-display-app.py"))
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        try:
-            cls.httpd = make_server("127.0.0.1", 0, mod.app, threaded=True)
-        except OSError as exc:
-            raise unittest.SkipTest(f"cannot bind: {exc}") from exc
-        cls.port = cls.httpd.server_port
-        threading.Thread(target=cls.httpd.serve_forever, daemon=True).start()
-        try:
-            cls.pw = sync_playwright().start()
-            cls.browser = cls.pw.chromium.launch()
-        except Exception as exc:                          # no browser downloaded
-            cls.httpd.shutdown()
-            raise unittest.SkipTest(f"chromium is not available: {exc}") from exc
-
-    @classmethod
-    def tearDownClass(cls):
-        cls.browser.close()
-        cls.pw.stop()
-        cls.httpd.shutdown()
-        cls.httpd.server_close()
+    module_name = "gm_display_app_retest"
 
     # ── helpers ───────────────────────────────────────────────────────────
     # `#text-scroll` transitions padding-top over 0.4s, and --tx-bottom (the
@@ -138,10 +104,7 @@ class Panel(unittest.TestCase):
     NO_PADDING_TRANSITION = "#text-scroll { transition: none !important; }"
 
     def open(self, size=DESKTOP, snap=None, narrate=True, **ctx):
-        context = self.browser.new_context(viewport={"width": size[0], "height": size[1]}, **ctx)
-        self.addCleanup(context.close)
-        page = context.new_page()
-        page.goto(f"http://127.0.0.1:{self.port}/", wait_until="load")
+        page = self.open_page(size=size, wait=0, **ctx)
         page.add_style_tag(content=self.NO_PADDING_TRANSITION)
         page.wait_for_timeout(400)
         if narrate:

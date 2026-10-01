@@ -12,41 +12,18 @@ three must-haves of Phase 4b:
 
 Skipped when playwright or its Chromium is not installed; nothing here is
 needed to run the rest of the suite.
+
+The browser and the static server come from tests/_browser.py (W15).
 """
-import http.server
 import json
 import pathlib
-import socketserver
-import threading
 import unittest
 
-REPO = pathlib.Path(__file__).resolve().parent.parent
-HARNESS = REPO / "display" / "evidence-panel.html"
-PORT = 8749
+from tests._browser import BrowserTestCase
 
-try:
-    from playwright.sync_api import sync_playwright
-    HAVE_PLAYWRIGHT = True
-except ImportError:                                        # pragma: no cover
-    HAVE_PLAYWRIGHT = False
+REPO = pathlib.Path(__file__).resolve().parent.parent
 
 VIEWPORTS = {"table": (1440, 900), "phone": (390, 844)}
-
-
-class _Quiet(http.server.SimpleHTTPRequestHandler):
-    def log_message(self, *args):
-        pass
-
-
-def _serve():
-    handler = lambda *a, **k: _Quiet(*a, directory=str(REPO / "display"), **k)
-    # allow_reuse_address before binding: a hardcoded PORT left bound by a previous
-    # run (or a crashed one) would otherwise fail this bind outright and take all
-    # 8 tests in the class with it at setUpClass.
-    socketserver.TCPServer.allow_reuse_address = True
-    httpd = socketserver.TCPServer(("127.0.0.1", PORT), handler)
-    threading.Thread(target=httpd.serve_forever, daemon=True).start()
-    return httpd
 
 
 # The numbers the panel has to hit, as a browser must report them.
@@ -86,57 +63,18 @@ SPELLS = ("() => { window.__spells = Array.from({length: 14}, (_, i) => ({name: 
           " : Promise.reject(new Error('offline')); }")
 
 
-@unittest.skipUnless(HAVE_PLAYWRIGHT, "playwright is not installed")
-class MeasuredLayout(unittest.TestCase):
-    server = None
-    playwright = None
-    browser = None
-
-    @classmethod
-    def setUpClass(cls):
-        if not HARNESS.exists():
-            raise unittest.SkipTest("display/evidence-panel.html is missing")
-        # A port we cannot bind is an environment problem, not a layout failure.
-        # Raising here would take all 8 tests in the class with it and read as a
-        # broken panel; skipping says only that the measurement could not run.
-        try:
-            cls.server = _serve()
-        except OSError as exc:
-            raise unittest.SkipTest(f"cannot bind {PORT}: {exc}") from exc
-        try:
-            cls.playwright = sync_playwright().start()
-            cls.browser = cls.playwright.chromium.launch()
-        except Exception as exc:                          # no browser downloaded
-            cls.tearDownClass()
-            raise unittest.SkipTest(f"chromium is not available: {exc}") from exc
-
-    @classmethod
-    def tearDownClass(cls):
-        if cls.browser:
-            cls.browser.close()
-        if cls.playwright:
-            cls.playwright.stop()
-        if cls.server:
-            cls.server.shutdown()
-            # shutdown() stops the serve loop; it does NOT close the listening
-            # socket. Without server_close() the port stays bound after the
-            # process exits and the next run's bind fails with Errno 48.
-            cls.server.server_close()
-            cls.server = None
+class MeasuredLayout(BrowserTestCase):
+    server_kind = "static"
+    ready_js = "window.__ready === true"
 
     def panel(self, name, spell_list=False):
         w, h = VIEWPORTS[name]
-        page = self.browser.new_page(viewport={"width": w, "height": h})
-        page.goto(f"http://127.0.0.1:{PORT}/evidence-panel.html", wait_until="load")
-        page.wait_for_function("window.__ready === true", timeout=15000)
-        page.wait_for_timeout(200)
+        page = self.open_page(size=(w, h), wait=200)
         if spell_list:
             page.evaluate(SPELLS)
             page.click("#tx-leads button:has-text('Cast')")
             page.wait_for_timeout(500)
-        out = page.evaluate(PROBE)
-        page.close()
-        return out
+        return page.evaluate(PROBE)
 
     # ── must-have 6: a table display reads from across the table ───────────
     def test_a_table_display_draws_squares_of_at_least_40px(self):
@@ -213,18 +151,14 @@ class MeasuredLayout(unittest.TestCase):
 
     def panel_with_odds(self, name="table", before_resolve=None):
         w, h = VIEWPORTS[name]
-        page = self.browser.new_page(viewport={"width": w, "height": h})
-        page.goto(f"http://127.0.0.1:{PORT}/evidence-panel.html", wait_until="load")
-        page.wait_for_function("window.__ready === true", timeout=15000)
+        page = self.open_page(size=(w, h), wait=0)
         if before_resolve:
             page.evaluate(before_resolve)
         else:
             page.evaluate(self.RESOLVE)
         # The odds float lives for 1.4s, so it has to be read before it goes.
         page.wait_for_timeout(200)
-        out = page.evaluate(self.ODDS)
-        page.close()
-        return out
+        return page.evaluate(self.ODDS)
 
     def odds(self, name="table"):
         return self.panel_with_odds(name)
@@ -331,9 +265,7 @@ class MeasuredLayout(unittest.TestCase):
         attribute of the same name, so it moved nothing. The test measures
         rendered rectangles, which is the only thing that could have caught it.
         """
-        page = self.browser.new_page(viewport={"width": 1440, "height": 900})
-        page.goto(f"http://127.0.0.1:{PORT}/evidence-panel.html", wait_until="load")
-        page.wait_for_function("window.__ready === true", timeout=15000)
+        page = self.open_page(size=(1440, 900), wait=0)
         page.evaluate(self.RESOLVE)
         page.wait_for_timeout(200)
         out = page.evaluate("""() => {
@@ -344,7 +276,6 @@ class MeasuredLayout(unittest.TestCase):
                     w: Math.round(r.width)};
           }).concat([{board: true, l: Math.round(bd.left), r: Math.round(bd.right)}]);
         }""")
-        page.close()
         board = [o for o in out if o.get("board")][0]
         floats = [o for o in out if not o.get("board")]
         self.assertTrue(floats, "no odds float was drawn to measure")
@@ -357,9 +288,7 @@ class MeasuredLayout(unittest.TestCase):
     def test_a_token_in_the_first_column_still_shows_its_whole_chance(self):
         """The worst case, on its own: a token at x=0 with a phrase three cells
         wide, which is where the clamping actually has to do something."""
-        page = self.browser.new_page(viewport={"width": 1440, "height": 900})
-        page.goto(f"http://127.0.0.1:{PORT}/evidence-panel.html", wait_until="load")
-        page.wait_for_function("window.__ready === true", timeout=15000)
+        page = self.open_page(size=(1440, 900), wait=0)
         page.evaluate("""() => {
           const s = JSON.parse(JSON.stringify(window.__SNAP));
           // Theodric is the leftmost token; put him in column 0 and make the
@@ -380,7 +309,6 @@ class MeasuredLayout(unittest.TestCase):
           return {text: f.textContent, l: Math.round(r.left), r: Math.round(r.right),
                   bl: Math.round(bd.left), br: Math.round(bd.right)};
         }""")
-        page.close()
         self.assertIsNotNone(out, "a token in the first column drew no float at all")
         self.assertEqual(out["text"], "40% to fail the save")
         self.assertGreaterEqual(out["l"], out["bl"], "the chance ran off the left edge")

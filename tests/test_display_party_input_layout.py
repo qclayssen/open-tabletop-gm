@@ -5,22 +5,19 @@ not overlap those rows or the reading column. Loads the real index.html through
 the Flask app on an ephemeral port. Skipped when playwright or Chromium is absent.
 
 Also pins, as static checks, the client wording for the recall and refusal paths.
+
+The browser and the display server come from tests/_browser.py (W15).
 """
-import importlib.util
-import pathlib
 import re
-import threading
 import unittest
 
+from tests._browser import (
+    LAYOUT_PROBE,
+    VIEWPORT_MATRIX,
+    BrowserTestCase,
+    assert_viewport_matrix,
+)
 from tests.display_sources import read_display_sources
-
-REPO = pathlib.Path(__file__).resolve().parent.parent
-
-try:
-    from playwright.sync_api import sync_playwright
-    HAVE_PLAYWRIGHT = True
-except ImportError:                                        # pragma: no cover
-    HAVE_PLAYWRIGHT = False
 
 PROBE = """() => {
   const r = e => e.getBoundingClientRect();
@@ -55,44 +52,14 @@ class ClientWording(unittest.TestCase):
         self.assertIn("_refusalMessage", skip)
 
 
-@unittest.skipUnless(HAVE_PLAYWRIGHT, "playwright is not installed")
-class ExpandedPanelLayout(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        from werkzeug.serving import make_server
-        spec = importlib.util.spec_from_file_location(
-            "gm_display_app_pi_layout", str(REPO / "display" / "gm-display-app.py"))
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        try:
-            cls.httpd = make_server("127.0.0.1", 0, mod.app)
-        except OSError as exc:
-            raise unittest.SkipTest(f"cannot bind: {exc}") from exc
-        cls.port = cls.httpd.server_port
-        threading.Thread(target=cls.httpd.serve_forever, daemon=True).start()
-        try:
-            cls.pw = sync_playwright().start()
-            cls.browser = cls.pw.chromium.launch()
-        except Exception as exc:
-            cls.httpd.shutdown()
-            raise unittest.SkipTest(f"chromium is not available: {exc}") from exc
-
-    @classmethod
-    def tearDownClass(cls):
-        cls.browser.close()
-        cls.pw.stop()
-        cls.httpd.shutdown()
-        cls.httpd.server_close()
+class ExpandedPanelLayout(BrowserTestCase):
+    module_name = "gm_display_app_pi_layout"
 
     def measure(self, w, h):
-        page = self.browser.new_page(viewport={"width": w, "height": h})
-        page.goto(f"http://127.0.0.1:{self.port}/", wait_until="load")
-        page.wait_for_timeout(600)
+        page = self.open_page(size=(w, h), wait=600)
         page.click("#input-panel-header")
         page.wait_for_timeout(250)
-        out = page.evaluate(PROBE)
-        page.close()
-        return out
+        return page.evaluate(PROBE)
 
     def check(self, w, h):
         m = self.measure(w, h)
@@ -101,15 +68,12 @@ class ExpandedPanelLayout(unittest.TestCase):
         self.assertGreaterEqual(m["left"], m["readRight"], f"overlaps the reading column: {m}")
 
     def check_centred(self, w, h, classes):
-        page = self.browser.new_page(viewport={"width": w, "height": h})
-        page.goto(f"http://127.0.0.1:{self.port}/", wait_until="load")
-        page.wait_for_timeout(600)
+        page = self.open_page(size=(w, h), wait=600)
         page.click("#input-panel-header")
         # The padding animates (transition: padding 0.4s), so wait it out.
         page.evaluate("cls => document.getElementById('text-scroll').classList.add(...cls)", classes)
         page.wait_for_timeout(700)
         m = page.evaluate(PROBE)
-        page.close()
         self.assertAlmostEqual(m["readCentre"], m["vw"] / 2, delta=2,
                                msg=f"reading column is not centred ({classes}): {m}")
         self.assertGreaterEqual(m["left"], m["readRight"],
@@ -127,6 +91,33 @@ class ExpandedPanelLayout(unittest.TestCase):
 
     def test_1280x720(self):
         self.check(1280, 720)
+
+    def test_the_matrix_widths_too(self):
+        """The panel check above runs at three desktop widths. The audit's matrix
+        names three more, and 768 is the one the re-test measured: it is where
+        the story column used to collapse to 84px.
+
+        Two of check()'s three assertions carry over. The third, that the panel
+        starts to the right of the reading column, is a desktop-only fact and is
+        deliberately not repeated here: below the 1100px breakpoint the rails
+        stop being side columns, so the panel is a fixed overlay pinned to the
+        bottom of the window and shares horizontal space with the prose by
+        design. Asserting it at 375 would be a new claim about the layout, not
+        this panel's existing one, and W9 is the item that owns it.
+        """
+        for name, w, h in VIEWPORT_MATRIX:
+            for expanded in (False, True):
+                with self.subTest(viewport=name, input_panel="expanded" if expanded else "collapsed"):
+                    self.clear_display_state()
+                    page = self.open_page(size=(w, h), wait=600)
+                    page.click("#input-panel-header")
+                    page.wait_for_timeout(250)
+                    assert_viewport_matrix(self, page.evaluate(LAYOUT_PROBE), where=name)
+                    p = page.evaluate(PROBE)
+                    self.assertLessEqual(p["bottom"], p["vh"],
+                                         f"runs off the viewport ({name}): {p}")
+                    self.assertGreaterEqual(p["top"], p["rowsBottom"] + 8,
+                                            f"overlaps settings rows ({name}): {p}")
 
 
 if __name__ == "__main__":
