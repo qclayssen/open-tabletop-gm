@@ -55,8 +55,20 @@ body.tx-sidebar-hidden #tx-panel { left: 60px; }
    for the first paint, before the panel has been measured. The fixed
    min(62vh, 640px) + 90px this replaced was 25px short of the panel at
    1200x784 and 116px short at 1024x768, which is why the opening lines of
-   every scene sat under the board. */
-body.tx-on #text-scroll { padding-top: calc(var(--tx-bottom, 150px) + 28px); }
+   every scene sat under the board.
+
+   --dpb-bottom is the dice-pending badge's measured bottom edge, published by
+   display.js, and --text-top-inset is the resting inset display.css declares.
+   The badge is an overlay like the panel and covers the same opening lines, and
+   it is up at the same time as the panel whenever a player is waiting on a roll
+   from inside a fight, so the inset is the largest of the three rather than
+   whichever rule happened to win. The base inset is in the max() too, which is
+   what stops a badge from making the story smaller: a max() of the two overlays
+   alone would hand a 124px badge a narrower window than the 172px its own page
+   reserves, and the story would jump up when a roll was asked for. */
+body.tx-on #text-scroll {
+  padding-top: calc(max(var(--tx-bottom, 150px), var(--dpb-bottom, 0px), var(--text-top-inset, 72px)) + 28px);
+}
 /* "Hide map" folds the panel down to its header and the initiative strip, not
    to nothing: a folded panel still answers "whose turn is it" and "who is
    left", which is what a table watches between moves. It is then sized by what
@@ -356,7 +368,9 @@ body.tx-min #tx-panel { max-height: none; }
      measured inset as everywhere else: the panel is a screen's worth minus its
      own margins, and the old 100dvh - 72px ignored that the panel is also
      bounded by 100dvh - 84px, which put the story 12px under its edge. */
-  body.tx-on #text-scroll { padding-top: calc(var(--tx-bottom, 100dvh - 84px) + 28px); }
+  body.tx-on #text-scroll {
+    padding-top: calc(max(var(--tx-bottom, 100dvh - 84px), var(--dpb-bottom, 0px), var(--text-top-inset, 172px)) + 28px);
+  }
   /* One column, and the panel fits. It is a scroll box with a ceiling, and on a
      short window the board plus the action bar were taller than the box: 907px
      of content in 692px, so the Move/Attack row started below the fold with

@@ -24,6 +24,7 @@ import re
 import unittest
 
 from tests._browser import BrowserTestCase
+from tests.display_settle import calm, present, settle
 from tests.display_sources import read_display_sources
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
@@ -100,13 +101,13 @@ class Panel(BrowserTestCase):
     # geometry read, so it wants the settled layout, not a frame of an animation.
     # Taking the transition off is what makes "wait until it stops changing"
     # mean something: with the transition live, "not changing yet" and "finished"
-    # are the same observation, and the first is what you get. See settle().
-    NO_PADDING_TRANSITION = "#text-scroll { transition: none !important; }"
+    # are the same observation, and the first is what you get. See calm() and
+    # settle() in tests/display_settle.py, which own that reasoning for every
+    # display browser test rather than for this file alone.
 
     def open(self, size=DESKTOP, snap=None, narrate=True, **ctx):
         page = self.open_page(size=size, wait=0, **ctx)
-        page.add_style_tag(content=self.NO_PADDING_TRANSITION)
-        page.wait_for_timeout(400)
+        calm(page)
         if narrate:
             page.evaluate("t => { handleIncomingText(t); instantFlush(); }", NARRATION)
         if snap is not None:
@@ -114,71 +115,33 @@ class Panel(BrowserTestCase):
             self.settle(page)
         return page
 
-    # Poll padding-top, not --tx-bottom: the variable is published synchronously by
-    # the ResizeObserver, so it is already final (`698px`) on the first read while
-    # padding-top is still short of it. Polling the variable returns immediately.
-    SETTLE = """() => {
-      const pad = parseFloat(getComputedStyle(
-        document.getElementById('text-scroll')).paddingTop);
-      const txb = parseFloat(getComputedStyle(document.body)
-        .getPropertyValue('--tx-bottom')) || 0;
-      // Both have to be true, and the second is the one that was missing:
-      // --tx-bottom is what padding-top is computed FROM, so until it is
-      // published there is nothing to be stable relative to, and a padding
-      // reading of 72 or 172 is the untouched starting value rather than a
-      // settled one. `open()` takes the transition off, so once this holds the
-      // value is final rather than momentarily unmoved.
-      if (!txb || pad < txb) return false;
-      const w = window;
-      if (w.__mqLastPad === undefined || pad !== w.__mqLastPad) {
-        w.__mqLastPad = pad; w.__mqStable = 0; return false;
-      }
-      return ++w.__mqStable >= 3;
-    }"""
-
     def settle(self, page):
-        """Block until padding-top has caught up with the published panel bottom.
+        """Block until the inset has caught up with everything overlaying the story.
 
-        Three things this has to get right, each of which I got wrong first:
-
-        - Poll padding-top, NOT --tx-bottom. The variable is published
-          synchronously by the ResizeObserver, so it is already at its final
-          value (`698px`) on the first read while padding-top is still animating
-          toward it. Polling the variable returns immediately and measures 187px
-          mid-flight -- that version failed five tests that had been passing.
-        - Each poll must be a separate task. A synchronous `for` loop inside the
-          predicate never yields, style recalc never runs, padding sits at its
-          72px starting value for every iteration, and "stable" is reached on
-          the third one -- measuring before the animation began.
-        - Three identical samples, not one: a single match can be two samples
-          inside the same easing step.
-
-        The bug that made this file red on `main`, and the reason the first two
-        are not enough on their own: "three samples in a row and none of them
-        moved" is ALSO what an animation looks like in its first 50ms, before it
-        has travelled anywhere. So the predicate could return true while padding
-        was still at its starting value, and the geometry read that followed was
-        of a half-built layout. It passed in isolation because a lightly loaded
-        machine got its first poll after the transition had begun, and it failed
-        at the fourth viewport when run after the rest of the file because by
-        then there were three stale pages open and everything was slower. That is
-        the worst shape for a timing bug: green when you run the test, red when
-        you run the suite.
-
-        The fix is to stop inferring "finished" from motion. `--tx-bottom` is
-        published synchronously and padding-top is `calc(var(--tx-bottom) + 28px)`,
-        so `pad >= txb` is a real lower bound for "arrived" rather than a guess
-        about easing curves, and `open()` removes the transition so that arriving
-        is the only thing left to observe.
-
-        This does not weaken what the file checks. On the broken tree the new
-        predicate fails `test_the_story_starts_below_the_panel` at (1440, 900) and
-        (390, 844) exactly as the old one did, and it still fails when the inset
-        is merely 12px short, which is the off-by-N bug this whole mechanism
-        exists to catch and which a pure stability check cannot see.
+        The predicate and the three ways it went wrong before it are written out
+        in tests/display_settle.py. It is bound as a method because most of the
+        calls here are `self.settle(page)`.
         """
-        page.wait_for_function(self.SETTLE, polling="raf", timeout=8000)
-        page.wait_for_timeout(50)
+        settle(page)
+
+    def present(self, page, predicate, what, arg=None):
+        present(page, predicate, what, arg=arg)
+
+    def scroll_board_right(self, page):
+        """Scroll the board to its far right, and wait until it has got there.
+
+        A board scroll is clamped to the board's own extent, so "as far right as
+        the map goes" is the only position that can be asked for at any map
+        width; a fixed pixel count is either past the end or short of it. The
+        read that follows has to be of a scrolled board: taken before the scroll
+        took effect it is 0, and both tests that use this then measure what the
+        panel did to a position the player never had.
+        """
+        page.evaluate("""() => { const b = document.getElementById('tx-board');
+          b.scrollLeft = b.scrollWidth; }""")
+        present(page, """() => { const b = document.getElementById('tx-board');
+          return b.scrollLeft >= b.scrollWidth - b.clientWidth - 1; }""",
+                "the board to scroll to its far right")
 
     # ── N-2: the panel must not be an opaque lid on the story ────────────
     GEOMETRY = """() => {
@@ -393,8 +356,7 @@ class Panel(BrowserTestCase):
         self.assertGreater(page.evaluate(self.BOARD)["scrollW"],
                            page.evaluate("document.getElementById('tx-board').clientWidth"),
                            "the map fits, so there is no scroll to lose")
-        page.evaluate("document.getElementById('tx-board').scrollLeft = 284")
-        page.wait_for_timeout(150)
+        self.scroll_board_right(page)
         before = page.evaluate("document.getElementById('tx-board').scrollLeft")
         self.assertGreater(before, 0, "could not scroll the board to test with")
         page.evaluate("s => Tactics.update(s)", dict(snap))
@@ -412,8 +374,7 @@ class Panel(BrowserTestCase):
         page.evaluate("s => { s.tokens.forEach(t => { t.x = 0; t.y = 0; });"
                       " Tactics.update(s); }", snapshot(w=40, h=20))
         self.settle(page)
-        page.evaluate("document.getElementById('tx-board').scrollLeft = 1200")
-        page.wait_for_timeout(150)
+        self.scroll_board_right(page)
         self.assertGreater(page.evaluate("document.getElementById('tx-board').scrollLeft"), 0,
                            "could not scroll away from the creatures")
         page.evaluate("s => Tactics.update(s)", snapshot(w=40, h=20))
@@ -542,7 +503,13 @@ class Panel(BrowserTestCase):
             body=json.dumps({"error": "There is no player's turn open right now. "
                                       "It is Kobold 2's turn. Nothing was sent."})))
         page.click("#tx-actions button:has-text('End turn')")
-        page.wait_for_timeout(700)
+        # The refusal comes back through a fetch and is written to the banner
+        # when it lands, so wait for the banner to say it rather than for a
+        # length of time: 700ms was enough on an idle machine and a race on a
+        # loaded one, where the failure reads as the banner being empty.
+        self.present(page, """() => document.getElementById('tx-banner')
+                                       .textContent.includes('Kobold 2')""",
+                     "the refusal to reach the banner")
         m = page.evaluate("""() => {
           const b = document.getElementById('tx-banner');
           return {text: b.textContent, role: b.getAttribute('role'),
@@ -555,7 +522,6 @@ class Panel(BrowserTestCase):
         # dismissed here rather than waited out, so the assertion is about the
         # banner's lifetime and not about a timer.
         page.evaluate("document.getElementById('tx-toast').hidden = true")
-        page.wait_for_timeout(300)
         still = page.inner_text("#tx-banner")
         self.assertIn("Kobold 2's turn", still,
                       f"the refusal left with the toast: {still!r}")
@@ -569,9 +535,8 @@ class Panel(BrowserTestCase):
             body=json.dumps({"error": "There is no player's turn open right now. "
                                       "It is Kobold 2's turn. Nothing was sent."})))
         page.click("#tx-actions button:has-text('End turn')")
-        page.wait_for_timeout(700)
-        self.assertFalse(page.evaluate("document.getElementById('tx-toast').hidden"),
-                         "the toast should be showing at first")
+        self.present(page, "() => !document.getElementById('tx-toast').hidden",
+                     "the refusal to put the toast up")
         page.wait_for_function("document.getElementById('tx-toast').hidden", timeout=12000)
         still = page.inner_text("#tx-banner")
         self.assertIn("Kobold 2's turn", still,
@@ -603,9 +568,9 @@ class Panel(BrowserTestCase):
             status=409, content_type="application/json",
             body=json.dumps({"error": "There is no player's turn open right now."})))
         page.click("#tx-actions button:has-text('End turn')")
-        page.wait_for_timeout(600)
-        self.assertIn("no player's turn",
-                      page.inner_text("#tx-banner").lower())
+        self.present(page, """() => document.getElementById('tx-banner')
+                                       .textContent.toLowerCase().includes("no player's turn")""",
+                     "the refusal to reach the banner")
         snap = snapshot()
         snap["current"] = "kob-1"
         page.unroute("**/combat/do")
@@ -656,10 +621,13 @@ class Panel(BrowserTestCase):
         # Keyboard: Tab reaches it and Enter toggles, as any button does.
         page.evaluate("document.getElementById('controls-toggle-row').focus()")
         page.keyboard.press("Enter")
-        page.wait_for_timeout(300)
+        self.present(page, """(was) => document.getElementById('controls-toggle-row')
+                                      .getAttribute('aria-expanded') !== was""",
+                     "Enter to toggle the settings rail", arg=m["expanded"])
         self.assertEqual(
             page.evaluate("document.getElementById('controls-toggle-row')"
-                          ".getAttribute('aria-expanded')"), "false")
+                          ".getAttribute('aria-expanded')"),
+            "false" if m["expanded"] == "true" else "true")
 
 
 class ClientWording(unittest.TestCase):

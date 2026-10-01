@@ -15,6 +15,7 @@ from tests._browser import (
     BrowserTestCase,
     assert_viewport_matrix,
 )
+from tests.display_settle import present
 from tests.display_sources import read_display_sources
 
 SIZES = ((1440, 900), (1024, 768), (768, 1024), (1200, 784))
@@ -60,12 +61,40 @@ class TypeFloor(unittest.TestCase):
 class Browser(BrowserTestCase):
     module_name = "gm_display_app_typeset"
 
+    # Every measurement in this file is of a DEFAULT layout, and a default layout
+    # needs a display with no roster on it. `display/stats.json` is gitignored
+    # runtime state that gm-display-app.py loads at import, so whichever display
+    # test posted a roster last leaves one behind and the character sidebar takes
+    # its 210px column: at 390 the reading column then measures 138px of 390, and
+    # the scan below fails on a tree that has not changed. Reproduced on clean
+    # origin/main by running test_display_xss.py first. The viewport matrix at the
+    # bottom of this file already called clear_display_state() for exactly this
+    # reason; the two column scans had not caught up.
+
     def open(self, w, h, **ctx):
         return self.open_page(size=(w, h), wait=500, **ctx)
 
     def narrate(self, page, text=SAMPLE):
         page.evaluate("t => { handleIncomingText(t); instantFlush(); }", text)
-        page.wait_for_timeout(200)
+        present(page, "() => !!document.querySelector('#text-content .dm-block')",
+                "the narration to render")
+
+    def open_input(self, page):
+        """Open the party input panel, and wait until it is open.
+
+        Five of the tests below measure a layout that only exists with the panel
+        expanded, and each of them used to sleep for it. The header toggles a
+        class and that class is what hides the body, so the honest condition is
+        a box rather than a length of time: `#input-body` having a height.
+        Reading `display` instead would be satisfied one style recalc before the
+        geometry the test is about has settled.
+        """
+        page.click("#input-panel-header")
+        present(page, """() => {
+          const r = document.getElementById('input-body').getBoundingClientRect();
+          return r.width > 0 && r.height > 0;
+        }""", "the party input panel to open")
+        return page
 
     # 1. typesetting ---------------------------------------------------------
     def test_markdown_renders_as_elements_not_literals(self):
@@ -89,7 +118,6 @@ class Browser(BrowserTestCase):
         page.evaluate("window.__pwn = 0")
         self.narrate(page, '<img src=x onerror="window.__pwn=1"> **b** <script>window.__pwn=2</script>\n'
                            '## <b>h</b>\n- <i onclick="1">x</i>\n')
-        page.wait_for_timeout(200)
         got = page.evaluate("""() => ({pwn: window.__pwn,
           imgs: document.querySelectorAll('.dm-block img:not(.block-badge)').length,
           tags: document.querySelectorAll('.dm-block script, .dm-block b, .dm-block i').length,
@@ -100,7 +128,8 @@ class Browser(BrowserTestCase):
     def test_speaker_chip_and_markdown_in_speech(self):
         page = self.open(1200, 784)
         page.evaluate("renderNPCBlock('Hesper', '*She goes still.* **\"No lock,\"** she says.\\nThen more.')")
-        page.wait_for_timeout(300)
+        present(page, "() => !!document.querySelector('.npc-block .npc-name')",
+                "the NPC block to render")
         got = page.evaluate("""() => { const n = document.querySelector('.npc-block .npc-name');
           const cs = getComputedStyle(n);
           return {name: n.textContent, radius: parseFloat(cs.borderTopLeftRadius),
@@ -155,6 +184,7 @@ class Browser(BrowserTestCase):
         stop being side columns."""
         for w, h in NARROW:
             with self.subTest(width=w):
+                self.clear_display_state()
                 page = self.open(w, h)
                 self.narrate(page)
                 m = page.evaluate(self.COLUMN)
@@ -170,13 +200,22 @@ class Browser(BrowserTestCase):
         column is clear of it in both states."""
         for w, h in NARROW:
             with self.subTest(width=w):
+                self.clear_display_state()
                 page = self.open(w, h)
                 self.narrate(page)
                 shut = page.evaluate(self.COLUMN)
                 self.assertLessEqual(shut["rail"]["bottom"], shut["colTop"] + 1,
                                      f"the collapsed rail runs over the column: {shut}")
+                # The wait is on the toggle having taken effect, not on a
+                # direction. Below the 1100px breakpoint the rail STARTS
+                # collapsed (display.js _setControlsVisible), so the click opens
+                # it there and closes it above, and `shut`/`open_` are the two
+                # states in whichever order this page happened to begin in.
+                was = page.get_attribute("#controls-toggle-row", "aria-expanded")
                 page.click("#controls-toggle-row")
-                page.wait_for_timeout(400)
+                present(page, """(was) => document.getElementById('controls-toggle-row')
+                                        .getAttribute('aria-expanded') !== was""",
+                        "the settings rail to toggle", arg=was)
                 open_ = page.evaluate(self.COLUMN)
                 self.assertLessEqual(open_["rail"]["bottom"], open_["colTop"] + 1,
                                      f"the open rail runs over the column: {open_}")
@@ -188,8 +227,7 @@ class Browser(BrowserTestCase):
         for w, h in SIZES:
             with self.subTest(size=(w, h)):
                 page = self.open(w, h)
-                page.click("#input-panel-header")
-                page.wait_for_timeout(250)
+                self.open_input(page)
                 m = page.evaluate("""() => { const r = id => document.getElementById(id).getBoundingClientRect();
                   const p = r('input-panel'), roll = r('dp-roll'), ta = r('player-input-text');
                   const ts = document.getElementById('text-scroll').getBoundingClientRect();
@@ -245,8 +283,7 @@ class Browser(BrowserTestCase):
                 page = self.open(w, h)
                 self.narrate(page)
                 page.evaluate("renderNPCBlock('Hesper', 'hi')")
-                page.click("#input-panel-header")
-                page.wait_for_timeout(300)
+                self.open_input(page)
                 small = page.evaluate("""() => { const out = [];
                   document.querySelectorAll('body *').forEach(e => {
                     const r = e.getBoundingClientRect(); if (!r.width || !r.height) return;
@@ -270,15 +307,13 @@ class Browser(BrowserTestCase):
         for w, h in SIZES:
             with self.subTest(size=(w, h)):
                 page = self.open(w, h)
-                page.click("#input-panel-header")
-                page.wait_for_timeout(300)
+                self.open_input(page)
                 self.assertEqual(page.evaluate(self.TARGETS.replace("MIN", "32")), [])
 
     def test_interactive_targets_are_at_least_44px_on_touch(self):
         page = self.open(768, 1024, has_touch=True, is_mobile=True)
         self.assertTrue(page.evaluate("matchMedia('(pointer: coarse)').matches"))
-        page.click("#input-panel-header")
-        page.wait_for_timeout(300)
+        self.open_input(page)
         bad = page.evaluate(self.TARGETS.replace("MIN", "44"))
         self.assertEqual(bad, [])
 
@@ -317,6 +352,13 @@ class Browser(BrowserTestCase):
         self.assertGreaterEqual(ring[1], 2)
 
     def _raf_count(self, page_args, settle=1200):
+        """Frames drawn in `settle` ms, counted by an init script.
+
+        The one sleep in this file that stays a sleep, and the reason the rest
+        are not: this measures a RATE, so the answer genuinely is "how much time
+        were you given". The two negative cases are the absence of the loop, and
+        no predicate can wait for a thing that should not be there.
+        """
         context = self.browser.new_context(viewport={"width": 1200, "height": 784}, **page_args.get("ctx", {}))
         self.addCleanup(context.close)
         context.add_init_script("""window.__raf = 0; const o = window.requestAnimationFrame;
@@ -352,8 +394,7 @@ class Browser(BrowserTestCase):
                     page = self.open(w, h)
                     self.narrate(page)
                     if expanded:
-                        page.click("#input-panel-header")
-                        page.wait_for_timeout(250)
+                        self.open_input(page)
                     assert_viewport_matrix(self, page.evaluate(LAYOUT_PROBE),
                                            where=f"{name} {w}x{h} input "
                                                  f"{'expanded' if expanded else 'collapsed'}")

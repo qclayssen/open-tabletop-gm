@@ -19,10 +19,12 @@ a real browser and is skipped when playwright or its Chromium is missing.
 
 The browser and the static server come from tests/_browser.py (W15).
 """
+import json
 import pathlib
 import unittest
 
 from tests._browser import BrowserTestCase
+from tests.display_settle import present
 from tests.test_display_tactics_ui import CSS, JS, NODE, _run
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
@@ -59,7 +61,6 @@ def _key(snap):
 
 
 def _js(value):
-    import json
     return json.dumps(value)
 
 
@@ -326,7 +327,11 @@ class StaticBoardLayers(BrowserTestCase):
         self.page.evaluate(
             "() => document.querySelector('#tx-board .tx-tok').dispatchEvent("
             "new MouseEvent('click', {bubbles: true}))")
-        self.page.wait_for_timeout(120)
+        # The handler is not synchronous: it goes out through a fetch that
+        # resolves as a promise, so the post lands a task later. Wait for the
+        # post to exist rather than for a length of time that it might.
+        present(self.page, "() => window.__posts.length >= 1",
+                "the click to send an action")
         posts = self.page.evaluate("() => window.__posts")
         self.assertEqual(len(posts), 1,
                          f"one click produced {len(posts)} actions on a reused board")
@@ -337,7 +342,13 @@ class StaticBoardLayers(BrowserTestCase):
         width = self.page.evaluate(
             "() => document.querySelector('#tx-board svg').getAttribute('width')")
         self.page.set_viewport_size({"width": 800, "height": 600})
-        self.page.wait_for_timeout(500)            # the resize handler debounces 150ms
+        # The resize handler debounces, so the refit is deliberately not
+        # immediate. The wait is on the width it has to reach, which also asserts
+        # that the refit happened rather than only that time passed.
+        present(self.page, """(w) => {
+          const svg = document.querySelector('#tx-board svg');
+          return svg && svg.getAttribute('width') !== w;
+        }""", "the board to refit for a narrower panel", arg=width)
         after = self.compare()
         self.assertTrue(after["sameSvg"], "a resize rebuilt the terrain")
         now = self.page.evaluate(
@@ -504,7 +515,11 @@ WHERE = """() => {
     move: !!q('#tx-leads button[data-key="Move"]')
               && q('#tx-leads button[data-key="Move"]').getAttribute('aria-pressed') === 'true',
     attackChoices: document.querySelectorAll('#tx-actions [data-key^="attack:"]').length,
-    reachCells: document.querySelectorAll('#tx-actions .tx-reach').length,
+    // The walk overlay is drawn into the board's overlay layer, not the action
+    // bar (tactics.js drawOverlay). It was read out of #tx-actions here, where
+    // it can never match, so "the reachable overlay outlived the mode" below was
+    // a count of nothing and could not fail.
+    reachCells: document.querySelectorAll('#tx-board .tx-reach').length,
     cursor: document.querySelectorAll('#tx-board .tx-cursor').length,
     say: (document.getElementById('tx-say').textContent || '').trim().slice(0, 40),
   };
@@ -547,6 +562,19 @@ class KeyboardAndFocus(BrowserTestCase):
         """Put the keyboard on a control, the way a Tab would."""
         self.page.evaluate("(s) => document.querySelector(s).focus()", selector)
 
+    def state(self, field, what, value):
+        """Block until one field of WHERE() reads what the last keypress was for.
+
+        A sleep after a keystroke is a bet that the panel had re-rendered by the
+        time the next line ran. The bet holds on an idle machine and loses on a
+        loaded one, and a keyboard test that loses it does not fail on the thing
+        it is about: it fails on the mode still being armed, or the attack list
+        still being gone, and the message says nothing about which keypress was
+        late. Naming the field and the expected value turns the wait into the
+        assertion it was standing in for.
+        """
+        present(self.page, f"() => ({WHERE})().{field} === {json.dumps(value)}", what)
+
     def tab_to(self, name):
         """Tab until the keyboard is on the control with this data-key, or id.
 
@@ -564,7 +592,14 @@ class KeyboardAndFocus(BrowserTestCase):
     def attack(self, key="Attack"):
         self.focus('#tx-leads button[data-key="%s"]' % key)
         self.page.keyboard.press("Enter")
-        self.page.wait_for_timeout(200)
+        armed = "attack" if key == "Attack" else "move"
+        choices = "attackChoices" if key == "Attack" else "reachCells"
+        self.state(armed, f"the {key} mode to arm", True)
+        # Arming also asks the engine what it can do, so the list arrives a task
+        # later than the mode does. Both shapes are read from WHERE() because
+        # every test below this point assumes the list is there.
+        present(self.page, f"() => ({WHERE})().{choices} > 0",
+                f"the {key} choice list to render")
 
     def ask(self):
         """Make the engine put up a question, and return when it is up.
@@ -572,13 +607,21 @@ class KeyboardAndFocus(BrowserTestCase):
         Dash rather than an attack, because an attack button only chooses the
         weapon: it sends nothing until a target is clicked on the board. Dash
         goes straight to act(), which is the loop that calls ask().
+
+        The wait is on the prompt HOLDING THE KEYBOARD, not on it being
+        visible. `ask()` in tactics.js un-hides the box and then focuses the
+        control it wants in a `setTimeout(..., 0)`, so for one macrotask the
+        question is on screen with the keyboard still on the Dash button. Every
+        caller here is about what the keyboard does next, and a 250ms sleep was
+        covering that gap.
         """
         self.page.evaluate(PENDING)
         self.focus('#tx-actions button[data-key="Dash"]')
         self.page.keyboard.press("Enter")
-        self.page.wait_for_timeout(250)
-        self.assertFalse(self.page.evaluate("() => document.getElementById('tx-prompt').hidden"),
-                         "the engine's question did not open")
+        present(self.page,
+                "() => { const p = document.getElementById('tx-prompt');"
+                " return !p.hidden && p.contains(document.activeElement); }",
+                "the engine's question to open and take the keyboard")
 
     # ── the keyboard-only flow the audit asks for ───────────────────────────
 
@@ -599,7 +642,8 @@ class KeyboardAndFocus(BrowserTestCase):
         self.page.keyboard.press("Tab")
         self.assertEqual(self.where()["text"], "Attack")
         self.page.keyboard.press("Enter")
-        self.page.wait_for_timeout(200)
+        present(self.page, f"() => ({WHERE})().attackChoices === 1",
+                "the attack list to open")
         armed = self.where()
         self.assertTrue(armed["attack"], "Enter did not arm the attack mode")
         self.assertEqual(armed["attackChoices"], 1, "the attack list did not open")
@@ -621,7 +665,7 @@ class KeyboardAndFocus(BrowserTestCase):
         self.assertEqual(self.where()["id"], "tx-board",
                          "a snapshot took the keyboard off the board mid-flow")
         self.page.keyboard.press("Escape")
-        self.page.wait_for_timeout(150)
+        self.state("attack", "Escape to cancel the armed attack mode", False)
         gone = self.where()
         self.assertFalse(gone["attack"], "Escape did not cancel the armed mode")
         self.assertEqual(gone["attackChoices"], 0, "the attack list outlived the mode")
@@ -659,7 +703,7 @@ class KeyboardAndFocus(BrowserTestCase):
               {target: 'frog-1', attack: 'Longsword', legal: true, hit_percent: 71}]}})});
         }""")
         self.page.keyboard.press("Escape")            # cancel
-        self.page.wait_for_timeout(100)
+        self.state("attack", "the first Escape to cancel the attack mode", False)
         self.attack()                                 # arm again, 71%
         after = self.page.evaluate(text_of)
         self.assertIn("71%", after, "the new percentage was not drawn")
@@ -678,7 +722,8 @@ class KeyboardAndFocus(BrowserTestCase):
         """
         self.focus('#tx-leads button[data-key="Cast"]')
         self.page.keyboard.press("Enter")
-        self.page.wait_for_timeout(250)
+        present(self.page, "() => document.querySelectorAll('#tx-actions button').length > 10",
+                "the action bar to rebuild for the cast mode")
         keys = self.page.evaluate("""() => {
           const all = [...document.querySelectorAll('#tx-actions button')];
           return {total: all.length,
@@ -713,7 +758,7 @@ class KeyboardAndFocus(BrowserTestCase):
         self.attack()
         self.focus('#tx-leads button[data-key="Attack"]')
         self.page.keyboard.press("Escape")
-        self.page.wait_for_timeout(150)
+        self.state("attack", "Escape from the side list to cancel the mode", False)
         after = self.where()
         self.assertFalse(after["attack"], "Escape from the side list did not cancel the mode")
         self.assertEqual(after["attackChoices"], 0, "the attack list outlived the mode")
@@ -724,29 +769,24 @@ class KeyboardAndFocus(BrowserTestCase):
         self.page.focus("#tx-board")
         self.assertTrue(self.where()["move"])
         self.page.keyboard.press("Escape")
-        self.page.wait_for_timeout(150)
+        self.state("reachCells", "Escape on the board to clear the walk", 0)
         after = self.where()
         self.assertFalse(after["move"], "Escape on the board did not cancel the mode")
         self.assertEqual(after["reachCells"], 0, "the reachable overlay outlived the mode")
 
     def test_escape_cancels_the_measure_before_the_mode(self):
         """Two things armed, one Escape each, nearest first."""
+        ruler_pressed = ("() => document.querySelector('[data-ruler=\"line\"]')"
+                         ".getAttribute('aria-pressed') === '%s'")
         self.attack("Move")
         self.focus('[data-ruler="line"]')
         self.page.keyboard.press("Enter")
-        self.page.wait_for_timeout(100)
-        self.assertEqual(self.page.evaluate(
-            "() => document.querySelector('[data-ruler=\"line\"]').getAttribute('aria-pressed')"),
-            "true")
+        present(self.page, ruler_pressed % "true", "the line ruler to arm")
         self.page.keyboard.press("Escape")
-        self.page.wait_for_timeout(100)
-        self.assertEqual(self.page.evaluate(
-            "() => document.querySelector('[data-ruler=\"line\"]').getAttribute('aria-pressed')"),
-            "false", "the first Escape did not take the measure")
+        present(self.page, ruler_pressed % "false", "the first Escape to take the measure down")
         self.assertTrue(self.where()["move"], "the first Escape also cancelled the mode")
         self.page.keyboard.press("Escape")
-        self.page.wait_for_timeout(100)
-        self.assertFalse(self.where()["move"], "the second Escape did not cancel the mode")
+        self.state("move", "the second Escape to cancel the mode", False)
 
     def test_escape_closes_the_engines_question(self):
         """The prompt holds the keyboard and is on top, so it is what Escape means.
@@ -756,14 +796,16 @@ class KeyboardAndFocus(BrowserTestCase):
         question stayed on screen with the keyboard still inside it.
         """
         self.ask()
-        self.assertTrue(self.page.evaluate(
-            "() => document.getElementById('tx-prompt').contains(document.activeElement)"),
-            "the prompt did not take the keyboard")
+        # The prompt holding the keyboard is what `ask()` waits for, so asserting
+        # it again here would only be asserting the wait. What is left is the
+        # part this test is about: Escape answered the prompt instead of
+        # reaching past it to whatever the board was doing.
         sent = self.page.evaluate("() => window.__sent.length")
         self.page.keyboard.press("Escape")
-        self.page.wait_for_timeout(250)
-        self.assertTrue(self.page.evaluate("() => document.getElementById('tx-prompt').hidden"),
-                        "Escape did not close the engine's question")
+        # Closing it is a round trip through the prompt's own cancel path, so
+        # wait for the close rather than for a length of time.
+        present(self.page, "() => document.getElementById('tx-prompt').hidden",
+                "Escape to close the engine's question")
         self.assertEqual(self.page.evaluate(
             "() => document.getElementById('tx-prompt').innerHTML"), "",
             "Escape left the question's controls on screen")
@@ -790,7 +832,8 @@ class KeyboardAndFocus(BrowserTestCase):
         self.assertEqual(number["style"], "solid",
                          f"the engine's own input has no drawn ring: {number}")
         self.page.keyboard.press("Escape")           # answer the question again
-        self.page.wait_for_timeout(200)
+        present(self.page, "() => document.getElementById('tx-prompt').hidden",
+                "Escape to answer the engine's question")
         self.assertTrue(self.tab_to("Move"), "Tab never reached a lead action")
         lead = self.page.evaluate(RING)
         self.assertEqual(lead["key"], "Move", lead)
