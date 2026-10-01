@@ -32,10 +32,12 @@ jobs:
           # matrix here would double the wait for a signal, not add one.
           python-version: '3.13'
       - name: Install test dependencies
-        # flask/flask-cors: a dozen tests import display/gm-display-app.py.
+        # flask: a dozen tests import display/gm-display-app.py, and
+        # tests/test_start.py reads it. flask-cors is NOT needed -- 3c62b92 (#149)
+        # dropped the last import of it, so it is not installed here.
         # pyyaml: scripts/graph_extract_deterministic.py sys.exit(2)s at import
         # without it, which crashes pytest's collector with INTERNALERROR
         # rather than a readable failure.
-        run: python -m pip install --upgrade pip pytest flask flask-cors pyyaml
+        run: python -m pip install --upgrade pip pytest flask pyyaml
       - name: pytest
         run: python -m pytest tests/ -q
