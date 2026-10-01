@@ -313,6 +313,155 @@ def classify(xp_per_character: int, thresholds, ruleset: str = "2014") -> str:
     return "trivial"
 
 
+# -- the day, not the fight --───────────────────────────────────────────────────
+
+def _day_xp(level: int) -> int:
+    """One character's adventuring-day budget. xp.py owns the table."""
+    level = _clamp_level(level)
+    return xp().ADVENTURING_DAY_XP.get(level, xp().ADVENTURING_DAY_XP[20])
+
+
+def _encounters_affordable(day_per_character: int, thresholds: list) -> dict:
+    """How many fights of each difficulty fit inside one character's day.
+
+    Integer division. It is floored rather than rounded, and the docstring used
+    to claim that a day smaller than one Easy encounter was a case worth
+    defending, but enumerating all 80 cells of the two tables, the smallest
+    quotient anywhere is 2, so that case cannot arise and the justification was
+    decoration. The floor is still the right rounding here, and the reason is the
+    honest one: it never reports a day as holding more fights than it can pay for.
+
+    `thresholds` is the threshold row, named for what it is. The parameter used to
+    be called `per_character`, which `budget()` also uses for the threshold row,
+    so the name was technically consistent and practically misleading.
+    """
+    return {tier: day_per_character // value
+            for tier, value in zip(TIERS["2014"], thresholds)}
+
+
+def adventuring_day(levels=None, ruleset: str = "2014", plan=None, lookup=None,
+                     suggest=None) -> dict:
+    """What a party can be handed in a whole day, as opposed to one fight.
+
+    2014 ONLY, and deliberately so. There is no 2024 counterpart here, and the
+    reason is not the one this function used to give. The 2024 rules have no
+    adventuring-day table at all, and 2024 rates each encounter against the
+    party's whole day rather than spending a day's budget across several, so there
+    is nothing to divide and nothing to port. The honest reason is simply "2024
+    has no adventuring day".
+
+    An earlier draft rationalised the refusal as "2024's three tiers are a whole
+    day's share, not an encounter cost", which is a true observation standing in
+    for a false reason,
+    and this function does not tell a GM a reason it has not checked.
+
+    `plan` is the optional part that makes this worth having: a list of planned
+    encounters, each a `groups` list like `rate()` takes, so the GM can ask "I
+    have these four fights, is that a day?" Without a plan the budget alone is
+    nearly useless, and the reason is worth writing down precisely, because an
+    earlier draft of this docstring got it wrong.
+
+    The day table is calibrated to the DMG's "six to eight medium or hard
+    encounters in a day", so dividing it by a threshold column gives roughly the
+    DMG's own number every time: the Medium column divides to 5 to 8 and the Hard
+    column to 3 to 5, across every level from 1 to 20. The Easy column (11 to 16)
+    and the Deadly column (2 to 3) are further out, which is the DMG's own point
+    about easy and deadly encounters rather than an error. So "a day holds about
+    seven Medium fights" is true at level 1 and at level 20 and tells a GM
+    planning a level 20 day nothing they had not already assumed. The budget can
+    never come out over or under on its own. Only a plan can, which is why
+    `--plan` is the feature and the budget is the frame it is read in.
+    """
+    if ruleset not in RULESETS:
+        raise ValueError(f"unknown ruleset {ruleset!r} (2014 or 2024)")
+    if ruleset != "2014":
+        raise ValueError("The adventuring day budget is a 2014 DMG table and 2024 has "
+                         "no adventuring day, so there is no day budget to read. Rate "
+                         "individual fights with `rate` instead.")
+    lv = _levels(levels)
+    rows = [_day_xp(l) for l in lv]
+    per_character_budget = _day_xp(_average_level(lv))
+    thresholds = _row("2014", _average_level(lv))
+    affordable = _encounters_affordable(per_character_budget, thresholds)
+    low, high = xp().ENCOUNTERS_PER_DAY
+    total = sum(rows)
+    out = {
+        "ruleset": ruleset,
+        "levels": lv,
+        "average_level": _average_level(lv),
+        "mixed": len(set(lv)) > 1,
+        "day_per_character": rows,
+        "party_total": total,
+        "thresholds": thresholds,
+        "tiers": list(TIERS["2014"]),
+        "encounters": affordable,
+        "per_day": (low, high),
+        "planned": [],
+        "planned_xp": 0,
+        "headroom": _headroom(0, total, 0),
+    }
+    for index, groups in enumerate(plan or [], start=1):
+        if not groups:
+            continue
+        rated = rate(groups, lv, "2014", lookup=lookup, suggest=suggest)
+        out["planned"].append({
+            "index": index,
+            "groups": [(r["name"], r["count"], r["cr_label"], r["xp"], r["total"])
+                       for r in rated["rows"]],
+            "count": rated["count"],
+            "raw": rated["raw"],
+            "multiplier": rated["multiplier"],
+            "adjusted": rated["adjusted"],
+            "per_character": rated["per_character"],
+            "difficulty": rated["difficulty"],
+        })
+        out["planned_xp"] += rated["adjusted"]
+    if out["planned"]:
+        out["headroom"] = _headroom(out["planned_xp"], total, len(out["planned"]))
+    return out
+
+
+def _headroom(spent: int, total: int, fights: int) -> str:
+    """How much of the day a planned set of fights uses up, in words.
+
+    The bands are fractions of the day budget, not a restatement of
+    `ENCOUNTERS_PER_DAY`, and the docstring used to claim otherwise. Two reasons
+    they stay separate: a share is the thing that is actually measurable here,
+    and tying the bands to an encounter count would make a change to the DMG's
+    pacing guidance silently move the arithmetic's thresholds.
+
+    The share is reported as a share, and the fight count as the count the GM
+    actually wrote, never converted into an invented "fights' worth". A GM who
+    planned four fights does not learn anything from being told those four fights
+    are worth one, and the conversion would be the exact confident-wrong-number
+    failure this module exists to prevent.
+
+    Nothing here names a condition level. An earlier draft said exhaustion 5 was
+    "likely" in the far-over band, and that is the tool asserting a mechanical
+    game state it did not compute and cannot compute: this function is read-only,
+    sees no tokens, and exhaustion lives in the tracker where only a long rest
+    reduces it. The XP budget measures expected XP earned, not resource
+    depletion. The bands below are editorial advice and say so; the numbers
+    above them are the engine's and are checkable.
+    """
+    if fights <= 0:
+        return "no fights planned yet"
+    share = spent / total if total else 1.0
+    plural = "fight" if fights == 1 else "fights"
+    lead = f"{fights} planned {plural}, about {share:.0%} of the day"
+    if share <= 0.5:
+        return f"{lead}. Room for more, or a rest between them"
+    if share <= 1.0:
+        return (f"{lead}. That is a full adventuring day and not an over budget "
+                f"one, which is what the table is calibrated for")
+    if share <= 2.0:
+        return (f"{lead}. Over: two days, or a long rest in the middle of it. "
+                f"Which of those is a GM's call, not the table's")
+    return (f"{lead}. Far over: this reads as a multi-day march rather than a day. "
+            f"The party will be spent before the last fight; how spent is the DMG's "
+            f"call, and the DMG's exhaustion table is the reference")
+
+
 # ── XP award, through the ledger xp.py already keeps ──────────────────────────
 
 def award_xp(sheet_path, amount: int) -> dict:

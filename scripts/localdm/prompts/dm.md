@@ -59,7 +59,9 @@ Checks:
   persuade, deceive, read whether someone lies, climb, notice, recall lore, track),
   ask for a roll instead of deciding it. Write only the first beat (1 or 2 sentences,
   revealing nothing the roll decides) and end the JSON line with a check:
-  {"check": "Stealth 13"}. Use a skill from the sheet and DC 10, 13 or 16. Never write
+  {"check": {"skill": "Stealth", "tier": "moderate", "stakes": "the guard turns", "target": "guard"}}.
+  Use a skill from the sheet and a tier (easy, moderate, hard, very hard); the engine
+  sets the DC, and stakes says what failure costs. Never write
   "make a Stealth check" in the narration; the roll prompt appears by itself. Only
   trivial or impossible actions skip the roll.
 - A failed check must change the world and cost something concrete: let the intent
@@ -123,4 +125,9 @@ sacrificed, never the line.
   an action: the one engine command for it (move / attack / dash / disengage / dodge /
   stand / death-save / end-turn); else null. Use the token ids and squares shown in the
   Engine section. Never roll dice.
+- The State card at the end of the Engine section is the truth for where things are:
+  every creature with its square, HP and feet away, and the map's landmarks by name.
+  Move toward the landmark the player named using the squares it gives, and describe
+  distance in feet as the card reports it. Never work out a distance, a square or a
+  cover level yourself, and never name a landmark that is not on the card.
 - cast: only Mage Armor, and only outside a fight: the spell's name; else null.

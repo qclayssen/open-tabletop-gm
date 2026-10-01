@@ -6,9 +6,11 @@ Faction clocks track progress toward goals without constant GM attention.
 Ticks follow in-game time (days or weeks), not sessions. The script decides
 *whether and how far* a faction moves; the GM decides *what it looks like*.
 
-Everything printed here is GM-only. No output is ever pushed to the player
-display: a clock face the players never see is what makes off-screen pressure
-pressure rather than bookkeeping.
+Everything printed here is GM-only. Clocks stay off the player display unless
+the GM opts one in with `reveal`: a clock face the players never see is what
+makes off-screen pressure pressure rather than bookkeeping, so hidden is the
+default and only revealed clocks (name, size, filled segments, never the goal
+or notes) are ever read by the display, via `revealed_clocks`.
 
 Usage:
     # Add a faction with a goal and clock size (4, 6 or 8 segments)
@@ -30,6 +32,10 @@ Usage:
     # GM veto, for things that must not happen yet
     python3 world.py -c $CAMPAIGN hold "Red Hand"
     python3 world.py -c $CAMPAIGN release "Red Hand"
+
+    # Show one clock to the players as a segmented dial (default: hidden)
+    python3 world.py -c $CAMPAIGN reveal "Red Hand"
+    python3 world.py -c $CAMPAIGN hide "Red Hand"
 
     # A full clock has fired: narrate the change, then acknowledge it
     python3 world.py -c $CAMPAIGN complete "Red Hand"
@@ -123,6 +129,7 @@ class Faction:
     clock_size: int = 4          # segments: 4, 6, or 8
     current: int = 0             # current segments filled
     held: bool = False           # vetoed by the GM
+    revealed: bool = False       # GM chose to show this clock on the player display
     fired: bool = False          # clock is full; awaiting narration, not ticking
     fired_at: Optional[str] = None
     fired_tick: Optional[int] = None
@@ -145,6 +152,7 @@ class Faction:
             "clock_size": self.clock_size,
             "current": self.current,
             "held": self.held,
+            "revealed": self.revealed,
             "fired": self.fired,
             "fired_at": self.fired_at,
             "fired_tick": self.fired_tick,
@@ -162,6 +170,7 @@ class Faction:
             clock_size=int(data.get("clock_size", 4)),
             current=int(data.get("current", 0)),
             held=bool(data.get("held", False)),
+            revealed=bool(data.get("revealed", False)),
             fired=bool(data.get("fired", False)),
             fired_at=data.get("fired_at"),
             fired_tick=data.get("fired_tick"),
@@ -644,6 +653,39 @@ def complete_faction(campaign: str, faction_name: str, outcome: str = "") -> int
     return 0
 
 
+def set_revealed(campaign: str, faction_name: str, revealed: bool) -> int:
+    """Opt one clock in to (or out of) the player display. Per campaign, persisted."""
+    state = load_state(campaign)
+    if faction_name not in state.factions:
+        print(f"Faction '{faction_name}' not found. `status` lists the known ones.")
+        return 1
+    state.factions[faction_name].revealed = revealed
+    save_state(state, campaign)
+    if revealed:
+        print(f"[{GM_ONLY}] Revealed '{faction_name}': its dial now shows on the player display.")
+    else:
+        print(f"[{GM_ONLY}] Hid '{faction_name}': its dial is off the player display.")
+    log_faction_event(campaign, f"- {'Revealed' if revealed else 'Hid'} **{faction_name}** "
+                                f"{'to' if revealed else 'from'} the players")
+    return 0
+
+
+def revealed_clocks(campaign: str) -> list:
+    """The only faction data allowed to reach the player display.
+
+    Hidden clocks are absent from the result, not flagged. Each entry carries
+    just name, size and filled segments: no goal, notes, lean or history.
+    """
+    try:
+        state = load_state(campaign)
+    except (OSError, ValueError):
+        return []
+    return [
+        {"name": f.name, "size": f.clock_size, "filled": max(0, min(f.current, f.clock_size))}
+        for f in state.factions.values() if f.revealed
+    ]
+
+
 def show_status(campaign: str) -> int:
     state = load_state(campaign)
 
@@ -653,7 +695,7 @@ def show_status(campaign: str) -> int:
 
     print(f"[{GM_ONLY}] Tick {state.current_tick} · one hidden d6 per faction per {state.tick_interval}")
     for faction in state.factions.values():
-        print(f"\n{faction.name} [{faction.state()}]")
+        print(f"\n{faction.name} [{faction.state()}]" + (" (revealed)" if faction.revealed else ""))
         print(f"  Goal: {faction.goal}")
         print(f"  Progress: [{_clock_bar(faction)}] {faction.current}/{faction.clock_size}")
         if faction.lean:
@@ -738,6 +780,14 @@ def main() -> int:
                                       parents=[common])
     release_p.add_argument("faction", help="Faction name")
 
+    reveal_p = subparsers.add_parser("reveal", help="Show a clock to the players on the display",
+                                     parents=[common])
+    reveal_p.add_argument("faction", help="Faction name")
+
+    hide_p = subparsers.add_parser("hide", help="Take a clock off the player display",
+                                   parents=[common])
+    hide_p.add_argument("faction", help="Faction name")
+
     complete_p = subparsers.add_parser("complete", help="Acknowledge a fired clock and reset it",
                                        parents=[common])
     complete_p.add_argument("faction", help="Faction name")
@@ -770,6 +820,8 @@ def main() -> int:
     elif args.command == "lean":          return set_lean(campaign, args.faction, args.lean)
     elif args.command == "hold":          return hold_faction(campaign, args.faction)
     elif args.command == "release":       return release_faction(campaign, args.faction)
+    elif args.command == "reveal":        return set_revealed(campaign, args.faction, True)
+    elif args.command == "hide":          return set_revealed(campaign, args.faction, False)
     elif args.command == "complete":      return complete_faction(campaign, args.faction, args.outcome)
     elif args.command == "set-interval":  return set_interval(campaign, args.interval)
     elif args.command == "status":        return show_status(campaign)

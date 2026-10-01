@@ -22,6 +22,8 @@ import os
 import pathlib
 import threading
 
+import safeio   # scripts/safeio.py (on sys.path via localdm/__init__)
+
 from . import reply
 
 
@@ -76,8 +78,8 @@ class Memory:
         with self._lock:
             if not self._transcript.exists():
                 return []
-            lines = self._transcript.read_text(encoding="utf-8").splitlines()
-        return reply.sanitize_turns([json.loads(line) for line in lines if line.strip()])
+        turns, _bad = safeio.read_jsonl_tolerant(self._transcript)
+        return reply.sanitize_turns(turns)
 
     def summary(self) -> str:
         path = self.dir / "summary.md"

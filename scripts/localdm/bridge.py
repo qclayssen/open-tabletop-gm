@@ -10,10 +10,18 @@ from __future__ import annotations
 import contextlib
 import io
 import pathlib
+import re
 import shlex
 from dataclasses import dataclass
 
-PLAYER_VERBS = ("move", "attack", "dash", "disengage", "dodge", "stand", "death-save", "end-turn")
+PLAYER_VERBS = ("move", "attack", "cast", "dash", "disengage", "dodge", "stand", "death-save",
+                "end-turn")
+# Words in the whole command (verb, the actor id the engine commands take first, then the
+# target or spell) before it is worth running: the tactics REPL's NEEDS, one actor id up.
+NEEDS = {"move": 3, "attack": 3, "cast": 3}
+# "attack at the frog", "cast fire bolt on the frog": framing words, never a target.
+FILLER = ("at", "on", "the")
+INCOMPLETE = "That command is not complete. Name what to {verb}, or say it in plain words."
 
 
 @dataclass
@@ -62,6 +70,28 @@ def resolve_names(args: list, tokens: list) -> list:
     return out
 
 
+def normalize(args: list, enc=None):
+    """Make a parsed player command match what the tactics REPL would send.
+
+    Drops at/on/the from attack and cast, and turns "move <actor> toward the frog" into
+    a move at the creature's id, which the engine walks toward with `engine.approach`.
+    Returns (args, problem): `problem` is a friendly line when the command is too short to
+    run, and the engine is then never called."""
+    verb = args[0]
+    if verb in ("attack", "cast"):
+        args = [verb, *[a for a in args[1:] if a.lower() not in FILLER]]
+    if len(args) < NEEDS.get(verb, 0):
+        return args, INCOMPLETE.format(verb=verb)
+    if verb == "move" and len(args) >= 3 and enc is not None:
+        from tactics import fightq
+        rest = args[2:]
+        if not (len(rest) == 1 and re.fullmatch(r"[A-Za-z]{1,2}\d{1,3}", rest[0])):
+            foe = fightq.approach_target(enc, args[1], rest)
+            if foe is not None:
+                args = [verb, args[1], foe]
+    return args, ""
+
+
 class Bridge:
     def __init__(self, campaign: str, camp_dir):
         self.campaign = campaign
@@ -73,9 +103,14 @@ class Bridge:
         with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
             try:
                 code = cli.main(["-c", self.campaign, *args])
-            except SystemExit as e:                      # argparse
+            except SystemExit as e:
+                # cli.main now refuses an incomplete command itself (code 1, one friendly
+                # line); this is the safety net for anything argparse still raises.
                 code = e.code if isinstance(e.code, int) else 1
-        return Result(int(code or 0), buf.getvalue().strip())
+        text = buf.getvalue().strip()
+        if code and not text:
+            text = "That command is not complete. Type `/c help` for the commands."
+        return Result(int(code or 0), text)
 
     def snapshot(self):
         from tactics import state

@@ -49,6 +49,14 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
+# Flask is required; fail here with the fix, not later with a traceback in app.log.
+if ! python3 -c "import flask" 2>/dev/null; then
+  echo "Error: Flask is not installed for $(command -v python3 || echo python3)."
+  echo "Install it with:  pip3 install -r \"$DISPLAY_DIR/requirements.txt\""
+  echo "(numpy is optional and only adds audio.)"
+  exit 1
+fi
+
 # Check the campaign exists before killing a running display for it.
 if [[ -n "$CAMPAIGN" ]]; then
   python3 "$DISPLAY_DIR/preflight.py" "$CAMPAIGN" > "$DISPLAY_DIR/.preflight" || {

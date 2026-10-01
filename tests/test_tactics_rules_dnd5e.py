@@ -82,20 +82,20 @@ def test_ranged_attack_with_an_enemy_adjacent_has_disadvantage():
 
 
 def test_cover_adds_to_ac():
-    # Fire Bolt +5 vs frog AC 11 + half cover 2 = 13. d20 7 -> 12, miss.
+    # Fire Bolt +6 vs frog AC 11 + half cover 2 = 13. d20 6 -> 12, miss.
     ctx = AttackContext(distance=30, melee=False, cover=2)
-    res = RULES.attack(kairos(), frog(), kairos().attacks[0], ctx, roller(7), player=False)
+    res = RULES.attack(kairos(), frog(), kairos().attacks[0], ctx, roller(6), player=False)
     assert res["ac"] == 13 and not res["hit"]
 
 
 def test_hit_chance_matches_the_dice():
     k, f = kairos(), frog()
     bolt = k.attacks[0]
-    # +5 vs AC 11: need a natural 6 -> 15/20 = 75%.
-    assert RULES.hit_chance(k, f, bolt, RANGED)["percent"] == 75
-    # With advantage: 1 - 0.25^2 = 93.75% -> 94.
+    # +6 vs AC 11: need a natural 5 -> 16/20 = 80%.
+    assert RULES.hit_chance(k, f, bolt, RANGED)["percent"] == 80
+    # With advantage: 1 - 0.2^2 = 96%.
     f.add_condition("restrained")
-    assert RULES.hit_chance(k, f, bolt, RANGED)["percent"] == 94
+    assert RULES.hit_chance(k, f, bolt, RANGED)["percent"] == 96
     # Only a nat 20 hits: 5%, with advantage 1 - 0.95^2 = 9.75% -> 10.
     assert RULES.hit_chance(k, f, dict(bolt, bonus=-50), RANGED)["percent"] == 10
 
@@ -108,12 +108,12 @@ def test_hit_chance_matches_the_dice():
 # system free to label its own numbers its own way.
 
 def test_a_resolved_attack_carries_the_chance_it_was_rolled_at():
-    # Fire Bolt +5 vs frog AC 11: need a 6, so 75%. The roll is a 3, a miss.
+    # Fire Bolt +6 vs frog AC 11: need a 5, so 80%. The roll is a 3, a miss.
     r = roller(3)
     k, f = kairos(), frog()
     res = RULES.attack(k, f, k.attacks[0], RANGED, r, player=False)
     assert not res["hit"]
-    assert r.log[0].odds == {"percent": 75, "label": "to hit",
+    assert r.log[0].odds == {"percent": 80, "label": "to hit",
                              "about": "frog-1", "advantage": "normal"}
     assert res["odds"] == r.log[0].odds
 
@@ -129,17 +129,17 @@ def test_the_odds_on_the_roll_are_the_ones_the_preview_showed():
 
 
 def test_the_odds_follow_the_cover_and_the_mode_the_roll_was_actually_made_at():
-    # Half cover: frog AC 11 + 2 = 13, +5 bolt needs an 8 -> 13/20 = 65%.
+    # Half cover: frog AC 11 + 2 = 13, +6 bolt needs a 7 -> 14/20 = 70%.
     k, f = kairos(), frog()
-    r = roller(7)
+    r = roller(6)                       # 6 + 6 = 12 vs AC 13: a miss, so no damage die
     RULES.attack(k, f, k.attacks[0], AttackContext(distance=30, melee=False, cover=2), r, player=False)
-    assert r.log[0].odds["percent"] == 65
-    # Prone from range is disadvantage: 75% to hit -> 0.75^2 = 56.25% -> 56.
+    assert r.log[0].odds["percent"] == 70
+    # Prone from range is disadvantage: 80% to hit -> 0.8^2 = 64%.
     f2 = frog()
     f2.add_condition("prone")
     r2 = roller(9, 2)
     RULES.attack(kairos(), f2, kairos().attacks[0], RANGED, r2, player=False)
-    assert r2.log[0].odds["percent"] == 56
+    assert r2.log[0].odds["percent"] == 64
     assert r2.log[0].odds["advantage"] == "disadvantage"
 
 
@@ -180,15 +180,15 @@ def test_a_roll_with_no_odds_is_ordinary_not_an_error():
 def test_player_roll_is_requested_not_invented():
     with pytest.raises(PendingRoll) as e:
         RULES.attack(kairos(), frog(), kairos().attacks[0], RANGED, roller(), player=True)
-    assert e.value.notation == "1d20+5"
+    assert e.value.notation == "1d20+6"
 
 
 def test_supplied_player_rolls_are_used_and_tagged():
-    # Natural 15 + 5 = 20 hits; Fire Bolt 1d10 supplied as 6.
+    # Natural 15 + 6 = 21 hits; Fire Bolt 1d10 supplied as 6.
     r = roller(supplied=[15, 6], source="verbal")
     f = frog()
     res = RULES.attack(kairos(), f, kairos().attacks[0], RANGED, r, player=True)
-    assert res["total"] == 20 and res["damage"]["total"] == 6 and f.hp == 12
+    assert res["total"] == 21 and res["damage"]["total"] == 6 and f.hp == 12
     assert [x.source for x in r.log] == ["verbal", "verbal"]
 
 

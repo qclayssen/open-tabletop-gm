@@ -16,6 +16,8 @@ Setup and flow
 Encounter design (no combat running — these are for before the fight)
     budget --party auto            what this party can be handed, per difficulty
     rate --monsters "goblin x4"    what a monster list costs that party
+    day --party auto               what a whole adventuring day holds (2014)
+    day --plan "goblin x4|orc x2"  cost a day you have already designed
 
 Actions (the current creature)
     move <token> <square>          e.g. move kairos D5   (preview <token> <square> checks first)
@@ -35,6 +37,7 @@ Actions (the current creature)
     trigger <token> [target]       the readied action happens now (a reaction)
     reactions <token> ask|auto|off Shield / Silvery Barbs: ask the player, always, never
     sight <token>                  who it sees, and with what cover (the display's cover shading)
+    card <token> [--players]       state card: creatures and named landmarks, feet, cover, north
     fog hide|dim|off               display fog of war: squares no PC sees are dimmed; "hide"
                                    also leaves out the creatures there (the default)
     condition <token> add|remove <condition>     GM ruling (e.g. a rider the engine left to you)
@@ -61,6 +64,8 @@ Output is 1 to 4 plain lines for the GM; --json prints the full result.
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import json
 import os
 import pathlib
@@ -71,7 +76,7 @@ import sys
 from paths import find_campaign            # scripts/paths.py (on sys.path via tactics/__init__)
 
 from . import (actions, ai, effects, encounter, engine, formations, maps, policy, receipts,
-                 rest, roller, sight, spells, slots, state, sync)
+                 rest, roller, sight, slots, spells, state, statecard, sync)
 from .core import rules_for
 from .grid import label, parse_square
 from .roller import PendingRoll, Roller
@@ -81,11 +86,13 @@ _SCRIPTS = pathlib.Path(__file__).resolve().parents[1]
 
 _DISPLAY_CAMPAIGN = _SCRIPTS.parent / "display" / ".campaign"
 # Read-only means: nothing is written, nothing is rolled, no pending command is
-# cleared. `budget` and `rate` are design tools — a fight is built before there
-# is an encounter to save, so they must work with nothing running and must not
-# touch combat/pending.json.
-READ_ONLY = ("status", "options", "preview", "reachable", "targets", "log", "spells",
-             "preview-area", "sight", "budget", "rate", "receipts", "formation")
+# cleared. `budget`, `day` and `rate` are design tools: a fight is built before
+# there is an encounter to save, so they must work with nothing running and must
+# not touch combat/pending.json. `day` earns its place here the same way: it
+# costs a day the GM has already designed, and reaching the save path with no
+# encounter loaded is exactly how it was found broken.
+READ_ONLY = ("status", "options", "preview", "reachable", "approach", "targets", "log", "spells",
+             "preview-area", "sight", "card", "budget", "day", "rate", "receipts", "formation")
 # `formation` is here even though `formation save` writes a file: pending.json
 # exists to replay the *same* engine dice after a decision, and nothing under
 # `formation` rolls. Saving a formation is a deliberate act, and making it
@@ -672,9 +679,11 @@ def run(args) -> int:
         enc, text = cmd_start(args, camp_dir, roller)
     elif args.cmd == "receipts":
         return receipts.main(["--dir", str(camp_dir)] + (["--rolls", "6"] if args.rolls else []))
-    elif args.cmd in ("budget", "rate"):
+    elif args.cmd in ("budget", "day", "rate"):
         if args.cmd == "budget":
             text, data = encounter.cmd_budget(args, camp_dir, _campaign(args))
+        elif args.cmd == "day":
+            text, data = encounter.cmd_day(args, camp_dir, _campaign(args))
         else:
             text, data = encounter.cmd_rate(args, camp_dir, _campaign(args))
     elif args.cmd == "formation":
@@ -708,6 +717,9 @@ def run(args) -> int:
         elif cmd == "reachable":
             data = engine.reachable(enc, args.token)
             text = f"{len(data['walk'])} squares walking, {len(data['dash'])} more with Dash."
+        elif cmd == "approach":
+            data = engine.approach(enc, args.token, args.target)
+            text = data["text"]
         elif cmd == "targets":
             data = {"targets": engine.attack_options(enc, args.token)}
             legal = [t for t in data["targets"] if t["legal"]]
@@ -745,6 +757,9 @@ def run(args) -> int:
                                    _reactions(enc, args))["text"]
         elif cmd == "sight":
             data = sight.sight(enc, args.token, players=args.players)
+            text = data["text"]
+        elif cmd == "card":
+            data = statecard.statecard(enc, args.token, players=args.players)
             text = data["text"]
         elif cmd == "fog":
             enc.meta["fog"] = args.mode
@@ -926,7 +941,10 @@ def parser() -> argparse.ArgumentParser:
     for name in ("move", "preview"):
         s = sub.add_parser(name, parents=c)
         s.add_argument("token")
-        s.add_argument("square")
+        s.add_argument("square", help="a square like D5, or a creature to walk toward")
+    s = sub.add_parser("approach", parents=c, help="where a move toward a creature would end")
+    s.add_argument("token")
+    s.add_argument("target")
     s = sub.add_parser("attack", parents=c)
     s.add_argument("token")
     s.add_argument("target")
@@ -990,6 +1008,10 @@ def parser() -> argparse.ArgumentParser:
     s.add_argument("token")
     s.add_argument("--players", action="store_true",
                    help="only what the players can see (the display passes this)")
+    s = sub.add_parser("card", parents=c, help="state card: creatures and landmarks with feet and cover")
+    s.add_argument("token")
+    s.add_argument("--players", action="store_true",
+                   help="only what the players can see (fog and hidden enemies filtered)")
     s = sub.add_parser("fog", parents=c, help="display fog of war: hide, dim or off")
     s.add_argument("mode", choices=list(sight.FOG_MODES))
     sub.add_parser("undo-move", parents=c)
@@ -1008,6 +1030,16 @@ def parser() -> argparse.ArgumentParser:
                    help="'auto' (default) is every character sheet in the campaign")
     s.add_argument("--ruleset", choices=list(encounter.RULESETS),
                    help="defaults to the campaign's own system version")
+    s = sub.add_parser("day", parents=c,
+                       help="what a whole adventuring day costs this party (2014)")
+    s.add_argument("--party", default="auto", metavar="auto|NAMES",
+                   help="'auto' (default) is every character sheet in the campaign")
+    s.add_argument("--ruleset", choices=list(encounter.RULESETS),
+                   help="defaults to the campaign's own system version; the day "
+                        "budget itself is 2014 only")
+    s.add_argument("--plan", metavar="FIGHTS",
+                   help="cost a day you have already designed: 'goblin x4 | orc x2'. "
+                        "'|' separates fights, ',' separates monsters within one")
     s = sub.add_parser("rate", parents=c,
                        help="what a list of monsters costs this party")
     s.add_argument("--monsters", required=True, metavar="LIST",
@@ -1056,9 +1088,32 @@ def parser() -> argparse.ArgumentParser:
     return top
 
 
+def _parse(argv: list):
+    """parse_args, but a malformed command prints one friendly line, not argparse's usage
+    block. --help still prints normally. Returns None after such a refusal."""
+    err = io.StringIO()
+    try:
+        with contextlib.redirect_stderr(err):
+            return parser().parse_args(argv)
+    except SystemExit as e:
+        if not e.code:
+            raise                                   # -h / --help: argparse already printed it
+        lines = [ln for ln in err.getvalue().splitlines() if "error:" in ln]
+        why = lines[-1].split("error:", 1)[1].strip() if lines else "that command is not complete"
+        verb = next((a for a in argv if not a.startswith("-") and a in _verbs()), "")
+        print(f"That command is not complete: {why}." + (f" Try `{verb} --help`." if verb else ""))
+        return None
+
+
+def _verbs() -> set:
+    return set(parser()._subparsers._group_actions[0].choices)
+
+
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
-    args = parser().parse_args(argv)
+    args = _parse(argv)
+    if args is None:
+        return 1
     if isinstance(getattr(args, "attack", None), list):
         args.attack = " ".join(args.attack) or None
     if getattr(args, "cmd", "") == "ready" and args.kind == "move" and args.what and not args.target:
@@ -1120,6 +1175,11 @@ def main(argv=None) -> int:
         print(f"{e.prompt} Nothing has happened yet.\n"
               f"Re-run the same command with {_prior(args)}--react yes or --react no.")
         return 2
+    except ValueError as e:
+        # A bad square or number typed by a player (move kairos frog-1) is a refusal,
+        # not a crash: uncaught, it killed the REPL mid-fight (test report pt3, B1).
+        print(f"{e}.".replace("..", "."))
+        return 1
 
 
 def _prior(args, drop_last_roll: bool = False) -> str:

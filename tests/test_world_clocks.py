@@ -60,6 +60,8 @@ class FactionClockTests(unittest.TestCase):
         self.campaign = f"unittest-clocks-{os.getpid()}-{id(self)}"
         self.camp_dir = self.root / "campaigns" / self.campaign
         self.camp_dir.mkdir(parents=True)
+        # calendar.py resolves through paths.require_campaign, which needs state.md.
+        (self.camp_dir / "state.md").write_text("# clocks\n", encoding="utf-8")
         self.json_path = self.camp_dir / "factions.json"
         self._add("Red Hand", "seize the granary", 6)
 

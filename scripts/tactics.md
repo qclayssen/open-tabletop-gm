@@ -143,11 +143,13 @@ Design-time only — no combat running, no dice.
 ```bash
 $T budget                       # what this party can be handed, per difficulty
 $T rate --monsters "goblin x4, hobgoblin"
+$T day --plan "goblin x4 | orc x2"   # is a planned set of fights a day, or three?
 ```
 
 - `--party auto` (the default) is every character sheet in the campaign; `--party "Kairos,Vesper"` picks. Levels are read off the sheets, and a mixed party is measured at its average level — the output says so when it does.
 - `--ruleset 2014` (Easy/Medium/Hard/Deadly, with the monster-count multiplier) or `2024` (Low/Moderate/High, no multiplier). Defaults to the campaign's own `**System Version:**` in `state.md`.
 - `rate` shows the whole calculation — each monster's CR and XP, the raw total, the multiplier, the per-character share and the thresholds it was measured against. Below the first threshold it says `TRIVIAL`: not a fight, and not "Easy".
+- `day` is the session-planning question rather than the fight one. The DMG puts an adventuring day at about six to eight medium or hard encounters, and `--plan` costs a day you have already designed against that budget, fight by fight, with `|` between fights and `,` between monsters in one. It reports the share of the day used and whether that is under, about right, or over. It is 2014 only: 2024 has no adventuring day, and `day --ruleset 2024` says so rather than dividing something that is not there. Use it before a session, not mid-fight.
 - Monster names come from the SRD. A name that is not there comes back with near matches.
 
 ## Formations: a monster arrangement you set up once
@@ -180,6 +182,8 @@ $T start enrollment-ledger-rotunda --formation stacks-ambush    # a different ma
 - `$T status`: round, whose turn, everyone's square, HP, conditions (with the exhaustion level), concentration and readied actions.
 - `$T log 5`: the last five things that happened.
 - `$T sight kairos`: who Kairos sees and with what cover (the display's Cover shading, as text). Use it when a player asks "can I see it?" or "is it behind cover?"; never work cover out yourself.
+- `$T card kairos`: the state card, and the one command to reach for instead of guessing at where anything is. Every creature with its square, HP and feet from Kairos, then the map's landmarks by name with their squares, feet and the cover Kairos has against them. North is fixed and stated on the card: row 1 is the top edge, columns run A, B, C west to east. **Every number is the engine's** (`Grid.distance` for feet, `sight` for cover), so the card and a real attack always agree — never add up a distance or a cover yourself. `$T card kairos --players` is the same card through the display's fog filter, with the hidden and the unseen left out; the fight already hands you that view, so you only need it when you are reading a card by hand.
+- **Landmarks are addressable, not just scenery.** A map feature gets a handle when it compiles: its own `name` if the map gives one (`north-door`), otherwise its type plus a counter (`crate-1`, `crate-2`), which is why a map written before names existed still gets stable names. A duplicate name gets `-2`. Say the name and its squares — "move Kairos behind the north door" is checkable, and the card tells you which square that is.
 - `$T fog hide|dim|off`: fog of war on the display. `hide` (default) dims squares no PC sees and leaves out the creatures there; `dim` only dims; `off` shows everything. It never changes a rule or what you read here.
 - Rolls follow `roll_mode` in state.md: `players` (default) asks the player for their dice; `auto` rolls everything. Enemy dice are always rolled by the engine.
 

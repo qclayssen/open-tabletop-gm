@@ -32,6 +32,10 @@ scripts/                     dice.py, combat.py (initiative), tracker.py (condit
                              concentration, death saves -> <campaign>/tracker.json), paths.py,
                              calendar.py (in-world time; `advance N days` ticks world.py),
                              world.py (off-screen faction clocks -> <campaign>/factions.json)
+scripts/safeio.py            crash-safe state files: atomic write + .bak, corrupt files quarantined
+                             (*.corrupt-<ts>) and recovered from .bak with a stderr warning,
+                             tolerant JSONL reads. paths.require_campaign is the one resolver
+                             (never creates a campaign); `paths.py campaigns list` lists them.
 scripts/tactics/             grid combat engine (stdlib only)
   grid.py                    5 ft squares, terrain legend, diagonals "5" | "5-10-5",
                              Dijkstra movement, DMG corner line of sight and cover,

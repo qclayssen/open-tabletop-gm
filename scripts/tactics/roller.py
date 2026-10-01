@@ -146,7 +146,7 @@ class Roll:
 class Roller:
     """rng: random.Random for engine rolls. supplied: natural values for player
     rolls, consumed in order. supplied_source: "player" or "verbal"."""
-    rng: random.Random = field(default_factory=random.Random)
+    rng: random.Random = field(default_factory=_dice.new_rng)
     supplied: list = field(default_factory=list)
     supplied_source: str = "verbal"
     for_me: bool = False      # "Roll for me": the engine rolls whatever the player has not supplied

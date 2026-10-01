@@ -28,7 +28,10 @@ ALWAYS_LASTING = {"exhaustion", "exhausted"}
 _HP = re.compile(r"(\*\*HP:\*\*\s*)(\d+)\s*/\s*(\d+)")
 _TEMP = re.compile(r"(\*\*Temp HP:\*\*\s*)(\d+)")
 _DEATH = re.compile(r"(\*\*Death Saves:\*\*\s*Successes:\s*)(\d+)(\s*\|\s*Failures:\s*)(\d+)")
-_HIT_DICE = re.compile(r"(\*\*Hit Dice:\*\*\s*)(\d+d\d+)\s*\(remaining:\s*(\d+)\)")
+_HIT_DICE = re.compile(r"^(.*?\*\*Hit Dice:\*\*[ \t]*)(.*)$", re.M)
+_HD_TERM = re.compile(r"(\d+)\s*d\s*(\d+)", re.I)
+_HD_REMAINING = re.compile(r"remaining:\s*(\d+)", re.I)
+_HD_FRACTION = re.compile(r"^(\d+)\s*/\s*(\d+)\s*d\s*(\d+)", re.I)
 _CONDITIONS = re.compile(r"^- \*\*Conditions:\*\*.*$", re.M)
 _SLOT_ROW = re.compile(r"^(\|\s*(\d+)\w*\s*\|\s*\d+\s*\|\s*)(\d+)(\s*\|)", re.M)
 _FEATURES = re.compile(r"^###\s+(.+?)\s*$", re.M)
@@ -158,6 +161,36 @@ def _feature_names(text: str) -> list:
     return out
 
 
+def parse_hit_dice(value: str):
+    """`{"die", "total", "remaining"}` from the text after `**Hit Dice:**`, or None.
+
+    Handles `5d6 (remaining: 2)`, `5d6`, `2/5 d6` (remaining/total) and a
+    multiclass list such as `3d8 + 2d10 (remaining: 4)` (total is the sum, the
+    die is the first one listed). The unfilled template `Xd[Y]` gives None.
+    """
+    value = value.strip()
+    frac = _HD_FRACTION.match(value)
+    if frac:
+        return {"die": f"d{frac.group(3)}", "total": int(frac.group(2)),
+                "remaining": min(int(frac.group(1)), int(frac.group(2)))}
+    terms = _HD_TERM.findall(value)
+    if not terms:
+        return None
+    total = sum(int(n) for n, _ in terms)
+    rem = _HD_REMAINING.search(value)
+    remaining = min(int(rem.group(1)), total) if rem else total
+    return {"die": f"d{terms[0][1]}", "total": total, "remaining": remaining}
+
+
+def _rewrite_hit_dice(value: str, remaining: int) -> str:
+    """The Hit Dice text with only the remaining count changed."""
+    if _HD_REMAINING.search(value):
+        return _HD_REMAINING.sub(f"remaining: {remaining}", value, count=1)
+    if _HD_FRACTION.match(value.strip()):
+        return re.sub(r"\d+", str(remaining), value, count=1)
+    return f"{value.rstrip()} (remaining: {remaining})"
+
+
 def read_sheet(text: str, token_id: str, pos: tuple, path: str = "") -> Token:
     title = re.search(r"^#\s+(.+)$", text, re.M)
     if not title:
@@ -219,6 +252,7 @@ def read_sheet(text: str, token_id: str, pos: tuple, path: str = "") -> Token:
     temp = _TEMP.search(text)
     death = _DEATH.search(text)
     hd = _HIT_DICE.search(text)
+    hit_dice = parse_hit_dice(hd.group(2)) if hd else None
     conds = []
     cm = _CONDITIONS.search(text)
     if cm:
@@ -235,7 +269,7 @@ def read_sheet(text: str, token_id: str, pos: tuple, path: str = "") -> Token:
                      "failures": int(death.group(4)) if death else 0},
         source={"kind": "sheet", "path": path},
         extra={"ac_note": ac_text, "slots": slots, "save_spells": save_spells,
-               "hit_dice": {"die": hd.group(2), "remaining": int(hd.group(3))} if hd else None,
+               "hit_dice": hit_dice,
                "abilities": scores, "skills": skills, "level": level, "spells": spells,
                "features": _feature_names(text),
                # What a short rest can give back is a class question (Pact Magic,
@@ -264,8 +298,10 @@ def write_back(text: str, token) -> str:
                      out, count=1)
     hd = token.extra.get("hit_dice")
     if hd:
-        out = _HIT_DICE.sub(lambda m: f"{m.group(1)}{m.group(2)} (remaining: {hd['remaining']})",
-                            out, count=1)
+        out = _HIT_DICE.sub(
+            lambda m: (m.group(1) + _rewrite_hit_dice(m.group(2), int(hd["remaining"]))
+                       if parse_hit_dice(m.group(2)) else m.group(0)),
+            out, count=1)
     slots = token.extra.get("slots") or {}
 
     def _slot(m):

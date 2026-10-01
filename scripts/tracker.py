@@ -45,9 +45,8 @@ import argparse
 import time
 import pathlib
 
-from paths import campaigns_dir as _campaigns_dir
-
-_CAMPAIGNS_DIR = _campaigns_dir()
+from paths import require_campaign as _require_campaign, CampaignNotFound
+import safeio
 
 from datetime import datetime, timezone
 
@@ -77,23 +76,20 @@ CONDITION_COLOURS = {
 
 
 def _state_path(campaign: str) -> str:
-    d = str(_CAMPAIGNS_DIR / campaign)
-    os.makedirs(d, exist_ok=True)
-    return os.path.join(d, "tracker.json")
+    try:
+        d = _require_campaign(campaign)
+    except CampaignNotFound as e:
+        print(f"tracker.py: {e}", file=sys.stderr)
+        raise SystemExit(2)
+    return os.path.join(str(d), "tracker.json")
 
 
 def _load(campaign: str) -> dict:
-    path = _state_path(campaign)
-    try:
-        with open(path, encoding="utf-8") as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {}
+    return safeio.load_json_safe(_state_path(campaign))
 
 
 def _save(campaign: str, state: dict) -> None:
-    with open(_state_path(campaign), "w", encoding="utf-8") as f:
-        json.dump(state, f, indent=2)
+    safeio.atomic_write_json(_state_path(campaign), state)
 
 
 def _entity(state: dict, name: str) -> dict:

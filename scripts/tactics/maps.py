@@ -12,8 +12,9 @@ from __future__ import annotations
 
 import json
 import pathlib
+import re
 
-from .grid import DEFAULT_LEGEND, TERRAIN, Grid
+from .grid import DEFAULT_LEGEND, TERRAIN, Grid, label
 
 MAPS_DIR = pathlib.Path(__file__).resolve().parents[2] / "display" / "maps"
 
@@ -41,6 +42,42 @@ def _find(name: str) -> pathlib.Path:
     raise FileNotFoundError(f"no map {name!r}. Maps: {', '.join(available())}")
 
 
+def _slug(text) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", str(text).strip().lower()).strip("-")
+
+
+def _landmarks(features: list, owner: list) -> list:
+    """Every map feature as an addressable landmark: {name, type, label, squares}.
+
+    `name` is the feature's own "name" (slugged, e.g. "north-door") or, when the
+    map does not give one, type plus a per-type counter ("crate-1", "crate-2"),
+    so every map written before names existed still gets stable handles. A
+    duplicate explicit name gets "-2", "-3". `squares` are the labels of the
+    squares the feature still covers after later rectangles painted over it, in
+    reading order; a feature fully painted over is dropped (its counter still
+    advanced, so the other handles do not shift). Display and GM text only: the
+    engine's rules read `rows`, never this."""
+    cells = {}
+    for y, row in enumerate(owner):
+        for x, i in enumerate(row):
+            if i is not None:
+                cells.setdefault(i, []).append(label((x, y)))
+    counts, used, out = {}, set(), []
+    for i, f in enumerate(features):
+        t = f["type"]
+        counts[t] = counts.get(t, 0) + 1
+        name = _slug(f.get("name", "")) or f"{_slug(t)}-{counts[t]}"
+        base, n = name, 1
+        while name in used:
+            n += 1
+            name = f"{base}-{n}"
+        used.add(name)
+        if i in cells:
+            out.append({"name": name, "type": t, "label": f.get("label", ""),
+                        "squares": cells[i], "named": bool(f.get("name") or f.get("label"))})
+    return out
+
+
 def compile_map(spec: dict) -> dict:
     """Map file dict -> {"grid": <Grid dict>, "meta": {...}}. Validates as it goes."""
     w, h = int(spec["width"]), int(spec["height"])
@@ -60,6 +97,7 @@ def compile_map(spec: dict) -> dict:
     if base not in known:
         raise ValueError(f"base terrain {base!r} is not a terrain type")
     cells = [[base] * w for _ in range(h)]
+    owner = [[None] * w for _ in range(h)]              # which feature painted each square last
     labels = []
     for i, f in enumerate(spec.get("features", [])):
         t = f["type"]
@@ -71,6 +109,7 @@ def compile_map(spec: dict) -> dict:
         for yy in range(y, y + fh):
             for xx in range(x, x + fw):
                 cells[yy][xx] = t
+                owner[yy][xx] = i
         if f.get("label"):
             labels.append({"text": f["label"], "x": x, "y": y})
     rows = ["".join(char_for[c] for c in row) for row in cells]
@@ -82,7 +121,8 @@ def compile_map(spec: dict) -> dict:
         grid["terrain"] = engine_terrain
     Grid.from_dict(grid)                                   # fail early on anything odd
     meta = {"name": spec.get("name", ""), "info": spec.get("info", ""),
-            "labels": labels, "zones": spec.get("zones", []),
+            "labels": labels,
+            "landmarks": _landmarks(spec.get("features", []), owner), "zones": spec.get("zones", []),
             "spawns": spec.get("spawns", []),
             # Opt in to token portraits for a fight on this map. Off by default:
             # a portrait is art the GM has to have chosen, and a map that did not

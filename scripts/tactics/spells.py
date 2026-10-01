@@ -406,12 +406,16 @@ def preview(enc, caster_ref, spell: str, target=None, level: int = None) -> dict
             exp = avg * R.damage_multiplier(t, dtype) * (ch["fail"] + (1 - ch["fail"]) * k)
             rows.append({"id": t.id, "name": t.name, "side": t.side, "square": t.square,
                          "ally": not hostile(c, t), "fail_percent": ch["percent_fail"],
-                         "cover": cover, "expected": round(exp, 1)})
+                         "cover": cover, "expected": round(exp, 1),
+                         "advantage": ch["advantage"], "reasons": ch["reasons"],
+                         "dc": ch["dc"], "save_bonus": ch["bonus"]})
     elif spec["mode"] == "attack":
         t = tg["target"]
         hc = R.hit_chance(c, t, spec["attack"], tg["ctx"])
         rows.append({"id": t.id, "name": t.name, "side": t.side, "square": t.square,
                      "ally": not hostile(c, t), "hit_percent": hc["percent"],
+                     "advantage": hc["advantage"], "reasons": hc["reasons"],
+                     "attack_bonus": hc["bonus"], "target_ac": hc["ac"], "cover": hc["cover"],
                      "expected": round(hc["chance"] * avg * R.damage_multiplier(t, dtype), 1)})
     elif spec["mode"] == "darts":
         for t, n in tg["darts"]:

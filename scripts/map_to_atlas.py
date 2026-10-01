@@ -417,7 +417,17 @@ def build_scene(spec: dict, map_id: str, background: str | None,
     return {
         "schema": ATLAS_SCHEMA,
         "version": ATLAS_VERSION,
+        # `title`, not `name`: `MapPersistence.ts` reads the scene's display name
+        # from `title`, so a scene carrying only `name` opens untitled. `name` is
+        # kept alongside it because the sidecar in `scenes/<id>.json` is what the
+        # asset index reads the name from, and the two files are read by different
+        # code paths.
+        "title": spec.get("name") or map_id,
         "name": spec.get("name") or map_id,
+        # Atlas stores the background image twice. `mapPath` is what the asset
+        # index resolves the scene against, `background` is what the renderer
+        # paints; a scene with only one of them shows a grid and no art.
+        "mapPath": background,
         "background": background,
         "grid": grid,
         "objects": {
@@ -426,10 +436,28 @@ def build_scene(spec: dict, map_id: str, background: str | None,
             "pins": {},
             "texts": {},
             "drawings": {},
-            "walls": {},
-            "lights": {},
+            # Arrays, not dicts. `MapPersistence.ts:472` reads these straight into
+            # the store and `WallRenderer` iterates them, so `{}` iterates as zero
+            # walls only by luck of the empty case and breaks on the first segment.
+            "walls": [],
+            "lights": [],
         },
-        "camera": {"x": 0, "y": 0, "scale": 1},
+        "camera": None,
+        # Atlas's own defaults. Left unset, a scene opens with fog on, widgets
+        # showing and a saved camera, none of which a fresh export wants.
+        "widgetValues": {},
+        "widgetSettings": {},
+        "dmNotePath": None,
+        "tokenSettings": {
+            "showNameplates": True, "showHPBars": True,
+            "showStressBars": False, "showInstanceBadges": True,
+            "tokenRingSize": 1,
+        },
+        "initiative": [],
+        "initiativeTrackerOpen": False,
+        "diceLog": [],
+        "pinnedNotePreviews": [],
+        "lootRoller": None,
     }
 
 
@@ -469,13 +497,23 @@ def bestiary_index(vault: Path) -> dict[str, str]:
     does the matching. Scanned once per export, not once per token.
     """
     index: dict[str, str] = {}
-    for folder in ("Bestiary", "bestiary"):
+    for folder in ("Bestiary", "bestiary", "NPCs", "npcs", "Characters", "characters"):
         directory = vault / folder
         if not directory.is_dir():
             continue
         for note in sorted(directory.glob("*.md")):
             index.setdefault(_fold(note.stem), f"{folder}/{note.name}")
     return index
+
+
+# `NPCs/` and `Characters/` are here, not just `Bestiary/`, and the reason is
+# Atlas's behaviour rather than a preference. Atlas watches the vault and rewrites
+# any note in its **Bestiary Folder** that a token already references: it wrote nine
+# of the NPC notes as `BestiaryAdrixmdAdrix.md` with `name:` set to
+# `[[Bestiary/Adrix.md|Adrix]]`, on every run, and the mangling is unrecoverable
+# because the note's own `name` had become a link to itself. Those folders are
+# outside the Bestiary Folder, so they are left alone, and scanning them here is
+# what keeps a token's `statblockPath` resolving to a file that exists.
 
 
 def bestiary_note(vault: Path, name: str, index: dict[str, str] | None = None) -> str | None:

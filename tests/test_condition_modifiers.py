@@ -331,10 +331,10 @@ def test_the_conditions_that_have_no_attack_modifier():
 # ─── A1.12  attack() uses the modifiers, and the GM's ruling wins ─────────────
 
 def test_a_poisoned_attack_rolls_twice_and_says_so():
-    # Fire Bolt +5 vs frog AC 11: disadvantage, faces 3 and 14, keep 3 -> 8: a miss.
+    # Fire Bolt +6 vs frog AC 11: disadvantage, faces 3 and 14, keep 3 -> 9: a miss.
     t = with_("poisoned")
     res = RULES.attack(t, frog(), t.attacks[0], RANGED, roller(3, 14), player=False)
-    assert res["advantage"] == "disadvantage" and res["total"] == 8 and not res["hit"]
+    assert res["advantage"] == "disadvantage" and res["total"] == 9 and not res["hit"]
     assert "disadvantage" in res["text"] and "poisoned" in res["text"]
 
 
@@ -347,7 +347,7 @@ def test_an_explicit_ruling_beats_the_condition_in_both_directions():
     res = RULES.attack(t, frog(), t.attacks[0], RANGED, roller(17, 3, 9), player=False,
                        explicit="advantage")
     assert res["advantage"] == "advantage" and "GM's ruling" in res["text"]
-    assert res["total"] == 22 and res["hit"]
+    assert res["total"] == 23 and res["hit"]
 
 
 def test_a_ruling_beats_the_targets_condition_too():
@@ -385,8 +385,8 @@ def test_a_conditional_save_penalty_and_an_explicit_ruling():
     # either way: an explicit ruling outranks the condition that would forbid it.
     t2 = with_("stunned")
     res = RULES.saving_throw(t2, "int", 10, roller(3, 12), player=False, explicit="advantage")
-    assert res["advantage"] == "advantage" and res["total"] == 17   # keep 12, +5 INT
-    assert res["text"] == ("Kairos INT save: 17 vs DC 10, advantage, success "
+    assert res["advantage"] == "advantage" and res["total"] == 18   # keep 12, +6 INT
+    assert res["text"] == ("Kairos INT save: 18 vs DC 10, advantage, success "
                            "(advantage: the GM's ruling).")
 
 
@@ -395,14 +395,14 @@ def test_a_conditional_save_penalty_and_an_explicit_ruling():
 def test_the_attack_line_names_the_condition_that_did_it():
     t = with_("poisoned")
     res = RULES.attack(t, frog(), t.attacks[0], RANGED, roller(3, 14), player=False)
-    assert res["text"].startswith("Kairos Fire Bolt -> Frog 1: 8 vs AC 11, disadvantage, miss")
+    assert res["text"].startswith("Kairos Fire Bolt -> Frog 1: 9 vs AC 11, disadvantage, miss")
     assert "disadvantage: Kairos is poisoned" in res["text"]
 
 
 def test_a_normal_roll_says_nothing_about_conditions():
-    """Fire Bolt +5 vs frog AC 11: d20 12 -> 17, hit; 1d10 with a 9 -> 9 damage."""
+    """Fire Bolt +6 vs frog AC 11: d20 12 -> 18, hit; 1d10 with a 9 -> 9 damage."""
     res = RULES.attack(kairos(), frog(), kairos().attacks[0], RANGED, roller(12, 9), player=False)
-    assert res["text"] == ("Kairos Fire Bolt -> Frog 1: 17 vs AC 11, hit. "
+    assert res["text"] == ("Kairos Fire Bolt -> Frog 1: 18 vs AC 11, hit. "
                            "9 fire damage; Frog 1 9/18 HP.")
 
 
@@ -457,7 +457,7 @@ def test_a_check_is_rolled_out_of_turn_with_the_conditions_on_it():
     res = engine.check(enc, roller(supplied=[3, 14]), "kairos", "perception", 10,
                        advantage="normal", sense="sight")
     assert res["advantage"] == "disadvantage" and "poisoned" in res["text"]
-    assert res["total"] == 6 and not res["success"]
+    assert res["total"] == 5 and not res["success"]
     assert enc.turn.action_used is False          # a check costs no action
 
 
@@ -541,3 +541,26 @@ def test_the_exhaustion_level_can_be_set_with_a_flag(camp, capsys):
     saved = json.loads((camp / "combat" / "encounter.json").read_text(encoding="utf-8"))
     assert saved["tokens"]["kairos"]["extra"]["exhaustion_level"] == 2
     assert saved["tokens"]["kairos"]["conditions"] == ["exhaustion"]
+
+
+# ─── the breakdown behind a chance ────────────────────────────────────────────
+
+def test_hit_chance_carries_the_numbers_it_was_made_from():
+    """A display says why a percentage is what it is from these fields alone."""
+    prone = with_("prone", side="enemy", ac=11)
+    bolt = {"name": "Fire Bolt", "bonus": 5, "damage": [{"dice": "1d10"}]}
+    covered = AttackContext(distance=5, melee=True, cover=2)
+    hc = RULES.hit_chance(kairos(), prone, bolt, covered)
+    # AC 11 + 2 cover - 5 bonus: an 8 hits. 13/20 = 65%; advantage vs prone: 88%.
+    assert (hc["bonus"], hc["ac"], hc["cover"], hc["need"]) == (5, 11, 2, 8)
+    assert hc["percent"] == 88 and hc["advantage"] == "advantage" and hc["reasons"]
+
+
+def test_save_chance_carries_the_dc_bonus_cover_and_reasons():
+    t = with_("restrained")
+    sc = RULES.save_chance(t, "dex", 14, cover=2)
+    assert sc["dc"] == 14 and sc["cover"] == 2 and sc["bonus"] == 2 + 2
+    assert sc["advantage"] == "disadvantage" and sc["reasons"]
+    assert RULES.save_chance(t, "str", 14, cover=2)["cover"] == 0     # cover only helps Dex saves
+    auto = RULES.save_chance(with_("stunned"), "dex", 15)
+    assert auto["percent_fail"] == 100 and auto["reasons"] and auto["need"] is None

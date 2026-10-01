@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """play.py: run a session on a small local model, with a smarter advisor on call.
 
-    python3 scripts/localdm/play.py -c <campaign> [--show-gm-notes] [--budget 12000]
+    python3 scripts/localdm/play.py <campaign> [--show-gm-notes] [--budget 12000]
                                     [--display-url URL | --no-display]
 
 Type what your character does. While a roll is pending, type the number on the
@@ -52,12 +52,15 @@ if __package__ in (None, ""):                        # run as a script
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
     import localdm                                    # noqa: F401  (puts scripts/ on sys.path)
 
-from localdm import advisor, autopilot, context, display_bridge, llm, reply, stall, triggers  # noqa: E402
-from localdm.bridge import Bridge, parse_player_command, resolve_names          # noqa: E402
+from localdm import advisor, autopilot, checks, context, display_bridge, llm, reply, stall, triggers  # noqa: E402
+from localdm.bridge import Bridge, PLAYER_VERBS, normalize, parse_player_command, resolve_names  # noqa: E402
+from tactics import fightq                                     # noqa: E402
+import safeio                                                   # noqa: E402
 from localdm.memory import Memory                               # noqa: E402
 from localdm import notes as notes_mod                          # noqa: E402
 from localdm.summarizer import Summarizer                       # noqa: E402
 from localdm import canon as canon_mod                         # noqa: E402
+from localdm import recap as recap_mod                         # noqa: E402
 
 # The narration cap, in sentences. dm.md carries the same number: the prompt and the
 # length retry below have to agree, or the retry is asking the model to break a rule
@@ -114,8 +117,9 @@ PLAYER_TURN = ("First decide the outcome. If what the player is attempting has a
                "outcome (search, sneak, persuade, deceive, read someone, climb, notice, "
                "recall lore, track, anything that might not work), do not decide it: narrate "
                "only the character beginning the attempt, revealing nothing the roll "
-               'decides, and end with the check: {"check": "<Skill from the sheet> <DC>"}. '
-               "Use DC 10 (easy), 13 (moderate) or 16 (hard). If the outcome is not "
+               'decides, and end with the check: {"check": {"skill": "<Skill from the sheet>", '
+               '"tier": "easy|moderate|hard|very hard", "stakes": "<what failure costs>", '
+               '"target": "<what it is aimed at>"}}. If the outcome is not '
                "uncertain, set check to null and narrate what happens instead. Then at "
                f"most {NARRATION_SENTENCES} sentences of narration, and the JSON line with "
                "null for every other field.")
@@ -131,6 +135,9 @@ CHECK_BEAT = ("You are asking for a check, so this beat is what happens BEFORE t
               "roll. Narrate only the character starting the attempt and the world's "
               "response to the attempt. Keep the check in the JSON line, with null for "
               "every other field.")
+NO_STAKES = ("The attempt was asked for with no stakes, so no roll happens. Narrate it in "
+             "1 to 3 sentences as succeeding at a small cost, or as turning up a new clue. "
+             "Do not say a check was made. Then the JSON line with null for every field.")
 CAST_TASK = ("Narrate the casting in 1 to 3 sentences, using only the numbers the Engine "
              "section gives (never a different AC, duration or slot count). Then the JSON "
              "line with null for every field.")
@@ -312,6 +319,8 @@ class Session:
         self.saved_notes = ""          # from /advise, used by the next DM call
         self.notes = notes_mod.Notes(self.camp_dir)   # the same notes, kept on disk
         self.turn = 0
+        self.check_mode = os.environ.get("GM_CHECK_POLICY", "on").strip().lower()
+        self.check_ledger = checks.Ledger()   # failed attempts this scene (checks.py)
         self.display = None            # set by main(): the browser display, if any
         # called with a stall line right before a blocking advisor call, so the
         # terminal shows it during the wait, not glued to the answer afterwards.
@@ -754,7 +763,15 @@ class Session:
         if not snap or snap["status"] != "active":
             return ""
         ids = ", ".join(f"{t['id']} = {t['name']}" for t in snap["tokens"])
-        return f"{self.bridge.run(['status']).text}\nToken ids: {ids}"
+        text = f"{self.bridge.run(['status']).text}\nToken ids: {ids}"
+        # Engine-computed positions, feet and cover for whoever acts now, so the
+        # model points at handles and squares instead of inventing them. Players'
+        # view: no hidden or fogged creature is named here.
+        if snap["current"]:
+            card = self.bridge.run(["card", snap["current"]["id"], "--players"])
+            if card.code == 0 and card.text:
+                text += f"\n{card.text}"
+        return text
 
     def _foes_down(self) -> bool:
         snap = self.bridge.snapshot()
@@ -780,6 +797,7 @@ class Session:
         # bridge again, which would cost a snapshot call on the hot path.
         if args and args[0] in ("start", "end") and res.code == 0:
             self.names.begin()
+            self.check_ledger.begin()
         if res.needs_roll or res.needs_react:
             self.pending = {"args": list(args), "rolls": list(rolls), "reacts": list(reacts),
                             "react": res.needs_react}
@@ -886,6 +904,10 @@ class Session:
             return self._notes_cmd(line[len(line.split()[0]):])
         if line == "/usage":
             return self._usage()
+        if line == "/recap":
+            return [recap_mod.build_recap(self.camp_dir) or "(Nothing stored to recap yet.)"]
+        if line == "/prep":
+            return [recap_mod.build_prep(self.camp_dir)]
         if self.pending:                # the engine is waiting: free text must not reach the DM
             # Recorded anyway: the player said it, and a deferred move is a move the
             # DM must be able to acknowledge once the roll lands (audit report B3).
@@ -893,11 +915,11 @@ class Session:
             return [f"(engine) {_waiting(self.pending)}"]
         return self._player_turn(line)
 
-    def _ability_check(self, spec: str, line: str) -> list:
+    def _ability_check(self, spec: str, line: str, meta: dict | None = None) -> list:
         """The DM asked for a check: the player rolls in the browser (or it is rolled here
         with no display), then the DM narrates the outcome."""
-        m = re.match(r"\s*([A-Za-z ]+?)\s*(?:DC\s*)?(\d+)?\s*$", spec)
-        skill, dc = (m.group(1), int(m.group(2) or 12)) if m else (spec, 12)
+        req = checks.parse_request(spec, meta, strict=self.check_mode == "strict")
+        skill, dc = req.skill, req.dc
         found = context.skill_bonus(self.camp_dir, skill)
         if found is None and context.first_sheet_path(self.camp_dir) is not None:
             # The sheet exists and does not list this skill. Rolling it anyway made a
@@ -909,6 +931,21 @@ class Session:
             return [f"(engine) {skill.title()} is not a skill on this sheet, so nothing was "
                     f"rolled. Skills on the sheet: {listed}."]
         who, skill, bonus = found or ("", skill.title(), 0)
+        req.skill = skill
+        verdict = checks.decide(req, actor=who, bonus=bonus, ledger=self.check_ledger,
+                                mode=self.check_mode)
+        if verdict.kind == "refused":
+            self.memory.add("engine", verdict.text)
+            return [verdict.text]
+        if verdict.kind in ("auto_success", "no_stakes"):
+            self.memory.add("engine", verdict.text)
+            ok = verdict.kind == "auto_success"
+            r = (self._check_narration(verdict.text, True, margin=0) if ok
+                 else self._dm(engine=verdict.text, task=NO_STAKES))
+            if r.narration:
+                self._say(r.narration)
+                return [f"({verdict.text})", r.narration]
+            return [f"({verdict.text})"]
         total = None
         if self.display is not None and self.display.registered:
             self.display.narrate(self.take_narration())      # the scene first, then the roll prompt
@@ -917,6 +954,8 @@ class Session:
             total = random.randint(1, 20) + bonus
         article = "an" if skill[:1] in "AEIOU" else "a"
         ok = total >= dc
+        if not ok:
+            self.check_ledger.record_failure(who, skill, req.target)
         result = (f"{who or 'The player'} rolled {article} {skill} check: {total} against DC "
                   f"{dc}: {'success' if ok else 'failure'}.")
         self.memory.add("engine", result)
@@ -972,8 +1011,8 @@ class Session:
         else:
             if lv:
                 caster.extra["slots"][lv]["used"] += 1
-            sheet.write_text(R.write_back(sheet.read_text(encoding="utf-8"), caster),
-                             encoding="utf-8")
+            safeio.atomic_write_text(
+                sheet, R.write_back(sheet.read_text(encoding="utf-8"), caster))
             # The sheet's AC field is left as-is (write_back never touches it: see
             # tactics_sheet.py), so the new AC is recorded here instead, for the
             # sidebar to pick up (context.party_stats) until the effect expires.
@@ -1077,6 +1116,10 @@ class Session:
     def _autopilot(self, line: str):
         """Output for a combat action parsed without a model, or None."""
         if not self.bridge.is_combat_active():
+            # A sheet question goes first: "how many hit points do I have" contains "hit".
+            sheet = self._sheet_answer(line)
+            if sheet is not None:
+                return sheet
             # B2: the player declared an attack but no fight is running. Left alone,
             # this reaches the model as ordinary narration, and a small model
             # improvises a whole ruleset — bolded "**Attack Roll:** d20 + 6 vs AC
@@ -1095,6 +1138,12 @@ class Session:
             return None
         from tactics import state
         enc = state.load(state.encounter_path(self.camp_dir))
+        asked = fightq.classify(line, PLAYER_VERBS, scope="fight")
+        if asked is not None:            # a question: answered from the engine, no model call
+            self.memory.add("player", line)
+            out = fightq.answer(enc, enc.current.id, asked)
+            self.memory.add("engine", "\n".join(out))
+            return out
         p = autopilot.plan(line, enc, enc.current.id, self.last_target)
         if p is None:
             return None
@@ -1110,6 +1159,43 @@ class Session:
         self.last_target = p.target or self.last_target
         self.queue = [list(c) for c in p.cmds[1:]]
         return note + self._engine(p.cmds[0])
+
+    def _run_command(self, args: list) -> list:
+        """Run a player command the model suggested: ids for names, tactics-REPL phrasing
+        ("attack at the frog", "move toward the frog"), and a friendly line for a command
+        too short to run instead of an engine refusal."""
+        snap = self.bridge.snapshot()
+        if snap:
+            args = resolve_names(args, snap["tokens"])
+        enc = None
+        if args[0] == "move":
+            from tactics import state
+            try:
+                enc = state.load(state.encounter_path(self.camp_dir))
+            except (OSError, ValueError, KeyError, TypeError, AttributeError):
+                enc = None
+        args, problem = normalize(args, enc)
+        if problem:
+            return [f"(engine) {problem}"]
+        return self._engine(args)
+
+    def _sheet_answer(self, line: str):
+        """Out of a fight: a question the character sheet can answer (HP, AC, passive
+        scores, inventory) is answered by the engine with no model call, or None.
+
+        Same classifier as the fight questions (tactics.fightq), "explore" scope.
+        TODO(narrative review 4.2): rules-claim refusal ("house rule", "from now on",
+        "give me", "developer mode") hooks in here, before the line reaches the model."""
+        asked = fightq.classify(line, PLAYER_VERBS, scope="explore")
+        if asked is None:
+            return None
+        facts = context.sheet_facts(self.camp_dir)
+        if facts is None:                # no sheet to read: leave it to the story
+            return None
+        self.memory.add("player", line)
+        out = fightq.answer_sheet(asked, facts)
+        self.memory.add("engine", "\n".join(out))
+        return out
 
     def _player_turn(self, line: str) -> list:
         auto = self._autopilot(line)
@@ -1131,8 +1217,7 @@ class Session:
             args = parse_player_command(r.command) if r.command else None
             if not args:
                 return refused + [NO_ACTION]
-            snap = self.bridge.snapshot()
-            return refused + self._engine(resolve_names(args, snap["tokens"]) if snap else args)
+            return refused + self._run_command(args)
         self.turn += 1
         r = self._dm(player=line, engine=engine, notes=notes, task=PLAYER_TURN)
         # The DM may ask a smarter advisor for help on any turn, and is never
@@ -1185,13 +1270,12 @@ class Session:
             # stall lines ask, and it is read here only when a check is actually present.
             out.append(CHECK_MID_FIGHT.format(spec=r.check))
         elif r.check and not self._players_turn():
-            out += self._ability_check(r.check, line)
+            out += self._ability_check(r.check, line, r.check_meta)
         if r.cast and not self._players_turn():
             out += self._cast_spell(r.cast)
         args = parse_player_command(r.command) if r.command else None
         if args and self._players_turn():
-            snap = self.bridge.snapshot()
-            out += self._engine(resolve_names(args, snap["tokens"]) if snap else args)
+            out += self._run_command(args)
         if not notes:                        # nobody advised this turn: review it
             self._start_shadow(line, r.narration)
         self.summarizer.maybe_start()
@@ -1199,12 +1283,32 @@ class Session:
         return out
 
 
+def _missing_campaign_message(name, camp_dir) -> str:
+    """No such campaign: say where we looked, what exists, and how to make one."""
+    import paths
+    root = paths.campaigns_dir()
+    found = []
+    try:
+        found = sorted(d.name for d in root.iterdir() if paths._is_campaign(d))
+    except OSError:
+        pass
+    lines = [f"No campaign {name!r} at {camp_dir}", f"Campaign root: {root}"]
+    if found:
+        lines.append("Campaigns found: " + ", ".join(found))
+    else:
+        lines.append("No campaigns found there. Set GM_CAMPAIGN_ROOT if yours live elsewhere.")
+    lines.append("To create one, run /gm new <name> in the /gm skill (Claude Code or OpenCode).")
+    return "\n".join(lines)
+
+
 def main(argv=None) -> int:
     from paths import find_campaign
     ap = argparse.ArgumentParser(prog="play.py", description=__doc__.split("\n\n")[0],
                                  formatter_class=argparse.RawDescriptionHelpFormatter,
                                  epilog=__doc__.split("\n\n", 1)[1])
-    ap.add_argument("-c", "--campaign", required=True)
+    ap.add_argument("campaign_pos", nargs="?", metavar="campaign", help="campaign name")
+    ap.add_argument("-c", "--campaign", dest="campaign_opt", metavar="NAME",
+                    help="campaign name (same as the positional form)")
     ap.add_argument("--show-gm-notes", action="store_true",
                     help="print advisor notes (spoilers: for a GM, not a player)")
     ap.add_argument("--no-status", action="store_true",
@@ -1225,10 +1329,21 @@ def main(argv=None) -> int:
                          "localhost:$GM_DISPLAY_PORT, display/.port, else localhost:5001)")
     ap.add_argument("--no-display", action="store_true",
                     help="send nothing to any display (narration or grid combat)")
+    ap.add_argument("--no-recap", action="store_true",
+                    help="skip the 'previously on...' recap when resuming after a gap")
+    ap.add_argument("--no-prep", action="store_true",
+                    help="skip the pre-session prep checklist (/prep shows it on demand)")
+    ap.add_argument("--recap-gap", type=float, default=None, metavar="HOURS",
+                    help="hours away before the recap shows (default: GM_RECAP_GAP_HOURS or 6)")
     args = ap.parse_args(argv)
+    if args.campaign_pos and args.campaign_opt and args.campaign_pos != args.campaign_opt:
+        ap.error(f"two campaigns given ({args.campaign_pos!r} and -c {args.campaign_opt!r})")
+    args.campaign = args.campaign_opt or args.campaign_pos
+    if not args.campaign:
+        ap.error("which campaign? Usage: play.py <campaign>")
     camp_dir = find_campaign(args.campaign)
     if not camp_dir.exists():
-        print(f"No campaign {args.campaign!r} at {camp_dir}")
+        print(_missing_campaign_message(args.campaign, camp_dir))
         return 1
     usage = camp_dir / "localdm" / "usage.jsonl"
     client = llm.Client(usage_log=usage)
@@ -1253,6 +1368,13 @@ def main(argv=None) -> int:
             display.push_party(context.party_stats(camp_dir))
     else:
         os.environ["TACTICS_NO_DISPLAY"] = "1"
+    # Opening blocks: the gap is read from file times, which the first turn resets,
+    # so they are built before any turn is taken.
+    for block in recap_mod.session_start(camp_dir, recap=not args.no_recap,
+                                         prep=not args.no_prep, min_gap=args.recap_gap):
+        print(block + "\n")
+        if display and block.startswith("Previously"):
+            display.narrate(block)
     while True:
         try:
             line = input("> ")

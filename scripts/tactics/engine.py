@@ -269,9 +269,67 @@ def _provokers(enc: Encounter, mover, path) -> list:
     return sorted(out, key=lambda x: x[0])
 
 
+def _melee_reach(t) -> int:
+    """How far the creature hits in melee, in feet (5 when it has no melee attack)."""
+    reaches = [a.get("reach", 5) for a in t.attacks
+               if a.get("type") in ("melee", "melee_or_ranged") and "unparsed" not in a.get("flags", [])]
+    return max(reaches, default=5)
+
+
+def approach(enc: Encounter, token_ref, target_ref) -> dict:
+    """Where "move toward that creature" ends: the engine picks the square, never the model.
+
+    The cheapest square the mover can walk to this turn (no Dash) that puts it within its own
+    melee reach of the target; failing that, the reachable square closest to the target.
+    Returns {"square", "path", "feet", "distance", "in_reach", "text"}. Read-only; the move
+    itself is `move()` to that square, so opportunity attacks and reactions work as usual."""
+    t, target = _resolve(enc, token_ref), _resolve(enc, target_ref)
+    if t.id == target.id:
+        raise CombatError(f"{t.name} cannot approach itself.")
+    grid, opts, R = enc.board(), move_options(enc, t), rules_for(enc)
+    mine = enc.current is not None and enc.current.id == t.id
+    left = remaining_movement(enc) if mine else R.speed(t)
+    parity = enc.turn.diag_parity if mine else 0
+    reach = _melee_reach(t)
+    squares = grid.reachable(t.pos, left, opts, parity=parity)
+    squares = {p: c for p, c in squares.items() if p != target.pos}
+    squares[t.pos] = 0
+    best = min(squares, key=lambda p: (max(grid.distance(p, target.pos), reach), squares[p],
+                                       grid.distance(p, target.pos), p))
+    dist = grid.distance(best, target.pos)
+    found = grid.path(t.pos, best, opts=opts, parity=parity)
+    path, feet = found if found else ([t.pos], 0)
+    if best == t.pos:
+        text = (f"{t.name} is already within reach of {target.name} ({dist} ft)." if dist <= reach
+                else f"{t.name} cannot get any closer to {target.name} ({dist} ft away).")
+    else:
+        text = (f"{t.name} can reach {label(best)} ({feet} ft), " + (
+            f"within reach of {target.name}." if dist <= reach
+            else f"{dist} ft short of {target.name}."))
+    return {"square": label(best), "path": [label(p) for p in path], "feet": feet,
+            "distance": dist, "in_reach": dist <= reach, "target": target.id, "text": text}
+
+
+def _destination(enc: Encounter, t, square):
+    """A square label, a (x, y), or the name of a creature to walk toward."""
+    if not isinstance(square, str):
+        return tuple(square)
+    try:
+        return parse_square(square)
+    except ValueError:
+        pass
+    try:
+        other = enc.token(square)
+    except KeyError:
+        other = None
+    if other is None:
+        raise CombatError(f"{square!r} is not a square (like D5) or a creature here.")
+    return parse_square(approach(enc, t, other)["square"])
+
+
 def _plan(enc: Encounter, t, square):
     grid, opts = enc.board(), move_options(enc, t)
-    dest = parse_square(square) if isinstance(square, str) else tuple(square)
+    dest = _destination(enc, t, square)
     if not grid.in_bounds(dest):
         raise CombatError(f"{label(dest)} is off the map.")
     if not grid.passable(dest):
@@ -512,6 +570,17 @@ def _find_attack(attacker, name):
                       f"Attacks: {', '.join(a['name'] for a in attacker.attacks)}.")
 
 
+def _threatens(enc: Encounter, mover, h) -> bool:
+    """Whether leaving h's reach would provoke it: it can react, has an opportunity
+    attack, reaches the mover's square now, and the mover has not Disengaged."""
+    R = rules_for(enc)
+    if enc.turn.disengaged and enc.current and enc.current.id == mover.id:
+        return False
+    if not (h.active and R.can_react(h) and R.opportunity_attack(h)):
+        return False
+    return enc.board().distance(mover.pos, h.pos) <= R.reach(h)
+
+
 def attack_options(enc: Encounter, attacker_ref) -> list:
     """Every (attack, hostile target) pair with legality, hit chance and expected
     damage, best first. Drives target highlighting and the enemy option list."""
@@ -531,7 +600,11 @@ def attack_options(enc: Encounter, attacker_ref) -> list:
                 hc = R.hit_chance(a, t, atk, ctx)
                 row.update(hit_percent=hc["percent"], advantage=hc["advantage"],
                            reasons=hc["reasons"], cover=ctx.cover,
-                           expected_damage=round(hc["chance"] * average_damage(atk), 1))
+                           expected_damage=round(hc["chance"] * average_damage(atk), 1),
+                           attack_bonus=hc["bonus"], target_ac=hc["ac"], need=hc["need"],
+                           # Moving away from this target would draw its opportunity
+                           # attack: the engine's own test (_provokers), not a guess.
+                           provokes=_threatens(enc, a, t))
             out.append(row)
     out.sort(key=lambda r: (not r["legal"], -r.get("expected_damage", 0)))
     return out

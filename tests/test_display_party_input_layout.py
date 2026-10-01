@@ -27,9 +27,12 @@ PROBE = """() => {
   const rows = [...document.querySelectorAll('#audio-controls .audio-row')]
     .filter(e => e.offsetHeight).map(e => r(e).bottom);
   const ts = document.getElementById('text-scroll');
-  const readRight = innerWidth - parseFloat(getComputedStyle(ts).paddingRight);
+  const cs = getComputedStyle(ts);
+  const readLeft = parseFloat(cs.paddingLeft);
+  const readRight = innerWidth - parseFloat(cs.paddingRight);
   return {top: panel.top, bottom: panel.bottom, left: panel.left,
-          rowsBottom: Math.max(...rows), readRight, vh: innerHeight};
+          rowsBottom: Math.max(...rows), readLeft, readRight,
+          readCentre: (readLeft + readRight) / 2, vw: innerWidth, vh: innerHeight};
 }"""
 
 
@@ -93,6 +96,28 @@ class ExpandedPanelLayout(unittest.TestCase):
         self.assertGreaterEqual(m["top"], m["rowsBottom"] + 8, f"overlaps settings rows: {m}")
         self.assertLessEqual(m["bottom"], m["vh"], f"runs off the viewport: {m}")
         self.assertGreaterEqual(m["left"], m["readRight"], f"overlaps the reading column: {m}")
+
+    def check_centred(self, w, h, classes):
+        page = self.browser.new_page(viewport={"width": w, "height": h})
+        page.goto(f"http://127.0.0.1:{self.port}/", wait_until="load")
+        page.wait_for_timeout(600)
+        page.click("#input-panel-header")
+        # The padding animates (transition: padding 0.4s), so wait it out.
+        page.evaluate("cls => document.getElementById('text-scroll').classList.add(...cls)", classes)
+        page.wait_for_timeout(700)
+        m = page.evaluate(PROBE)
+        page.close()
+        self.assertAlmostEqual(m["readCentre"], m["vw"] / 2, delta=2,
+                               msg=f"reading column is not centred ({classes}): {m}")
+        self.assertGreaterEqual(m["left"], m["readRight"],
+                                f"party input overlaps the prose ({classes}): {m}")
+
+    def test_reading_column_is_centred_in_every_rail_state(self):
+        for w, h in ((1440, 900), (1280, 720), (1920, 1080)):
+            for classes in ([], ["sidebar-hidden"], ["controls-hidden"],
+                            ["sidebar-hidden", "controls-hidden"]):
+                with self.subTest(size=(w, h), classes=classes):
+                    self.check_centred(w, h, classes)
 
     def test_1440x900(self):
         self.check(1440, 900)

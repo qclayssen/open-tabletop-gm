@@ -114,6 +114,42 @@ def test_every_object_container_is_present(env):
         "tokens", "fog", "pins", "texts", "drawings", "walls", "lights"}
 
 
+def test_the_state_carries_the_keys_atlas_itself_writes(env):
+    """The scene has to be indistinguishable from one the UI saved.
+
+    Every key here is one `MapPersistence.ts` reads on load. Dropping any of them
+    does not raise -- the store falls back to a default -- so the failure is a
+    scene that opens untitled, ungridded or with fog on, and nothing complains.
+    `title` is the one that bites hardest: it is the display name, so a scene
+    carrying only `name` opens as "Untitled Map".
+    """
+    _export(env)
+    state = _scene(env[1])["state"]
+    assert {"title", "mapPath", "background", "grid", "objects", "camera",
+            "widgetValues", "widgetSettings", "dmNotePath", "tokenSettings",
+            "initiative", "initiativeTrackerOpen", "diceLog",
+            "pinnedNotePreviews", "lootRoller"} <= set(state)
+    assert state["title"] == "Test Cave"
+    # Both spellings of the artwork, because two different readers want them.
+    assert state["mapPath"] == state["background"]
+    assert state["mapPath"].endswith(".jpg")
+    assert state["camera"] is None, "an export must not restore a saved camera"
+
+
+def test_walls_and_lights_are_arrays_not_dicts(env):
+    """Atlas iterates these directly, so the container type is load-bearing.
+
+    `{}` happens to yield zero walls when empty, which is why the wrong shape
+    survived: nothing looked wrong until the first hand-drawn wall was added and
+    `WallRenderer` was handed an object instead of a list.
+    """
+    _export(env)
+    objects = _scene(env[1])["state"]["objects"]
+    for key in ("walls", "lights"):
+        assert isinstance(objects[key], list), f"{key} must be a list"
+        assert objects[key] == []
+
+
 # ─── geometry ────────────────────────────────────────────────────────────────
 
 def test_token_lands_on_the_centre_of_its_own_cell(env):

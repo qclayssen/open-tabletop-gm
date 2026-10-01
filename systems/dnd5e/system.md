@@ -158,6 +158,7 @@ Award Inspiration immediately when a player makes a bold roleplay choice, acts o
 Moments a 5e GM should ask about directly rather than waiting for the player to raise them (see Applied Standard 14):
 
 - **Spell preparation.** Any prepared caster (cleric, druid, paladin, wizard) chooses spells after a long rest. Ask the night before a session you know is combat-heavy, or any time the character has taken a level and gained new prepared-spell slots: name how many they can prepare and ask which ones.
+- **Session prep.** The local DM's `/prep` checklist (`scripts/localdm/recap.py`) front-loads the spell preparation, consumables, watch order and open-thread questions from the sheet and state.md, so they do not depend on the GM remembering to ask.
 - **Long rest.** Ask who takes first watch (or how watches split) before narrating the rest resolving, and whether anyone wants to use downtime during it (identify an item, practice a tool, tend a wound).
 - **Loot division.** When treasure or a magic item with only one clear use is found, ask who wants it rather than assigning it or letting it go unclaimed.
 - **Level-up choices.** Ability Score Improvement vs. feat, subclass pick at the class's feature level, cantrip/spell swap on level-up — these are always the player's call, never assumed.

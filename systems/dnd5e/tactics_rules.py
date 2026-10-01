@@ -670,7 +670,12 @@ class DnD5e(Rules):
             p = 1 - (1 - p) ** 2
         elif mode == "disadvantage":
             p = p ** 2
-        return {"chance": p, "percent": round(p * 100), "advantage": mode, "reasons": reasons}
+        # The breakdown the odds were made from, so a display can say why a number
+        # is what it is without working any of it out: the to-hit bonus, the AC
+        # before cover, the cover's AC bonus, and the natural roll that hits.
+        return {"chance": p, "percent": round(p * 100), "advantage": mode, "reasons": reasons,
+                "bonus": int(attack.get("bonus", 0)), "ac": self.ac(target),
+                "cover": ctx.cover, "need": need}
 
     def attack(self, attacker, target, attack: dict, ctx: AttackContext, roller,
                player: bool, explicit: str = "normal") -> dict:
@@ -805,8 +810,10 @@ class DnD5e(Rules):
         ability = ability.lower()[:3]
         mods = self.condition_modifiers(token)
         if ability in ("str", "dex") and _save_for(mods, ability) == "auto_fail":
-            return {"fail": 1.0, "percent_fail": 100, "advantage": "auto fail"}
-        mode, _ = self._save_mode(token, ability, explicit)
+            return {"fail": 1.0, "percent_fail": 100, "advantage": "auto fail",
+                    "reasons": self._save_mode(token, ability, explicit)[1], "dc": dc,
+                    "bonus": None, "cover": 0, "need": None}
+        mode, reasons = self._save_mode(token, ability, explicit)
         bonus = self.save_bonus(token, ability, cover)
         pen = next((e for e in token.effects if e.get("save_penalty")), None)
         if pen:
@@ -818,7 +825,9 @@ class DnD5e(Rules):
         elif mode == "disadvantage":
             succeed = succeed ** 2
         fail = 1 - succeed
-        return {"fail": fail, "percent_fail": round(fail * 100), "advantage": mode}
+        return {"fail": fail, "percent_fail": round(fail * 100), "advantage": mode,
+                "reasons": reasons, "dc": dc, "bonus": bonus,
+                "cover": cover if ability == "dex" else 0, "need": need}
 
     def ability_check(self, token, name: str, dc: int, roller, player: bool,
                       explicit: str = "normal", sense: str = "", other=None,
@@ -1013,6 +1022,14 @@ class DnD5e(Rules):
         return _encounter_module().rate(groups, levels, ruleset or "2014",
                                         lookup=_lookup_monster, suggest=_srd_suggest,
                                         known=known)
+
+    def adventuring_day(self, levels, ruleset="", plan=None):
+        # Each planned fight is rated through the same path `rate_encounter` uses,
+        # so a day's worth of fights is costed by the code that costs one fight
+        # and the two cannot drift apart.
+        return _encounter_module().adventuring_day(levels, ruleset or "2014", plan=plan,
+                                                   lookup=_lookup_monster,
+                                                   suggest=_srd_suggest)
 
     def award_xp(self, sheet_path, amount):
         return _encounter_module().award_xp(sheet_path, amount)

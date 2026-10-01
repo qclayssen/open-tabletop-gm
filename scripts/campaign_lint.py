@@ -46,7 +46,7 @@ from paths import campaigns_dir, find_campaign
 # by sync. A missing one is not a style problem: the section is simply gone.
 REQUIRED_STATE_SECTIONS = {
     **{s: "read into the DM prompt every turn (context.state_digest)"
-       for s in context.DIGEST_SECTIONS},
+       for s in context.DIGEST_SECTIONS if s not in context.OPTIONAL_DIGEST_SECTIONS},
     # Last, so it wins: World State is in DIGEST_SECTIONS and is also read by the
     # display sidebar. Listed first it was overwritten by the comprehension above,
     # so the reason a GM sees named only the sidebar and never the DM prompt.
@@ -168,7 +168,10 @@ def lint_state(rep: Report, text: str) -> None:
 
     # The arc is the one place a YAML block is parsed by a human, so it is the
     # one place a syntax error is silent until the GM reads it mid-session.
-    fence = _FENCE.search(text)
+    # Scoped to the Campaign Arc section: other sections (World Queue) carry
+    # their own yaml fence, and the first fence in the file is not the arc.
+    arc_at = re.search(r"^## Campaign Arc[ \t]*$", text, re.M)
+    fence = _FENCE.search(text, arc_at.end() if arc_at else 0)
     if not fence:
         rep.add("warn", "state.md", "no ```yaml block under ## Campaign Arc",
                 hint="/gm new writes one; a sandbox campaign sets `type: sandbox`")

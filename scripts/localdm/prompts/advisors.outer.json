@@ -3,7 +3,7 @@
   "briefs": {
     "_shared.md": "514a6e892f78e7019a0e44d9042b497f84c56385c1816b8b991c869482df51c7",
     "arbiter.md": "89fcfeeb7b4c021657bd162cd043311084935f9a380d2d6fbff2cbba583810be",
-    "continuity.md": "d93536947c5cf8c63ca37d8a3cd1ba0a9823498f9649a3803c8393c620b2ff4a",
+    "continuity.md": "e58f7327d7bca8cf69856a02773b49310f6864e981404f4cf2d77fce1a8d7852",
     "designer.md": "e63fc69cf2500fb434f2d1b7800cf57f0357abde5f66a69f30dbccf213800700",
     "director.md": "fd2992ab66dd81a9d0c937e119ef620f791cde75f8808efbd7c415b98d0d0e9e",
     "historian.md": "8029e2a1a6d7304c9d275dd9b68419e805ee3cc39ab214ffa7da0e2686c6733a",
@@ -13,11 +13,11 @@
     "tactician.md": "06db29ce5ceb2bac6b9573222cd969f0f014917e30bb01004de118018e1b28d4"
   },
   "dev_council": {
-    "DEV-ADVISORS.md": "1c0f4bcc9b64caa64ff121260ce632498680af1bde18799b9229a281ff4f2e81",
-    "architect.md": "63c9c7583e164c77ed901c32fa2687089a9e8f320d039c46dde60083e9664d03",
-    "engineer.md": "7c32f452692bc18d7bbaed0e9b2fba0c3ae7537eb7125078e2da8b51f5910c5c",
-    "security.md": "9b115f7501cf0099885727fe3fae1d4b8668cba510ff51bbfc4e772a60258ea6",
-    "steward.md": "c15634fe701d4bb3dde209dbdd2db0657e9170ea320f6d5c8fb7afec92fd7aac",
-    "verifier.md": "2cc49510cceb5342391704446a7b7e9bceebd499406513341b09b7f8a1d75e7d"
+    "dev/README.md": "74f847f7e935abf1f5ff036308ec8922e2bad73564cfaf826f8d3c8deaae9505",
+    "dev/architect.md": "63c9c7583e164c77ed901c32fa2687089a9e8f320d039c46dde60083e9664d03",
+    "dev/engineer.md": "7c32f452692bc18d7bbaed0e9b2fba0c3ae7537eb7125078e2da8b51f5910c5c",
+    "dev/security.md": "9b115f7501cf0099885727fe3fae1d4b8668cba510ff51bbfc4e772a60258ea6",
+    "dev/steward.md": "c15634fe701d4bb3dde209dbdd2db0657e9170ea320f6d5c8fb7afec92fd7aac",
+    "dev/verifier.md": "2cc49510cceb5342391704446a7b7e9bceebd499406513341b09b7f8a1d75e7d"
   }
 }

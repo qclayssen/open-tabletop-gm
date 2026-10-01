@@ -4,17 +4,17 @@ This guide gets you playing a tactical grid fight in about five minutes, with no
 
 ## 1. Set up (once)
 
-You need Python 3.10 or newer. The fight uses SRD monster data, which is built once from the public 5e SRD (network needed):
-
-```bash
-python3 systems/dnd5e/build_srd.py --no-fvtt
-```
+You need Python 3.10 or newer. Nothing else: the tutorial ships with the two kobolds it needs, so no download is required.
 
 ## 2. Start the tutorial
 
+From any directory:
+
 ```bash
-python3 scripts/tactics/play.py tutorial
+python3 /path/to/open-tabletop-gm/start.py
 ```
+
+(`start.py` checks Python and Flask, then runs `scripts/tactics/play.py tutorial`. For the full SRD monster list later, run `python3 start.py --srd`, which builds it once from the public 5e SRD and needs network. Other scenarios and options: `python3 scripts/tactics/play.py --help`.)
 
 Two kobolds are climbing into the Training Yard. Kairos spots them first, so they are surprised and lose their first turn (the 5e surprise rule): you get a full turn before anything can hurt you. The game draws the map, then walks you through ten short lessons, one command at a time. Each lesson ends when you have done what it asks, in any order. After the last one you are on your own: win the fight.
 

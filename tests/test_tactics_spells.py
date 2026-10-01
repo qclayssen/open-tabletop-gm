@@ -1,8 +1,8 @@
 """Milestone 4: spells, templates, saves, concentration, reactions, riders,
 Help, Hide, Escape and Ready. Hand-checked with scripted dice.
 
-Kairos (tests.tactics_fixtures.caster): AC 12, 8 HP, spell save DC 13, spell
-attack +5, CON save +2, two level 1 slots, controlled by the player, so his
+Kairos (tests.tactics_fixtures.caster): AC 12, 8 HP, spell save DC 14, spell
+attack +6, CON save +2, two level 1 slots, controlled by the player, so his
 dice are supplied (roller(supplied=[...])). Engine dice are the scripted faces.
 Giant frog: AC 11, 18 HP, DEX save +1, INT save -4, Bite +3 (1d6+1, grapples).
 """
@@ -29,10 +29,10 @@ def fight(*tokens, order=None):
 def test_fire_bolt_is_a_spell_attack_with_the_players_dice():
     k, f = caster(), frog("frog-1", (4, 0))
     enc = fight(k, f)
-    # d20 15 + 5 = 20 vs AC 11: hit; 1d10 = 7 fire. Frog 18 -> 11.
+    # d20 15 + 6 = 21 vs AC 11: hit; 1d10 = 7 fire. Frog 18 -> 11.
     res = spells.cast(enc, roller(supplied=[15, 7]), "kairos", "fire bolt", ["frog-1"])
     assert f.hp == 11 and enc.turn.action_used
-    assert res["text"].startswith("Kairos casts Fire Bolt. Kairos Fire Bolt -> Frog 1: 20 vs AC 11, hit.")
+    assert res["text"].startswith("Kairos casts Fire Bolt. Kairos Fire Bolt -> Frog 1: 21 vs AC 11, hit.")
 
 
 def test_a_cantrip_needs_the_players_roll_first():
@@ -123,8 +123,8 @@ def test_the_area_preview_shows_fail_chance_expected_damage_and_allies():
     enc = fight(k, frog("frog-1", (1, 0)), ally)
     pv = spells.preview(enc, "kairos", "burning hands", "D1")
     frog_row = next(r for r in pv["affected"] if r["id"] == "frog-1")
-    # DEX +1 vs DC 13: fails on 1-11, 55%. 10.5 x (0.55 + 0.45 / 2) = 8.1.
-    assert frog_row["fail_percent"] == 55 and frog_row["expected"] == 8.1
+    # DEX +1 vs DC 14: fails on 1-12, 60%. 10.5 x (0.60 + 0.40 / 2) = 8.4.
+    assert frog_row["fail_percent"] == 60 and frog_row["expected"] == 8.4
     mira = next(r for r in pv["affected"] if r["id"] == "mira")
     assert mira["ally"] and "(ALLY)" in pv["text"]
 
@@ -143,9 +143,9 @@ def test_range_and_sight_are_checked_before_anything_is_spent():
 def test_the_bonus_action_spell_rule():
     k = caster(spells=KAIROS_SPELLS + ["Healing Word"])
     enc = fight(k, frog("frog-1", (4, 0)))
-    k.hp = 3
+    k.hp = 2
     spells.cast(enc, roller(supplied=[15, 7]), "kairos", "fire bolt", ["frog-1"])    # action cantrip
-    # Healing Word: 1d4 + MOD (DC 13 - 8 - proficiency 2 = +3): 2 + 3 = 5 HP.
+    # Healing Word: 1d4 + MOD (DC 14 - 8 - proficiency 2 = +4): 2 + 4 = 6 HP, 2 -> 8 exactly.
     spells.cast(enc, roller(supplied=[2]), "kairos", "healing word", ["kairos"])
     assert k.hp == 8
     enc2 = fight(caster(spells=KAIROS_SPELLS + ["Healing Word"]), frog("frog-1", (4, 0)))
@@ -279,8 +279,8 @@ def test_escape_uses_the_better_of_athletics_and_acrobatics():
     enc = fight(f, k)
     engine.attack(enc, roller(15, 4), "frog-1", "kairos")
     engine.end_turn(enc, roller())
-    # Acrobatics +2 beats Athletics -1: 9 + 2 = 11 vs DC 11, free.
-    res = actions.escape(enc, roller(supplied=[9]), "kairos")
+    # Acrobatics +4 beats Athletics -1: 7 + 4 = 11 vs DC 11, free.
+    res = actions.escape(enc, roller(supplied=[7]), "kairos")
     assert res["escaped"] and not k.has("grappled") and "Acrobatics 11 vs DC 11" in res["text"]
 
 
@@ -326,7 +326,8 @@ def test_hide_needs_total_cover_then_beats_passive_perception():
     rows = ["...#....", "...#....", "...#....", "........"]
     k, f = caster(pos=(0, 0)), frog("frog-1", (6, 0))
     enc = start(encounter([k, f], rows=rows), ["kairos", "frog-1"])
-    # Behind the wall: Stealth 8 + 4 = 12 ties the frog's passive Perception 12: hidden.
+    # Behind the wall: Stealth 8 + 4 (DEX +2, Kenku proficiency +2, per the sheet) = 12
+    # ties the frog's passive Perception 12 (10 + Perception +2): hidden.
     res = actions.hide(enc, roller(supplied=[8]), "kairos")
     assert res["hidden"] and k.has("hidden")
     # In the open, hiding is refused and nothing is spent.
@@ -335,6 +336,15 @@ def test_hide_needs_total_cover_then_beats_passive_perception():
     with pytest.raises(CombatError, match="plain sight"):
         actions.hide(enc2, roller(), "kairos")
     assert not enc2.turn.action_used
+
+
+def test_hide_one_below_the_passive_perception_is_noticed():
+    # The other side of the tie above: Stealth 7 + 4 = 11 against passive 12 fails.
+    rows = ["...#....", "...#....", "...#....", "........"]
+    k, f = caster(pos=(0, 0)), frog("frog-1", (6, 0))
+    enc = start(encounter([k, f], rows=rows), ["kairos", "frog-1"])
+    res = actions.hide(enc, roller(supplied=[7]), "kairos")
+    assert not res["hidden"] and not k.has("hidden") and res["stealth"] == 11
 
 
 def test_attacking_from_hiding_has_advantage_then_reveals():

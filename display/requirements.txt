@@ -1,5 +1,4 @@
 flask
-flask-cors
-pygame
-numpy
-pyyaml
+# Optional: numpy only adds display audio (display/audio.py) and portrait
+# cropping in scripts/faculty_sheets.py. Everything else runs without it.
+# numpy

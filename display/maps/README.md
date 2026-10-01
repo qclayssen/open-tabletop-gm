@@ -37,12 +37,14 @@ A map is a grid of 5 ft squares. You paint it with rectangles, in order, over a 
 | `diagonals` | no | `"5"` (default, 2014 rule: every square costs 5 ft) or `"5-10-5"` (every second diagonal costs 10 ft) |
 | `info` | no | A short description for the display |
 | `base` | no | Terrain under everything, default `floor` |
-| `features` | no | Rectangles: `type`, `x`, `y`, `w` and `h` (both default 1), optional `label`. The map editor rewrites this list; see below |
+| `features` | no | Rectangles: `type`, `x`, `y`, `w` and `h` (both default 1), optional `label` and optional `name`. The map editor rewrites this list; see below |
 | `terrain` | no | Extra terrain types for this map (see below) |
 | `zones` | no | x positions of dashed vertical lines across the board (the Mage Tower halfway line) |
 | `spawns` | no | Suggested token positions; `color` is a college (`quan`, `lore`, `pris`, `silv`, `with`), `danger` or `brass` |
 | `grid` | no | `cell_px`, `offset_x`, `offset_y` — the grid aligned to the map's artwork in pixels. See below |
 | `token_art` | no | Per-spawn token portraits for `scripts/map_to_atlas.py`: `{"<spawn id>": "<path>"}`. See below |
+
+A feature's optional `name` is what makes it addressable. Every feature gets a landmark handle when the map compiles: the `name` slugged (`north-door`) if you gave one, otherwise its type plus a per-type counter (`crate-1`, `crate-2`). So `combat.py card <token>` can list landmarks by name with their squares, and "move him behind the altar" becomes a checkable instruction instead of a guess. Naming features is optional and no shipped map needs it, but it is what turns scenery into somewhere to go. A duplicate name gets `-2`; a feature painted over entirely is dropped but still advances the counter, so handles stay stable.
 
 ### `grid`: the pixel size of a square
 
@@ -192,3 +194,18 @@ python3 scripts/map_catalog.py --open                      # browse what you hav
 `map_catalog.py` renders every map that loads into one static HTML page with a thumbnail, its size in feet, and its terrain. Thumbnails are inlined as data URIs, so it works from a USB stick and survives being emailed; a map with no artwork installed says so rather than drawing a blank tile that would be indistinguishable from an empty map.
 
 Thumbnails need an image resizer, and none is a dependency of the engine. It looks for `magick`, `convert`, `ffmpeg` and `sips` (macOS only) in that order. With none of them installed the page is still written and every map still listed -- the artwork is simply not shown, and both the page and stdout say so, rather than passing off a missing resizer as missing artwork.
+
+## Exporting to Chartdown
+
+`python3 scripts/map_to_chartdown.py <map> [--tokens] [--terrain NAME=WORD] [--out DIR]`
+writes `<map>.cd`, a [Chartdown](https://github.com/Nossimonov/Chartdown) (spec v0.8)
+text document with a `chartdown: 0.8` header. It is one-way, like the Atlas export: it
+reads the map the way the engine does and never reads a `.cd` back. Square grids only.
+
+Terrain becomes vocabulary words through an explicit table: `difficult` is `rubble`,
+`water` is `water`, `wall` is `earth` (solid rock), `void` is `void`, `feature` is
+`boulder`, `hazard` is a declared `hazard` word, and floor is left unmarked. A custom
+terrain such as `wood` or `finish` is refused until you name a word for it
+(`--terrain wood=grass`); nothing is guessed. Each run prints what was lost: the
+diagonal rule, terrain costs and cover, pixel cell size, labels, and (with `--tokens`)
+that spawns are a position and a name only and do not survive Chartdown's UVTT export.

@@ -33,7 +33,6 @@ from collections import deque
 from typing import Optional
 from flask import (Flask, Response, request, render_template, jsonify,
                    send_from_directory)
-from flask_cors import CORS
 
 _DISPLAY_DIR  = os.path.dirname(os.path.abspath(__file__))
 _SKILL_DIR    = os.path.dirname(_DISPLAY_DIR)
@@ -512,7 +511,52 @@ app = Flask(__name__)
 app.root_path = _DISPLAY_DIR
 app.template_folder = os.path.join(_DISPLAY_DIR, "templates")
 app.config['TEMPLATES_AUTO_RELOAD'] = True
-CORS(app)
+
+
+# ─── Security headers and cross-origin policy ────────────────────────────────
+# The display is same-origin: its page, /stream and every POST come from one
+# host. No cross-origin browser access is granted (no Access-Control-Allow-*
+# headers), and a state-changing request from a foreign Origin is refused unless
+# it carries the LAN token. Non-browser clients (send.py, push_stats.py, curl)
+# send no Origin header and are unaffected. CSP is report-only for now.
+_CSP_REPORT_ONLY = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline'; "
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+    "font-src 'self' https://fonts.gstatic.com data:; "
+    "img-src 'self' data: blob:; "
+    "media-src 'self' data: blob:; "
+    "connect-src 'self'; "
+    "object-src 'none'; base-uri 'self'; frame-ancestors 'self'"
+)
+
+
+def _origin_is_foreign() -> bool:
+    origin = request.headers.get("Origin")
+    if not origin or origin == "null":
+        return origin == "null"
+    from urllib.parse import urlsplit
+    return urlsplit(origin).netloc.lower() != request.host.lower()
+
+
+@app.before_request
+def _refuse_foreign_origin_writes():
+    if request.method in ("GET", "HEAD", "OPTIONS"):
+        return None
+    if _origin_is_foreign():
+        if _lan_token is not None and _token_ok():
+            return None
+        return jsonify({"ok": False, "error": "cross-origin request refused"}), 403
+    return None
+
+
+@app.after_request
+def _security_headers(resp):
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("Referrer-Policy", "same-origin")
+    resp.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    resp.headers.setdefault("Content-Security-Policy-Report-Only", _CSP_REPORT_ONLY)
+    return resp
 
 # Wire audio broadcast after _broadcast is defined (see bottom of file)
 # — done lazily via set_broadcast() called after app is created.
@@ -1281,8 +1325,32 @@ def _persist_input_queue() -> None:
 _load_input_queue()
 
 
+# SSE sequencing. Every broadcast payload gets a monotonically increasing `seq`.
+# Payloads that carry narration (or a clear) are kept in a bounded replay buffer so
+# a client that reconnects with /stream?since=<lastSeq> receives only what it
+# missed. _EPOCH changes on every server start, so a client can tell that a lower
+# seq means a restart rather than a duplicate. Guarded by _clients_lock.
+_SEQ_BUFFER_MAX = 512
+_EPOCH = secrets.token_hex(4)
+_seq = 0
+_seq_evicted = 0   # highest seq that has been evicted from the buffer
+_seq_buffer: deque = deque(maxlen=_SEQ_BUFFER_MAX)
+_CLOSE = object()   # sentinel: tells a client's generator to end its stream
+
+
+def _replayable(payload: dict) -> bool:
+    return bool(payload.get("text") or payload.get("clear"))
+
+
 def _broadcast(payload: dict) -> None:
+    global _seq, _seq_evicted
     with _clients_lock:
+        _seq += 1
+        payload = {**payload, "seq": _seq}
+        if _replayable(payload):
+            if len(_seq_buffer) == _SEQ_BUFFER_MAX:
+                _seq_evicted = _seq_buffer[0]["seq"]
+            _seq_buffer.append(payload)
         dead = []
         for q in _clients:
             try:
@@ -1290,8 +1358,55 @@ def _broadcast(payload: dict) -> None:
             except queue.Full:
                 dead.append(q)
         for q in dead:
+            # A full queue means this client is too slow. Dropping payloads
+            # silently would lose narration, so log it and close the stream: the
+            # browser reconnects and replays from its last seq.
+            print("[display] SSE client queue full; disconnecting so it can resume",
+                  file=sys.stderr)
             _clients.remove(q)
             _client_chars.pop(q, None)
+            try:
+                while True:
+                    q.get_nowait()
+            except queue.Empty:
+                pass
+            q.put_nowait(_CLOSE)
+
+
+def _replay_since(since: int):
+    """Buffered narration payloads after `since`, or None if the gap cannot be
+    filled (unknown seq, restart, or the buffer has rolled past it). Caller holds
+    _clients_lock."""
+    if since > _seq:
+        return None
+    if since == _seq:
+        return []
+    if since < _seq_evicted:
+        return None   # narration after `since` may have rolled out of the buffer
+    return [p for p in _seq_buffer if p["seq"] > since]
+
+
+_last_clocks = None  # last revealed-clock payload pushed, to broadcast only on change
+
+
+def _clocks_payload() -> list:
+    """Revealed faction clocks for the active campaign (hidden ones are absent)."""
+    name = _active_campaign_name()
+    if not name:
+        return []
+    try:
+        import world as _world
+        return _world.revealed_clocks(name)
+    except Exception:
+        return []
+
+
+def _push_clocks_if_changed() -> None:
+    global _last_clocks
+    clocks = _clocks_payload()
+    if clocks != _last_clocks:
+        _last_clocks = clocks
+        _broadcast({"clocks": clocks})
 
 
 # ─── Routes ──────────────────────────────────────────────────────────────────
@@ -3179,8 +3294,20 @@ def combat_do():
 @app.route("/stream")
 def stream():
     q: queue.Queue = queue.Queue(maxsize=256)
+    _since_raw = request.args.get("since") or request.headers.get("Last-Event-ID") or ""
+    try:
+        since = int(_since_raw) if _since_raw.strip() else None
+    except ValueError:
+        since = None
+    missed = None
     with _clients_lock:
         _clients.append(q)
+        if since is not None and request.args.get("epoch", _EPOCH) == _EPOCH:
+            missed = _replay_since(since)
+        # First payload tells the client which server run and seq it is joining.
+        q.put_nowait({"hello": {"epoch": _EPOCH, "seq": _seq, "resumed": missed is not None}})
+        for _p in (missed or []):
+            q.put_nowait(_p)
         # Register this client's bound character (phones pass ?character=/?char=);
         # the main display passes neither. Drives dice-request phone-vs-screen routing.
         _ch = (request.args.get("character") or request.args.get("char") or "").strip().lower()[:48]
@@ -3195,7 +3322,7 @@ def stream():
     # Replay recent entries so late-connecting / reconnecting browsers catch up.
     # Sent as a typed batch so the browser can render each item (dm/player/dice) correctly.
     with _text_log_lock:
-        recent = list(_text_log)
+        recent = list(_text_log) if missed is None else []
     if recent:
         q.put_nowait({"replay_batch": recent})
 
@@ -3208,6 +3335,11 @@ def stream():
     with _combat_lock:
         if _current_combat:
             q.put_nowait({"combat": dict(_current_combat)})
+
+    # Revealed faction clocks only; hidden clocks never leave the server.
+    _clk = _clocks_payload()
+    if _clk:
+        q.put_nowait({"clocks": _clk})
 
     # Send current input queue so the pending indicator is accurate on reconnect.
     with _input_lock:
@@ -3268,12 +3400,20 @@ def stream():
             while True:
                 try:
                     payload = q.get(timeout=5)
-                    yield f"data: {json.dumps(payload)}\n\n"
+                    if payload is _CLOSE:
+                        return
+                    _id = payload.get("seq")
+                    yield (f"id: {_id}\n" if _id is not None else "") + \
+                        f"data: {json.dumps(payload)}\n\n"
                 except queue.Empty:
                     # Self-heal: an action that left .input_queue must stop
                     # showing QUEUED. Broadcasts only when something changed.
                     try:
                         _reconcile_queue_state()
+                    except Exception:
+                        pass
+                    try:
+                        _push_clocks_if_changed()  # picks up reveal/hide/tick from world.py
                     except Exception:
                         pass
                     yield ": keepalive\n\n"   # prevent proxy timeout
