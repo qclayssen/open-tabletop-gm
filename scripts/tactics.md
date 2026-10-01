@@ -177,6 +177,40 @@ $T start enrollment-ledger-rotunda --formation stacks-ambush    # a different ma
 
 `formation place` starts nothing and is the safe way to try a formation on a map you are thinking about. Use it before `start`.
 
+## The scene: the map the story is on when no fight is running
+
+The campus is the background of the story, not the backdrop of one fight. Today
+the campaign has one map slot, `combat/encounter.json`, and `/c end` writes
+`*(none)*` over it, so between fights the world reads as having no map at all.
+A **scene** is the other owner: one file per campaign, `<campaign>/scene.json`,
+holding the map, its background and where the party is standing on it.
+
+```bash
+$T scene strixhaven-campus          # make a Chartdown map the current scene
+$T here biblioplex                 # snap the party onto a named place
+$T here "Bow's End Tavern"         # labels work as well as slugs
+$T scene --show                    # read it back
+$T here detentionbog --hide        # keep the marker off every browser
+```
+
+- `scene MAP` reads `MAP.cd` out of `<campaign>/maps/chartdown/` for its extent
+  and its title, and defaults the background to the committed `.player.svg`
+  beside it. The party's marker starts at the top-left corner until you place it.
+- `here PLACE` looks the place up in the `.cd` `[features]` block and stores the
+  coordinate as a **fraction** of the map's extent, not as a cell and not as a
+  pixel. A region map has no cell grid, and a pixel does not survive the artwork
+  being re-exported; a fraction survives both.
+- A place the `.cd` does not give a single point for is **named and refused**
+  rather than guessed at. Nothing here silently places the party at 0,0.
+- **Combat borrows the scene, it does not erase it.** `/c end` says combat is
+  over and names the scene the party is back in. A campaign with no `scene.json`
+  still gets `*(none)*`, exactly as before.
+- `--hide` takes the marker off every browser. There is no GM-only view to read
+  it from, because the display has one audience: the GM reads a hidden marker
+  from the terminal. `scene` and `here` write files, so they never roll.
+- Pins are not part of this. A pin opens a note or another map (`scripts/pin.py`);
+  a scene owns the map and the marker is a token on it.
+
 ## Other
 
 - `$T status`: round, whose turn, everyone's square, HP, conditions (with the exhaustion level), concentration and readied actions.

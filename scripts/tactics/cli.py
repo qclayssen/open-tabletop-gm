@@ -76,7 +76,7 @@ import sys
 from paths import find_campaign            # scripts/paths.py (on sys.path via tactics/__init__)
 
 from . import (actions, ai, effects, encounter, engine, formations, maps, policy, receipts,
-                 rest, roller, sight, slots, spells, state, statecard, sync)
+                 rest, roller, scenes, sight, slots, spells, state, statecard, sync)
 from .core import rules_for
 from .grid import label, parse_square
 from .roller import PendingRoll, Roller
@@ -92,13 +92,17 @@ _DISPLAY_CAMPAIGN = _SCRIPTS.parent / "display" / ".campaign"
 # costs a day the GM has already designed, and reaching the save path with no
 # encounter loaded is exactly how it was found broken.
 READ_ONLY = ("status", "options", "preview", "reachable", "approach", "targets", "log", "spells",
-             "preview-area", "sight", "card", "budget", "day", "rate", "receipts", "formation")
+             "preview-area", "sight", "card", "budget", "day", "rate", "receipts", "formation",
+             "scene", "here")
 # `formation` is here even though `formation save` writes a file: pending.json
 # exists to replay the *same* engine dice after a decision, and nothing under
 # `formation` rolls. Saving a formation is a deliberate act, and making it
 # consume a pending roll would let an unrelated interrupted attack change what
 # gets written. `formation save` is also the one member that needs a running
 # fight, and says so itself rather than being a read-only command.
+# `scene` and `here` are here for the same reason: neither rolls, and both are
+# read-only with respect to the encounter, so an interrupted attack must not be
+# able to change where `scene.json` says the party is standing.
 # Flags that do not change what a command means: a re-run with them added is
 # the same command, so it replays the same engine dice (see _pending).
 OLD_FORM = "*"     # decision key for a --react given up front (opportunity attacks)
@@ -526,6 +530,66 @@ def cmd_formation(args, camp_dir, enc=None) -> tuple:
         return "\n".join([head, *rows, *([""] + warn if warn else [])]), data
 
 
+# ─── the scene ────────────────────────────────────────────────────────────────
+
+def _no_scene(camp_dir) -> str:
+    """The sentence for a campaign with no `scene.json`. One, used everywhere."""
+    where = scenes.cd_path(camp_dir, "NAME").parent
+    return ("No scene yet. Run `combat.py scene MAP`, where MAP is the name of a "
+            f"`.cd` in {where}.")
+
+
+def cmd_scene(args, camp_dir) -> tuple:
+    """`scene <name>`. Make a Chartdown map this campaign's persistent scene."""
+    if args.show:
+        spec = scenes.load(camp_dir)
+        if spec is None:
+            return _no_scene(camp_dir), {}
+        data = {"scene": spec}
+        marker = spec["marker"]
+        return (f"Scene {spec['map']!r} ({spec['name'] or 'unnamed'}), background "
+                f"{spec['background']}, extent {spec['extent'][0]:g}x{spec['extent'][1]:g}. "
+                f"Marker {marker['name']!r} at {marker['x']:g}, {marker['y']:g} of the "
+                f"background"
+                + (f", on {marker['place']}" if marker.get("place") else "")
+                + ("" if marker.get("revealed") is True else ", not on the players' board"),
+                data)
+
+    try:
+        spec = scenes.blank(camp_dir, args.name, background=args.background)
+        problems = scenes.validate(spec)
+        if problems:
+            raise scenes.SceneError("; ".join(problems))
+        path = scenes.save(camp_dir, spec)
+    except scenes.SceneError as e:
+        raise Stop(str(e)) from None
+    data = {"scene": spec, "path": str(path)}
+    return (f"Scene set to {spec['name'] or spec['map']!r} ({spec['map']}): background "
+            f"{spec['background']}, extent {spec['extent'][0]:g}x{spec['extent'][1]:g}. "
+            f"Put the party somewhere with `combat.py here PLACE` "
+            f"(`combat.py scene --show` reads it back).", data)
+
+
+def cmd_here(args, camp_dir) -> tuple:
+    """`here <place>`. Snap the party marker onto a named place in the `.cd`."""
+    spec = scenes.load(camp_dir)
+    if spec is None:
+        raise Stop(_no_scene(camp_dir))
+    try:
+        place = scenes.find_place(scenes.cd_path(camp_dir, spec["map"]), args.place)
+        moved = scenes.snap(spec, place, name=args.name, revealed=args.reveal)
+        path = scenes.save(camp_dir, moved)
+    except scenes.SceneError as e:
+        raise Stop(str(e)) from None
+    marker = moved["marker"]
+    where = f" ({place['label']})" if place.get("label") else ""
+    data = {"scene": moved, "place": place, "path": str(path)}
+    return (f"The party is at {args.place}{where}, {marker['x']:g}, {marker['y']:g} of "
+            f"{spec['background']}. Stored in {path}."
+            + ("" if marker.get("revealed") is True
+               else " Not on the players' board."), data)
+
+
 def _pc_names(enc) -> list:
     return [t.name for t in enc.tokens.values() if t.side == "pc"]
 
@@ -640,7 +704,12 @@ def _end(camp_dir, enc, campaign: str = "", award: bool = True) -> str:
     written = sync.write_sheets(camp_dir, enc, rules)
     lines = sync.summary_lines(enc, enc.meta)
     logged = sync.append_session_log(camp_dir, lines)
-    sync.set_active_combat(camp_dir, "*(none)*")
+    # Combat borrows the map slot for the length of a fight and gives it back.
+    # Writing the literal `*(none)*` here used to erase the current map instead,
+    # which is why "the campus is the background of the story" had nothing to
+    # survive in. `scenes.ended_body` restores the scene and is byte-identical
+    # to the old line for a campaign that has never opened one.
+    sync.set_active_combat(camp_dir, scenes.ended_body(camp_dir))
     engine._log(enc, "end", "", f"Combat ended after round {enc.round}.")
     out = [f"Combat ended after round {enc.round}. " + lines[2].lstrip("- ")]
     for name, path, diff in written:
@@ -694,6 +763,17 @@ def run(args) -> int:
         if args.formation_action == "save":
             live = _load(camp_dir)
         text, data = cmd_formation(args, camp_dir, live)
+        if args.json:
+            print(json.dumps(data, indent=1))
+        else:
+            print(text)
+        return 0
+    elif args.cmd in ("scene", "here"):
+        # Both read and write campaign files and neither is combat state, so
+        # they go through the same branch as `formation` rather than through
+        # `_load(camp_dir)`: asking where the party is must work with no fight
+        # running, which is the only time anybody asks.
+        text, data = (cmd_scene if args.cmd == "scene" else cmd_here)(args, camp_dir)
         if args.json:
             print(json.dumps(data, indent=1))
         else:
@@ -1070,6 +1150,24 @@ def parser() -> argparse.ArgumentParser:
     g.add_argument("--at", metavar="SQ", help="pin the anchor to this square")
     g.add_argument("--centre", action="store_true",
                    help="drop it in the middle of the map, scaled to it")
+    s = sub.add_parser("scene", parents=c,
+                       help="make a Chartdown map this campaign's persistent scene")
+    s.add_argument("name", nargs="?",
+                   help="the map's `.cd` stem, e.g. strixhaven-campus")
+    s.add_argument("--background", metavar="PATH",
+                   help="campaign-relative background. Defaults to the committed "
+                        ".player.svg beside the .cd")
+    s.add_argument("--show", action="store_true",
+                   help="read the scene back instead of setting one")
+    s = sub.add_parser("here", parents=c,
+                       help="snap the party marker onto a named place in the scene's .cd")
+    s.add_argument("place", help="a place slug or label from the .cd, e.g. biblioplex")
+    s.add_argument("--name", metavar="TEXT", help="what the marker is called on screen")
+    s.add_argument("--reveal", dest="reveal", action="store_true", default=None,
+                   help="put the marker on the players' screen (the default)")
+    s.add_argument("--hide", dest="reveal", action="store_false",
+                   help="keep the marker off every browser. The GM reads it from "
+                        "the terminal; there is no GM-only view to read it from")
     s = sub.add_parser("condition", parents=c, help="GM: add or remove a condition")
     s.add_argument("token")
     s.add_argument("action", choices=["add", "remove"])
