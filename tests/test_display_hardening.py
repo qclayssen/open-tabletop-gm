@@ -165,6 +165,16 @@ class SseSequencing(unittest.TestCase):
 class XssInBrowser(BrowserTestCase):
     module_name = "gm_display_hardening_xss"
 
+    def setUp(self):
+        # gm-display-app.py replays its saved roster to a page as it connects,
+        # so a roster left in display/stats.json by whichever display test ran
+        # last is rendered before this test's own updateStats() call. The stale
+        # card and this test's card differ only by name, and the assertion below
+        # reads the FIRST .sb-identity in the document, so the two together made
+        # this file order-dependent: it passed alone and failed behind
+        # test_display_xss.py on clean main. Wipe first.
+        self.clear_display_state()
+
     def test_hostile_names_do_not_execute(self):
         evil = '<img src=x onerror="window.__pwned=(window.__pwned||0)+1">'
         stats = {
