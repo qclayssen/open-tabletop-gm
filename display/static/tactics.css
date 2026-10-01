@@ -89,6 +89,15 @@ body.tx-min #tx-panel { max-height: none; }
 .tx-btn:disabled { opacity: .45; cursor: not-allowed; }
 .tx-btn.tx-primary { background: var(--tx-accent); color: var(--tx-paper); border-color: var(--tx-accent); }
 .tx-btn:focus-visible, .tx-tok:focus-visible { outline: 2px solid var(--tx-brass); outline-offset: 2px; }
+/* Every control in the panel gets a ring, whatever it is, so nothing that can
+   take the keyboard is invisible to the player holding it. A default for the
+   panel rather than a list, because the panel is rebuilt under the keyboard
+   between turns: a control can appear where nothing focusable was a moment ago
+   (the number input ask() puts up, a spell whose slots just ran out), and a
+   list only ever covers the controls someone remembered to write down.
+   The board is left out because it draws its own ring a pixel closer, flush
+   against its own frame. */
+#tx-panel :where(:not(.tx-board):focus-visible) { outline: 2px solid var(--tx-brass); outline-offset: 2px; }
 
 .tx-strip { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
 .tx-chip {

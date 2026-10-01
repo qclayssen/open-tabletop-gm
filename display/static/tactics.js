@@ -35,7 +35,8 @@
                spells: null, spell: null, singles: null, darts: null, dartsText: '',
                helpTarget: null, readyWhat: null, readyStep: null,
                cursor: null, ruler: { tool: null, a: null, b: null, fixed: false }, camMap: null, camTimer: 0,
-               sight: false, sightFrom: null, sightData: null, sightKey: '', layoutAt: null };
+               sight: false, sightFrom: null, sightData: null, sightKey: '', layoutAt: null,
+                svg: null, boardKey: null };
   const CONDITION_CODES = { blinded: 'Bl', charmed: 'Ch', deafened: 'De', exhaustion: 'Ex', frightened: 'Fr',
     grappled: 'Gr', incapacitated: 'In', invisible: 'Iv', paralyzed: 'Pa', petrified: 'Pe', poisoned: 'Po',
     prone: 'Pr', restrained: 'Re', stunned: 'St', unconscious: 'Un' };
@@ -67,9 +68,10 @@
   const living = () => ((snap && snap.tokens) || []).filter(t => !t.dead);
   const sqOf = t => label(t.x, t.y);
 
-  /* Pure helpers: the side table, the frame geometry and the cell rule. They
-     touch no DOM and no snapshot, so tests/test_display_tactics_ui.py runs
-     them straight out of this file and pins the numbers below. */
+  /* Pure helpers: the side table, the frame geometry, the cell rule, the roll
+     wording and the board cache key. They touch no DOM and no snapshot, so
+     tests/test_display_tactics_ui.py runs them straight out of this file and
+     pins the numbers below. */
   const SIDES = {
     enemy: { cls: 'tx-side-enemy', word: 'enemy',   glyph: '⚔', colour: 'var(--tx-danger)' },
     pc:    { cls: 'tx-side-pc',    word: 'ally',    glyph: '♥', colour: 'var(--tx-quan)' },
@@ -331,6 +333,57 @@
               : typeof r.expected === 'number' ? r.expected : null;
     return { percent: pct, phrase, expected: exp, chips: whyChips(r), provokes: r.provokes === true };
   }
+
+  // ── the board cache key ──────────────────────────────────────────────────
+  //
+  // The panel used to throw the whole board away and rebuild it on every
+  // snapshot: W*H terrain rects, the grid lines, the fog, then
+  // `board.innerHTML = ''` and a fresh append. None of that is per-turn, so it
+  // is built once and kept, and these two say when it may be kept. Both are
+  // pure functions of the snapshot, so the rule can be pinned without a
+  // browser.
+
+  // The fog, as one string.
+  //
+  // Part of the terrain key, not an overlay: it decides which squares are lit,
+  // so a cached terrain layer carries its fog with it and a fog change has to
+  // rebuild rather than repaint over it.
+  //
+  // "off" and "on:" are deliberately different. A snapshot with no `fog` at all
+  // draws no fog; one with `fog: {runs: []}` draws fog over every square, and a
+  // key that collapsed the two would leave the first map's clear board on screen
+  // for the second, which is the one answer that may not go stale.
+  //
+  // The runs are sorted so that the same set of seen squares sent in a
+  // different order is the same key. Sorting can only ever cost a rebuild (two
+  // shapes of the same set), never buy a wrong reuse.
+  function fogKey(sp) {
+    const f = sp && sp.fog;
+    if (!f) return 'off';
+    return 'on:' + (f.runs || []).map(r => r.join(':')).sort().join(',');
+  }
+
+  // What the static layers are, exactly. A match means the terrain on screen is
+  // the terrain this snapshot asks for; anything else means tear it all down.
+  //
+  // - the map name and its shape, so a different battle never inherits a grid
+  // - the rows themselves: the terrain is drawn from them, and a map edited in
+  //   place keeps its name and its W and H
+  // - image, zones, labels and colors: the rest of what the map contributes to
+  //   the static drawing, all from the same map file as the rows
+  // - the fog, above
+  //
+  // Deliberately not hashed to a short digest. A hash is a fixed length whatever
+  // it covers and two different maps can collide, and a collision here is one
+  // map's terrain drawn over another's: the one failure this cache must not
+  // have. The exact string is a few KB on the largest map the display ships and
+  // comparing it costs far less than the rects it saves.
+  function boardKey(sp, W, H) {
+    const meta = (sp && sp.meta) || {}, g = (sp && sp.grid) || {};
+    return JSON.stringify([meta.name || '', W, H, g.rows || null, meta.image || '',
+                           meta.zones || null, meta.labels || null, meta.colors || null,
+                           fogKey(sp)]);
+  }
   /* end pure helpers */
 
   // Nudge a text element back inside the board, horizontally and vertically.
@@ -421,7 +474,19 @@
     });
     document.addEventListener('keydown', e => {
       if (e.key !== 'Escape') return;
+      // On the document, not on the board and not on the action bar, so Escape
+      // is one key from anywhere: the map has the keyboard after a Tab and the
+      // side list after another, and a player who armed a mode with the mouse is
+      // not holding the keyboard at all.
+      //
+      // The engine's own question comes first. ask() puts the keyboard inside
+      // itself and is the topmost thing on screen, so it is the thing Escape has
+      // to answer; without this the prompt is the one thing in the panel a
+      // keyboard can only get out of by finding its own Cancel button.
+      if (el.prompt && !el.prompt.hidden && el.prompt.onEscape) { el.prompt.onEscape(); return; }
       if (ui.ruler.tool) { setRuler(null); return; }
+      // render() redraws the bar and puts the keyboard back (restoreFocus), so
+      // cancelling a mode does not also cost the player their place in it.
       if (ui.mode) { clearMode(); render(); }
     });
     el.cover.addEventListener('click', toggleSight);
@@ -719,6 +784,21 @@
     return sideBySide ? 'side' : 'stack';
   }
 
+  // ── the board cache ───────────────────────────────────────────────────────
+  //
+  // The board used to be thrown away and rebuilt on every push: W*H terrain
+  // rects, the grid lines, the fog, then `board.innerHTML = ''` and a fresh
+  // append. A snapshot arrives on every action and on every hover-driven
+  // preview, so on a 40x30 map that was 1200 rects and 70 lines created and
+  // discarded to show one token that had moved.
+  //
+  // None of that is per-turn. The ground under a fight does not change while
+  // the fight does, so the svg, the terrain, the artwork, the grid, the labels
+  // and the fog are built once and kept, and only the layers the player is
+  // actually changing are emptied and redrawn. boardKey and fogKey, which say
+  // when, are pure and live in the pure block above; this is where the answer
+  // is used.
+
   function renderBoard() {
     const rows = (snap.grid && snap.grid.rows) || [];
     const H = rows.length, W = H ? rows[0].length : 0;
@@ -726,9 +806,72 @@
     ui.layout = chooseLayout(W);
     const box = boardBox();
     const cell = boardCell(W, H, box.w, box.h, box.phone);
-    const s = svg('svg', { viewBox: `0 0 ${W * C} ${H * C}`, width: W * cell, height: H * cell,
+    // Reuse is only safe while the cached svg is still the one being shown.
+    // `ui.svg.parentNode === el.board` is the check that matters: it survives a
+    // panel rebuilt underneath us, a board emptied by anything else, and a map
+    // that has changed, none of which can leave the key equal and the node
+    // somewhere nobody is looking.
+    const key = boardKey(snap, W, H);
+    const reuse = key === ui.boardKey && ui.svg && ui.svg.parentNode === el.board;
+    let keepL = el.board.scrollLeft, keepT = el.board.scrollTop;
+    // A map that has just mounted (page load, or a new battle) opens where the
+    // table last left it; a re-render of the same map keeps the live scroll.
+    const camName = cameraName(), fresh = camName !== ui.camMap;
+    const saved = fresh ? cameraLoad()[camName] : null;
+    if (saved) { keepL = saved.scrollL; keepT = saved.scrollT; }
+    ui.camMap = camName;
+    const s = reuse ? ui.svg : buildBoard(W, H, key);
+    // The svg is sized to the box it is drawn into, not to the map, so a window
+    // resize or a phone reflow reuses the terrain and still refits the board.
+    s.setAttribute('width', W * cell);
+    s.setAttribute('height', H * cell);
+    s.classList.toggle('tx-aiming', ui.mode === 'aim');
+    clearLayers();
+    drawSight();
+    for (const t of snap.tokens || []) drawToken(t);
+    drawOverlay();
+    drawCursor();
+    // Only a fresh svg has just had the scroll knocked out of it by the
+    // innerHTML wipe; a reused one was never detached, so its scroll still is
+    // where the player put it.
+    if (!reuse) { el.board.scrollLeft = keepL; el.board.scrollTop = keepT; }
+    drawRuler();
+    // First look at a map, with no camera to return to: show the whole fight,
+    // not the square the hero happens to be standing on. Anything else and a
+    // wide map opens on one corner with every enemy off-screen, which is the
+    // first thing a player sees and the one they have to notice is incomplete.
+    // A re-render of the map already on screen only nudges the view when the
+    // acting token has genuinely gone out of it, so a player who scrolled
+    // somewhere on purpose keeps that view.
+    if (fresh && !saved) frameEncounter(cell);
+    else ensureActorVisible(cell);
+    saveCameraSoon();
+    floaters();
+  }
+
+  // The layers emptied on every redraw: the three whose draw calls only add.
+  //
+  // drawToken appends a token and its portrait clip and never removes either,
+  // and a floating number leaves on its own 1400ms timer, long after the push
+  // that put it there. Everything else clears the layer it owns before drawing
+  // (drawSight, drawOverlay with the mark layer, drawCursor, drawRuler), so
+  // that rule is not applied to it twice.
+  function clearLayers() {
+    for (const layer of [ui.defsLayer, ui.tokenLayer, ui.floatLayer]) {
+      if (layer) layer.innerHTML = '';
+    }
+  }
+
+  // The svg and the part of it a map does not change: the hatch patterns, the
+  // artwork, the terrain, the fog, the grid, the zones and the labels. Built
+  // once per key and kept until the key stops matching.
+  //
+  // The z-order of everything below is load-bearing and unchanged: the grid and
+  // the labels sit over the fog, and the armed-mode overlay and the tokens sit
+  // over the grid.
+  function buildBoard(W, H, key) {
+    const s = svg('svg', { viewBox: `0 0 ${W * C} ${H * C}`, width: W * C, height: H * C,
                            role: 'group', 'aria-label': `Battle map, ${W} by ${H} squares` });
-    if (ui.mode === 'aim') s.classList.add('tx-aiming');
     const hatch = svg('pattern', { id: 'tx-hatch', width: 6, height: 6, patternUnits: 'userSpaceOnUse',
                                    patternTransform: 'rotate(45)' }, svg('defs', {}, s));
     svg('line', { x1: 0, y1: 0, x2: 0, y2: 6, class: 'tx-hatch-line' }, hatch);
@@ -749,10 +892,15 @@
       svg('image', { x: 0, y: 0, width: W * C, height: H * C, preserveAspectRatio: 'none',
                      href: '/maps/' + art, class: 'tx-art' }, s);
     }
+    // tx-terrain names the group in its own right, not just as the stylesheet's
+    // hook for the over-art case: it is the layer the board cache keeps, so a
+    // test can hold a reference to it and ask whether it is still the same one.
+    //
     // With artwork underneath, terrain is a translucent wash rather than an opaque
     // fill, so the terrain still has to read but the picture is the point. A map
     // with no image is unchanged, which is what every existing map expects.
-    const terrain = svg('g', art ? { class: 'tx-terrain-over-art' } : {}, s);
+    const terrain = svg('g', { class: 'tx-terrain' + (art ? ' tx-terrain-over-art' : '') }, s);
+    const rows = (snap.grid && snap.grid.rows) || [];
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
       const name = terrainOf(rows[y][x]);
       // data-t is what the stylesheet keys on to keep walls and voids solid over
@@ -763,7 +911,6 @@
     }
     drawFog(svg('g', { 'aria-hidden': 'true' }, s), W, H);
     ui.sightLayer = svg('g', { 'aria-hidden': 'true' }, s);
-    drawSight();
     const grid = svg('g', { style: 'stroke:var(--tx-grid)' }, s);
     for (let i = 0; i <= W; i++) svg('line', { x1: i * C, y1: 0, x2: i * C, y2: H * C }, grid);
     for (let j = 0; j <= H; j++) svg('line', { x1: 0, y1: j * C, x2: W * C, y2: j * C }, grid);
@@ -776,8 +923,8 @@
     ui.overlay = svg('g', {}, s);
     // Portrait clips live in defs, not in the token layer: they are referenced
     // by url(#id) and never drawn themselves, and keeping them out of the layer
-    // means nothing can mistake one for content. Rebuilt with the board, so a
-    // clip cannot outlive the token that named it.
+    // means nothing can mistake one for content. Rebuilt with the tokens on every
+    // redraw (clearLayers), so a clip cannot outlive the token that named it.
     ui.defsLayer = svg('defs', {}, s);
     ui.tokenLayer = svg('g', {}, s);
     ui.markLayer = svg('g', { 'aria-hidden': 'true' }, s);
@@ -785,9 +932,10 @@
     ui.floatLayer = svg('g', {}, s);
     ui.cursorLayer = svg('g', { 'aria-hidden': 'true' }, s);
     ui.svg = s;
-    for (const t of snap.tokens || []) drawToken(t);
-    drawOverlay();
-    drawCursor();
+    ui.boardKey = key;
+    // Listeners go on once, with the svg. Re-adding them on every render would
+    // stack a second pointermove and a second click handler on the same node,
+    // and one click on a token would send two actions.
     s.addEventListener('pointermove', onHover);
     s.addEventListener('click', onBoardClick);
     s.setAttribute('aria-hidden', 'true');          // the board itself speaks: see describe()
@@ -795,27 +943,8 @@
       if ((ui.mode === 'move' || ui.mode === 'aim') && ui.armed !== ui.hover) { ui.hover = null; drawOverlay(); renderInfo(); }
       else if (ui.mode === 'attack' || ui.mode === 'spell') { ui.hover = null; renderInfo(); }
     });
-    let keepL = el.board.scrollLeft, keepT = el.board.scrollTop;
-    // A map that has just mounted (page load, or a new battle) opens where the
-    // table last left it; a re-render of the same map keeps the live scroll.
-    const camName = cameraName(), fresh = camName !== ui.camMap;
-    const saved = fresh ? cameraLoad()[camName] : null;
-    if (saved) { keepL = saved.scrollL; keepT = saved.scrollT; }
-    ui.camMap = camName;
     el.board.innerHTML = ''; el.board.appendChild(s);
-    el.board.scrollLeft = keepL; el.board.scrollTop = keepT;   // a re-render must not snap back to the corner
-    drawRuler();
-    // First look at a map, with no camera to return to: show the whole fight,
-    // not the square the hero happens to be standing on. Anything else and a
-    // wide map opens on one corner with every enemy off-screen, which is the
-    // first thing a player sees and the one they have to notice is incomplete.
-    // A re-render of the map already on screen only nudges the view when the
-    // acting token has genuinely gone out of it, so a player who scrolled
-    // somewhere on purpose keeps that view.
-    if (fresh && !saved) frameEncounter(cell);
-    else ensureActorVisible(cell);
-    saveCameraSoon();
-    floaters();
+    return s;
   }
 
   const isPhone = () => !!(window.matchMedia && matchMedia(`(max-width: ${PHONE_MAX_W}px)`).matches);
@@ -1410,11 +1539,49 @@
     if (!ui.camTimer) ui.camTimer = setTimeout(saveCamera, 300);   // throttle: at most one write per 300 ms
   }
 
+  // Which control has the keyboard, as an identity that survives a rebuild.
+  //
+  // The action bar is emptied and refilled on every snapshot, which lands focus
+  // on the body, and a body focus sends the next Tab back to the top of the
+  // document: a keyboard player part-way along the bar is thrown back to the
+  // first control in the page on every action, and actions arrive constantly.
+  //
+  // By data-key, not by text content. Text is not an identity here: the attack
+  // buttons read "Longsword (up to 65%)" and the number moves with the roll, so
+  // the one control that most needs to be found again is the one whose text
+  // changes. A key is a name, so it does not move.
+  function focusedKey() {
+    const a = document.activeElement;
+    if (!a || a === document.body || !el.panel || !el.panel.contains(a)) return null;
+    return (a.dataset && a.dataset.key) || null;
+  }
+
+  // Put the keyboard back where it was.
+  //
+  // The key names the control, and so do its prefixes: "attack:Longsword" is a
+  // choice inside the attack mode, so when Escape takes that choice away with
+  // the mode, the keyboard falls back to the Attack button that opened the list.
+  // It walks down the prefixes until one names a control that is still there and
+  // can still be pressed, and lands on the board if none does: the board is
+  // always there, is where the next thing is done, and has the square cursor on
+  // it, so a lost focus stays inside the panel instead of dropping the player at
+  // the top of the page.
+  //
+  // Not while the engine is asking a question (ask()): that prompt owns the
+  // keyboard for as long as it is up, and this would pull focus out of it.
+  function restoreFocus(key) {
+    if (!key || (el.prompt && !el.prompt.hidden)) return;
+    const all = el.panel.querySelectorAll('[data-key]');
+    for (let k = key; k; k = k.includes(':') ? k.slice(0, k.lastIndexOf(':')) : '') {
+      for (const node of all) if (node.dataset.key === k && !node.disabled) { node.focus(); return; }
+    }
+    if (el.board) el.board.focus();
+  }
+
   // ── side panel: info, actions, log ───────────────────────────────────────
   function renderSide() {
     const t = current();
-    // Rebuilding the buttons would drop keyboard focus: put it back on the same button.
-    const had = el.actions.contains(document.activeElement) ? document.activeElement.textContent : null;
+    const had = focusedKey();
     // The lead row is a real element that survives the rebuild, so the phone's
     // pinned row stays first and the rest of the bar is emptied under it.
     el.actions.innerHTML = '';
@@ -1454,10 +1621,7 @@
     } else if (t && myTurn()) {
       button('Roll death save', () => act('death-save', [t.id]), { primary: true });
     }
-    if (had !== null) {
-      const again = [...el.actions.querySelectorAll('button')].find(b => b.textContent === had && !b.disabled);
-      if (again) again.focus();
-    }
+    restoreFocus(had);
     el.log.innerHTML = '';
     for (const e of (snap.log || []).slice(-8)) {
       const li = document.createElement('li');
@@ -1482,12 +1646,18 @@
 
   function renderInfo() {
     const t = current();
+    // #tx-info and #tx-forecast are rebuilt with innerHTML on every render, and
+    // a render arrives on every hover and every snapshot. Nothing focusable is in
+    // them today, but the same rule as renderSide applies if that changes, and a
+    // hover must not be able to move the keyboard.
+    const had = focusedKey();
     el.forecast.innerHTML = '';
-    if (!t) { el.info.innerHTML = snap.unseen_turn ? 'A creature you cannot see is acting. The GM narrates.' : ''; return; }
-    if (!myTurn()) { el.info.innerHTML = `<strong>${esc(t.name)}</strong> is acting. The GM narrates their turn.` + pendingLine() + statusLine(t) + sightLine(); return; }
-    if (snap.turn && snap.turn.pending === 'death_save') { el.info.innerHTML = `<strong>${esc(t.name)}</strong> is dying: roll a death save.`; return; }
+    if (!t) { el.info.innerHTML = snap.unseen_turn ? 'A creature you cannot see is acting. The GM narrates.' : ''; restoreFocus(had); return; }
+    if (!myTurn()) { el.info.innerHTML = `<strong>${esc(t.name)}</strong> is acting. The GM narrates their turn.` + pendingLine() + statusLine(t) + sightLine(); restoreFocus(had); return; }
+    if (snap.turn && snap.turn.pending === 'death_save') { el.info.innerHTML = `<strong>${esc(t.name)}</strong> is dying: roll a death save.`; restoreFocus(had); return; }
     el.info.innerHTML = infoText(t) + pendingLine() + (ui.mode ? '' : sightLine());
     el.forecast.innerHTML = forecastHtml();
+    restoreFocus(had);
   }
 
   // The hover forecast for one target: hit or fail chance, expected damage, the
@@ -1598,13 +1768,32 @@
     o = o || {};
     const b = document.createElement('button');
     b.type = 'button'; b.className = 'tx-btn' + (o.primary ? ' tx-primary' : '') + (o.cls ? ' ' + o.cls : ''); b.textContent = text;
+    // A stable name, so the keyboard can be put back here after the bar is
+    // rebuilt (restoreFocus). The text is the name of the action, so it is the
+    // key, except where the caller knows better: the attack, spell and dart
+    // lists put a number in their text that moves with the roll, and a key
+    // built from that would not survive the roll.
+    b.dataset.key = o.key || text;
     if (o.pressed !== undefined) b.setAttribute('aria-pressed', String(!!o.pressed));
     if (o.lead) b.dataset.tx = 'lead';        // the phone's pinned row
     if (o.end) b.dataset.tx = 'end';          // pinned to the bar's bottom edge
     if (o.title) b.title = o.title;
     if (o.meta) { const m = document.createElement('span'); m.className = 'tx-meta'; m.textContent = o.meta; b.appendChild(m); }
     b.disabled = !!o.disabled || (ui.busy && !o.always) || !fn;
-    if (fn) b.addEventListener('click', fn);
+    if (fn) b.addEventListener('click', e => {
+      fn(e);
+      // Enter or Space on a button that arms a mode hands the keyboard to the
+      // board. A mode is answered with a square, the square cursor is what the
+      // arrow keys move and Enter acts on, and the board is one Tab away at the
+      // far end of a bar that can be twenty buttons long with a spell list in
+      // it. Without this, arming a mode from the keyboard leaves the keyboard on
+      // the button that armed it and the arrow keys do nothing.
+      //
+      // detail 0 is a keyboard-generated click (a real pointer click is 1), so a
+      // mouse player keeps the keyboard where it is: they are looking at the
+      // board, not at the bar.
+      if (e.detail === 0 && ui.mode) el.board.focus();
+    });
     // A lead action goes in the pinned row; everything else lands under it.
     (o.parent || (o.lead ? el.leads : el.actions)).appendChild(b);
     return b;
@@ -1630,7 +1819,7 @@
       const legal = ui.targets.filter(r => r.attack === name && r.legal);
       const best = legal.reduce((m, r) => Math.max(m, r.hit_percent), 0);
       button(name + (legal.length ? ` (up to ${best}%)` : ' (no target)'), () => { ui.attack = name; render(); },
-        { pressed: ui.attack === name, disabled: !legal.length, parent: b });
+        { key: 'attack:' + name, pressed: ui.attack === name, disabled: !legal.length, parent: b });
     }
   }
 
@@ -1671,7 +1860,7 @@
       if (lv > 0 && lv < 99) head += slot ? ` · ${Math.max(0, slot.total - slot.used)} of ${slot.total} slots left` : ' · no slots';
       note(b, head, 'tx-group');
       for (const sp of list.filter(s => (s.level == null ? 99 : s.level) === lv)) {
-        button(sp.name, () => pickSpell(sp), { parent: b, disabled: !sp.ok, cls: 'tx-spell',
+        button(sp.name, () => pickSpell(sp), { parent: b, disabled: !sp.ok, cls: 'tx-spell', key: 'cast:' + sp.name,
           meta: sp.ok ? describe(sp) : sp.reason, title: sp.ok ? describe(sp) : sp.reason });
       }
     }
@@ -1683,7 +1872,7 @@
       note(row, `Reactions (${names}):`);
       for (const mode of ['ask', 'auto', 'off']) {
         button(mode[0].toUpperCase() + mode.slice(1), () => act('reactions', [t.id, mode], { keepMode: true }),
-          { parent: row, pressed: (t.reactions || 'ask') === mode, cls: 'tx-small',
+          { parent: row, pressed: (t.reactions || 'ask') === mode, cls: 'tx-small', key: 'react:' + mode,
             title: { ask: 'Ask me when one could be used', auto: 'Use them whenever they help', off: 'Never use them' }[mode] });
       }
       b.appendChild(row);
@@ -1749,8 +1938,10 @@
     const n = ui.darts.length;
     button(n === 1 ? `Cast: every dart at ${(tokenById(ui.darts[0]) || {}).name}` : `Cast ${ui.spell.name}`,
       () => castSpell(ui.darts.slice()), { parent: b, primary: true, disabled: !(n === 1 || n === MAX_DARTS),
+        key: 'darts:cast',
         title: 'One target takes every dart; or pick one target per dart' });
-    button('Undo last dart', () => { ui.darts.pop(); ui.dartsText = ''; render(); dartsPreview(); }, { parent: b, disabled: !n });
+    button('Undo last dart', () => { ui.darts.pop(); ui.dartsText = ''; render(); dartsPreview(); },
+      { parent: b, disabled: !n, key: 'darts:undo' });
   }
 
   async function dartsPreview() {
@@ -1787,13 +1978,15 @@
     note(b, 'Attack', 'tx-group');
     if (!attacks.length) note(b, 'No weapon attack.');
     for (const name of attacks)
-      button(name, () => readyPick({ kind: 'attack', what: name, label: name }), { parent: b, cls: 'tx-spell' });
+      button(name, () => readyPick({ kind: 'attack', what: name, label: name }),
+        { parent: b, cls: 'tx-spell', key: 'ready:attack:' + name });
     const spells = (ui.spells || []).filter(sp => !isReaction(sp) && sp.casting === 'action');
     if (spells.length) note(b, 'Spell (held with concentration)', 'tx-group');
     for (const sp of spells)
       button(sp.name, () => readyPick({ kind: 'cast', what: sp.name, label: sp.name, area: sp.targeting === 'area',
                                          none: ['self', 'none'].includes(sp.targeting) }),
         { parent: b, cls: 'tx-spell', disabled: !sp.ok, meta: sp.ok ? describe(sp) : sp.reason,
+          key: 'ready:cast:' + sp.name,
           title: sp.ok ? describe(sp) : sp.reason });
   }
 
@@ -2040,10 +2233,16 @@
       const box = el.prompt; box.hidden = false; box.innerHTML = '';
       const p = document.createElement('div'); p.textContent = first; box.appendChild(p);
       const row = document.createElement('div'); row.className = 'tx-row'; box.appendChild(row);
-      const finish = v => { box.hidden = true; box.innerHTML = ''; resolve(v); };
+      const finish = v => { box.hidden = true; box.innerHTML = ''; box.onEscape = null; resolve(v); };
+      // How the document-level Escape answers this prompt. Set for all three
+      // kinds of question and cleared by finish, so a prompt that has gone is
+      // never one Escape can find.
+      box.onEscape = () => finish(null);
       if (react) {
-        const yes = button(oa ? 'Yes, attack' : 'Yes', () => finish({ react: 'yes' }), { parent: row, primary: true, always: true });
-        button(oa ? 'No, let them go' : 'No', () => finish({ react: 'no' }), { parent: row, always: true });
+        const yes = button(oa ? 'Yes, attack' : 'Yes', () => finish({ react: 'yes' }),
+          { parent: row, primary: true, always: true, key: 'ask:yes' });
+        button(oa ? 'No, let them go' : 'No', () => finish({ react: 'no' }),
+          { parent: row, always: true, key: 'ask:no' });
         setTimeout(() => yes.focus(), 0);
       } else if (m) {
         const n = +m[1], sides = +m[2], adv = m[5];
@@ -2054,7 +2253,7 @@
         row.appendChild(input);
         const use = button('Use my roll', () => {
           const v = +input.value; if (v >= n && v <= n * sides) finish({ roll: v }); else input.focus();
-        }, { parent: row, primary: true, always: true });
+        }, { parent: row, primary: true, always: true, key: 'ask:use' });
         button('Roll the dice', () => {
           const d = () => 1 + (crypto.getRandomValues(new Uint32Array(1))[0] % sides);
           let total;
@@ -2063,12 +2262,13 @@
             toast(`d20 with ${adv}: ${a} and ${b}, keep ${total}`);
           } else { total = 0; for (let i = 0; i < n; i++) total += d(); toast(`${n}d${sides}: ${total}`); }
           finish({ roll: total });
-        }, { parent: row, always: true });
-        button('Roll for me', () => finish({ forMe: true }), { parent: row, always: true, title: 'The engine rolls this action for you' });
+        }, { parent: row, always: true, key: 'ask:dice' });
+        button('Roll for me', () => finish({ forMe: true }),
+          { parent: row, always: true, key: 'ask:forme', title: 'The engine rolls this action for you' });
         input.addEventListener('keydown', e => { if (e.key === 'Enter') use.click(); });
         setTimeout(() => input.focus(), 0);
       }
-      button('Cancel', () => finish(null), { parent: row, always: true });
+      button('Cancel', () => finish(null), { parent: row, always: true, key: 'ask:cancel' });
     });
   }
 
