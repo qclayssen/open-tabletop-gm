@@ -474,7 +474,19 @@
     });
     document.addEventListener('keydown', e => {
       if (e.key !== 'Escape') return;
+      // On the document, not on the board and not on the action bar, so Escape
+      // is one key from anywhere: the map has the keyboard after a Tab and the
+      // side list after another, and a player who armed a mode with the mouse is
+      // not holding the keyboard at all.
+      //
+      // The engine's own question comes first. ask() puts the keyboard inside
+      // itself and is the topmost thing on screen, so it is the thing Escape has
+      // to answer; without this the prompt is the one thing in the panel a
+      // keyboard can only get out of by finding its own Cancel button.
+      if (el.prompt && !el.prompt.hidden && el.prompt.onEscape) { el.prompt.onEscape(); return; }
       if (ui.ruler.tool) { setRuler(null); return; }
+      // render() redraws the bar and puts the keyboard back (restoreFocus), so
+      // cancelling a mode does not also cost the player their place in it.
       if (ui.mode) { clearMode(); render(); }
     });
     el.cover.addEventListener('click', toggleSight);
@@ -1527,11 +1539,49 @@
     if (!ui.camTimer) ui.camTimer = setTimeout(saveCamera, 300);   // throttle: at most one write per 300 ms
   }
 
+  // Which control has the keyboard, as an identity that survives a rebuild.
+  //
+  // The action bar is emptied and refilled on every snapshot, which lands focus
+  // on the body, and a body focus sends the next Tab back to the top of the
+  // document: a keyboard player part-way along the bar is thrown back to the
+  // first control in the page on every action, and actions arrive constantly.
+  //
+  // By data-key, not by text content. Text is not an identity here: the attack
+  // buttons read "Longsword (up to 65%)" and the number moves with the roll, so
+  // the one control that most needs to be found again is the one whose text
+  // changes. A key is a name, so it does not move.
+  function focusedKey() {
+    const a = document.activeElement;
+    if (!a || a === document.body || !el.panel || !el.panel.contains(a)) return null;
+    return (a.dataset && a.dataset.key) || null;
+  }
+
+  // Put the keyboard back where it was.
+  //
+  // The key names the control, and so do its prefixes: "attack:Longsword" is a
+  // choice inside the attack mode, so when Escape takes that choice away with
+  // the mode, the keyboard falls back to the Attack button that opened the list.
+  // It walks down the prefixes until one names a control that is still there and
+  // can still be pressed, and lands on the board if none does: the board is
+  // always there, is where the next thing is done, and has the square cursor on
+  // it, so a lost focus stays inside the panel instead of dropping the player at
+  // the top of the page.
+  //
+  // Not while the engine is asking a question (ask()): that prompt owns the
+  // keyboard for as long as it is up, and this would pull focus out of it.
+  function restoreFocus(key) {
+    if (!key || (el.prompt && !el.prompt.hidden)) return;
+    const all = el.panel.querySelectorAll('[data-key]');
+    for (let k = key; k; k = k.includes(':') ? k.slice(0, k.lastIndexOf(':')) : '') {
+      for (const node of all) if (node.dataset.key === k && !node.disabled) { node.focus(); return; }
+    }
+    if (el.board) el.board.focus();
+  }
+
   // ── side panel: info, actions, log ───────────────────────────────────────
   function renderSide() {
     const t = current();
-    // Rebuilding the buttons would drop keyboard focus: put it back on the same button.
-    const had = el.actions.contains(document.activeElement) ? document.activeElement.textContent : null;
+    const had = focusedKey();
     // The lead row is a real element that survives the rebuild, so the phone's
     // pinned row stays first and the rest of the bar is emptied under it.
     el.actions.innerHTML = '';
@@ -1571,10 +1621,7 @@
     } else if (t && myTurn()) {
       button('Roll death save', () => act('death-save', [t.id]), { primary: true });
     }
-    if (had !== null) {
-      const again = [...el.actions.querySelectorAll('button')].find(b => b.textContent === had && !b.disabled);
-      if (again) again.focus();
-    }
+    restoreFocus(had);
     el.log.innerHTML = '';
     for (const e of (snap.log || []).slice(-8)) {
       const li = document.createElement('li');
@@ -1599,12 +1646,18 @@
 
   function renderInfo() {
     const t = current();
+    // #tx-info and #tx-forecast are rebuilt with innerHTML on every render, and
+    // a render arrives on every hover and every snapshot. Nothing focusable is in
+    // them today, but the same rule as renderSide applies if that changes, and a
+    // hover must not be able to move the keyboard.
+    const had = focusedKey();
     el.forecast.innerHTML = '';
-    if (!t) { el.info.innerHTML = snap.unseen_turn ? 'A creature you cannot see is acting. The GM narrates.' : ''; return; }
-    if (!myTurn()) { el.info.innerHTML = `<strong>${esc(t.name)}</strong> is acting. The GM narrates their turn.` + pendingLine() + statusLine(t) + sightLine(); return; }
-    if (snap.turn && snap.turn.pending === 'death_save') { el.info.innerHTML = `<strong>${esc(t.name)}</strong> is dying: roll a death save.`; return; }
+    if (!t) { el.info.innerHTML = snap.unseen_turn ? 'A creature you cannot see is acting. The GM narrates.' : ''; restoreFocus(had); return; }
+    if (!myTurn()) { el.info.innerHTML = `<strong>${esc(t.name)}</strong> is acting. The GM narrates their turn.` + pendingLine() + statusLine(t) + sightLine(); restoreFocus(had); return; }
+    if (snap.turn && snap.turn.pending === 'death_save') { el.info.innerHTML = `<strong>${esc(t.name)}</strong> is dying: roll a death save.`; restoreFocus(had); return; }
     el.info.innerHTML = infoText(t) + pendingLine() + (ui.mode ? '' : sightLine());
     el.forecast.innerHTML = forecastHtml();
+    restoreFocus(had);
   }
 
   // The hover forecast for one target: hit or fail chance, expected damage, the
@@ -1715,13 +1768,32 @@
     o = o || {};
     const b = document.createElement('button');
     b.type = 'button'; b.className = 'tx-btn' + (o.primary ? ' tx-primary' : '') + (o.cls ? ' ' + o.cls : ''); b.textContent = text;
+    // A stable name, so the keyboard can be put back here after the bar is
+    // rebuilt (restoreFocus). The text is the name of the action, so it is the
+    // key, except where the caller knows better: the attack, spell and dart
+    // lists put a number in their text that moves with the roll, and a key
+    // built from that would not survive the roll.
+    b.dataset.key = o.key || text;
     if (o.pressed !== undefined) b.setAttribute('aria-pressed', String(!!o.pressed));
     if (o.lead) b.dataset.tx = 'lead';        // the phone's pinned row
     if (o.end) b.dataset.tx = 'end';          // pinned to the bar's bottom edge
     if (o.title) b.title = o.title;
     if (o.meta) { const m = document.createElement('span'); m.className = 'tx-meta'; m.textContent = o.meta; b.appendChild(m); }
     b.disabled = !!o.disabled || (ui.busy && !o.always) || !fn;
-    if (fn) b.addEventListener('click', fn);
+    if (fn) b.addEventListener('click', e => {
+      fn(e);
+      // Enter or Space on a button that arms a mode hands the keyboard to the
+      // board. A mode is answered with a square, the square cursor is what the
+      // arrow keys move and Enter acts on, and the board is one Tab away at the
+      // far end of a bar that can be twenty buttons long with a spell list in
+      // it. Without this, arming a mode from the keyboard leaves the keyboard on
+      // the button that armed it and the arrow keys do nothing.
+      //
+      // detail 0 is a keyboard-generated click (a real pointer click is 1), so a
+      // mouse player keeps the keyboard where it is: they are looking at the
+      // board, not at the bar.
+      if (e.detail === 0 && ui.mode) el.board.focus();
+    });
     // A lead action goes in the pinned row; everything else lands under it.
     (o.parent || (o.lead ? el.leads : el.actions)).appendChild(b);
     return b;
@@ -1747,7 +1819,7 @@
       const legal = ui.targets.filter(r => r.attack === name && r.legal);
       const best = legal.reduce((m, r) => Math.max(m, r.hit_percent), 0);
       button(name + (legal.length ? ` (up to ${best}%)` : ' (no target)'), () => { ui.attack = name; render(); },
-        { pressed: ui.attack === name, disabled: !legal.length, parent: b });
+        { key: 'attack:' + name, pressed: ui.attack === name, disabled: !legal.length, parent: b });
     }
   }
 
@@ -1788,7 +1860,7 @@
       if (lv > 0 && lv < 99) head += slot ? ` · ${Math.max(0, slot.total - slot.used)} of ${slot.total} slots left` : ' · no slots';
       note(b, head, 'tx-group');
       for (const sp of list.filter(s => (s.level == null ? 99 : s.level) === lv)) {
-        button(sp.name, () => pickSpell(sp), { parent: b, disabled: !sp.ok, cls: 'tx-spell',
+        button(sp.name, () => pickSpell(sp), { parent: b, disabled: !sp.ok, cls: 'tx-spell', key: 'cast:' + sp.name,
           meta: sp.ok ? describe(sp) : sp.reason, title: sp.ok ? describe(sp) : sp.reason });
       }
     }
@@ -1800,7 +1872,7 @@
       note(row, `Reactions (${names}):`);
       for (const mode of ['ask', 'auto', 'off']) {
         button(mode[0].toUpperCase() + mode.slice(1), () => act('reactions', [t.id, mode], { keepMode: true }),
-          { parent: row, pressed: (t.reactions || 'ask') === mode, cls: 'tx-small',
+          { parent: row, pressed: (t.reactions || 'ask') === mode, cls: 'tx-small', key: 'react:' + mode,
             title: { ask: 'Ask me when one could be used', auto: 'Use them whenever they help', off: 'Never use them' }[mode] });
       }
       b.appendChild(row);
@@ -1866,8 +1938,10 @@
     const n = ui.darts.length;
     button(n === 1 ? `Cast: every dart at ${(tokenById(ui.darts[0]) || {}).name}` : `Cast ${ui.spell.name}`,
       () => castSpell(ui.darts.slice()), { parent: b, primary: true, disabled: !(n === 1 || n === MAX_DARTS),
+        key: 'darts:cast',
         title: 'One target takes every dart; or pick one target per dart' });
-    button('Undo last dart', () => { ui.darts.pop(); ui.dartsText = ''; render(); dartsPreview(); }, { parent: b, disabled: !n });
+    button('Undo last dart', () => { ui.darts.pop(); ui.dartsText = ''; render(); dartsPreview(); },
+      { parent: b, disabled: !n, key: 'darts:undo' });
   }
 
   async function dartsPreview() {
@@ -1904,13 +1978,15 @@
     note(b, 'Attack', 'tx-group');
     if (!attacks.length) note(b, 'No weapon attack.');
     for (const name of attacks)
-      button(name, () => readyPick({ kind: 'attack', what: name, label: name }), { parent: b, cls: 'tx-spell' });
+      button(name, () => readyPick({ kind: 'attack', what: name, label: name }),
+        { parent: b, cls: 'tx-spell', key: 'ready:attack:' + name });
     const spells = (ui.spells || []).filter(sp => !isReaction(sp) && sp.casting === 'action');
     if (spells.length) note(b, 'Spell (held with concentration)', 'tx-group');
     for (const sp of spells)
       button(sp.name, () => readyPick({ kind: 'cast', what: sp.name, label: sp.name, area: sp.targeting === 'area',
                                          none: ['self', 'none'].includes(sp.targeting) }),
         { parent: b, cls: 'tx-spell', disabled: !sp.ok, meta: sp.ok ? describe(sp) : sp.reason,
+          key: 'ready:cast:' + sp.name,
           title: sp.ok ? describe(sp) : sp.reason });
   }
 
@@ -2157,10 +2233,16 @@
       const box = el.prompt; box.hidden = false; box.innerHTML = '';
       const p = document.createElement('div'); p.textContent = first; box.appendChild(p);
       const row = document.createElement('div'); row.className = 'tx-row'; box.appendChild(row);
-      const finish = v => { box.hidden = true; box.innerHTML = ''; resolve(v); };
+      const finish = v => { box.hidden = true; box.innerHTML = ''; box.onEscape = null; resolve(v); };
+      // How the document-level Escape answers this prompt. Set for all three
+      // kinds of question and cleared by finish, so a prompt that has gone is
+      // never one Escape can find.
+      box.onEscape = () => finish(null);
       if (react) {
-        const yes = button(oa ? 'Yes, attack' : 'Yes', () => finish({ react: 'yes' }), { parent: row, primary: true, always: true });
-        button(oa ? 'No, let them go' : 'No', () => finish({ react: 'no' }), { parent: row, always: true });
+        const yes = button(oa ? 'Yes, attack' : 'Yes', () => finish({ react: 'yes' }),
+          { parent: row, primary: true, always: true, key: 'ask:yes' });
+        button(oa ? 'No, let them go' : 'No', () => finish({ react: 'no' }),
+          { parent: row, always: true, key: 'ask:no' });
         setTimeout(() => yes.focus(), 0);
       } else if (m) {
         const n = +m[1], sides = +m[2], adv = m[5];
@@ -2171,7 +2253,7 @@
         row.appendChild(input);
         const use = button('Use my roll', () => {
           const v = +input.value; if (v >= n && v <= n * sides) finish({ roll: v }); else input.focus();
-        }, { parent: row, primary: true, always: true });
+        }, { parent: row, primary: true, always: true, key: 'ask:use' });
         button('Roll the dice', () => {
           const d = () => 1 + (crypto.getRandomValues(new Uint32Array(1))[0] % sides);
           let total;
@@ -2180,12 +2262,13 @@
             toast(`d20 with ${adv}: ${a} and ${b}, keep ${total}`);
           } else { total = 0; for (let i = 0; i < n; i++) total += d(); toast(`${n}d${sides}: ${total}`); }
           finish({ roll: total });
-        }, { parent: row, always: true });
-        button('Roll for me', () => finish({ forMe: true }), { parent: row, always: true, title: 'The engine rolls this action for you' });
+        }, { parent: row, always: true, key: 'ask:dice' });
+        button('Roll for me', () => finish({ forMe: true }),
+          { parent: row, always: true, key: 'ask:forme', title: 'The engine rolls this action for you' });
         input.addEventListener('keydown', e => { if (e.key === 'Enter') use.click(); });
         setTimeout(() => input.focus(), 0);
       }
-      button('Cancel', () => finish(null), { parent: row, always: true });
+      button('Cancel', () => finish(null), { parent: row, always: true, key: 'ask:cancel' });
     });
   }
 

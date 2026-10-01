@@ -23,11 +23,10 @@ import socketserver
 import threading
 import unittest
 
-from tests.test_display_tactics_ui import JS, NODE, _run
+from tests.test_display_tactics_ui import CSS, JS, NODE, _run
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 HARNESS = REPO / "display" / "evidence-panel.html"
-PORT = 8750
 
 try:
     from playwright.sync_api import sync_playwright
@@ -42,11 +41,23 @@ class _Quiet(http.server.SimpleHTTPRequestHandler):
 
 
 def _serve():
+    """A static server for display/, on a port the OS picks.
+
+    Port 0 rather than a hardcoded one: this file has three browser classes and
+    CI runs pytest -n 4, which can put two of them on two workers at the same
+    moment. A fixed port is then already bound, the bind raises, and setUpClass
+    skips the whole class, which is exactly the silent green the playwright CI
+    step was added to stop.
+    """
     handler = lambda *a, **k: _Quiet(*a, directory=str(REPO / "display"), **k)
     socketserver.TCPServer.allow_reuse_address = True
-    httpd = socketserver.TCPServer(("127.0.0.1", PORT), handler)
+    httpd = socketserver.TCPServer(("127.0.0.1", 0), handler)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     return httpd
+
+
+def _port(httpd):
+    return httpd.server_address[1]
 
 
 # A grid to test the key against: 6x3, two walls.
@@ -248,6 +259,7 @@ class StaticBoardLayers(unittest.TestCase):
     """
 
     server = None
+    port = 0
     playwright = None
     browser = None
 
@@ -257,8 +269,9 @@ class StaticBoardLayers(unittest.TestCase):
             raise unittest.SkipTest("display/evidence-panel.html is missing")
         try:
             cls.server = _serve()
+            cls.port = _port(cls.server)
         except OSError as exc:
-            raise unittest.SkipTest(f"cannot bind {PORT}: {exc}") from exc
+            raise unittest.SkipTest(f"cannot serve {REPO / 'display'}: {exc}") from exc
         try:
             cls.playwright = sync_playwright().start()
             cls.browser = cls.playwright.chromium.launch()
@@ -282,7 +295,7 @@ class StaticBoardLayers(unittest.TestCase):
 
     def setUp(self):
         self.page = self.browser.new_page(viewport={"width": 1440, "height": 900})
-        self.page.goto(f"http://127.0.0.1:{PORT}/evidence-panel.html", wait_until="load")
+        self.page.goto(f"http://127.0.0.1:{self.port}/evidence-panel.html", wait_until="load")
         self.page.wait_for_function("window.__ready === true", timeout=15000)
 
     def tearDown(self):
@@ -510,6 +523,457 @@ class StaticBoardLayers(unittest.TestCase):
           clips: document.querySelectorAll('#tx-board clipPath').length,
           floats: document.querySelectorAll('#tx-board .tx-float').length,
         })""")
+
+
+# A fake engine, so a mode can actually be armed without a server. It answers
+# the two calls a turn needs (reach, targets) and remembers what it was sent.
+ENGINE = """() => {
+  window.__sent = [];
+  window.fetch = (url, opts) => {
+    const body = JSON.parse(opts.body);
+    window.__sent.push(body.cmd);
+    let result = {};
+    if (body.cmd === 'targets') result = {targets: [
+      {target: 'frog-1', attack: 'Longsword', legal: true, hit_percent: 65},
+      {target: 'frog-2', attack: 'Longsword', legal: true, hit_percent: 60}]};
+    if (body.cmd === 'reachable') result = {walk: {B2: 0, C2: 0}, dash: {E2: 0}};
+    return Promise.resolve({ok: true, json: () => Promise.resolve({result})});
+  };
+}"""
+
+# A question for the engine to ask, which opens the prompt ask() builds. The
+# dice go on the FIRST line: ask() reads the first line to decide which of the
+# three prompts to build, and a "rolls 1d20+3" on a second line is text it never
+# looks at.
+PENDING = """() => {
+  window.fetch = (url, opts) => Promise.resolve({ok: true, json: () =>
+    Promise.resolve({pending: 'Kairos attacks Giant Frog 1, rolls 1d20+3'})});
+}"""
+
+# The focus ring on whatever currently has the keyboard, read as the browser
+# resolved it rather than as a string in the stylesheet.
+RING = """() => {
+  const a = document.activeElement, s = getComputedStyle(a);
+  return {tag: a.tagName, id: a.id || null, key: a.dataset ? (a.dataset.key || null) : null,
+          width: s.outlineWidth, offset: s.outlineOffset,
+          colour: s.outlineColor, style: s.outlineStyle};
+}"""
+
+# Where the keyboard is, and what the panel says about it.
+WHERE = """() => {
+  const a = document.activeElement;
+  const q = s => document.querySelector(s);
+  return {
+    tag: a ? a.tagName : null,
+    id: a ? a.id : null,
+    key: a && a.dataset ? (a.dataset.key || null) : null,
+    text: a ? (a.textContent || '').trim().slice(0, 30) : null,
+    inPanel: !!(a && document.getElementById('tx-panel').contains(a)),
+    attack: !!q('#tx-leads button[data-key="Attack"]')
+              && q('#tx-leads button[data-key="Attack"]').getAttribute('aria-pressed') === 'true',
+    move: !!q('#tx-leads button[data-key="Move"]')
+              && q('#tx-leads button[data-key="Move"]').getAttribute('aria-pressed') === 'true',
+    attackChoices: document.querySelectorAll('#tx-actions [data-key^="attack:"]').length,
+    reachCells: document.querySelectorAll('#tx-actions .tx-reach').length,
+    cursor: document.querySelectorAll('#tx-board .tx-cursor').length,
+    say: (document.getElementById('tx-say').textContent || '').trim().slice(0, 40),
+  };
+}"""
+
+
+@unittest.skipUnless(HAVE_PLAYWRIGHT, "playwright is not installed")
+class KeyboardAndFocus(unittest.TestCase):
+    """W13: the panel is playable from the keyboard, and keeps the keyboard.
+
+    Three separate things. The keyboard survives a rebuild, found by data-key
+    rather than by text, because text is not an identity here: an attack button
+    reads "Longsword (up to 65%)" and the number moves with the roll. Escape
+    answers whatever is on top, from wherever the keyboard happens to be. And
+    every control in the panel draws a ring when the keyboard is on it.
+    """
+
+    server = None
+    port = 0
+    playwright = None
+    browser = None
+
+    @classmethod
+    def setUpClass(cls):
+        if not HARNESS.exists():
+            raise unittest.SkipTest("display/evidence-panel.html is missing")
+        try:
+            cls.server = _serve()
+            cls.port = _port(cls.server)
+        except OSError as exc:
+            raise unittest.SkipTest(f"cannot serve {REPO / 'display'}: {exc}") from exc
+        try:
+            cls.playwright = sync_playwright().start()
+            cls.browser = cls.playwright.chromium.launch()
+        except Exception as exc:
+            cls.tearDownClass()
+            raise unittest.SkipTest(f"chromium is not available: {exc}") from exc
+
+    @classmethod
+    def tearDownClass(cls):
+        if cls.browser:
+            cls.browser.close()
+        if cls.playwright:
+            cls.playwright.stop()
+        if cls.server:
+            cls.server.shutdown()
+            cls.server.server_close()
+            cls.server = None
+
+    def setUp(self):
+        self.page = self.browser.new_page(viewport={"width": 1440, "height": 900})
+        self.page.goto(f"http://127.0.0.1:{self.port}/evidence-panel.html", wait_until="load")
+        self.page.wait_for_function("window.__ready === true", timeout=15000)
+        self.page.evaluate(ENGINE)
+
+    def tearDown(self):
+        self.page.close()
+
+    def snap(self, **changes):
+        snap = self.page.evaluate("() => JSON.parse(JSON.stringify(window.__SNAP))")
+        for key, value in changes.items():
+            if key == "token":
+                snap["tokens"][0].update(value)
+            else:
+                snap[key] = value
+        return snap
+
+    def push(self, snap):
+        self.page.evaluate("(s) => { Tactics.update(s); }", snap)
+
+    def where(self):
+        return self.page.evaluate(WHERE)
+
+    def focus(self, selector):
+        """Put the keyboard on a control, the way a Tab would."""
+        self.page.evaluate("(s) => document.querySelector(s).focus()", selector)
+
+    def tab_to(self, name):
+        """Tab until the keyboard is on the control with this data-key, or id.
+
+        Real Tab presses, because :focus-visible only answers to keyboard
+        navigation and a programmatic focus() is not one. The bound covers the
+        panel plus the harness's own Send button many times over.
+        """
+        at = "(n) => { const a = document.activeElement; return (a.dataset.key || a.id) === n; }"
+        for _ in range(60):
+            if self.page.evaluate(at, name):
+                return True
+            self.page.keyboard.press("Tab")
+        return False
+
+    def attack(self, key="Attack"):
+        self.focus('#tx-leads button[data-key="%s"]' % key)
+        self.page.keyboard.press("Enter")
+        self.page.wait_for_timeout(200)
+
+    def ask(self):
+        """Make the engine put up a question, and return when it is up.
+
+        Dash rather than an attack, because an attack button only chooses the
+        weapon: it sends nothing until a target is clicked on the board. Dash
+        goes straight to act(), which is the loop that calls ask().
+        """
+        self.page.evaluate(PENDING)
+        self.focus('#tx-actions button[data-key="Dash"]')
+        self.page.keyboard.press("Enter")
+        self.page.wait_for_timeout(250)
+        self.assertFalse(self.page.evaluate("() => document.getElementById('tx-prompt').hidden"),
+                         "the engine's question did not open")
+
+    # ── the keyboard-only flow the audit asks for ───────────────────────────
+
+    def test_tab_to_attack_enter_arrows_escape_with_no_mouse_at_all(self):
+        """The whole flow, on the keyboard, start to finish.
+
+        Tab to Attack, Enter to arm, arrows to walk the square cursor to the
+        target, Escape to call it off. The part that used to break is the
+        middle: arming a mode from the keyboard left the keyboard on the Attack
+        button, so the arrow keys went to a button and nothing moved.
+        """
+        self.page.focus("#tx-board")
+        self.page.keyboard.press("Tab")          # the board's next tab stop is the action bar
+        # Read by text here, not by data-key: this test is about the flow, and
+        # naming the controls is another test's job.
+        self.assertEqual(self.where()["text"], "Move",
+                         "the first Tab off the board did not reach the action bar")
+        self.page.keyboard.press("Tab")
+        self.assertEqual(self.where()["text"], "Attack")
+        self.page.keyboard.press("Enter")
+        self.page.wait_for_timeout(200)
+        armed = self.where()
+        self.assertTrue(armed["attack"], "Enter did not arm the attack mode")
+        self.assertEqual(armed["attackChoices"], 1, "the attack list did not open")
+        self.assertEqual(armed["id"], "tx-board",
+                         "the keyboard stayed on the button, so the arrow keys would do nothing")
+        self.assertEqual(armed["cursor"], 1, "no square cursor was drawn on the focused board")
+
+        # Arrow keys walk the cursor. The board listens for them itself, so this
+        # is the flow working, not the cursor being drawn by something else.
+        self.page.keyboard.press("Home")        # the creature whose turn it is: B7
+        self.assertTrue(self.where()["say"].startswith("B7"), self.where()["say"])
+        for _ in range(8):
+            self.page.keyboard.press("ArrowRight")
+        after = self.where()
+        self.assertTrue(after["say"].startswith("J7"), after["say"])
+        # ...and it survives a snapshot, which is the thing that used to throw
+        # the keyboard to the top of the page mid-flow.
+        self.push(self.snap(token={"x": 2, "hp": 7}))
+        self.assertEqual(self.where()["id"], "tx-board",
+                         "a snapshot took the keyboard off the board mid-flow")
+        self.page.keyboard.press("Escape")
+        self.page.wait_for_timeout(150)
+        gone = self.where()
+        self.assertFalse(gone["attack"], "Escape did not cancel the armed mode")
+        self.assertEqual(gone["attackChoices"], 0, "the attack list outlived the mode")
+        self.assertEqual(gone["id"], "tx-board", "Escape threw the keyboard out of the panel")
+
+    # ── focus survives the rebuild ──────────────────────────────────────────
+
+    def test_the_keyboard_stays_on_the_same_button_across_a_push(self):
+        """A snapshot does not take the keyboard away.
+
+        The bar is emptied and refilled on every push, so without this focus
+        lands on the body and the next Tab starts from the top of the page,
+        which is a different place on every action.
+        """
+        self.focus('#tx-leads button[data-key="Attack"]')
+        for i in range(3):
+            self.push(self.snap(token={"x": 2 + i, "hp": 9 - i}))
+            self.assertEqual(self.where()["key"], "Attack", f"push {i} moved the keyboard")
+
+    def test_the_keyboard_is_found_by_key_and_not_by_its_text(self):
+        """An attack button's text is a number that moves; its key is a name.
+
+        Text matching cannot find this button again once the percentage changes,
+        and the percentage changes on exactly the push that most needs the
+        keyboard to stay put: the attack mode re-reads its options.
+        """
+        self.attack()
+        text_of = ("() => document.querySelector"
+                   "('#tx-actions [data-key=\"attack:Longsword\"]').textContent")
+        before = self.page.evaluate(text_of)
+        self.assertIn("65%", before)
+        self.page.evaluate("""() => {
+          window.fetch = (url, opts) => Promise.resolve({ok: true, json: () =>
+            Promise.resolve({result: {targets: [
+              {target: 'frog-1', attack: 'Longsword', legal: true, hit_percent: 71}]}})});
+        }""")
+        self.page.keyboard.press("Escape")            # cancel
+        self.page.wait_for_timeout(100)
+        self.attack()                                 # arm again, 71%
+        after = self.page.evaluate(text_of)
+        self.assertIn("71%", after, "the new percentage was not drawn")
+        self.assertNotEqual(before, after, "the text did not move, so this proves nothing")
+        self.focus('#tx-actions [data-key="attack:Longsword"]')
+        self.push(self.snap(token={"x": 5}))
+        self.assertEqual(self.where()["key"], "attack:Longsword",
+                         "the keyboard was lost because the text moved")
+
+    def test_every_rebuilt_control_is_named_and_no_two_share_a_name(self):
+        """The mechanism, pinned: a control with no key cannot be found again.
+
+        The action bar is the rebuilt region. The header buttons are written
+        once into the panel's markup and never emptied, so a key on them would
+        name something that cannot be lost.
+        """
+        self.focus('#tx-leads button[data-key="Cast"]')
+        self.page.keyboard.press("Enter")
+        self.page.wait_for_timeout(250)
+        keys = self.page.evaluate("""() => {
+          const all = [...document.querySelectorAll('#tx-actions button')];
+          return {total: all.length,
+                  keyed: all.filter(b => b.dataset.key).length,
+                  dupes: all.map(b => b.dataset.key)
+                              .filter((k, i, a) => k && a.indexOf(k) !== i)};
+        }""")
+        self.assertGreater(keys["total"], 10, "the bar did not render")
+        self.assertEqual(keys["keyed"], keys["total"],
+                         "a button in the bar has no data-key, so focus cannot return to it")
+        self.assertEqual(keys["dupes"], [], "two controls share a key, so focus picks one")
+
+    def test_a_button_that_greys_out_leaves_the_keyboard_in_the_panel(self):
+        """Spending the action greys the whole bar out.
+
+        A disabled control cannot hold focus at all, so there is nothing to put
+        the keyboard back on and the old text match simply gave up. It goes to
+        the board instead, which is where a turn is played.
+        """
+        self.focus('#tx-actions button[data-key="Ready"]')
+        self.assertEqual(self.where()["key"], "Ready")
+        self.push(self.snap(turn={"movement_left": 30, "action_used": True}))
+        self.assertTrue(self.page.evaluate(
+            "() => document.querySelector('#tx-actions button[data-key=\"Ready\"]').disabled"),
+            "Ready should be disabled once the action is spent")
+        self.assertTrue(self.where()["inPanel"],
+                        "the keyboard left the panel when the button greyed out")
+
+    # ── Escape ──────────────────────────────────────────────────────────────
+
+    def test_escape_cancels_from_the_side_list(self):
+        self.attack()
+        self.focus('#tx-leads button[data-key="Attack"]')
+        self.page.keyboard.press("Escape")
+        self.page.wait_for_timeout(150)
+        after = self.where()
+        self.assertFalse(after["attack"], "Escape from the side list did not cancel the mode")
+        self.assertEqual(after["attackChoices"], 0, "the attack list outlived the mode")
+        self.assertEqual(after["key"], "Attack", "the keyboard was thrown out of the panel")
+
+    def test_escape_cancels_from_the_board(self):
+        self.attack("Move")
+        self.page.focus("#tx-board")
+        self.assertTrue(self.where()["move"])
+        self.page.keyboard.press("Escape")
+        self.page.wait_for_timeout(150)
+        after = self.where()
+        self.assertFalse(after["move"], "Escape on the board did not cancel the mode")
+        self.assertEqual(after["reachCells"], 0, "the reachable overlay outlived the mode")
+
+    def test_escape_cancels_the_measure_before_the_mode(self):
+        """Two things armed, one Escape each, nearest first."""
+        self.attack("Move")
+        self.focus('[data-ruler="line"]')
+        self.page.keyboard.press("Enter")
+        self.page.wait_for_timeout(100)
+        self.assertEqual(self.page.evaluate(
+            "() => document.querySelector('[data-ruler=\"line\"]').getAttribute('aria-pressed')"),
+            "true")
+        self.page.keyboard.press("Escape")
+        self.page.wait_for_timeout(100)
+        self.assertEqual(self.page.evaluate(
+            "() => document.querySelector('[data-ruler=\"line\"]').getAttribute('aria-pressed')"),
+            "false", "the first Escape did not take the measure")
+        self.assertTrue(self.where()["move"], "the first Escape also cancelled the mode")
+        self.page.keyboard.press("Escape")
+        self.page.wait_for_timeout(100)
+        self.assertFalse(self.where()["move"], "the second Escape did not cancel the mode")
+
+    def test_escape_closes_the_engines_question(self):
+        """The prompt holds the keyboard and is on top, so it is what Escape means.
+
+        Otherwise the one thing a keyboard cannot leave is the thing the engine
+        put up: Escape reached past it to whatever the board was doing and the
+        question stayed on screen with the keyboard still inside it.
+        """
+        self.ask()
+        self.assertTrue(self.page.evaluate(
+            "() => document.getElementById('tx-prompt').contains(document.activeElement)"),
+            "the prompt did not take the keyboard")
+        sent = self.page.evaluate("() => window.__sent.length")
+        self.page.keyboard.press("Escape")
+        self.page.wait_for_timeout(250)
+        self.assertTrue(self.page.evaluate("() => document.getElementById('tx-prompt').hidden"),
+                        "Escape did not close the engine's question")
+        self.assertEqual(self.page.evaluate(
+            "() => document.getElementById('tx-prompt').innerHTML"), "",
+            "Escape left the question's controls on screen")
+        # Escape answered it, exactly as the prompt's own Cancel button does:
+        # the action is given up rather than sent again with no answer.
+        self.assertEqual(self.page.evaluate("() => window.__sent.length"), sent,
+                         "Escape re-sent the action instead of cancelling it")
+
+    # ── the ring ────────────────────────────────────────────────────────────
+
+    def test_every_control_in_the_panel_shows_the_panels_ring(self):
+        """A control the keyboard can reach has to say where the keyboard is.
+
+        Read as a computed style rather than as a string in the stylesheet,
+        because the buttons already had a rule and the one that matters is on
+        the control nobody remembered to list: the number input the engine's
+        own question puts up. Both are read on a real keyboard focus, because
+        :focus-visible answers to one and a programmatic focus() is not it.
+        """
+        self.ask()
+        number = self.page.evaluate(RING)
+        self.assertEqual(number["tag"], "INPUT",
+                         f"the ring was read from the wrong control: {number}")
+        self.assertEqual(number["style"], "solid",
+                         f"the engine's own input has no drawn ring: {number}")
+        self.page.keyboard.press("Escape")           # answer the question again
+        self.page.wait_for_timeout(200)
+        self.assertTrue(self.tab_to("Move"), "Tab never reached a lead action")
+        lead = self.page.evaluate(RING)
+        self.assertEqual(lead["key"], "Move", lead)
+        self.assertEqual(lead["width"], number["width"], "the two rings differ in width")
+        self.assertEqual(lead["offset"], number["offset"], "the two rings differ in offset")
+        self.assertEqual(lead["colour"], number["colour"],
+                         "the engine's own input does not get the panel's brass ring")
+
+    def test_the_board_keeps_its_own_closer_ring(self):
+        """The panel default must not flatten the board's offset.
+
+        The board sits flush against its own frame and wants 1px of offset, so
+        the rule that rings every other control in the panel leaves it out.
+        """
+        self.assertTrue(self.tab_to("tx-board"), "Tab never reached the board")
+        board = self.page.evaluate(RING)
+        self.assertEqual(board["id"], "tx-board", board)
+        self.assertEqual(board["style"], "solid", board)
+        self.assertTrue(self.tab_to("Move"), "Tab never reached a lead action")
+        lead = self.page.evaluate(RING)
+        self.assertEqual(lead["key"], "Move", lead)
+        self.assertEqual(board["width"], lead["width"], board)
+        self.assertEqual(board["colour"], lead["colour"], board)
+        self.assertEqual(board["offset"], "1px",
+                         f"the board lost the 1px offset it draws flush: {board}")
+        self.assertEqual(lead["offset"], "2px", lead)
+
+
+class TheKeyboardMechanism(unittest.TestCase):
+    """The focus mechanism, pinned at the source level.
+
+    The behaviour is measured in a browser above. These pin the three things
+    that would silently undo it: restoring focus by text content again, a
+    render that rebuilds the bar without putting the keyboard back, and a
+    button factory that stops naming its buttons.
+    """
+
+    def setUp(self):
+        self.js = JS.read_text(encoding="utf-8")
+
+    def block(self, name):
+        start = self.js.index(f"function {name}(")
+        depth, i = 0, self.js.index("{", start)
+        while i < len(self.js):
+            if self.js[i] == "{":
+                depth += 1
+            elif self.js[i] == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            i += 1
+        code = self.js[start:i + 1]
+        return "\n".join(ln for ln in code.splitlines()
+                         if not ln.strip().startswith("//"))
+
+    def test_focus_is_restored_by_key_and_not_by_text(self):
+        for name in ("restoreFocus", "focusedKey"):
+            self.assertNotIn("textContent", self.block(name),
+                             f"{name} identifies a control by its text again")
+        self.assertIn("dataset.key", self.block("restoreFocus"))
+
+    def test_every_render_that_rebuilds_the_bar_puts_the_keyboard_back(self):
+        for name in ("renderSide", "renderInfo"):
+            self.assertIn("focusedKey()", self.block(name), f"{name} drops the keyboard")
+            self.assertIn("restoreFocus(", self.block(name), f"{name} never puts it back")
+
+    def test_every_button_is_named(self):
+        self.assertIn("b.dataset.key = o.key || text;", self.block("button"))
+
+    def test_escape_is_answered_on_the_document_and_the_prompt_first(self):
+        self.assertRegex(self.js, r"document\.addEventListener\('keydown', e => \{\s*\n"
+                                  r"\s*if \(e\.key !== 'Escape'\) return;")
+        handler = self.block("build")
+        self.assertIn("el.prompt.onEscape()", handler,
+                      "Escape does not answer the engine's question first")
+        self.assertIn("if (ui.mode) { clearMode(); render(); }", handler)
+        self.assertIn("box.onEscape = () => finish(null);", self.block("ask"),
+                      "the prompt does not offer Escape a way out")
 
 
 if __name__ == "__main__":
