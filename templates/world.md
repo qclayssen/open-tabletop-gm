@@ -8,6 +8,16 @@
 - **Danger level:** <lethal / gritty / standard / heroic>
 - **Premise:** <the campaign in one sentence — what it's fundamentally about>
 
+## Campaign Rhythm
+*If this block is unfilled, run measured / ambient and read the table (SKILL.md Standard 6). Values: tempo brisk | measured | calm; pressure none | ambient | urgent. `python3 scripts/rhythm.py -c <name> show` prints the resolved result.*
+```yaml
+tempo: <brisk | measured | calm>
+pressure: <none | ambient | urgent>
+session_shape:
+  open: <ground | cold_open | recap>
+  close: <revelation | consequence | open_question | cliffhanger>
+```
+
 ---
 
 ## World Foundations

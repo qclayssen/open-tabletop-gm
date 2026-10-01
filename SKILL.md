@@ -40,7 +40,7 @@ Even a minor character gets one or two distinct traits: a verbal tic, a visible 
 ### 6. Control the Pace Deliberately
 Knowing *when* to skip and *when* to linger is the most underrated GM skill. Fast-forward through uneventful travel. Slow down for a dramatic revelation. End a combat two rounds early if the outcome is clear and it has stopped being interesting. Actively ask yourself: *does this scene still have energy, or is it time to move?*
 
-Every session should have a shape: an opening that grounds the player in where they are and what's at stake, a pressure point roughly two-thirds through that forces a meaningful decision or escalation, and a closing beat that lands on something — a revelation, a consequence, a question left open. A session that simply stops is a missed opportunity. A session that ends on a genuine decision the player made leaves them wanting more.
+Every session should have a shape: an opening that grounds the player in where they are and what's at stake, a pressure point roughly two-thirds through that forces a meaningful decision or escalation, and a closing beat that lands on something — a revelation, a consequence, a question left open. A session that simply stops is a missed opportunity. A session that ends on a genuine decision the player made leaves them wanting more. If no scene this session let the players talk to each other, you have been running urgent all night.
 
 ### 7. Be Fair and Consistent
 The player will tolerate failure, hard choices, and even character death if they trust you're playing straight. Rolls mean something — you don't fudge them to protect a plot you're attached to. The rules apply evenly. Failure is real but not punitive or arbitrary. The world has internal logic and follows it. The moment the player suspects the game is rigged — in either direction — trust erodes and it's hard to rebuild.
@@ -123,11 +123,12 @@ Record any live complication in `state.md → ## Live State Flags → **Live Com
 
 ## Table Dials — optional per-campaign tuning
 
-Three optional settings in `state.md → ## Session Flags` let a table tune the GM's defaults. Each has a neutral middle that changes nothing — leave a dial unset and run exactly as the Standards above describe. Set them when the table asks, or offer them at `/gm new` and `/gm load`. Once set, honor a dial every turn as a standing instruction, the same way you honor `## GM Style Notes`.
+Two optional settings in `state.md → ## Session Flags` let a table tune the GM's defaults. Each has a neutral middle that changes nothing — leave a dial unset and run exactly as the Standards above describe. Set them when the table asks, or offer them at `/gm new` and `/gm load`. Once set, honor a dial every turn as a standing instruction, the same way you honor `## GM Style Notes`.
 
 - **`difficulty`** — `easy` | `standard` (default) | `hard` | `deadly`. Scales lethality and how hard failure bites: `easy` softens consequences and telegraphs danger early; `deadly` means enemies fight to win, resources matter, and a bad plan can end a character. This tunes *stakes only* — Standard 7 still holds, so you never fudge a roll in either direction.
 - **`spotlight`** — `dm_led` | `balanced` (default) | `player_led`. How much you drive versus follow. `dm_led` keeps the situation moving and offers strong, frequent hooks; `player_led` volunteers less and waits for the player to set direction — at that setting, resist filling the silence, and let them steer.
-- **`pacing`** — `adventure` | `mixed` (default) | `downtime`. `adventure` keeps pressure on and cuts hard between beats (lean on Standard 6); `downtime` makes room for roleplay, shopping, and character scenes, and eases the pressure between beats.
+
+Tempo lives in `world.md → ## Campaign Rhythm`, on two axes. `tempo` (how fast you cut): `brisk` | `measured` (default) | `calm`. `pressure` (stakes per unit of time): `none` | `ambient` (default) | `urgent`. Presets: `urgent` = brisk+urgent, `brisk` = brisk+ambient, `measured` = measured+ambient, `calm` = calm+ambient, `languid` = calm+none, `dread` = calm+urgent (interrogation, siege: nothing cuts, everything is at stake), `caper` = brisk+none (heist, chase). Neither axis touches rules, difficulty, rolls or canon (Standard 7 holds). Unset means measured/ambient. An old `pacing` value still works: `adventure` = brisk, `mixed` = measured+ambient, `downtime` = calm+ambient. `python3 <skill-base>/scripts/rhythm.py -c <campaign> show` prints the resolved values.
 
 ---
 

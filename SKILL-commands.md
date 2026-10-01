@@ -46,6 +46,7 @@ Do NOT run `git init` or any git commands in campaign directories.
 | `/gm factions <subcommand>` | Off-screen faction clocks: `add`, `status`, `clock`, `lean`, `hold`, `release`, `reveal`, `hide`, `complete`, `set-interval`, `clear`. Ticks themselves come from `calendar.py advance`. See `/gm factions` procedure below. |
 | `/gm oracle <chaos [set N\|adjust --pc-won\|--pc-lost] \| ask [--likelihood L] \| event [--seed S]>` | Solo/GM oracles: the chaos factor (`## Session Flags`, 1-9, default 5), a yes/no verdict, and Mythic Random Event Focus (a direction to interpret against existing threads, not an outcome). Maps to `python3 <skill-base>/scripts/oracle.py -c <campaign> <subcommand>`. The d100 is rolled through `dice.py`; `--seed` replays it. |
 | `/gm queue [roll \| add \| fire <id> \| dismiss <id> --reason "..." \| requeue <id> \| start \| validate]` | The `## World Queue` in state.md: off-screen pressure waiting to surface. Bare `/gm queue` lists pending entries with triggers and `demands`. See `/gm queue` procedure below. |
+| `/gm rhythm [show\|plan\|set <scene-id\|session\|campaign> <tempo\|pressure\|preset> <value>\|validate]` | The campaign's tempo and pressure, resolved with provenance. `show` prints it; `set campaign preset dread` edits `world.md → ## Campaign Rhythm` in place. Maps to `python3 <skill-base>/scripts/rhythm.py -c <current> <subcommand>`. Add `--dry-run` to `set` to preview. |
 
 ---
 

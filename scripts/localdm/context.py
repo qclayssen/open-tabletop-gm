@@ -168,6 +168,24 @@ def is_template_line(line: str) -> str:
     return ""
 
 
+def _tidy_yaml_blocks(lines: list[str]) -> list[str]:
+    """Drop a fenced block emptied by the template-line pass, and strip trailing
+    `# comments` from the values under `## Campaign Rhythm` (only the resolved
+    values reach the prompt). An unfilled rhythm block therefore costs nothing."""
+    out, in_rhythm = [], False
+    for i, ln in enumerate(lines):
+        if _HEAD_LINE.match(ln):
+            in_rhythm = ln.strip() == "## Campaign Rhythm"
+        elif in_rhythm and not ln.lstrip().startswith("```"):
+            ln = re.sub(r"\s+#.*$", "", ln)
+            nxt = lines[i + 1] if i + 1 < len(lines) else ""
+            if ln.rstrip().endswith(":") and len(nxt) - len(nxt.lstrip()) <= len(ln) - len(ln.lstrip()):
+                continue                           # a parent key whose children were all blank
+        out.append(ln)
+    text = re.sub(r"^\s*```\w*\n\s*```\s*$\n?", "", "\n".join(out), flags=re.M)
+    return [ln for ln in text.split("\n") if ln.strip()]
+
+
 def notes_digest(camp_dir, files=NOTE_FILES, limit: int = 2500) -> str:
     """world.md and npcs.md, trimmed: what the DM and advisors check facts against.
 
@@ -182,6 +200,7 @@ def notes_digest(camp_dir, files=NOTE_FILES, limit: int = 2500) -> str:
         except OSError:
             continue
         keep = [ln for ln in text.splitlines() if ln.strip() and not is_template_line(ln)]
+        keep = _tidy_yaml_blocks(keep)
         rows = [i for i, ln in enumerate(keep) if ln.lstrip().startswith("|")]
         if len(rows) == 1:                         # a table header and no data rows
             keep.pop(rows[0])
