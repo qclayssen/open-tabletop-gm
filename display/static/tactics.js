@@ -36,11 +36,29 @@
                helpTarget: null, readyWhat: null, readyStep: null,
                cursor: null, ruler: { tool: null, a: null, b: null, fixed: false }, camMap: null, camTimer: 0,
                sight: false, sightFrom: null, sightData: null, sightKey: '', layoutAt: null,
-                svg: null, boardKey: null };
+                svg: null, boardKey: null,
+                // Whether the display is receiving live updates.
+                //
+                // Starts true, and that is not a claim that the stream is up.
+                // It is the absence of a claim that it is down. Only
+                // display/static/display.js knows how the stream is doing, so
+                // this starts out of its hands and is corrected the moment it
+                // is told; on a real page that happens during init, before any
+                // snapshot is drawn. The panel also runs on its own, with no
+                // stream at all (display/evidence-panel.html, the layout
+                // harness), and a panel with no connection cannot have its
+                // actions disabled by one.
+                online: true };
   const CONDITION_CODES = { blinded: 'Bl', charmed: 'Ch', deafened: 'De', exhaustion: 'Ex', frightened: 'Fr',
     grappled: 'Gr', incapacitated: 'In', invisible: 'Iv', paralyzed: 'Pa', petrified: 'Pe', poisoned: 'Po',
     prone: 'Pr', restrained: 'Re', stunned: 'St', unconscious: 'Un' };
   const el = {};
+
+  // Why the map cannot be acted on, in the words the engine uses everywhere
+  // else it refuses something. This is the title on every disabled action, and
+  // the banner text below the map, so the reason is never only a colour.
+  const OFFLINE_TITLE = 'The display has lost the server. This comes back when it reconnects.';
+  const OFFLINE_BANNER = 'The display lost the server. The map below is out of date and cannot be acted on until it reconnects.';
 
   // ── helpers ──────────────────────────────────────────────────────────────
   const colLabel = x => { let s = ''; x += 1; while (x) { const r = (x - 1) % 26; s = String.fromCharCode(65 + r) + s; x = Math.floor((x - 1) / 26); } return s; };
@@ -1922,7 +1940,17 @@
     if (o.end) b.dataset.tx = 'end';          // pinned to the bar's bottom edge
     if (o.title) b.title = o.title;
     if (o.meta) { const m = document.createElement('span'); m.className = 'tx-meta'; m.textContent = o.meta; b.appendChild(m); }
-    b.disabled = !!o.disabled || (ui.busy && !o.always) || !fn;
+    // Genuinely disabled, not styled as such. `disabled` takes the control out
+    // of the tab order and stops the click reaching the handler at all, which is
+    // the point: during an outage the map is a picture of a fight, and every one
+    // of these buttons would send an action into a server that is not there.
+    //
+    // `always` is deliberately not consulted here. It exists so an engine prompt
+    // (ask()) keeps its buttons usable while the panel is busy, and a prompt
+    // answered during an outage would be answering about a fight that may have
+    // moved on, so offline overrides it.
+    b.disabled = !ui.online || !!o.disabled || (ui.busy && !o.always) || !fn;
+    if (!ui.online && fn) b.title = OFFLINE_TITLE;
     if (fn) b.addEventListener('click', e => {
       fn(e);
       // Enter or Space on a button that arms a mode hands the keyboard to the
@@ -2320,8 +2348,11 @@
   }
 
   async function clickSquare(sq, pointerType) {
-    if (ui.ruler.tool) { rulerClick(sq); return; }
+    if (ui.ruler.tool) { rulerClick(sq); return; }   // measuring is local; works offline
     if (ui.busy) return;
+    // The board is a click target too, so disabling the action bar does not
+    // cover it. Everything past this point would send an action.
+    if (!ui.online) return;
     if (ui.mode === 'aim') return clickAim({ pointerType }, sq);
     if (ui.mode === 'ready' && ui.readyStep === 'target' && ui.readyWhat && ui.readyWhat.area) return readyFinish(sq);
     if (ui.mode !== 'move' || !ui.reach) return;
@@ -2419,6 +2450,18 @@
   // ── actions and prompts ──────────────────────────────────────────────────
   async function act(cmd, args, o) {
     o = o || {};
+    // Refuse before the fetch, not only in the button's disabled state.
+    //
+    // The disabled attribute is the front door, but a click can still arrive
+    // without one: Enter on a control that was focused the moment the stream
+    // dropped, a pointer that went down before the outage and came up after, a
+    // queued touch event. Each of those would send an action built from a
+    // snapshot the server has since moved past, and the engine would either
+    // apply it to the wrong state or answer 409. This is the door behind it.
+    if (!ui.online) {
+      refuse(OFFLINE_BANNER);
+      return false;
+    }
     ui.busy = true; renderSide();
     const extra = { rolls: [] };
     let done = false;
@@ -2588,9 +2631,57 @@
     }
   }
 
+  // ── connection ───────────────────────────────────────────────────────────
+  //
+  // What the display is doing about the stream being down.
+  //
+  // Before this, the pill said "Reconnecting" and the map carried on looking
+  // perfectly usable. Every action button stayed enabled, so a player could
+  // click Move into an outage and watch nothing happen, or click into a
+  // recovery and have the action land against a fight that had moved on. The
+  // snapshot on screen is only as current as the last payload that arrived, so
+  // while the stream is down it is a picture, not a state.
+  function setOnline(ok) {
+    if (ui.online === ok) return;
+    ui.online = ok;
+    if (!ok) {
+      // Disarm anything that was armed against the snapshot we are about to
+      // stop trusting. A Move mode held open across the outage would be
+      // offering a reach map drawn minutes ago, and the click that finishes it
+      // would be a move from a position the creatures have since left.
+      clearMode();
+      // A prompt the engine asked before the outage is asking about a decision
+      // that may have been resolved while we were not listening. Close it
+      // rather than leave a live answer on screen; act() treats a closed prompt
+      // as "no answer", which sends nothing.
+      if (el.prompt && !el.prompt.hidden && el.prompt.onEscape) el.prompt.onEscape();
+      if (snap) {
+        el.banner.textContent = OFFLINE_BANNER;
+        el.banner.classList.add('tx-refusal');
+        el.banner.setAttribute('role', 'alert');
+      }
+    } else {
+      // Coming back. The server replays the current combat state on every
+      // connect, so update() is what makes the bar live again; clearing the
+      // refusal here lets the next snapshot speak for itself.
+      if (snap) clearRefusal();
+    }
+    // Rebuild the bar so every action button picks up the new disabled state.
+    // Focus is restored by renderSide's own restoreFocus, which skips a control
+    // that is disabled and falls back to the board, so a keyboard user is never
+    // stranded on a control that can no longer be pressed.
+    if (snap) renderSide();
+  }
+
   // ── boot ─────────────────────────────────────────────────────────────────
   async function init() {
     build();
+    // Subscribe before the first snapshot arrives, so a fight that arrives while
+    // the stream is still down is drawn with its actions already dead.
+    // GMConn.on fires straight away with the state as it is, so by the time any
+    // snapshot has been rendered this reflects the real stream rather than the
+    // optimistic default.
+    if (window.GMConn && typeof window.GMConn.on === 'function') window.GMConn.on(setOnline);
     try {
       const r = await fetch('/combat/state');
       const s = await r.json();
@@ -2606,7 +2697,7 @@
   // refusal() is exported so the wording is testable as a function rather than
   // only through a click: it is a pure map from (status, body) to a sentence,
   // and the cases that matter are the four the server can return.
-  window.Tactics = { update, init, state: () => snap, refusal, pendingBanner };
+  window.Tactics = { update, init, state: () => snap, refusal, pendingBanner, setOnline };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 })();
