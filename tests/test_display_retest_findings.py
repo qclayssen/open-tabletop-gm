@@ -138,8 +138,45 @@ class Panel(unittest.TestCase):
             page.evaluate("t => { handleIncomingText(t); instantFlush(); }", NARRATION)
         if snap is not None:
             page.evaluate("s => Tactics.update(s)", json.loads(json.dumps(snap)))
-            page.wait_for_timeout(400)
+            self.settle(page)
         return page
+
+    # `#text-scroll` has `transition: padding 0.4s ease`, and --tx-bottom (the
+    # measured panel bottom) feeds its padding-top. So the inset this file asserts
+    # on is *animating* for 400ms after Tactics.update(), and the previous
+    # `wait_for_timeout(400)` slept for exactly the transition's own duration --
+    # landing on either side of the boundary by machine speed. It passed here and
+    # failed on the GitHub runner with `603 not greater than or equal to 698`,
+    # invisible for as long as this file skipped for lack of Playwright.
+    SETTLE = """() => {
+      const pad = parseFloat(getComputedStyle(
+        document.getElementById('text-scroll')).paddingTop);
+      const w = window;
+      if (w.__mqLastPad === undefined || pad !== w.__mqLastPad) {
+        w.__mqLastPad = pad; w.__mqStable = 0; return false;
+      }
+      return ++w.__mqStable >= 3;
+    }"""
+
+    def settle(self, page):
+        """Block until padding-top stops moving, then let it paint.
+
+        Three things this has to get right, each of which I got wrong first:
+
+        - Poll padding-top, NOT --tx-bottom. The variable is published
+          synchronously by the ResizeObserver, so it is already at its final
+          value (`698px`) on the first read while padding-top is still animating
+          toward it. Polling the variable returns immediately and measures 187px
+          mid-flight -- that version failed five tests that had been passing.
+        - Each poll must be a separate task. A synchronous `for` loop inside the
+          predicate never yields, style recalc never runs, padding sits at its
+          72px starting value for every iteration, and "stable" is reached on
+          the third one -- measuring before the animation began.
+        - Three identical samples, not one: a single match can be two samples
+          inside the same easing step.
+        """
+        page.wait_for_function(self.SETTLE, polling="raf", timeout=8000)
+        page.wait_for_timeout(50)
 
     # ── N-2: the panel must not be an opaque lid on the story ────────────
     GEOMETRY = """() => {
@@ -180,7 +217,7 @@ class Panel(unittest.TestCase):
         re-wrapped the header onto a second row."""
         page = self.open(DESKTOP, snapshot())
         page.click("#tx-min")
-        page.wait_for_timeout(400)
+        self.settle(page)
         m = page.evaluate(self.GEOMETRY)
         self.assertTrue(m["folded"], m)
         self.assertFalse(m["panelOverflows"],
@@ -340,7 +377,7 @@ class Panel(unittest.TestCase):
         """
         snap["tokens"][0]["x"] = x
         page.evaluate("s => Tactics.update(s)", dict(snap))
-        page.wait_for_timeout(300)
+        self.settle(page)
 
     def test_a_push_does_not_throw_away_the_scroll(self):
         """The report: 'Re-render resets scrollLeft (after each push it snaps
@@ -359,7 +396,7 @@ class Panel(unittest.TestCase):
         before = page.evaluate("document.getElementById('tx-board').scrollLeft")
         self.assertGreater(before, 0, "could not scroll the board to test with")
         page.evaluate("s => Tactics.update(s)", dict(snap))
-        page.wait_for_timeout(400)
+        self.settle(page)
         after = page.evaluate("document.getElementById('tx-board').scrollLeft")
         self.assertEqual(after, before, f"the push reset the scroll: {before} -> {after}")
 
@@ -372,13 +409,13 @@ class Panel(unittest.TestCase):
         # Everybody in the left-hand column, then scrolled well right of them.
         page.evaluate("s => { s.tokens.forEach(t => { t.x = 0; t.y = 0; });"
                       " Tactics.update(s); }", snapshot(w=40, h=20))
-        page.wait_for_timeout(300)
+        self.settle(page)
         page.evaluate("document.getElementById('tx-board').scrollLeft = 1200")
         page.wait_for_timeout(150)
         self.assertGreater(page.evaluate("document.getElementById('tx-board').scrollLeft"), 0,
                            "could not scroll away from the creatures")
         page.evaluate("s => Tactics.update(s)", snapshot(w=40, h=20))
-        page.wait_for_timeout(400)
+        self.settle(page)
         m = page.evaluate(self.BOARD)
         kairos = next(t for t in m["inView"] if t["id"] == "kairos")
         self.assertGreaterEqual(kairos["l"], kairos["boxL"] - 1,
@@ -429,7 +466,7 @@ class Panel(unittest.TestCase):
         page = self.open(size, snap or snapshot())
         page.evaluate("p => { Tactics.state().turn.pending = p; Tactics.update(Tactics.state()); }",
                       pending)
-        page.wait_for_timeout(300)
+        self.settle(page)
         out = page.evaluate("""() => ({
           banner: document.getElementById('tx-banner').textContent,
           info: document.getElementById('tx-info').textContent,
@@ -571,7 +608,7 @@ class Panel(unittest.TestCase):
         snap["current"] = "kob-1"
         page.unroute("**/combat/do")
         page.evaluate("s => Tactics.update(s)", snap)
-        page.wait_for_timeout(400)
+        self.settle(page)
         got = page.inner_text("#tx-banner")
         self.assertIn("Kobold 1", got)
         self.assertNotIn("no player's turn", got.lower(), got)
