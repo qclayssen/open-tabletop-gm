@@ -54,7 +54,7 @@ except ImportError:                                  # running outside scripts/
     from tactics import maps as _maps
 
 
-def _fail(message: str) -> "SystemExit":
+def _fail(message: str) -> SystemExit:
     """Print a refusal and return the exit to raise.
 
     Printed here and raised by the caller rather than `raise SystemExit(msg)`,
@@ -162,9 +162,10 @@ def cmd_show(args, camp: pathlib.Path) -> int:
         print()
         try:
             print(_pins.note_body(camp, row))
-        except _pins.PinError as exc:
+        except _pins.PinError:
             # Same message as a missing note, on purpose: a refusal that
-            # distinguished "sealed" from "absent" would be an oracle.
+            # distinguished "sealed" from "absent" would be an oracle. note_body
+            # already collapses its reasons; this is the CLI agreeing with it.
             raise _fail("no such note")
     return 0
 

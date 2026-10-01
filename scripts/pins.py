@@ -45,6 +45,7 @@ because there is no such branch to write.
 from __future__ import annotations
 
 import json
+import math
 import os
 import pathlib
 import re
@@ -182,7 +183,7 @@ def _number(value, field) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise PinError(f"pin {field} must be a number")
     number = float(value)
-    if number != number or number in (float("inf"), float("-inf")):
+    if math.isnan(number) or math.isinf(number):
         raise PinError(f"pin {field} must be a finite number")
     return number
 
