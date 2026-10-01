@@ -14,11 +14,20 @@ from __future__ import annotations
 import pathlib
 import sys
 
+import pytest
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import faculty_sheets as fs
 
+# Pillow is a developer-machine dependency and CI does not have it. The two
+# tests that need it skip rather than returning, because a bare `return` in a
+# test function reports PASSED having asserted nothing, and CI is the machine
+# that reads that report. Note that test_faculty_sheets_without_pillow.py does
+# the opposite and blocks the import for real, on purpose: its subject is what
+# the tool does *without* Pillow, so a skip there would hide it. Do not make
+# these two files agree.
 try:
     from PIL import Image
     HAVE_PIL = True
@@ -53,7 +62,8 @@ def test_a_sheet_of_the_wrong_size_is_refused_because_boxes_would_miss():
     """Boxes measured on a 2295x5940 sheet land on the wrong pixels of any
     other size, and a crop of the wrong pixels still looks like a portrait."""
     if not HAVE_PIL:
-        return
+        pytest.skip("Pillow is not installed, and this refusal is checked by writing a "
+                    "real image of the wrong size, so there is nothing to assert without it")
     import tempfile
     d = pathlib.Path(tempfile.mkdtemp())
     fake = d / "quandrixteachers.jpg"
@@ -165,7 +175,8 @@ def test_college_is_derived_from_the_sheet_filename():
 
 def test_run_writes_one_png_per_figure_plus_a_manifest(tmp_path):
     if not HAVE_PIL:
-        return
+        pytest.skip("Pillow is not installed, and this is the only test that exercises the "
+                    "crop write path, so skipping it hides the one thing that writes files")
     import json
     sheet = tmp_path / "quandrixteachers.jpg"
     Image.new("RGB", fs.SHEET_SIZE, (120, 150, 145)).save(sheet)
