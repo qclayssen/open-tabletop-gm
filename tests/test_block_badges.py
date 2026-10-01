@@ -23,8 +23,9 @@ import pathlib
 import re
 import unittest
 
+from tests.display_sources import read_display_sources
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-HTML = ROOT / "display" / "templates" / "index.html"
 UI = ROOT / "systems" / "dnd5e" / "ui.json"
 
 
@@ -33,7 +34,14 @@ class BadgeWiringTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.src = HTML.read_text(encoding="utf-8")
+        # The manifest is still injected by the template; the word table and the
+        # function that reads it moved to display/static/display.js, and the style
+        # rule to display/static/display.css (W2). This class is about the wiring
+        # across all three, so it reads all three.
+        src = read_display_sources()
+        cls.src = src.all
+        cls.js = src.js
+        cls.css = src.css
 
     def test_the_badge_function_is_actually_called(self):
         """Defined-but-never-called is how this shipped dead.
@@ -41,7 +49,7 @@ class BadgeWiringTests(unittest.TestCase):
         Counting mentions, not asserting presence: a definition alone is
         exactly the state that looked fine in review.
         """
-        mentions = len(re.findall(r"_addBlockBadge", self.src))
+        mentions = len(re.findall(r"_addBlockBadge", self.js))
         self.assertGreaterEqual(
             mentions, 2,
             "_addBlockBadge appears once — it is defined and never invoked, "
@@ -51,7 +59,7 @@ class BadgeWiringTests(unittest.TestCase):
     def test_the_badge_class_has_a_style_rule(self):
         """An <img> with no rule renders as an unsized, unplaced image."""
         self.assertRegex(
-            self.src, r"\.block-badge\s*\{",
+            self.css, r"\.block-badge\s*\{",
             ".block-badge has no CSS rule, so a created badge would render raw",
         )
 
@@ -70,12 +78,13 @@ class BadgeWiringTests(unittest.TestCase):
 class BadgeLanguageTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.src = HTML.read_text(encoding="utf-8")
+        # The tables and the function are in display/static/display.js (W2).
+        cls.js = read_display_sources().js
         cls.ui = json.loads(UI.read_text(encoding="utf-8"))
 
     def test_kind_badges_use_no_word_list(self):
         """The language-agnostic path. It must not consult prose at all."""
-        block = re.search(r"const _KIND_BADGES = \{(.*?)\};", self.src, re.S)
+        block = re.search(r"const _KIND_BADGES = \{(.*?)\};", self.js, re.S)
         self.assertIsNotNone(block, "_KIND_BADGES missing")
         body = block.group(1)
         self.assertIn("npc-block", body)
@@ -101,7 +110,7 @@ class BadgeLanguageTests(unittest.TestCase):
     def test_an_unmatched_block_gets_no_badge(self):
         """Silence, not a wrong guess — and the state every non-English
         narration block lands in until its language has a table."""
-        fn = re.search(r"function _addBlockBadge\(el\) \{(.*?)\n\}", self.src, re.S)
+        fn = re.search(r"function _addBlockBadge\(el\) \{(.*?)\n\}", self.js, re.S)
         self.assertIsNotNone(fn)
         self.assertIn("if (!icon) return;", fn.group(1))
 

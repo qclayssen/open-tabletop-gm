@@ -12,8 +12,9 @@ import re
 import threading
 import unittest
 
+from tests.display_sources import read_display_sources
+
 REPO = pathlib.Path(__file__).resolve().parent.parent
-INDEX = REPO / "display" / "templates" / "index.html"
 
 try:
     from playwright.sync_api import sync_playwright
@@ -37,18 +38,20 @@ PROBE = """() => {
 
 
 class ClientWording(unittest.TestCase):
-    src = INDEX.read_text(encoding="utf-8")
+    # The handlers are in display/static/display.js; the error region's id is
+    # still markup in the template (W2).
+    _src = read_display_sources()
 
     def test_recall_409_never_says_delivered(self):
-        m = re.search(r"async function _recallAction.*?\n}\n", self.src, re.S)
+        m = re.search(r"async function _recallAction.*?\n}\n", self._src.js, re.S)
         self.assertTrue(m)
         self.assertNotIn("'Delivered'", m.group(0))
         self.assertIn("No longer queued", m.group(0))
 
     def test_send_and_skip_surface_the_server_message(self):
-        self.assertIn("_showInputError(", self.src)
-        self.assertIn('id="input-error"', self.src)
-        skip = re.search(r"async function _skipTurn.*?\n}\n", self.src, re.S).group(0)
+        self.assertIn("_showInputError(", self._src.js)
+        self.assertIn('id="input-error"', self._src.template)
+        skip = re.search(r"async function _skipTurn.*?\n}\n", self._src.js, re.S).group(0)
         self.assertIn("_refusalMessage", skip)
 
 
