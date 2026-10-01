@@ -2,7 +2,10 @@
 from __future__ import annotations
 
 import pathlib
+import re
 import sys
+
+import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -200,3 +203,169 @@ def test_a_nested_json_object_is_still_extracted():
         == "Shield"
     assert reply.parse("The door has a {crack} in it.").cast is None
     assert "crack" in reply.parse("The door has a {crack} in it.").narration
+
+
+# ── B6: a directive followed by trailing prose crashed `parse` ──
+#
+# `_LAST_OBJECT` is the last resort for exactly this reply shape: the directive
+# is in the reply but is not the last thing in it, a stray tag or a trailing
+# aside. It shipped with a NON-capturing group (e915db5) while `parse` reads
+# `m.group(1)`, so every input that reached this branch raised
+# `IndexError: no such group` out of `parse()` instead of parsing anything.
+#
+# The cost was not a mangled turn. `parse` is what turns a raw model string into
+# the turn the session saves, so the exception unwound past the campaign state
+# and the fight and the transcript. Reported as B6 in the playtest sweep and
+# reproduced on 1 model of 5, which is why the suite never caught it: the other
+# four put the directive last, where `_BARE` matches and has a group.
+#
+# Parametrized over all four directive names, because the four are one
+# alternation and a fix applied to three of them is not a fix.
+
+_DIRECTIVES = ("escalate", "command", "check", "cast")
+
+
+def _body(directive: str) -> str:
+    """A reply whose directive object is followed by prose that is not JSON."""
+    return ('The torchlight gutters across the flagstones.\n'
+            '{"%s": "Investigation 13"}\n'
+            'Rain drums on the shutters. The lantern gutters.' % directive)
+
+
+@pytest.mark.parametrize("directive", _DIRECTIVES)
+def test_a_directive_followed_by_trailing_prose_does_not_crash_parse(directive):
+    """The crash itself: this shape raised IndexError out of `parse`.
+
+    Before the fix every one of these four raised `IndexError: no such group`.
+    """
+    r = reply.parse(_body(directive))
+    assert isinstance(r, reply.DMReply)
+
+
+@pytest.mark.parametrize("directive", _DIRECTIVES)
+def test_a_directive_followed_by_trailing_prose_is_still_read(directive):
+    """And it is read, not merely survived.
+
+    This is the assertion that separates the fix from swallowing the error: a
+    change that only widened the `except` returns all-None here and leaves the
+    JSON in the narration, which is the same player-visible defect `_LAST_OBJECT`
+    was added to prevent.
+    """
+    r = reply.parse(_body(directive))
+    assert getattr(r, directive) == "Investigation 13"
+    assert "torchlight" in r.narration
+    assert "Investigation 13" not in r.narration
+    assert "{" not in r.narration
+
+
+@pytest.mark.parametrize("directive, tail", [
+    ("escalate", "\nThe lantern gutters."),
+    ("command", "\n\nWhat do you do?\n"),
+    ("check", "\n\n**Options**\n- look at the latch"),
+    ("cast", "\n</response>\nThe door is shut."),
+])
+def test_the_shapes_that_reached_the_last_resort_all_parsed(directive, tail):
+    """The other measured shapes, not just the one sentence in the report.
+
+    B6 came from a playtest sweep where the directive was followed by the
+    prompt's own trailing question, a markdown options block and a stray
+    response tag. All four raise `IndexError` before the fix.
+
+    Kept as its own parametrization rather than folded into the test above
+    because these are different tails on the same branch: the first test pins
+    the crash, this one pins that each real tail is actually handled.
+    """
+    r = reply.parse('Rain falls.\n{"%s": "Investigation 13"}%s' % (directive, tail))
+    assert getattr(r, directive) == "Investigation 13"
+    assert "{" not in r.narration
+
+
+@pytest.mark.parametrize("directive", _DIRECTIVES)
+def test_the_two_working_shapes_are_unchanged_by_the_group(directive):
+    """Control: `_FENCED` and `_BARE` with nothing after them are untouched.
+
+    Passes before and after by design, and says so. The group is added to the
+    third pattern and the `except` is widened, and neither touches the two that
+    already worked; this is what proves it. A test for "unchanged" cannot fail
+    pre-fix, so it is a control and is not claimed as evidence of the fix.
+    """
+    bare = reply.parse('A sigil is carved.\n{"%s": "Investigation 13"}' % directive)
+    fenced = reply.parse('A sigil is carved.\n```json\n{"%s": "Investigation 13"}\n```'
+                         % directive)
+    assert getattr(bare, directive) == "Investigation 13"
+    assert bare.narration == fenced.narration == "A sigil is carved."
+    assert getattr(fenced, directive) == "Investigation 13"
+
+
+def test_no_directive_key_means_no_damage_to_ordinary_prose():
+    """An ordinary brace pair is still not a directive, and still stays.
+
+    The alternation that makes the group safe: a non-directive key does not
+    match, so widening what `parse` tolerates cannot start eating braces.
+    """
+    assert reply.parse('The door has a {crack} in it.\nRain falls.') \
+        == reply.DMReply('The door has a {crack} in it.\nRain falls.')
+
+
+def test_a_pattern_without_a_capture_group_cannot_escape_parse(monkeypatch):
+    """The widened `except`, pinned deliberately.
+
+    With the capture group in place nothing reaches `IndexError` any more, so the
+    second half of the fix is unpinnable through the public path: reverting it
+    leaves every other test in this file green. This drives it directly instead,
+    by handing `parse` a pattern in the broken shape and asserting the contract
+    holds -- an unreadable directive degrades to narration rather than
+    unwinding the caller's turn.
+
+    A test that reaches inside the module is normally the wrong shape. It is
+    right here because the thing under test IS the guarantee that a malformed
+    internal pattern stays internal, and that guarantee has no other observable
+    effect once the bug is fixed. Without it, the `except` is unfalsifiable and
+    a later pattern edit can silently reintroduce the crash.
+    """
+    broken = re.compile(r'\{\s*"(?:escalate|command|check|cast)"[^{}]*\}', re.S)
+    monkeypatch.setattr(reply, "_LAST_OBJECT", broken)
+    text = 'Rain falls.\n{"check": "Investigation 13"}\nThe lantern gutters.'
+    r = reply.parse(text)               # must not raise IndexError
+    assert r.check is None              # and must not invent the field
+    assert r.narration == text          # and must leave the reply intact
+
+
+def test_prose_AFTER_a_mid_reply_directive_is_not_recovered():
+    """A limit of the fix, pinned so it cannot be mistaken for intended behaviour.
+
+    `parse` truncates at `m.start()`, so prose that FOLLOWED a mid-reply
+    directive is dropped along with the JSON. Before the fix this shape raised
+    IndexError and no narration came back at all, so this is strictly better --
+    but the prose is still gone, and a reader of the tests should not have to
+    infer that. Content loss, not a crash: see the brief's section 6.
+    """
+    r = reply.parse('Rain falls.\n{"check": "Perception 13"}\nThe lantern gutters.')
+    assert r.check == "Perception 13"
+    assert r.narration == "Rain falls."
+    assert "gutters" not in r.narration
+
+
+def test_a_nested_object_with_trailing_prose_is_still_not_extracted():
+    """The other limit: `[^{}]*` cannot span a nested object, so a cast object
+    followed by prose matches nothing and stays in the narration.
+
+    No crash either way. Pinned because the natural next edit to this pattern --
+    dropping `[^{}]*` for `.*` to catch nested casts -- would reach across the
+    narration, and this says what it would be trading against.
+    """
+    text = 'Rain falls.\n{"cast": {"spell_name": "mage armor"}}\nThe lantern gutters.'
+    r = reply.parse(text)
+    assert r.cast is None
+    assert r.narration == text
+
+
+def test_a_directive_named_but_not_parsable_falls_back_to_narration():
+    """Unreadable JSON with trailing prose: no raise, and nothing invented.
+
+    The widened `except` must not turn a failed read into a fabricated field.
+    """
+    text = 'Rain falls.\n{"check": }\nThe lantern gutters.'
+    r = reply.parse(text)
+    assert r.check is None
+    assert r.narration == text

@@ -22,8 +22,12 @@ _PROMPT_TAIL = re.compile(r"\s*(?:\n|^)\s*What (?:do|would) you (?:do|like to do
 # tag, a trailing aside, anything. Without it the JSON stays in the narration and
 # the player reads the engine's own instruction sheet as prose. Keyed on one of
 # the four directive names so an ordinary brace in the prose cannot match.
+# The group is not decoration. `parse` reads `m.group(1)` off whichever of the
+# three patterns matched, so this one has to capture the object it matched. It
+# shipped without one (e915db5), which meant this branch raised IndexError on
+# every input that ever reached it instead of parsing anything.
 _LAST_OBJECT = re.compile(
-    r'\{\s*"(?:escalate|command|check|cast)"[^{}]*\}', re.S)
+    r'(\{\s*"(?:escalate|command|check|cast)"[^{}]*\})', re.S)
 
 
 @dataclass
@@ -120,7 +124,13 @@ def parse(text: str) -> DMReply:
     if m:
         try:
             data = json.loads(m.group(1))
-        except json.JSONDecodeError:
+        # A match object used wrongly -- group(1) on a pattern with no group, or
+        # an attribute that does not exist -- is a bug in a pattern above, not a
+        # reason to lose the turn. `parse` is what turns a raw model string into
+        # the turn everything else saves, so nothing escapes it: an unreadable
+        # directive falls back to plain narration, which is what a reply with no
+        # JSON has always been.
+        except (json.JSONDecodeError, IndexError, AttributeError):
             data = {}
         if isinstance(data, dict) and data:
             text = text[:m.start()].rstrip()
