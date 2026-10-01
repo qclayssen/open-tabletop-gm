@@ -342,33 +342,49 @@ def note_body(camp_dir, pin: dict) -> str:
     if pin.get("revealed") is not True:
         raise PinError("that pin is not on the players' board")
 
-    rel = check_note_target(pin["target"])          # shape + allow-list
+    # Shape only, with the allow-list re-checked below on the *resolved* path.
+    # The first call is here to reject `..`, a NUL and an absolute path before
+    # anything touches the filesystem; its allow-list refusal is deliberately
+    # re-raised as "no such note" so the two reasons read identically.
+    try:
+        rel = check_note_target(pin["target"])
+    except PinError as exc:
+        raise PinError("no such note") from exc
     resolved = campaign_path(camp_dir, rel)         # containment, incl. symlinks
 
     # Re-apply the policy to the file we are actually going to open.
+    #
+    # Every refusal below raises the SAME message, deliberately. A message that
+    # distinguishes "'DM_SEALED' is not a folder a pin may read" from "no such
+    # note" is an existence oracle over the campaign's sealed files: the caller
+    # learns which ones exist by asking. The GM's own mistakes (a typo in the
+    # allow-list, a missing folder) are still legible from the CLI, which
+    # validates at authoring time with the specific message -- this read path is
+    # for a browser, and a browser gets one answer to every "no".
     try:
         inside = resolved.relative_to(pathlib.Path(camp_dir).expanduser().resolve())
     except ValueError as exc:                      # campaign_path already refused
-        raise PinError("that note is outside the campaign") from exc
-    _require_allowed(str(inside).replace("\\", "/"))
+        raise PinError("no such note") from exc
+    try:
+        _require_allowed(str(inside).replace("\\", "/"))
+    except PinError as exc:
+        raise PinError("no such note") from exc
 
     # A regular file only. `notes.md` being a FIFO passes every other check and
     # blocks forever on open; a device node behaves the same way. Cheap, and it
     # closes a hang that no other rule here would catch.
     try:
         if not stat.S_ISREG(os.stat(resolved).st_mode):
-            raise PinError("that note is not a file")
+            raise PinError("no such note")
     except FileNotFoundError as exc:
         raise PinError("no such note") from exc
     except OSError as exc:
-        raise PinError(f"that note could not be read: {exc}") from exc
+        raise PinError("no such note") from exc
 
     try:
         body = resolved.read_text(encoding="utf-8")
-    except FileNotFoundError as exc:
+    except (FileNotFoundError, OSError) as exc:
         raise PinError("no such note") from exc
-    except OSError as exc:
-        raise PinError(f"that note could not be read: {exc}") from exc
     if len(body) > MAX_NOTE_BYTES:
-        raise PinError(f"that note is larger than {MAX_NOTE_BYTES // 1024} KB")
+        raise PinError("no such note")
     return body
