@@ -35,7 +35,8 @@
                spells: null, spell: null, singles: null, darts: null, dartsText: '',
                helpTarget: null, readyWhat: null, readyStep: null,
                cursor: null, ruler: { tool: null, a: null, b: null, fixed: false }, camMap: null, camTimer: 0,
-               sight: false, sightFrom: null, sightData: null, sightKey: '', layoutAt: null };
+               sight: false, sightFrom: null, sightData: null, sightKey: '', layoutAt: null,
+                svg: null, boardKey: null };
   const CONDITION_CODES = { blinded: 'Bl', charmed: 'Ch', deafened: 'De', exhaustion: 'Ex', frightened: 'Fr',
     grappled: 'Gr', incapacitated: 'In', invisible: 'Iv', paralyzed: 'Pa', petrified: 'Pe', poisoned: 'Po',
     prone: 'Pr', restrained: 'Re', stunned: 'St', unconscious: 'Un' };
@@ -67,9 +68,10 @@
   const living = () => ((snap && snap.tokens) || []).filter(t => !t.dead);
   const sqOf = t => label(t.x, t.y);
 
-  /* Pure helpers: the side table, the frame geometry and the cell rule. They
-     touch no DOM and no snapshot, so tests/test_display_tactics_ui.py runs
-     them straight out of this file and pins the numbers below. */
+  /* Pure helpers: the side table, the frame geometry, the cell rule, the roll
+     wording and the board cache key. They touch no DOM and no snapshot, so
+     tests/test_display_tactics_ui.py runs them straight out of this file and
+     pins the numbers below. */
   const SIDES = {
     enemy: { cls: 'tx-side-enemy', word: 'enemy',   glyph: '⚔', colour: 'var(--tx-danger)' },
     pc:    { cls: 'tx-side-pc',    word: 'ally',    glyph: '♥', colour: 'var(--tx-quan)' },
@@ -330,6 +332,57 @@
     const exp = typeof r.expected_damage === 'number' ? r.expected_damage
               : typeof r.expected === 'number' ? r.expected : null;
     return { percent: pct, phrase, expected: exp, chips: whyChips(r), provokes: r.provokes === true };
+  }
+
+  // ── the board cache key ──────────────────────────────────────────────────
+  //
+  // The panel used to throw the whole board away and rebuild it on every
+  // snapshot: W*H terrain rects, the grid lines, the fog, then
+  // `board.innerHTML = ''` and a fresh append. None of that is per-turn, so it
+  // is built once and kept, and these two say when it may be kept. Both are
+  // pure functions of the snapshot, so the rule can be pinned without a
+  // browser.
+
+  // The fog, as one string.
+  //
+  // Part of the terrain key, not an overlay: it decides which squares are lit,
+  // so a cached terrain layer carries its fog with it and a fog change has to
+  // rebuild rather than repaint over it.
+  //
+  // "off" and "on:" are deliberately different. A snapshot with no `fog` at all
+  // draws no fog; one with `fog: {runs: []}` draws fog over every square, and a
+  // key that collapsed the two would leave the first map's clear board on screen
+  // for the second, which is the one answer that may not go stale.
+  //
+  // The runs are sorted so that the same set of seen squares sent in a
+  // different order is the same key. Sorting can only ever cost a rebuild (two
+  // shapes of the same set), never buy a wrong reuse.
+  function fogKey(sp) {
+    const f = sp && sp.fog;
+    if (!f) return 'off';
+    return 'on:' + (f.runs || []).map(r => r.join(':')).sort().join(',');
+  }
+
+  // What the static layers are, exactly. A match means the terrain on screen is
+  // the terrain this snapshot asks for; anything else means tear it all down.
+  //
+  // - the map name and its shape, so a different battle never inherits a grid
+  // - the rows themselves: the terrain is drawn from them, and a map edited in
+  //   place keeps its name and its W and H
+  // - image, zones, labels and colors: the rest of what the map contributes to
+  //   the static drawing, all from the same map file as the rows
+  // - the fog, above
+  //
+  // Deliberately not hashed to a short digest. A hash is a fixed length whatever
+  // it covers and two different maps can collide, and a collision here is one
+  // map's terrain drawn over another's: the one failure this cache must not
+  // have. The exact string is a few KB on the largest map the display ships and
+  // comparing it costs far less than the rects it saves.
+  function boardKey(sp, W, H) {
+    const meta = (sp && sp.meta) || {}, g = (sp && sp.grid) || {};
+    return JSON.stringify([meta.name || '', W, H, g.rows || null, meta.image || '',
+                           meta.zones || null, meta.labels || null, meta.colors || null,
+                           fogKey(sp)]);
   }
   /* end pure helpers */
 
@@ -719,6 +772,21 @@
     return sideBySide ? 'side' : 'stack';
   }
 
+  // ── the board cache ───────────────────────────────────────────────────────
+  //
+  // The board used to be thrown away and rebuilt on every push: W*H terrain
+  // rects, the grid lines, the fog, then `board.innerHTML = ''` and a fresh
+  // append. A snapshot arrives on every action and on every hover-driven
+  // preview, so on a 40x30 map that was 1200 rects and 70 lines created and
+  // discarded to show one token that had moved.
+  //
+  // None of that is per-turn. The ground under a fight does not change while
+  // the fight does, so the svg, the terrain, the artwork, the grid, the labels
+  // and the fog are built once and kept, and only the layers the player is
+  // actually changing are emptied and redrawn. boardKey and fogKey, which say
+  // when, are pure and live in the pure block above; this is where the answer
+  // is used.
+
   function renderBoard() {
     const rows = (snap.grid && snap.grid.rows) || [];
     const H = rows.length, W = H ? rows[0].length : 0;
@@ -726,9 +794,72 @@
     ui.layout = chooseLayout(W);
     const box = boardBox();
     const cell = boardCell(W, H, box.w, box.h, box.phone);
-    const s = svg('svg', { viewBox: `0 0 ${W * C} ${H * C}`, width: W * cell, height: H * cell,
+    // Reuse is only safe while the cached svg is still the one being shown.
+    // `ui.svg.parentNode === el.board` is the check that matters: it survives a
+    // panel rebuilt underneath us, a board emptied by anything else, and a map
+    // that has changed, none of which can leave the key equal and the node
+    // somewhere nobody is looking.
+    const key = boardKey(snap, W, H);
+    const reuse = key === ui.boardKey && ui.svg && ui.svg.parentNode === el.board;
+    let keepL = el.board.scrollLeft, keepT = el.board.scrollTop;
+    // A map that has just mounted (page load, or a new battle) opens where the
+    // table last left it; a re-render of the same map keeps the live scroll.
+    const camName = cameraName(), fresh = camName !== ui.camMap;
+    const saved = fresh ? cameraLoad()[camName] : null;
+    if (saved) { keepL = saved.scrollL; keepT = saved.scrollT; }
+    ui.camMap = camName;
+    const s = reuse ? ui.svg : buildBoard(W, H, key);
+    // The svg is sized to the box it is drawn into, not to the map, so a window
+    // resize or a phone reflow reuses the terrain and still refits the board.
+    s.setAttribute('width', W * cell);
+    s.setAttribute('height', H * cell);
+    s.classList.toggle('tx-aiming', ui.mode === 'aim');
+    clearLayers();
+    drawSight();
+    for (const t of snap.tokens || []) drawToken(t);
+    drawOverlay();
+    drawCursor();
+    // Only a fresh svg has just had the scroll knocked out of it by the
+    // innerHTML wipe; a reused one was never detached, so its scroll still is
+    // where the player put it.
+    if (!reuse) { el.board.scrollLeft = keepL; el.board.scrollTop = keepT; }
+    drawRuler();
+    // First look at a map, with no camera to return to: show the whole fight,
+    // not the square the hero happens to be standing on. Anything else and a
+    // wide map opens on one corner with every enemy off-screen, which is the
+    // first thing a player sees and the one they have to notice is incomplete.
+    // A re-render of the map already on screen only nudges the view when the
+    // acting token has genuinely gone out of it, so a player who scrolled
+    // somewhere on purpose keeps that view.
+    if (fresh && !saved) frameEncounter(cell);
+    else ensureActorVisible(cell);
+    saveCameraSoon();
+    floaters();
+  }
+
+  // The layers emptied on every redraw: the three whose draw calls only add.
+  //
+  // drawToken appends a token and its portrait clip and never removes either,
+  // and a floating number leaves on its own 1400ms timer, long after the push
+  // that put it there. Everything else clears the layer it owns before drawing
+  // (drawSight, drawOverlay with the mark layer, drawCursor, drawRuler), so
+  // that rule is not applied to it twice.
+  function clearLayers() {
+    for (const layer of [ui.defsLayer, ui.tokenLayer, ui.floatLayer]) {
+      if (layer) layer.innerHTML = '';
+    }
+  }
+
+  // The svg and the part of it a map does not change: the hatch patterns, the
+  // artwork, the terrain, the fog, the grid, the zones and the labels. Built
+  // once per key and kept until the key stops matching.
+  //
+  // The z-order of everything below is load-bearing and unchanged: the grid and
+  // the labels sit over the fog, and the armed-mode overlay and the tokens sit
+  // over the grid.
+  function buildBoard(W, H, key) {
+    const s = svg('svg', { viewBox: `0 0 ${W * C} ${H * C}`, width: W * C, height: H * C,
                            role: 'group', 'aria-label': `Battle map, ${W} by ${H} squares` });
-    if (ui.mode === 'aim') s.classList.add('tx-aiming');
     const hatch = svg('pattern', { id: 'tx-hatch', width: 6, height: 6, patternUnits: 'userSpaceOnUse',
                                    patternTransform: 'rotate(45)' }, svg('defs', {}, s));
     svg('line', { x1: 0, y1: 0, x2: 0, y2: 6, class: 'tx-hatch-line' }, hatch);
@@ -749,10 +880,15 @@
       svg('image', { x: 0, y: 0, width: W * C, height: H * C, preserveAspectRatio: 'none',
                      href: '/maps/' + art, class: 'tx-art' }, s);
     }
+    // tx-terrain names the group in its own right, not just as the stylesheet's
+    // hook for the over-art case: it is the layer the board cache keeps, so a
+    // test can hold a reference to it and ask whether it is still the same one.
+    //
     // With artwork underneath, terrain is a translucent wash rather than an opaque
     // fill, so the terrain still has to read but the picture is the point. A map
     // with no image is unchanged, which is what every existing map expects.
-    const terrain = svg('g', art ? { class: 'tx-terrain-over-art' } : {}, s);
+    const terrain = svg('g', { class: 'tx-terrain' + (art ? ' tx-terrain-over-art' : '') }, s);
+    const rows = (snap.grid && snap.grid.rows) || [];
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
       const name = terrainOf(rows[y][x]);
       // data-t is what the stylesheet keys on to keep walls and voids solid over
@@ -763,7 +899,6 @@
     }
     drawFog(svg('g', { 'aria-hidden': 'true' }, s), W, H);
     ui.sightLayer = svg('g', { 'aria-hidden': 'true' }, s);
-    drawSight();
     const grid = svg('g', { style: 'stroke:var(--tx-grid)' }, s);
     for (let i = 0; i <= W; i++) svg('line', { x1: i * C, y1: 0, x2: i * C, y2: H * C }, grid);
     for (let j = 0; j <= H; j++) svg('line', { x1: 0, y1: j * C, x2: W * C, y2: j * C }, grid);
@@ -776,8 +911,8 @@
     ui.overlay = svg('g', {}, s);
     // Portrait clips live in defs, not in the token layer: they are referenced
     // by url(#id) and never drawn themselves, and keeping them out of the layer
-    // means nothing can mistake one for content. Rebuilt with the board, so a
-    // clip cannot outlive the token that named it.
+    // means nothing can mistake one for content. Rebuilt with the tokens on every
+    // redraw (clearLayers), so a clip cannot outlive the token that named it.
     ui.defsLayer = svg('defs', {}, s);
     ui.tokenLayer = svg('g', {}, s);
     ui.markLayer = svg('g', { 'aria-hidden': 'true' }, s);
@@ -785,9 +920,10 @@
     ui.floatLayer = svg('g', {}, s);
     ui.cursorLayer = svg('g', { 'aria-hidden': 'true' }, s);
     ui.svg = s;
-    for (const t of snap.tokens || []) drawToken(t);
-    drawOverlay();
-    drawCursor();
+    ui.boardKey = key;
+    // Listeners go on once, with the svg. Re-adding them on every render would
+    // stack a second pointermove and a second click handler on the same node,
+    // and one click on a token would send two actions.
     s.addEventListener('pointermove', onHover);
     s.addEventListener('click', onBoardClick);
     s.setAttribute('aria-hidden', 'true');          // the board itself speaks: see describe()
@@ -795,27 +931,8 @@
       if ((ui.mode === 'move' || ui.mode === 'aim') && ui.armed !== ui.hover) { ui.hover = null; drawOverlay(); renderInfo(); }
       else if (ui.mode === 'attack' || ui.mode === 'spell') { ui.hover = null; renderInfo(); }
     });
-    let keepL = el.board.scrollLeft, keepT = el.board.scrollTop;
-    // A map that has just mounted (page load, or a new battle) opens where the
-    // table last left it; a re-render of the same map keeps the live scroll.
-    const camName = cameraName(), fresh = camName !== ui.camMap;
-    const saved = fresh ? cameraLoad()[camName] : null;
-    if (saved) { keepL = saved.scrollL; keepT = saved.scrollT; }
-    ui.camMap = camName;
     el.board.innerHTML = ''; el.board.appendChild(s);
-    el.board.scrollLeft = keepL; el.board.scrollTop = keepT;   // a re-render must not snap back to the corner
-    drawRuler();
-    // First look at a map, with no camera to return to: show the whole fight,
-    // not the square the hero happens to be standing on. Anything else and a
-    // wide map opens on one corner with every enemy off-screen, which is the
-    // first thing a player sees and the one they have to notice is incomplete.
-    // A re-render of the map already on screen only nudges the view when the
-    // acting token has genuinely gone out of it, so a player who scrolled
-    // somewhere on purpose keeps that view.
-    if (fresh && !saved) frameEncounter(cell);
-    else ensureActorVisible(cell);
-    saveCameraSoon();
-    floaters();
+    return s;
   }
 
   const isPhone = () => !!(window.matchMedia && matchMedia(`(max-width: ${PHONE_MAX_W}px)`).matches);
