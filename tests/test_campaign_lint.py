@@ -296,12 +296,181 @@ def test_an_index_row_with_no_entry_is_reported(tmp_path):
     assert any("Old Tam" in f["message"] for f in rep.findings), messages(rep)
 
 
+# ── the split index/entries file, which is what this campaign actually uses ──
+#
+# `npcs.md` for `strixhaven-kairos` is a 33-row table with zero headings and says so
+# in its own second line. The linter read it for headings anyway, so every index row
+# was reported as drifted against an index that agrees with its entries perfectly --
+# 33 false warnings, which is how people learn to ignore the lint. Each test below
+# pins one shape that produced a false warning.
+
+INDEX_ONLY = """# NPCs: demo
+
+*Index only. Full entries in `npcs-full.md`.*
+
+| Name | Role | Faction | Location | Attitude | Notes |
+|------|------|---------|----------|----------|-------|
+| Maribeth | fence | none | village | friendly | owes a debt |
+| Soovril | restorer | none | abbey | friendly | burns nothing |
+| Augusta | dean | Faculty | Lorehold | neutral | interim |
+| Idris Vey | student | none | Prismari | friendly | forged papers |
+"""
+
+# `## ` people, `### ` subsections, and one table section -- the real file's shape.
+ENTRIES_FULL = """# NPCs (full entries): demo
+
+## Maribeth
+- **Role:** fence | **CR/Level:** 2 | **HP:** 27 | **AC:** 15
+
+### Personality
+- **Brave ↔ Cowardly:** brave
+
+## Soovril, Patient Antiquarian (Lorehold)
+- **Role:** restorer | **CR/Level:** 3
+
+## Augusta, Order Returned (Lorehold, interim dean)
+- **Role:** dean | **CR/Level:** n/a
+
+## Web of Wants (every student NPC: desire, fear/secret)
+
+| NPC | Wants |
+|-----|-------|
+| Maribeth | a fence |
+"""
+
+
+def split_campaign(tmp_path, index=INDEX_ONLY, entries=ENTRIES_FULL):
+    camp = campaign(tmp_path, npcs=index)
+    (camp / "npcs-full.md").write_text(entries, encoding="utf-8")
+    return camp
+
+
+def test_entries_are_read_from_the_file_that_holds_them(tmp_path):
+    """The 33 false warnings. The index and the entries agree; there was no drift."""
+    camp = split_campaign(tmp_path)
+    rep = campaign_lint.lint_campaign("demo", camp)
+    assert not any("has no entry" in f["message"] and f["level"] == "warn"
+                   for f in rep.findings), messages(rep)
+    assert not any("no ## NPC entries" in f["message"] for f in rep.findings), \
+        messages(rep)
+
+
+def test_a_shallower_index_row_still_matches_its_longer_entry(tmp_path):
+    """`Soovril` in the index, `## Soovril, Patient Antiquarian (Lorehold)` below.
+
+    Whole-key equality calls that unwritten, and so did the four others like it
+    (Augusta, Dean Nev, Jadzi, Tam) -- asserting five written characters are missing.
+    """
+    camp = split_campaign(tmp_path)
+    rep = campaign_lint.lint_campaign("demo", camp)
+    assert not any("'Soovril'" in f["message"] for f in rep.findings), messages(rep)
+    assert not any("'Augusta'" in f["message"] for f in rep.findings), messages(rep)
+
+
+def test_an_unwritten_character_is_reported_as_info_not_a_warning(tmp_path):
+    """Half the cast being unwritten is a fact about the campaign, not a bug.
+
+    Reported at warn it is one more line in a list nobody reads. `Idris Vey` is
+    genuinely absent from `ENTRIES_FULL` and must still be visible -- just without
+    the alarm, and with a message that says which it is.
+    """
+    camp = split_campaign(tmp_path)
+    rep = campaign_lint.lint_campaign("demo", camp)
+    found = [f for f in rep.findings if "'Idris Vey'" in f["message"]]
+    assert found, messages(rep)
+    assert found[0]["level"] == "info", found[0]
+    assert "no entry yet" in found[0]["message"]
+
+
+def test_a_documented_title_does_not_make_a_written_character_look_unwritten(tmp_path):
+    """The index writes `Prof. Dace Orrin`; the heading writes `Professor Dace Orrin`.
+
+    Two spellings of one person, and reporting them as drift is the same false
+    positive wearing a different hat.
+    """
+    index = INDEX_ONLY.replace("| Maribeth |", "| Prof. Maribeth |")
+    camp = split_campaign(tmp_path, index=index)
+    rep = campaign_lint.lint_campaign("demo", camp)
+    assert not any("Maribeth" in f["message"] for f in rep.findings), messages(rep)
+
+
+def test_a_roster_entry_counts_the_people_inside_it(tmp_path):
+    """`## Deans Adrix and Nev` is one heading and two people.
+
+    Without roster expansion the index row `Dean Nev` is reported unwritten, and the
+    GM writes a second, duplicate entry for a character they already have.
+    """
+    entries = ENTRIES_FULL + """
+## Deans Adrix and Nev (Quandrix, canon post-invasion deans)
+- **Adrix:** the theorist.
+- **Nev, the Practical Dean:** turns theory into fractals.
+"""
+    index = INDEX_ONLY.replace("| Idris Vey | student | none | Prismari | friendly | forged papers |",
+                              "| Dean Nev | dean | Faculty | Quandrix | friendly | "
+                              "the practical dean |")
+    camp = split_campaign(tmp_path, index=index, entries=entries)
+    rep = campaign_lint.lint_campaign("demo", camp)
+    assert not any("Nev" in f["message"] for f in rep.findings), messages(rep)
+
+
 def test_the_personality_and_relationships_subheadings_are_not_npcs(tmp_path):
     """They are ### headings too. Counting them as NPCs would report every
     campaign as having three extra unnamed characters."""
     campaign(tmp_path)
     rep = campaign_lint.lint_campaign("demo", tmp_path / "campaigns" / "demo")
     assert not any("has no '###" in f["message"] for f in rep.findings), messages(rep)
+
+
+def test_a_linked_index_row_is_compared_by_name_not_by_markup(tmp_path):
+    """A vault is an Obsidian vault, so an index row reads
+    "[[npc-files/marabeth.md|Maribeth]]" while the ### entry below it is plain
+    text. Comparing the raw markup reported every linked NPC as drifted, which
+    buries the one real drift this check exists to catch. The link's own pipe
+    makes this worse: splitting the row on "|" first truncates the cell to
+    "[[npc-files/marabeth.md"."""
+    npcs = GOOD_NPCS.replace("| Maribeth |", "| [[npc-files/marabeth.md|Maribeth]] |")
+    campaign(tmp_path, npcs=npcs)
+    rep = campaign_lint.lint_campaign("demo", tmp_path / "campaigns" / "demo")
+    assert not any("has no '###" in f["message"] for f in rep.findings), messages(rep)
+
+
+def test_drift_is_still_reported_when_the_index_row_is_linked(tmp_path):
+    """The fix above must not blunt the check: a linked row with no ### entry
+    below it is still drift."""
+    npcs = GOOD_NPCS.replace("| Maribeth | fence | none | village | friendly | owes a debt |",
+                             "| Maribeth | fence | none | village | friendly | owes a debt |\n"
+                             "| [[npc-files/old-tam.md|Old Tam]] | fence | none | village | neutral | debt |")
+    campaign(tmp_path, npcs=npcs)
+    rep = campaign_lint.lint_campaign("demo", tmp_path / "campaigns" / "demo")
+    assert any("Old Tam" in f["message"] for f in rep.findings), messages(rep)
+
+
+def test_a_link_is_not_read_as_a_template_placeholder():
+    """A link's own text can carry angle brackets - "[[npc-files/<name>.md]]",
+    "[[Bestiary/Will-o'-Wisp|<wisp>]]" - and _PLACEHOLDER then matches across
+    the link and the filled line is reported as unfilled *and* dropped from the
+    DM's prompt. The link syntax is not a placeholder; the brackets around it
+    are the note name."""
+    from localdm import context
+    for line in ("- Read [[npc-files/<name>.md]] for the roster.",
+                 "- Also [[Bestiary/Will-o'-Wisp|<wisp>]] counts."):
+        assert context.is_template_line(line) == "", line
+
+
+def test_a_real_placeholder_still_reads_as_unfilled():
+    """unlink must not blunt the check it feeds: a genuine <placeholder>, and a
+    placeholder inside inline code, are still reported, so the fix cannot be a
+    blanket suppression of angle brackets."""
+    from localdm import context
+    assert "placeholder" in context.is_template_line("- Party: <their names>")
+    assert "placeholder" in context.is_template_line("- Read `npc-files/<name>.md`.")
+
+
+def test_unlink_returns_the_name_the_reader_sees():
+    from localdm import context
+    assert context.unlink("[[npc-files/hesper-vael.md|Hesper Vael]]") == "Hesper Vael"
+    assert context.unlink("[[arc.md]]") == "arc.md"
+    assert context.unlink("no links here") == "no links here"
 
 
 # ── sheets ───────────────────────────────────────────────────────────────────

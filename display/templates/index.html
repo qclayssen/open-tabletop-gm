@@ -2082,6 +2082,37 @@
     text-align: center;
     padding: 8px 0;
   }
+  /* The creature's portrait, from the same resolver the board's tokens use. The
+     frame and the octagon are the board's vocabulary (tactics.css .tx-ring),
+     so the face on the sheet is visibly the face on the token rather than a
+     separate picture of the same person. `hidden` is the default and only ever
+     removed by a real portrait, so a creature with no art costs no space. */
+  body.input-only #cp-portrait {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 4px 0 12px;
+    margin-bottom: 10px;
+    border-bottom: 1px solid rgba(180,140,60,0.25);
+  }
+  body.input-only #cp-portrait[hidden] { display: none; }
+  body.input-only #cp-portrait img {
+    width: 72px;
+    height: 72px;
+    flex: 0 0 72px;
+    border-radius: 10px;
+    object-fit: cover;
+    background: rgba(180,140,60,0.12);
+    box-shadow: 0 0 0 2px rgba(180,140,60,0.45);
+  }
+  body.input-only #cp-portrait .cp-credit {
+    font: 400 10px/1.4 ui-monospace, monospace;
+    color: rgba(180,140,60,0.55);
+  }
+  body.input-only #cp-portrait .cp-credit b {
+    color: rgba(200,165,90,0.8);
+    font-weight: 600;
+  }
   body.input-only #cp-body { width: 100%; }
   body.input-only #cp-body h1 {
     color: #f4e2a8;
@@ -3242,6 +3273,7 @@
     <!-- Phone-only character sheet pane (Sheet tab) -->
     <div id="character-pane" data-tab-section="character">
       <div id="cp-status">Loading…</div>
+      <div id="cp-portrait" hidden></div>
       <div id="cp-body"></div>
     </div>
   </div>
@@ -7219,12 +7251,19 @@ async function _loadCharacterSheet() {
   const ch = (_qpCh.get('char') || _qpCh.get('character')
               || localStorage.getItem('gm_player_name')
               || '').trim();
+  // Cleared first, before any early return below. The pane is reused across
+  // characters, so a sheet that fails to load would otherwise leave the PREVIOUS
+  // creature's face sitting above an error.
+  _clearSheetPortrait();
   if (!ch) {
     status.textContent = 'No character bound — open with ?char=<Name>';
     bodyEl.innerHTML = '';
     return;
   }
   status.textContent = `Loading ${ch}…`;
+  // Fired, not awaited: the markdown is the sheet, the portrait is a header on
+  // it, and a face that arrives a frame late beats a sheet that does not.
+  _loadSheetPortrait(ch);
   try {
     const res = await fetch(`/character/${encodeURIComponent(ch)}`, {
       headers: _authHeaders(),
@@ -7241,6 +7280,60 @@ async function _loadCharacterSheet() {
     status.textContent = `Network error — ${e.message || e}`;
     bodyEl.innerHTML = '';
   }
+}
+
+// The creature's portrait for the sheet header, from the SAME resolver the board
+// uses for its tokens (tactics/token_portraits.py, reached over /portrait/<name>).
+// That is the point: one name, one picture, two surfaces. A token on the map
+// and this sheet are the same creature and must not be drawn from two lookups
+// that happen to agree today.
+async function _loadSheetPortrait(name) {
+  const holder = document.getElementById('cp-portrait');
+  if (!holder) return;
+  try {
+    const res = await fetch(`/portrait/${encodeURIComponent(name)}`, {
+      headers: _authHeaders(),
+    });
+    if (!res.ok) return;               // 403 or a dead route: no face, no error
+    const info = await res.json();
+    // `url` null means the manifest has no portrait for this creature, which is
+    // the ordinary state for most of the SRD and is not worth a message.
+    // `installed` false while `url` is set means the art is named but the PNGs
+    // were never installed -- a real problem, and one this display cannot fix.
+    if (!info.url) return;
+    if (!info.installed) {
+      holder.innerHTML = `<div class="cp-credit">Portrait not installed — run <b>install_tokens.py</b></div>`;
+      holder.hidden = false;
+      return;
+    }
+    const img = document.createElement('img');
+    img.src = info.url;
+    img.alt = '';
+    // Art is gitignored, so a 404 here is the fresh-clone state. Drop the frame
+    // rather than leave a broken-image glyph in the header.
+    img.addEventListener('error', _clearSheetPortrait);
+    holder.innerHTML = '';
+    holder.appendChild(img);
+    // The board has nowhere to credit the artist, so the sheet is where it goes.
+    // Free to download is not free of the artist's claim (see CREDIT in
+    // token_portraits.py, and display/maps/README.md for the same rule on maps).
+    if (info.credit) {
+      const credit = document.createElement('div');
+      credit.className = 'cp-credit';
+      credit.textContent = `Portrait by ${info.credit}`;
+      holder.appendChild(credit);
+    }
+    holder.hidden = false;
+  } catch (e) {
+    _clearSheetPortrait();
+  }
+}
+
+function _clearSheetPortrait() {
+  const holder = document.getElementById('cp-portrait');
+  if (!holder) return;
+  holder.innerHTML = '';
+  holder.hidden = true;
 }
 
 // Minimal markdown → HTML for character sheets. Supports the subset used in

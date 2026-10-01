@@ -144,6 +144,36 @@ _HEAD_LINE = re.compile(r"^#{1,6} ")
 _TEMPLATE_DEFAULT = re.compile(r"Attitude toward party:\*\*\s*neutral|Current stage:\*\*\s*1\b", re.I)
 _PLACEHOLDER = re.compile(r"<[^>\n]+>")
 _EMPTY_FIELD = re.compile(r"\s*(?:[-*]\s+)?\*\*[^*]+:\*\*[\s|]*(?:\*\*[^*]+:\*\*[\s|]*)*")
+# A campaign vault is an Obsidian vault, so a cross-reference is written
+# [[tournament/00-framework.md|Convergence Trials]]. Those angle brackets are
+# link syntax, not a template placeholder: unmasked, _PLACEHOLDER matches
+# "<tournament/00-framework.md|Convergence Trials>" and the line is classified
+# unfilled, which both warned in the linter and dropped the line from the DM's
+# prompt entirely. A linked line is content.
+_WIKILINK = re.compile(r"\[\[[^\]\n]*\]\](?!\[)")
+
+
+def unlink(text: str) -> str:
+    """`[[target|Shown]]` -> `Shown`, `[[target]]` -> `target`.
+
+    Used wherever a name is read back out of the file: a link and the word it
+    stands for are the same name, and the linter compares index rows to `###`
+    headings that are usually not themselves linked.
+    """
+    return _WIKILINK.sub(
+        lambda m: (m.group(0)[2:-2].split("|")[-1].strip() or m.group(0)[2:-2]), text)
+
+
+def mask_links(text: str) -> str:
+    """Whole links replaced by a neutral token, brackets and all.
+
+    Distinct from unlink, which has to keep the readable name. The template
+    tests must not see a link's *target* either: a vault note can legitimately
+    be called `npc-files/<name>.md`, and `_PLACEHOLDER` would read that as an
+    unfilled `<name>` and drop a finished line from the DM's prompt. Blanking
+    the link entirely leaves the sentence around it to be judged.
+    """
+    return _WIKILINK.sub(" link ", text)
 
 
 def is_template_line(line: str) -> str:
@@ -157,11 +187,14 @@ def is_template_line(line: str) -> str:
     """
     if _is_helper(line):
         return "helper text (italic instructions to the GM)"
-    if _PLACEHOLDER.search(line):
+    # Every template test below runs on the line with its links blanked, so link
+    # syntax can never be mistaken for an empty field or a placeholder.
+    flat = mask_links(line)
+    if _PLACEHOLDER.search(flat):
         return "unfilled <placeholder>"
-    if _TEMPLATE_DEFAULT.search(line):
+    if _TEMPLATE_DEFAULT.search(flat):
         return "template default"
-    if _EMPTY_FIELD.fullmatch(line):
+    if _EMPTY_FIELD.fullmatch(flat):
         return "empty **Field:**"
     if re.fullmatch(r"[|\s:-]*", line):
         return "empty table"

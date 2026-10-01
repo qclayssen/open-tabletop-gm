@@ -16,6 +16,8 @@ Setup and flow
 Encounter design (no combat running — these are for before the fight)
     budget --party auto            what this party can be handed, per difficulty
     rate --monsters "goblin x4"    what a monster list costs that party
+    day --party auto               what a whole adventuring day holds (2014)
+    day --plan "goblin x4|orc x2"  cost a day you have already designed
 
 Actions (the current creature)
     move <token> <square>          e.g. move kairos D5   (preview <token> <square> checks first)
@@ -85,7 +87,7 @@ _DISPLAY_CAMPAIGN = _SCRIPTS.parent / "display" / ".campaign"
 # is an encounter to save, so they must work with nothing running and must not
 # touch combat/pending.json.
 READ_ONLY = ("status", "options", "preview", "reachable", "targets", "log", "spells",
-             "preview-area", "sight", "budget", "rate", "receipts", "formation")
+             "preview-area", "sight", "budget", "day", "rate", "receipts", "formation")
 # `formation` is here even though `formation save` writes a file: pending.json
 # exists to replay the *same* engine dice after a decision, and nothing under
 # `formation` rolls. Saving a formation is a deliberate act, and making it
@@ -672,9 +674,11 @@ def run(args) -> int:
         enc, text = cmd_start(args, camp_dir, roller)
     elif args.cmd == "receipts":
         return receipts.main(["--dir", str(camp_dir)] + (["--rolls", "6"] if args.rolls else []))
-    elif args.cmd in ("budget", "rate"):
+    elif args.cmd in ("budget", "day", "rate"):
         if args.cmd == "budget":
             text, data = encounter.cmd_budget(args, camp_dir, _campaign(args))
+        elif args.cmd == "day":
+            text, data = encounter.cmd_day(args, camp_dir, _campaign(args))
         else:
             text, data = encounter.cmd_rate(args, camp_dir, _campaign(args))
     elif args.cmd == "formation":
@@ -1008,6 +1012,16 @@ def parser() -> argparse.ArgumentParser:
                    help="'auto' (default) is every character sheet in the campaign")
     s.add_argument("--ruleset", choices=list(encounter.RULESETS),
                    help="defaults to the campaign's own system version")
+    s = sub.add_parser("day", parents=c,
+                       help="what a whole adventuring day costs this party (2014)")
+    s.add_argument("--party", default="auto", metavar="auto|NAMES",
+                   help="'auto' (default) is every character sheet in the campaign")
+    s.add_argument("--ruleset", choices=list(encounter.RULESETS),
+                   help="defaults to the campaign's own system version; the day "
+                        "budget itself is 2014 only")
+    s.add_argument("--plan", metavar="FIGHTS",
+                   help="cost a day you have already designed: 'goblin x4 | orc x2'. "
+                        "'|' separates fights, ',' separates monsters within one")
     s = sub.add_parser("rate", parents=c,
                        help="what a list of monsters costs this party")
     s.add_argument("--monsters", required=True, metavar="LIST",

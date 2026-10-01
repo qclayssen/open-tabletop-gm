@@ -246,3 +246,163 @@ def test_a_subsection_before_any_npc_is_not_turned_into_one():
 def test_a_subsection_never_becomes_an_npc_name(records):
     for name in records:
         assert name not in ("personality", "relationships", "notes")
+
+
+# ── the shapes npcs-full.md actually uses ───────────────────────────────────
+#
+# Every case below is a defect that shipped in this parser and produced a
+# character nobody wrote, or no character at all. `NPCS_MD` above is the flat
+# `###` shape; `NPCS_FULL_MD` is the real file's shape, where the 26 `## ` headings
+# are the people and the 19 `### ` headings are their subsections. The original
+# `^###` matcher took the subsections and missed every person, so this script
+# passed 19 tests and emitted nothing for the only campaign that has one.
+
+NPCS_FULL_MD = """# NPCs (full entries): strixhaven-kairos
+
+### Voice sheet (read before any scene with these five)
+- **Juno** (short, blunt): "Right, well."
+
+---
+
+## Juno Ashvale
+- **Role:** Companion, medic | **CR/Level:** as Kairos's level (base: **Acolyte** at 1) | **Location:** first-year hall
+- **Demeanor:** blunt, warm | **Secret:** Vess's assignee
+
+### Personality
+- **Brave ↔ Cowardly:** brave to a fault
+
+---
+
+## Magister Hesper Vael
+- **Role:** Guardian, Owlin archaeomancer | **CR/Level:** **Archmage**-tier | **Location:** Owl Roost
+
+---
+
+## Deans Adrix and Nev (Quandrix, canon post-invasion deans)
+- **Adrix:** the theorist; precise and cool. Runs the probation hearing.
+- **Nev, the Practical Dean:** turns theory into fractals. Warm, and teases.
+
+---
+
+## Quandrix Squad and Campus Faces (minor, no secrets, no suspects)
+- **Tilana Kapule** (Quandrix, outgoing Reader): strategist, gracious about being displaced.
+- **Drazhomir Yarnask** (Quandrix Guard): steady and dry.
+
+---
+
+## Web of Wants (every student NPC: desire, fear/secret, problem with someone)
+
+| NPC | Wants | Fear / Secret |
+|-----|-------|---------------|
+| Juno Ashvale | send money home | forgetting her mother's face |
+"""
+
+FULL = {r["name"]: r for r in ns.parse_npcs(NPCS_FULL_MD)}
+
+
+def test_people_at_the_shallower_heading_level_are_all_found():
+    """The regression this whole file exists for: `^###` matched the subsections."""
+    assert {"Juno Ashvale", "Magister Hesper Vael"} <= set(FULL)
+
+
+def test_the_voice_sheet_is_not_a_character():
+    """A `###` section before any `##` belongs to no NPC."""
+    assert not any("Voice sheet" in name for name in FULL)
+
+
+def test_a_relationship_bullet_is_not_a_roster_of_two_people():
+    """`Relationships:` and `Notes:` are field labels this file writes as bullets.
+
+    Read as names, a single NPC became two characters called "Relationships" and
+    "Notes" -- which is how the first roster rule turned Vess the Tallykeeper into
+    a pair of people. A label that is in the field vocabulary is never a person.
+    """
+    assert "Relationships" not in FULL
+    assert "Notes" not in FULL
+
+
+def test_a_roster_heading_splits_into_the_people_it_names():
+    """`Deans Adrix and Nev` is not a person; Adrix and Nev are."""
+    assert "Adrix" in FULL
+    assert any(name.startswith("Nev") for name in FULL)
+    assert not any("Adrix and Nev" in name for name in FULL)
+
+
+def test_a_roster_member_written_outside_parentheses_is_found():
+    """`- **Tilana Kapule** (Quandrix, Reader): ...` puts the colon outside the bold.
+
+    `_BULLET` requires the colon inside, so this shape matched nothing and the
+    whole Squad came through as one token named after its own heading.
+    """
+    assert "Tilana Kapule" in FULL
+    assert "Drazhomir Yarnask" in FULL
+
+
+def test_a_roster_member_keeps_its_description():
+    """Splitting a roster must not throw the only prose about those people away."""
+    assert "strategist" in FULL["Tilana Kapule"]["description"]
+
+
+def test_a_table_section_is_not_a_character():
+    """`Web of Wants` is a markdown table about people, and defines no fields."""
+    assert not any("Web of Wants" in name for name in FULL)
+
+
+def test_a_prose_subsection_is_kept_verbatim():
+    """Ysolde's `### Stat block (finale)` is the only place her numbers are written.
+
+    A parser that keeps only Personality/Relationships/Notes deletes the most
+    complete statblock in the campaign and emits a block with no HP in its place.
+    """
+    records = ns.parse_npcs(
+        "## Ysolde Marrow\n- **Role:** Mentor\n\n"
+        "### Stat block (finale)\nAC 15 (lattice ward), HP 130, spell save DC 17.\n")
+    traits = records[0]["description"]
+    assert "HP 130" in traits
+    assert "lattice ward" in traits
+
+
+def test_prose_in_the_cr_field_is_not_read_as_a_number():
+    """Four characters shipped with a CR that appears nowhere in the source.
+
+    Taking the first integer anywhere in `CR/Level` gave Mabli Quenn CR 25 (from
+    "reduced HP 25 from level 5"), Theodric Vane CR 6 ("from level 6 Mage reskin"),
+    Vess CR 189 ("book p.189") and Hesper CR 0 ("Scene 0B"). That is the Ruin
+    Grinder failure: a plausible number transcribed from something that was not
+    one, and a Challenge line the table would believe.
+    """
+    for value, expected in (
+        ("base **Apprentice Wizard**-style (use **Mage** at reduced HP 25 from level 5)",
+         "base Apprentice Wizard-style (use Mage at reduced HP 25 from level 5)"),
+        ("from level 6 **Mage** reskin", "from level 6 Mage reskin"),
+        ("**Daemogoth** (book p.189, CR 10)", "Daemogoth (book p.189, CR 10)"),
+        ("**Archmage**-tier", "Archmage-tier"),
+    ):
+        assert ns._cr(value) == expected
+    assert isinstance(ns._cr("base **Apprentice Wizard**-style"), str)
+
+
+def test_a_real_cr_is_still_a_number():
+    """The prose rule must not cost the numbers the GM actually wrote."""
+    assert ns._cr("2") == 2
+    assert ns._cr("**11**") == 11
+    assert ns._cr("0 (dead)") == 0
+
+
+def test_the_entries_file_is_preferred_over_the_index():
+    """`npcs.md` says of itself: "Index only. Full entries ... in `npcs-full.md`".
+
+    Both this script and the linter read `npcs.md` and expect headings, so for
+    `strixhaven-kairos` the miss is structural rather than a parser bug. A
+    campaign with no separate file still resolves.
+    """
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        campaign = pathlib.Path(tmp)
+        (campaign / "npcs.md").write_text(
+            "| Name | Role |\n|------|------|\n| Reeve Aldis Kett | Elected reeve |\n",
+            encoding="utf-8")
+        assert ns.entries_file(campaign).name == "npcs.md"
+        (campaign / "npcs-full.md").write_text("## Reeve Aldis Kett\n- **CR/Level:** 2\n",
+                                               encoding="utf-8")
+        assert ns.entries_file(campaign).name == "npcs-full.md"

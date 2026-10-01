@@ -12,6 +12,47 @@ This project is the LLM-agnostic, system-flexible fork of [claude-dnd-skill](htt
 
 ## [Unreleased]
 
+### Added: `combat.py day` — what a whole adventuring day costs, not one fight
+- **The gap.** `budget` answers what one encounter costs and `rate` answers what a
+  fight just cost. Neither answered the question a GM asks when planning a session
+  rather than rating a fight: *is this a day, or is this three days?* The 2014 DMG
+  tabulates a whole day separately from an encounter, and nothing read it.
+- `ADVENTURING_DAY_XP` (20 rows, DMG ch. 9) and `ENCOUNTERS_PER_DAY` in
+  `systems/dnd5e/xp.py`, not in `encounter.py`. The module states for itself that a
+  second copy of an XP table is a second thing to get wrong, and the day table is an
+  XP table; `encounter.py` imports it the way it already imports `XP_THRESHOLDS`.
+- **`--plan` is the feature; the budget is only the frame.** The day budget alone is
+  close to useless, and the reason is the non-obvious part: the table is *calibrated*
+  so that three to five encounters ARE a day, so dividing the day budget by any
+  difficulty threshold returns 3 to 4 encounters at **every level from 1 to 20**. "A
+  day holds 4 Hard fights" is true at level 1 and at level 20 and tells a GM planning
+  a level 20 day nothing they had not already assumed. The budget can never come out
+  over or under on its own. So `day --plan "goblin x4 | orc x2"` costs a day the GM
+  has already designed, fight by fight, and reports the share with a banded verdict:
+  room for more / a full day / two days / far over, the last naming exhaustion 5.
+- **Each planned fight is rated through `rate()`**, so a day cannot be costed by a
+  second implementation that drifts from the one that costs a single fight, and the
+  2014 monster-count multiplier is applied per fight rather than to the day total
+  (two fights of two is x1.5 twice, not x2 once).
+- **The fight count reported is the count the GM typed.** The first version converted
+  the XP back into a "fights' worth" figure and reported four planned fights as
+  "roughly 1 fights' worth". A GM who planned four fights learns nothing from that,
+  and it is the exact confident-wrong-number failure this command was written against.
+- **`|` separates fights, `,` separates monsters within one.** Reusing the comma for
+  both would make `goblin x4, orc x2` ambiguously one fight or two.
+- **2024 is refused, not derived.** 2024's three tiers are "the party's share of a
+  High-difficulty *day*", so there is no encounter cost to divide and deriving one
+  would produce a number with the right shape and no meaning. A 2024 GM is pointed at
+  `rate`.
+- `day` is in `READ_ONLY`, and a test asserts it writes nothing: no encounter, no
+  `pending.json`, no session-log line. This was a real defect on the first run, not a
+  hypothetical — `day` reached the save path with `enc` still `None` and died on
+  `enc.board()`. A planning tool that mutates fight state can be called at the wrong
+  moment and cost a real roll.
+- 23 tests in `tests/test_adventuring_day.py`. The guard is proven red rather than
+  assumed: with the six source files stashed and the tests kept, **22 of the 23 fail**
+  (the survivor is the argparse-choice test, which needs no new code).
+
 ### Added: random-event oracle and the World Queue (E0, E1)
 - `scripts/oracle.py`: chaos factor (`## Session Flags`), yes/no, and Random Event Focus, ported from the mature tree without `scene_meaning()` (unanchored word pairs dilute an authored world). Rolls go through `scripts/dice.py`; `--seed` replays them. `/gm oracle` documented.
 - `scripts/world_queue.py` and `## World Queue` in `templates/state.md`: off-screen events stored as decisions (`ask`, `if_ignored`, `expires_by`) with an optional `demands:` pressure claim. `roll` seeds at most one entry while fewer than 3 are pending and never sets `demands`; nothing auto-fires; fired entries are kept; three dismissals of one id surface at start; `validate` reports expired entries; there is no date field. The section is optional and is in `DIGEST_SECTIONS` (fired entries in full, pending ones marked do-not-reveal).

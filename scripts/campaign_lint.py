@@ -39,6 +39,9 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from localdm import context
 from map_to_atlas import IMAGE_SUFFIXES, slug
+from npcs_to_statblocks import _SUBSECTIONS as _SUBSECTION_NAMES
+from npcs_to_statblocks import entries_file, parse_npcs
+from npcs_to_statblocks import npc_level as npcs_npc_level
 from paths import campaigns_dir, find_campaign
 
 # The headings the code greps for, and why. DIGEST_SECTIONS goes into the DM
@@ -170,7 +173,7 @@ def lint_state(rep: Report, text: str) -> None:
     # one place a syntax error is silent until the GM reads it mid-session.
     # Scoped to the Campaign Arc section: other sections (World Queue) carry
     # their own yaml fence, and the first fence in the file is not the arc.
-    arc_at = re.search(r"^## Campaign Arc[ \t]*$", text, re.M)
+    arc_at = re.search(r"^## Campaign Arc[ \t]*$", text, re.MULTILINE)
     fence = _FENCE.search(text, arc_at.end() if arc_at else 0)
     if not fence:
         rep.add("warn", "state.md", "no ```yaml block under ## Campaign Arc",
@@ -232,26 +235,103 @@ def lint_world(rep: Report, text: str) -> None:
     lint_placeholders(rep, "world.md", text)
 
 
-def lint_npcs(rep: Report, text: str) -> None:
+def _normal_name(name: str) -> str:
+    """Two spellings of one person, folded to one key.
+
+    The index writes `Prof. Dace Orrin`, the entries write `Professor Dace
+    Orrin`, and a heading may carry an epithet the index row omits
+    (`Esteemed Professor Ysolde Marrow (the Stopped Hand)`). Those are one person
+    written two ways, and reporting them as drift trains people to ignore the
+    lint -- which is how the real drift got buried under 33 false ones.
+
+    Parentheticals are dropped whole rather than normalised inside: `(the Stopped
+    Hand)` is a title, and `(Quandrix, canon post-invasion deans)` is a college
+    and a note. Either way it is not part of the name.
+    """
+    text = re.sub(r"\s*\([^)]*\)", "", name).strip()
+    text = re.sub(r"^(?:esteemed\s+)?(?:prof(?:essor)?|magister|master|mistress|"
+                  r"coach|dean|dr|sir|lady|lord)\b\.?", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"[^\w\s]", " ", text)
+    return " ".join(text.lower().split())
+
+
+def _index_rows(text: str) -> set[str]:
+    """The names in the `| Name | ... |` index table.
+
+    Links are flattened *before* the row is split on "|", not after. A linked name
+    is "[[npc-files/hesper-vael.md|Hesper Vael]]", which carries its own pipe:
+    splitting first cuts the cell at that pipe and leaves the truncated markup
+    "[[npc-files/hesper-vael.md" to compare against the heading, so every linked
+    NPC was reported as a drifted index and the real drift was buried under it.
+    """
+    rows = [context.unlink(ln) for ln in text.splitlines()
+            if ln.strip().startswith("|")
+            and NPC_INDEX_HEADER.split("|")[1].strip() not in ln
+            and not re.fullmatch(r"\|[\s|:-]*\|", ln.strip())]
+    names = {ln.split("|")[1].strip() for ln in rows if len(ln.split("|")) > 2}
+    return {n for n in names if n and not n.startswith("<")}
+
+
+def lint_npcs(rep: Report, text: str, entries_text: str | None = None) -> None:
+    """Lint the NPC index and, separately, the file that holds the entries.
+
+    `entries_text` is the contents of the ENTRIES file (`npcs-full.md`), which for
+    most campaigns is not the file this function was handed.
+
+    Why that matters: `npcs.md` in `strixhaven-kairos` is a 33-row index table with
+    zero headings in it and says so in its own second line -- "Index only. Full
+    entries ... in `npcs-full.md`". Reading it for headings is structurally
+    guaranteed to find nothing, so this function reported 33 drifted index rows and
+    one "no entries" warning for a campaign whose index and entries agree.
+
+    And the heading LEVEL was wrong here even when they were the same file. The 26
+    `## ` headings in `npcs-full.md` are the people; the 19 `### ` are subsections
+    (`Personality`, `Relationships`, `Notes`). `^###` took the subsections and
+    matched no person at all, which is why the linter and the exporter disagreed
+    about the same campaign for the whole life of both.
+    """
     if NPC_INDEX_HEADER not in text:
         rep.add("warn", "npcs.md", "no NPC index table",
                 hint=f"the index is the one-line-per-NPC table: {NPC_INDEX_HEADER}")
-    entries = [m.group(1).strip() for m in re.finditer(r"^### +(.+?)\s*$", text, re.MULTILINE)]
-    named = [e for e in entries if not e.startswith("Personality")
-             and not e.startswith("Relationships") and not e.startswith("Notes")]
+
+    body = entries_text if entries_text is not None else text
+    source = "npcs-full.md" if entries_text is not None else "npcs.md"
+    level = npcs_npc_level(body) if body.strip() else 3
+    entries = [context.unlink(m.group(1)).strip()
+               for m in re.finditer(rf"^#{{{level}}} +(.+?)\s*$", body, re.MULTILINE)]
+    named = [e for e in entries if e.lower() not in _SUBSECTION_NAMES]
     if not named:
-        rep.add("warn", "npcs.md", "no ### NPC entries",
-                hint="one '### <Name>' block per NPC")
-    # A table that disagrees with the entries below it is the failure that
-    # matters: /gm npc adds to one and forgets the other.
-    rows = [ln for ln in text.splitlines() if ln.strip().startswith("|")
-            and NPC_INDEX_HEADER.split("|")[1].strip() not in ln
-            and not re.fullmatch(r"\|[\s|:-]*\|", ln.strip())]
-    indexed = {ln.split("|")[1].strip() for ln in rows if len(ln.split("|")) > 2}
-    indexed = {i for i in indexed if i and not i.startswith("<")}
-    for name in indexed - set(named):
-        rep.add("warn", "npcs.md", f"index row {name!r} has no '### {name}' entry",
-                hint="the index and the entries drifted apart")
+        rep.add("warn", source, f"no {'#' * level} NPC entries",
+                hint=f"one '{'#' * level} <Name>' block per NPC")
+
+    # Roster headings introduce several people at once (`Deans Adrix and Nev`), and
+    # `npcs_to_statblocks` already knows how to split them. Reusing that keeps the
+    # linter's idea of "who exists" identical to the exporter's, which is the whole
+    # point -- two tools disagreeing about the cast is how 33 false warnings happen.
+    rostered = [r["name"] for r in parse_npcs(body)]
+    by_key = {_normal_name(n): n for n in named + rostered}
+    # An index row is often SHORTER than the entry it refers to: the index says
+    # `Soovril`, the heading is `## Soovril, Patient Antiquarian (Lorehold)`, and
+    # `_normal_name` gives "soovril" against "soovril patient antiquarian".
+    # Whole-key equality calls all five of those unwritten -- Augusta, Dean Nev,
+    # Soovril, Jadzi and Tam are all in `npcs-full.md` -- so the leading name token
+    # is what decides. The failure mode is a missed "not written yet" line when two
+    # characters share a first name, which costs an informational message; the
+    # reverse, asserting a written character is unwritten, is the false report that
+    # trains people to ignore the lint.
+    first_tokens = {k.split()[0] for k in by_key if k}
+
+    for name in sorted(_index_rows(text)):
+        key = _normal_name(name)
+        if key in by_key or (key and key.split()[0] in first_tokens):
+            continue
+        # NOT WRITTEN YET is not drift. Half the cast being unwritten is a fact
+        # about the campaign, not a bug, and reporting it at warn severity is how a
+        # lint gets ignored -- which is the same reasoning that made BV9 refuse
+        # rather than fake artwork.
+        rep.add("info", "npcs.md", f"index row {name!r} has no entry yet",
+                hint="not written yet, which is not drift; /gm npc writes it")
+
     lint_placeholders(rep, "npcs.md", text)
 
 
@@ -383,6 +463,22 @@ def _lint_token_art(rep: Report, path: pathlib.Path, folder: str,
                  "as a colour disc, which is playable and not a broken image")
 
 
+def _read_optional(path: pathlib.Path | None) -> str | None:
+    """The contents of a file that is allowed not to exist, or None.
+
+    `entries_file()` returns `npcs.md` itself for a campaign that has no split, and
+    in that case the caller already has the text; returning None for a missing file
+    keeps "no separate entries file" from being distinguishable from "unreadable",
+    which are different problems.
+    """
+    if path is None or not path.is_file():
+        return None
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+
 def lint_campaign(name: str, path: pathlib.Path | None = None) -> Report:
     path = pathlib.Path(path) if path else find_campaign(name, migrate=False)
     rep = Report(name, path)
@@ -407,7 +503,15 @@ def lint_campaign(name: str, path: pathlib.Path | None = None) -> Report:
         if not text.strip():
             rep.add("error", required, "file is empty")
             continue
-        {"state.md": lint_state, "world.md": lint_world, "npcs.md": lint_npcs}[required](rep, text)
+        if required == "npcs.md":
+            # The entries file, when it is not this one. `npcs.md` is frequently an
+            # index-only table (it says so in its own second line for this
+            # campaign), and reading it for headings is structurally guaranteed to
+            # find none -- which is how 33 index rows were reported as drifted
+            # against an index that agrees with its entries perfectly.
+            lint_npcs(rep, text, _read_optional(entries_file(path)))
+        else:
+            {"state.md": lint_state, "world.md": lint_world}[required](rep, text)
 
     sheets = sorted((path / "characters").glob("*.md")) if (path / "characters").is_dir() else []
     if not sheets:

@@ -62,6 +62,10 @@ from paths import (
 # what a map file looks like, and it lives in scripts/ so the CLI and the tests
 # can reach it without going through Flask.
 from tactics import mapeditor as _mapeditor
+# The portrait index, for the one surface with no combat snapshot to read a
+# portrait out of: the character sheet. Same resolver the board goes through
+# (sync.portrait_for), so the two cannot disagree about a creature's face.
+from tactics import token_portraits as _portraits
 
 # Audio module — degrades silently if numpy not installed
 import sys as _sys
@@ -1409,6 +1413,47 @@ def token_portrait(filename):
     guarantee the icons and maps routes rely on.
     """
     return send_from_directory(_TOKENS_DIR, filename)
+
+
+@app.route("/portrait/<path:name>")
+def portrait_for(name):
+    """The portrait for a creature NAME, for the surfaces with no snapshot.
+
+    The board gets its art in the combat snapshot (`sync.portrait_for` ->
+    `portrait` -> `drawToken`). The character sheet has no snapshot, so it asks
+    here instead, and both answers come out of `token_portraits.resolve` -- one
+    resolver, so the token standing on the board and the sheet open beside it
+    cannot show two different faces for one name.
+
+    ALWAYS 200, including for a creature with no art. "This creature has no
+    portrait" is the normal state for most of the SRD's 334 monsters, and a 404
+    would make the sheet's caller treat the ordinary absence as a failure. The
+    three fields that matter are `portrait` (the filename, or null),
+    `installed` (whether that file is really on disk -- the art is third-party
+    and gitignored, so a clone without it has a portrait on the books and none
+    in the browser) and `url` (what to fetch, or null).
+
+    `credit` and `source` ride along whenever there is a portrait. The board has
+    nowhere to put them, so the sheet is where the artist gets named; they are
+    in the response whether or not the art is installed, because a GM whose art
+    failed to install is owed the same credit as one whose art is there.
+    """
+    if not _token_ok():
+        return "Forbidden", 403
+
+    safe = re.sub(r"[^A-Za-z0-9 _-]", "", name).strip()[:50]
+    filename = _portraits.resolve(safe) if safe else None
+    return jsonify({
+        "name": safe,
+        "portrait": filename,
+        "url": _portraits.url(safe) if filename else None,
+        # Two different absences, and the caller cannot tell them apart from a
+        # missing key: the manifest does not know this creature, or it does and
+        # the PNG is not installed. `is_installed` is the only thing that can.
+        "installed": _portraits.is_installed(safe, _TOKENS_DIR),
+        "credit": _portraits.CREDIT if filename else None,
+        "source": _portraits.SOURCE if filename else None,
+    })
 
 
 # ─── Map editor ──────────────────────────────────────────────────────────────

@@ -69,7 +69,15 @@ NARRATION_SENTENCES = 4
 # One retry is the same bargain every other corrective retry in _dm makes: a second
 # overrun is a real cap problem, not bad luck, and is answered by raising rather than
 # by asking again.
-DM_MAX_TOKENS = 600
+#
+# GM_DM_MAX_TOKENS overrides the cap. It has to exist, because the comment above
+# is now true: raising is the documented answer and nothing raised it. 600 fits a
+# non-reasoning local model and starves a reasoning one, which spends the budget
+# before writing the turn -- the draft comes back finish_reason=length with the
+# narration half-finished and no JSON directive, so the turn applies nothing. The
+# retry cannot rescue it (same cap, and LENGTH_RETRIES=1), so a reasoning model
+# loses the turn outright rather than merely truncating it.
+DM_MAX_TOKENS = int(os.environ.get("GM_DM_MAX_TOKENS") or 600)
 LENGTH_RETRIES = 1
 ENEMY_PICK = ("You choose actions for monsters in a tabletop fight. Reply with only the "
               "number of the best option for this creature.\n/no_think")
@@ -1233,7 +1241,7 @@ def main(argv=None) -> int:
     usage = camp_dir / "localdm" / "usage.jsonl"
     client = llm.Client(usage_log=usage)
     local_url = os.environ.get("GM_LOCAL_URL", "").strip()
-    local = llm.Client(base_url=local_url, api_key="", usage_log=usage) if local_url else client
+    local = llm.Client(base_url=local_url, api_key=None, usage_log=usage) if local_url else client
     models = llm.Models.from_env()
     shadow = not args.no_shadow and os.environ.get("GM_SHADOW", "1") != "0"
     status = not args.no_status and os.environ.get("GM_STATUS", "1") != "0"

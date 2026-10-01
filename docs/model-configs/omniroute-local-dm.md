@@ -54,9 +54,33 @@ GM_LLM_URL=http://localhost:11434 GM_DM_MODEL=qwen3:14b GM_ADVISOR_MODEL=qwen3:1
 ```
 
 `GM_NO_THINK=0` stops the `/no_think` suffix (only Qwen3 understands it).
-`GM_REASONING` sets `reasoning_effort` on local calls: `none` (default; Qwen3.5
-ignores `/no_think` and otherwise returns empty turns), `low`/`medium`/`high` to
-let it think, `off` to send nothing.
+`GM_REASONING` sets `reasoning_effort` on local calls: `medium` (default),
+`low` or `high` to let the model think harder, `none` to switch reasoning off
+where the endpoint allows it, and `off` to send no `reasoning_effort` field at
+all.
+
+`none` is the Qwen3.5 setting, not the default. Qwen3.5 ignores `/no_think` and
+otherwise returns empty turns, so a caller on it sets `GM_REASONING=none`
+explicitly. The default is the other way round because a cloud endpoint backed
+by a reasoning model rejects **both** `none` and `off`, with
+
+```
+HTTP 400 Reasoning is mandatory for this endpoint and cannot be disabled.
+```
+
+on the wire. That fails *every* turn, not one, and the transcript shows only
+`model unavailable` lines. If a run dies that way, set `GM_REASONING=low` before
+suspecting the model.
+
+Two endpoint quirks worth knowing, both measured rather than inferred:
+
+- **A cold first call can exceed 30 s.** `preflight.probe` uses a 30 s budget, so
+  a healthy cloud endpoint can be reported as unreachable on the very first call
+  and warm in 4-8 s afterwards. Retry before believing it.
+- **A free tier has a credit budget, and a playtest can exhaust it mid-session.**
+  The failure reads `HTTP 401 ... credits exhausted` and looks like a bad API key.
+  Area coverage silently drops: the turns that 401 are simply not tested, so a
+  report has to say which ones rather than counting them as passes.
 `GM_SHADOW=0` (or `--no-shadow`) turns off the background advisor review.
 
 ## Display

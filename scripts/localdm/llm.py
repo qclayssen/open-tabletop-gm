@@ -15,9 +15,14 @@ Environment:
     GM_COUNCIL_MODEL  /advise council                      (default dm-council)
     GM_FAST_MODEL     enemy picks and summaries            (default: GM_DM_MODEL)
     GM_REASONING      reasoning_effort sent on local-tier calls (dm, picks,
-                      summaries): none (default), low, medium, high, or off to
-                      send nothing. Qwen3.5 ignores /no_think and spends its
-                      whole budget reasoning unless this is "none".
+                      summaries): medium (default), low or high to think harder,
+                      none to switch reasoning off, or off to send no field at
+                      all. Qwen3.5 ignores /no_think and spends its whole budget
+                      reasoning, so a caller on it wants "none". The default is
+                      the other way round on purpose: an endpoint backed by a
+                      reasoning model rejects "none" AND "off" with a 400
+                      ("Reasoning is mandatory for this endpoint"), which fails
+                      every turn rather than one. See reasoning_from_env.
 """
 from __future__ import annotations
 
@@ -121,11 +126,21 @@ class Client:
             # indistinguishable from a working advisor that declined to comment.
             spent = int((data.get("usage") or {}).get("completion_tokens") or 0)
             thought = message.get("reasoning") or message.get("reasoning_content") or ""
-            if thought or spent >= max_tokens:
-                raise LLMError(
-                    f"no answer: {spent}/{max_tokens} completion tokens went to "
-                    f"reasoning, none to the answer. Raise max_tokens, or set "
-                    f"reasoning_effort (GM_REASONING=none).")
+            finish = str((data.get("choices") or [{}])[0].get("finish_reason") or "")
+            # Any blank content is an error, whatever the token count. The old
+            # guard fired only when reasoning was present or the budget was
+            # exhausted, so a blank reply at a PARTIAL budget (measured at
+            # 513/600, finish_reason=length) fell through as a successful call
+            # carrying no text: the turn rendered as nothing at all, with no
+            # error anywhere. For a DM that is a player who types a question and
+            # gets silence, which reads as the game ignoring them.
+            raise LLMError(
+                f"no answer in the reply: {spent}/{max_tokens} completion tokens, "
+                f"finish_reason={finish or 'unknown'}"
+                + (f", {len(thought)} of them reasoning" if thought else "")
+                + ". The model returned empty content. Raise max_tokens, or LOWER "
+                "reasoning_effort (GM_REASONING); if the endpoint mandates "
+                "reasoning, raise GM_DM_MAX_TOKENS instead.")
         usage = data.get("usage") or {}
         try:
             finish = (data["choices"][0] or {}).get("finish_reason") or "stop"
@@ -151,7 +166,15 @@ class Client:
 
 
 def reasoning_from_env() -> str | None:
-    value = os.environ.get("GM_REASONING", "none").strip().lower()
+    # Default "medium", not "none". "none" goes on the wire as
+    # reasoning_effort: "none" (only ""/""off" are dropped), and endpoints
+    # backed by a reasoning model reject that outright -- space-bunny-alpha
+    # answers 400 "Reasoning is mandatory for this endpoint and cannot be
+    # disabled", so every turn fails and the DM narrates nothing. Qwen3.5 is
+    # the one model that wants "none", and it is a local model a caller can
+    # point GM_REASONING at; a cloud reasoning model is the more common case
+    # and it is the one that was broken by default.
+    value = os.environ.get("GM_REASONING", "medium").strip().lower()
     return None if value in ("", "off") else value
 
 

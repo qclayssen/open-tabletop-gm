@@ -236,6 +236,25 @@ class Rules:
         """
         raise NotImplementedError
 
+    def adventuring_day(self, levels: list, ruleset: str = "", plan: list = None) -> dict:
+        """The whole day a party can be handed, not one fight.
+
+        The thresholds above answer what a single encounter costs; this answers
+        how much a day of them costs, which is the question behind "is this a
+        session or a campaign?".
+
+        `plan` is the part that makes it worth asking: a list of planned
+        encounters, each a `groups` list in the shape `rate_encounter` takes. With
+        a plan, the return value also carries the rated fights, their total, and
+        whether the day is under, about right, or over.
+
+        Returns the per-character and party day budgets and how many encounters
+        each difficulty fits. A system with no day concept raises
+        NotImplementedError, which is the honest answer: a day is a table lookup
+        in 2014 and a rules question elsewhere.
+        """
+        raise NotImplementedError
+
     def award_xp(self, sheet_path, amount: int) -> dict:
         """Add XP to one character sheet, in place.
 

@@ -3,8 +3,8 @@
 
 Why this is a measured table and not a detector
 -----------------------------------------------
-Strixhaven's five college sheets are one 2295x5940 JPG each, five painted
-figures interleaved with five lore panels. The obvious implementation is to
+Strixhaven's five college sheets are one 2295x5940 JPG each, six painted
+figures interleaved with six lore panels. The obvious implementation is to
 detect the figures, and four were tried here. Each found the right number of
 regions and the wrong ones: the panels bridge the figures above and below them
 into a single band, so a band centred on a bridge crops the gap between two
@@ -55,28 +55,79 @@ SHEET_SIZE = (2295, 5940)
 # trim a measured box away from the paper beside the figure.
 PANEL_SAT_MAX = 45
 PAPER_LUM_MIN = 190
+# The names are the sheet's own spelling, because the name is what becomes the
+# filename. "ambrose" was a typo in the key for a professor the sheet spells
+# Embrose Lu, and "nivall" had dropped an i off Nivalli. A typo here ships a
+# mislabelled portrait, which passes every check there is.
+#
+# The bands, measured on all five sheets so the next box can be placed against
+# numbers: the left column runs figure / panel / figure / panel / figure /
+# panel, the right column the mirror, and each panel ends in a dark rule about
+# 20px tall. No box may reach up into a panel, and a name label is gold text
+# painted over the art rather than a separate plate, so it is found by eye.
 BOXES: dict[str, list[tuple[str, tuple[int, int, int, int]]]] = {
     "quandrix": [
         ("kainne", (0, 200, 1160, 1010)),
         ("ibrahim", (1060, 1075, 2294, 1830)),
         ("adrix-nev", (40, 1995, 1145, 2760)),
         ("deekah", (1080, 2815, 2265, 3595)),
-        ("ruxa", (0, 3735, 1185, 4500)),
+        # The cap tops of the `RUXA` label sit at y≈4480, so a bottom of 4500 ships
+        # 20px of gold lettering across the bottom of the token. 4470 clears it.
+        ("ruxa", (0, 3735, 1185, 4470)),
+    ],
+    "silverquill": [
+        ("embrose", (469, 200, 1179, 910)),
+        ("shaile", (1110, 1060, 1750, 1700)),
+        ("breena", (298, 2000, 1038, 2740)),
+        ("nils", (1350, 2980, 1930, 3560)),
+        ("fain", (420, 3700, 1120, 4400)),
+        ("mavinda", (1305, 4845, 2035, 5575)),
+    ],
+    # Osgir's top edge sits on the dark rule under Hofri's panel, and that is
+    # load-bearing, not untidiness. Osgir is pale grey stone and trim_panels
+    # reads his head as paper: measured, his brow and goggles sit at 0.57-0.84
+    # panel over 0.5, so any box that starts above them has the face trimmed
+    # clean off. The rule is dark, so the rows on it are not panel, the trim
+    # finds no leading run to drop, and the head survives. Raising y0 past the
+    # rule to "tidy" it silently ships a picture of his collarbone.
+    "lorhold": [
+        ("augusta", (210, 180, 1010, 980)),
+        ("plargg", (1200, 1040, 1800, 1640)),
+        ("hofri", (303, 2090, 957, 2700)),
+        ("osgir", (1400, 2820, 2000, 3540)),
+        ("losheel", (450, 3700, 990, 4240)),
+        ("alibou", (1159, 4610, 2059, 5510)),
     ],
     # Unmeasured. Deliberately empty: the script refuses these rather than
     # falling back to a detector, because a wrong portrait is the one output
     # here that cannot be spotted by a later automated check.
     "witherbloom": [],
-    "silverquill": [],
+    # Five of the six measured and verified; held anyway, and deliberately
+    # empty. Nassari is painted diving with her head tucked into her chest, so
+    # the painting shows the crown of her head and a ruff and no face at all --
+    # there is nothing to cut, and any box here yields a collar and a shoulder
+    # that no later check could tell from a person. Five correct portraits and
+    # a missing sixth is a gap the GM can see. A sixth that looks like a
+    # portrait and is not is the failure this whole module exists to refuse.
     "prismari": [],
-    "lorhold": [],
 }
 
-# Measured, NOT verified. A first pass over the other four colleges found 24
-# boxes and roughly six of them were wrong: two portraits had a lore panel
-# inside them, one caught the wrong figure, and several carried the name label
-# across the chest. They are kept here so the work is not lost, and are NOT in
-# BOXES, so nothing ships from them.
+# Measured, NOT verified. A first pass over the four unreviewed colleges found
+# 24 boxes and claimed about six of them were wrong. Rendering them and looking
+# at every one found fourteen of the eighteen on these three sheets wrong, and
+# that is the number this table now rests on. Five crops had a lore panel or a
+# panel's dark rule inside them (Nils had most of Breena's panel, Nivalli had
+# two, Mavinda and Alibou each had a corner of the panel above, Zaffai had the
+# rule under Veyran's). Six carried the figure's own name label in the frame.
+# Three caught the sheet's ornamented header bar instead of the figure. Three
+# caught no face at all. Only Breena, Veyran and Plargg survived untouched, and
+# Hofri survived intact but framed with his face in the top quarter, so it was
+# re-centred rather than kept.
+#
+# Silverquill and Lorhold were then re-measured and are now in BOXES. What is
+# left here is witherbloom, never reviewed, and prismari, which was reviewed
+# and measured but cannot be completed. Both are held rather than promoted so
+# nothing ships from a box no one has looked at.
 #
 # The obvious fix -- mask the panel by colour, it is bright and low-chroma --
 # does not work on these pages. Measured on the Silverquill sheet, a lore panel
@@ -84,6 +135,19 @@ BOXES: dict[str, list[tuple[str, tuple[int, int, int, int]]]] = {
 # colour. These pages are washed-out pink, and the paintings are as pale as the
 # paper. There is no colour signature to separate them, which is why this has to
 # be eyeballed per figure.
+#
+# The five prismari entries below were re-measured after that review and each
+# one verified by eye against its render. They stay here only because BOXES
+# holds a whole faculty or nothing: five portraits and a hole is not a faculty,
+# and witherbloom has not been reviewed at all.
+#
+# Nassari has no entry here because there is no box worth recording. She is
+# painted diving with her head tucked into her chest: x 1400-1490 y 1210-1270 is
+# the crown and the back of her head, the white shape under it is her ruff, and
+# there is no face anywhere in the panel. Her arm reaches up to y 1150 and her
+# body runs to y 1800, so there are large, clean, lore-free crops of her -- of a
+# person seen from behind their own head. That is precisely the one output here
+# that no later check can catch, so it is not offered as a box.
 UNVERIFIED_BOXES: dict[str, list[tuple[str, tuple[int, int, int, int]]]] = {
     "witherbloom": [
         ("lisette", (90, 90, 1170, 990)),
@@ -93,29 +157,12 @@ UNVERIFIED_BOXES: dict[str, list[tuple[str, tuple[int, int, int, int]]]] = {
         ("tivash", (90, 3720, 1140, 4560)),
         ("yedora", (1140, 4620, 2280, 5490)),
     ],
-    "silverquill": [
-        ("ambrose", (90, 120, 1170, 900)),
-        ("shaile", (1110, 1170, 2295, 1860)),
-        ("breena", (0, 2000, 1290, 2750)),
-        ("nils", (1080, 2310, 2280, 3630)),
-        ("fain", (0, 3960, 990, 4710)),
-        ("mavinda", (1080, 4500, 2220, 5640)),
-    ],
     "prismari": [
-        ("uvilda", (60, 90, 1170, 1020)),
-        ("nassari", (1140, 1140, 2280, 1800)),
+        ("uvilda", (340, 180, 1140, 980)),
         ("veyran", (30, 2040, 1260, 2725)),
-        ("zaffai", (1200, 2850, 2250, 3660)),
-        ("arkin", (60, 3900, 1200, 4560)),
-        ("nivall", (840, 4530, 2280, 5700)),
-    ],
-    "lorhold": [
-        ("augusta", (60, 120, 1170, 1020)),
-        ("plargg", (1080, 1110, 2280, 1800)),
-        ("hofri", (60, 2040, 1200, 2730)),
-        ("osgir", (1110, 2870, 2280, 3540)),
-        ("losheel", (30, 3960, 1170, 4470)),
-        ("alibou", (1140, 4590, 2280, 5715)),
+        ("zaffai", (1425, 2880, 2125, 3580)),
+        ("arkin", (360, 3690, 1060, 4390)),
+        ("nivalli", (1190, 4653, 1930, 5393)),
     ],
 }
 

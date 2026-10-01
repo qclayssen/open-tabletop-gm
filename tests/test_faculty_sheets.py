@@ -32,9 +32,22 @@ QUANDRIX = ("kainne", "ibrahim", "adrix-nev", "deekah", "ruxa")
 
 def test_a_college_with_no_measured_boxes_is_refused_not_guessed():
     """The whole point. A detector here returns a plausible wrong portrait, and
-    nothing downstream can tell it apart from a right one."""
-    for college in ("witherbloom", "silverquill", "prismari", "lorhold"):
+    nothing downstream can tell it apart from a right one.
+
+    Silverquill and Lorehold left this tuple once their eighteen measured boxes
+    were verified by eye, crop by crop, and promoted. Prismari is still here: five
+    of its six figures verified, but Nassari has no face anywhere in her panel --
+    confirmed at 5x with a levels stretch -- and `BOXES` holds a whole faculty or
+    nothing, so shipping five would put a gap in a set that looks complete.
+    """
+    for college in ("witherbloom", "prismari"):
         assert fs.BOXES[college] == [], f"{college} has boxes; update this test"
+
+
+def test_the_colleges_that_shipped_have_a_whole_faculty():
+    """Six figures per sheet, so a shipped college is six -- never five."""
+    for college in ("quandrix", "silverquill", "lorhold"):
+        assert len(fs.BOXES[college]) == 6, f"{college} is not a whole faculty"
 
 
 def test_every_measured_college_lists_the_figures_we_verified():

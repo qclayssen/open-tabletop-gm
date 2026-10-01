@@ -61,6 +61,29 @@ XP_THRESHOLDS: dict[int, tuple[int, int, int, int]] = {
     20: (2800,  5700,  8500,  12700),
 }
 
+# ── Adventuring day XP budget — total XP per character a party can handle in a day ──
+# Source: D&D 5e DMG "Adventuring Day XP Budgets" table (ch. 9, XP).
+#
+# This is a DIFFERENT axis from XP_THRESHOLDS above and confusing the two is the
+# easy mistake: a threshold is what ONE encounter costs, this is what a whole day
+# of encounters costs. Three to five encounters make up an adventuring day, so a
+# day at level 5 is worth about three Hard fights, not one.
+#
+# It lives here, with the other 2014 XP tables, for the reason the module docstring
+# gives: a second copy of an XP table is a second thing to get wrong. `encounter.py`
+# imports it rather than restating it, the same way it imports XP_THRESHOLDS.
+ADVENTURING_DAY_XP: dict[int, int] = {
+    1: 300,     2: 600,     3: 1200,    4: 1700,    5: 3500,
+    6: 4000,    7: 5000,    8: 6000,    9: 7500,    10: 9000,
+    11: 10500,  12: 11500,  13: 13500,  14: 15000,  15: 18000,
+    16: 20000,  17: 25000,  18: 27000,  19: 30000,  20: 40000,
+}
+
+# How many encounters the DMG treats as making up an adventuring day. The day XP
+# budget is a stamina budget, not a scene count: this is the number of fights the
+# table above is actually calibrated for, and it is what makes a day read as a day.
+ENCOUNTERS_PER_DAY = (3, 5)
+
 # ── XP by CR ─────────────────────────────────────────────────────────────────
 CR_XP: dict[str, int] = {
     "0":   10,    "1/8": 25,    "1/4": 50,    "1/2": 100,

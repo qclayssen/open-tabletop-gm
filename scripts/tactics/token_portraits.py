@@ -34,21 +34,51 @@ USING IT
     from . import token_portraits
     token_portraits.resolve("Ghoul")        # -> "ghoul.png" or None
     token_portraits.resolve("Quandrix Scholar 3")  # -> "quandrix-scholar-3.png"
+    token_portraits.url("Daemogoth")        # -> "/tokens/daemogoth.png" or None
 
 The slug is the filename stem, lowercased with every run of non-alphanumerics
 collapsed to a single hyphen. A name that does not slugify to a known portrait
 returns None rather than guessing at a near-match: a wrong portrait on a
 creature is worse than no portrait, because it is a lie the table cannot check.
+
+ONE PICTURE, EVERY SURFACE THAT SHOWS THE CREATURE
+=================================================
+`resolve()` is the only place a creature is turned into a picture, and every
+surface that draws a creature goes through it:
+
+    the board      sync.portrait_for -> snapshot token `portrait` -> drawToken
+    the sheet      GET /portrait/<name> -> token_portraits.url
+    Atlas          map_to_atlas.py --token-art DIR, same slug rule
+
+That is the whole point of the module existing as an index rather than as a
+lookup someone retyped at a call site. A second copy of the slug rule is a
+second opinion about who a creature is, and this codebase's stated position is
+that it may only have one -- see `statblock_art.py`, which is the same argument
+about a different pool. So `url()` below is the display's half of that, and it
+is a wrapper on `resolve()` rather than a parallel lookup: a token on the board
+and the sheet open beside it cannot show different faces for one name.
 """
 
 from __future__ import annotations
 
+import pathlib
 import re
 
-# The directory the display serves portraits from. Absolute, like every other
-# path in the engine, because Flask derives its root from __name__ and only gets
-# that right when run as __main__ (see display/gm-display-app.py).
-TOKENS_DIR = None  # set below, once pathlib is available and __file__ resolves
+# The directory the display serves portraits from, and the URL it serves it at.
+# Both are named here so a caller that needs the file (is_installed) and a
+# caller that needs the URL (url) are reading the same two facts the display
+# route is built from. Absolute, like every other path in the engine, because
+# Flask derives its root from __name__ and only gets that right when run as
+# __main__ (see display/gm-display-app.py).
+TOKENS_DIR = pathlib.Path(__file__).resolve().parents[2] / "display" / "tokens"
+
+# The URL prefix the display serves that directory at. The route is
+# `display/gm-display-app.py` @app.route("/tokens/<path:filename>"), and
+# tactics.js drawToken builds the same string. Three places know this prefix,
+# which is one too many -- so it is named here, the route asserts against it
+# (tests/test_shared_portrait.py), and neither of the other two is free to
+# change it without the board 404ing every portrait in the fight.
+URL_PREFIX = "/tokens/"
 
 CREDIT = "hearden"
 SOURCE = "Strixhaven Tokens, r/StrixhavenDMs"
@@ -218,3 +248,43 @@ def resolve(name: str) -> str | None:
         if hit:
             return f"{hit}.png"
     return None
+
+
+def url(name: str) -> str | None:
+    """A creature name -> the URL to fetch its portrait from, or None.
+
+    The display's half of `resolve()`. The board gets a bare filename in the
+    combat snapshot and builds the URL in `drawToken`; the character sheet has
+    no snapshot, so it asks. Both answers come from here, which is what makes
+    "the token and the sheet show the same face" a property of the code rather
+    than a coincidence of two lookups agreeing.
+
+    A wrapper, not a second lookup. The tempting version of this function is to
+    skip `resolve()` and go to `PORTRAITS` directly, which would be faster and
+    would reintroduce exactly the drift this exists to remove.
+    """
+    filename = resolve(name)
+    return f"{URL_PREFIX}{filename}" if filename else None
+
+
+def is_installed(name: str, tokens_dir=None) -> bool:
+    """Whether this creature's portrait is actually on disk.
+
+    The index and the art are separate on purpose: the PNGs are third-party and
+    gitignored, so `resolve()` names a file that is absent on every fresh clone
+    and the display falls back to the coloured shape. That fallback is the right
+    behaviour and it is not a failure -- but a GM asking "why is my sheet not
+    showing art" deserves a different answer from a GM whose creature has no art
+    at all, and only the filesystem can tell those apart.
+
+    `tokens_dir` exists so a caller passes the directory it actually serves from
+    rather than the one this module assumes. The Flask app has its own
+    `_TOKENS_DIR` and a test may point that at a temporary folder, and an
+    existence check against a different directory than the one being served
+    answers a question nobody asked.
+    """
+    filename = resolve(name)
+    if not filename:
+        return False
+    return (pathlib.Path(tokens_dir) if tokens_dir else TOKENS_DIR).joinpath(
+        filename).is_file()
