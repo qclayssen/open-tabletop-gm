@@ -10,6 +10,7 @@ import threading
 import unittest
 
 from tests.display_sources import read_display_sources
+from tests.display_settle import box_settled, page_ready, present
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 
@@ -92,13 +93,32 @@ class Browser(unittest.TestCase):
         context = self.browser.new_context(viewport={"width": w, "height": h}, **ctx)
         page = context.new_page()
         page.goto(f"http://127.0.0.1:{self.port}/", wait_until="load")
-        page.wait_for_timeout(500)
+        # `wait_until="load"` already covers the scripts. This covers the two things
+        # that are true a beat later and that every measurement below reads wrong
+        # until they are: document.fonts has settled (a 100-character probe span
+        # measured before Cinzel lands gives the wrong characters-per-line, which is
+        # the whole of `test_measure_and_leading`), and display.js's own globals
+        # are installed. Measured on a warm page both are already true when load
+        # fires, so this normally costs nothing, which is the point: the 500ms it
+        # replaces was a fixed cost on every test in the file to cover a
+        # condition that is either true immediately or never.
+        page_ready(page)
         self.addCleanup(context.close)
         return page
 
     def narrate(self, page, text=SAMPLE):
         page.evaluate("t => { handleIncomingText(t); instantFlush(); }", text)
-        page.wait_for_timeout(200)
+        # Not a settle, and the distinction is measured rather than assumed. The
+        # block carries a `fadeIn` animation (display.css:172), so it is at opacity
+        # 0 for the first 600ms and a test that waited for the fade would be
+        # waiting 600ms to read the same numbers. It does not: measured across three
+        # page loads, the block's height is final and its element counts are
+        # identical at t=0 and t=+700ms, and the font-size scan below walks the
+        # same 44 elements at both, because it skips `visibility: hidden` and
+        # `display: none` but not `opacity: 0`. So the block is present with its
+        # final box the moment instantFlush returns, and the 200ms this replaces
+        # was waiting for nothing the assertions in this file read.
+        present(page, ".dm-block")
 
     # 1. typesetting ---------------------------------------------------------
     def test_markdown_renders_as_elements_not_literals(self):
@@ -122,7 +142,10 @@ class Browser(unittest.TestCase):
         page.evaluate("window.__pwn = 0")
         self.narrate(page, '<img src=x onerror="window.__pwn=1"> **b** <script>window.__pwn=2</script>\n'
                            '## <b>h</b>\n- <i onclick="1">x</i>\n')
-        page.wait_for_timeout(200)
+        # narrate() already waited for the block to be laid out, so this second
+        # sleep was reading the same DOM twice with a 200ms gap and nothing in
+        # between. If a payload is ever going to execute it executes when it is
+        # parsed, which is before the block exists.
         got = page.evaluate("""() => ({pwn: window.__pwn,
           imgs: document.querySelectorAll('.dm-block img:not(.block-badge)').length,
           tags: document.querySelectorAll('.dm-block script, .dm-block b, .dm-block i').length,
@@ -133,7 +156,11 @@ class Browser(unittest.TestCase):
     def test_speaker_chip_and_markdown_in_speech(self):
         page = self.open(1200, 784)
         page.evaluate("renderNPCBlock('Hesper', '*She goes still.* **\"No lock,\"** she says.\\nThen more.')")
-        page.wait_for_timeout(300)
+        # renderNPCBlock builds the element synchronously, and what is read below is
+        # text, element counts and two computed style values, none of which a fade
+        # is still changing. The 300ms was covering the arrival of something that
+        # had already arrived.
+        present(page, ".npc-block")
         got = page.evaluate("""() => { const n = document.querySelector('.npc-block .npc-name');
           const cs = getComputedStyle(n);
           return {name: n.textContent, radius: parseFloat(cs.borderTopLeftRadius),
@@ -209,7 +236,12 @@ class Browser(unittest.TestCase):
                 self.assertLessEqual(shut["rail"]["bottom"], shut["colTop"] + 1,
                                      f"the collapsed rail runs over the column: {shut}")
                 page.click("#controls-toggle-row")
-                page.wait_for_timeout(400)
+                # The rail opening, which is a layout change and not a timer.
+                # `#audio-controls` has no transition on its box (display.css gives
+                # the panel a border-colour transition and the rows a background
+                # one), so this normally settles on the first poll, where the 400ms
+                # was paying for it on every one of the eight widths.
+                box_settled(page, "#audio-controls")
                 open_ = page.evaluate(self.COLUMN)
                 self.assertLessEqual(open_["rail"]["bottom"], open_["colTop"] + 1,
                                      f"the open rail runs over the column: {open_}")
@@ -217,12 +249,29 @@ class Browser(unittest.TestCase):
 
     # 2. input panel ---------------------------------------------------------
 
+    def open_input_panel(self, page):
+        """Expand the Party Input panel and wait for it to be where it is going.
+
+        Four tests below do this, and all four were sleeping a fixed 250 to 300ms
+        afterwards. `#input-body` is `display: none` when collapsed (display.css:1588)
+        and the panel's only transition is a border colour, so the box is final the
+        moment the class flips. Measured: the panel is at top 438 / height 324 on
+        the first poll and stays there for 840ms after it.
+
+        Waiting on the panel rather than on `#input-body` is deliberate: the body is
+        what the click unhides, but every assertion below reads the PANEL's box
+        (does it fit the window, does the roll button sit inside it), so the panel
+        is the thing whose size is the subject.
+        """
+        page.click("#input-panel-header")
+        box_settled(page, "#input-panel")
+        return page
+
     def test_roll_button_and_textarea_fit(self):
         for w, h in SIZES:
             with self.subTest(size=(w, h)):
                 page = self.open(w, h)
-                page.click("#input-panel-header")
-                page.wait_for_timeout(250)
+                self.open_input_panel(page)
                 m = page.evaluate("""() => { const r = id => document.getElementById(id).getBoundingClientRect();
                   const p = r('input-panel'), roll = r('dp-roll'), ta = r('player-input-text');
                   const ts = document.getElementById('text-scroll').getBoundingClientRect();
@@ -278,8 +327,10 @@ class Browser(unittest.TestCase):
                 page = self.open(w, h)
                 self.narrate(page)
                 page.evaluate("renderNPCBlock('Hesper', 'hi')")
-                page.click("#input-panel-header")
-                page.wait_for_timeout(300)
+                # The scan below walks every element with a box, so it has to be
+                # the panel's final box: a panel still expanding is a panel whose
+                # hidden rows have not been measured yet.
+                self.open_input_panel(page)
                 small = page.evaluate("""() => { const out = [];
                   document.querySelectorAll('body *').forEach(e => {
                     const r = e.getBoundingClientRect(); if (!r.width || !r.height) return;
@@ -303,22 +354,23 @@ class Browser(unittest.TestCase):
         for w, h in SIZES:
             with self.subTest(size=(w, h)):
                 page = self.open(w, h)
-                page.click("#input-panel-header")
-                page.wait_for_timeout(300)
+                # A target measured while the panel is still expanding is a target
+                # measured at the wrong size, and a 32px floor is exactly the kind
+                # of number a half-open panel is short of.
+                self.open_input_panel(page)
                 self.assertEqual(page.evaluate(self.TARGETS.replace("MIN", "32")), [])
 
     def test_interactive_targets_are_at_least_44px_on_touch(self):
         page = self.open(768, 1024, has_touch=True, is_mobile=True)
         self.assertTrue(page.evaluate("matchMedia('(pointer: coarse)').matches"))
-        page.click("#input-panel-header")
-        page.wait_for_timeout(300)
+        self.open_input_panel(page)
         bad = page.evaluate(self.TARGETS.replace("MIN", "44"))
         self.assertEqual(bad, [])
 
     # 4. accessibility -------------------------------------------------------
     def test_landmarks_labels_and_live_log(self):
         page = self.open(1200, 784)
-        page.click("#input-panel-header")
+        self.open_input_panel(page)
         got = page.evaluate("""() => { const log = document.getElementById('text-scroll');
           const unnamed = [];
           document.querySelectorAll('button,[role=button],textarea,input:not([type=hidden])').forEach(e => {
@@ -350,6 +402,23 @@ class Browser(unittest.TestCase):
         self.assertGreaterEqual(ring[1], 2)
 
     def _raf_count(self, page_args, settle=1200):
+        """Count requestAnimationFrame callbacks over a fixed window.
+
+        THE ONE `wait_for_timeout` IN THIS FILE THAT IS NOT A BUG, and it is left
+        as a timer on purpose. This is not waiting for a layout to settle: it is
+        measuring a RATE. The display runs an animation loop, and the test asks how
+        many frames it asked for in 1200ms, comparing "> 10" (the loop is running)
+        against "<= 3" (it has stopped). There is no predicate to wait on, because
+        the negative case is the absence of the thing: a loop that never starts has
+        no event to wait for and no box that has stopped moving. Any conversion
+        would have to be "wait for the loop to stop", which inverts the test.
+
+        So the 1200 is the measurement window and it is a real number rather than a
+        guess: the two thresholds it feeds (>10 and <=3) are far enough apart that
+        the ~72 frames a 60Hz loop produces in that window is not in doubt, and the
+        two stop-cases are pinned at <=3 rather than ==0 precisely so that a slow
+        machine that delivers a stray frame or two does not turn this red.
+        """
         context = self.browser.new_context(viewport={"width": 1200, "height": 784}, **page_args.get("ctx", {}))
         self.addCleanup(context.close)
         context.add_init_script("""window.__raf = 0; const o = window.requestAnimationFrame;

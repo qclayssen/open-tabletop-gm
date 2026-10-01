@@ -20,6 +20,8 @@ import socketserver
 import threading
 import unittest
 
+from tests.display_settle import box_settled, present
+
 REPO = pathlib.Path(__file__).resolve().parent.parent
 HARNESS = REPO / "display" / "evidence-panel.html"
 PORT = 8749
@@ -71,6 +73,11 @@ PROBE = """() => {
     barAtPanelBottom: Math.round(r(bar).bottom) >= Math.round(r(panel).bottom) - 12,
     leadsPinned: inBar(leads), endTurnInBar: inBar(end),
     endTurnOnScreen: r(end).bottom <= innerHeight && r(end).top >= 0,
+    // How many spell rows actually rendered. Read on every probe so a test that
+    // believes it is measuring a long spell list can say so; see
+    // test_a_phone_keeps_end_turn_on_screen_with_a_long_spell_list, which was
+    // measuring an empty list for want of an `ok` in the fetch stub.
+    spellRows: document.querySelectorAll('.tx-spells .tx-spell').length,
     buttonH: Math.round(r(leads.querySelector('button')).height),
     chipStripes: [...new Set([...document.querySelectorAll('.tx-chip')]
       .map(c => getComputedStyle(c).borderLeftWidth))],
@@ -82,7 +89,7 @@ SPELLS = ("() => { window.__spells = Array.from({length: 14}, (_, i) => ({name: 
           " level: i % 4, mode: 'save', area: {shape: 'sphere', size: 20},"
           " targeting: 'single', range: 60, ok: true}));"
           " window.fetch = u => u === '/combat/do'"
-          " ? Promise.resolve({json: () => Promise.resolve({text: '', result: {spells: window.__spells}})})"
+          " ? Promise.resolve({ok: true, json: () => Promise.resolve({text: '', result: {spells: window.__spells}})})"
           " : Promise.reject(new Error('offline')); }")
 
 
@@ -129,11 +136,24 @@ class MeasuredLayout(unittest.TestCase):
         page = self.browser.new_page(viewport={"width": w, "height": h})
         page.goto(f"http://127.0.0.1:{PORT}/evidence-panel.html", wait_until="load")
         page.wait_for_function("window.__ready === true", timeout=15000)
-        page.wait_for_timeout(200)
+        # The board is drawn inside the harness's own `Tactics.update`, so
+        # `__ready` is already after it. What it is not after is the board's own
+        # entrance: tactics.js leaves `tx-flash` and `tx-pulse` running from the
+        # moment the panel opens, and the panel is sized from the board's box, so
+        # "ready" and "the panel has its final size" are different moments.
+        # The 200ms this replaces was a guess at the second on a fast machine.
+        box_settled(page, "#tx-panel")
         if spell_list:
             page.evaluate(SPELLS)
             page.click("#tx-leads button:has-text('Cast')")
-            page.wait_for_timeout(500)
+            # The list is fetched, then rendered, then `reveal()` scrolls it into
+            # view. Measured: the 14 rows are in the DOM about 6ms after the click
+            # and the panel has grown to 549px of spell box, so the 500ms this
+            # replaces was not measuring the list arriving either. Waited for
+            # instead, on the thing the assertions read.
+            present(page, ".tx-spells .tx-spell",
+                    why="the 14-spell list the SPELLS stub installs")
+            box_settled(page, "#tx-panel")
         out = page.evaluate(PROBE)
         page.close()
         return out
@@ -162,8 +182,20 @@ class MeasuredLayout(unittest.TestCase):
 
     def test_a_phone_keeps_end_turn_on_screen_with_a_long_spell_list(self):
         """The bug: the spell list wrapped the bar to three rows and End turn
-        fell under the fold."""
+        fell under the fold.
+
+        The spell count is asserted first because this test was measuring nothing
+        at all: the SPELLS stub returned `{json: ...}` with no `ok`, and
+        tactics.js:429 branches on `r.ok`, so every fetch took the error path,
+        the 14 spells never rendered, and the "long spell list" was a panel with
+        no list in it. It still passed, because a short spell list also keeps
+        End turn on screen. Dropping `ok: true` again fails here first, which is
+        what makes the rest of the assertions mean what they say.
+        """
         got = self.panel("phone", spell_list=True)
+        self.assertEqual(got["spellRows"], 14,
+                         f"the spell list did not render, so this is not a "
+                         f"long-list measurement: {got}")
         self.assertTrue(got["leadsPinned"], "the lead row scrolled out of the bar")
         self.assertTrue(got["endTurnInBar"], "End turn scrolled out of the bar")
         self.assertTrue(got["endTurnOnScreen"])
@@ -220,8 +252,15 @@ class MeasuredLayout(unittest.TestCase):
             page.evaluate(before_resolve)
         else:
             page.evaluate(self.RESOLVE)
-        # The odds float lives for 1.4s, so it has to be read before it goes.
-        page.wait_for_timeout(200)
+        # The float is removed on a setTimeout(1400) in tactics.js, so it has to
+        # be read DURING its life: not waited for to settle, and not waited for to
+        # go. The third option is to wait for it to EXIST, with a bound well inside
+        # its lifetime, which is what the 200ms sleep was approximating and doing
+        # badly: a fixed sleep is late by exactly as much as the machine is slow,
+        # and a slow machine is how the float goes missing between the wait and the
+        # read. Measured, the float is drawn in the same task as the push, so this
+        # returns in single-digit milliseconds and leaves ~1390ms of its life spare.
+        present(page, ".tx-odds-float", timeout=1000)
         out = page.evaluate(self.ODDS)
         page.close()
         return out
@@ -335,7 +374,8 @@ class MeasuredLayout(unittest.TestCase):
         page.goto(f"http://127.0.0.1:{PORT}/evidence-panel.html", wait_until="load")
         page.wait_for_function("window.__ready === true", timeout=15000)
         page.evaluate(self.RESOLVE)
-        page.wait_for_timeout(200)
+        # In its 1400ms life, and read during it. See panel_with_odds.
+        present(page, ".tx-odds-float", timeout=1000)
         out = page.evaluate("""() => {
           const bd = document.getElementById('tx-board').getBoundingClientRect();
           return [...document.querySelectorAll('.tx-odds-float')].map(f => {
@@ -371,7 +411,8 @@ class MeasuredLayout(unittest.TestCase):
           const n = JSON.parse(JSON.stringify(s));
           Tactics.update(n);
         }""")
-        page.wait_for_timeout(200)
+        # In its 1400ms life, and read during it. See panel_with_odds.
+        present(page, ".tx-odds-float", timeout=1000)
         out = page.evaluate("""() => {
           const bd = document.getElementById('tx-board').getBoundingClientRect();
           const f = document.querySelector('.tx-odds-float');

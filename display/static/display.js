@@ -4101,6 +4101,9 @@ connect();
   _initDicePad();
   // _initDiceBadgeClick is idempotent and guards on a dataset flag.
   _initDiceBadgeClick();
+  // The badge's height is measured once here, then re-measured by its own
+  // observer, so the story's inset follows it (see publishBadgeExtent).
+  watchBadgeExtent();
   _initModeSwitcher(_inputMode);
 }
 
@@ -4359,6 +4362,7 @@ function _updateDicePendingBadge(snapshot) {
   if (entries.length === 0) {
     badge.classList.remove('visible');
     badge.innerHTML = '';
+    publishBadgeExtent();
     return;
   }
   // Most recent request first (best-effort: snapshot order is insertion order on the server).
@@ -4377,6 +4381,40 @@ function _updateDicePendingBadge(snapshot) {
   if (!document.body.classList.contains('input-only')) {
     badge.innerHTML += '<span class="dpb-label">Tap to roll</span>';
   }
+  publishBadgeExtent();
+}
+
+// ── the badge's own extent, published to the stylesheet ──────────────────
+//
+// The badge is position:fixed over the story, so the story has to start below it,
+// exactly as it does below the combat panel. How much room the badge takes is
+// decided by what is in it: one outstanding request is 71px tall, two are 120px,
+// three are 169px, and a long label wraps. A number in the stylesheet cannot
+// follow that, and the one that was there (124px) did not: it is 3px short of a
+// single request's badge and 101px short of three, so the badge sat on the prose
+// in every case. Measured here and read back as --dpb-bottom, which is what
+// tactics.js already does for the panel it sits beside.
+function publishBadgeExtent() {
+  const badge = document.getElementById('dice-pending-badge');
+  // Nothing to clear when it is hidden, and leaving a stale number behind would
+  // hold the story down for a badge that is no longer on screen.
+  if (!badge || !badge.classList.contains('visible')) {
+    document.body.style.removeProperty('--dpb-bottom');
+    return;
+  }
+  document.body.style.setProperty(
+    '--dpb-bottom', Math.round(badge.getBoundingClientRect().bottom) + 'px');
+}
+
+// A ResizeObserver rather than a call after every update, for tactics.js's reason:
+// the badge changes height without this file being involved. The label re-wraps
+// when the window narrows, and a web font arriving late changes the line height.
+function watchBadgeExtent() {
+  const badge = document.getElementById('dice-pending-badge');
+  if (!badge) return;
+  publishBadgeExtent();
+  if (!window.ResizeObserver) return;
+  new ResizeObserver(publishBadgeExtent).observe(badge);
 }
 
 /* N2: the dice pad lives inside the Party Input panel, which is collapsed on the

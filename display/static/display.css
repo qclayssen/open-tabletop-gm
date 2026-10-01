@@ -102,8 +102,14 @@
     overflow-y: auto;
     overflow-x: hidden;
     /* Symmetric insets keep the prose centred on the screen: each side reserves the
-       larger of the two rails (sidebar left, settings and party input right). */
-    padding: 72px max(340px, 18vw) 48px max(340px, 18vw);
+       larger of the two rails (sidebar left, settings and party input right).
+       The top inset is also published as --text-top-inset, because the badge
+       rule below has to start from it rather than restate it: the narrow-width
+       media query changes the top inset to 172px, and a badge that computed
+       from the desktop 72px would then make the story JUMP UP 17px at the
+       moment a roll is requested. */
+    --text-top-inset: 72px;
+    padding: var(--text-top-inset) max(340px, 18vw) 48px max(340px, 18vw);
     z-index: 4;
     scroll-behavior: smooth;
     transition: padding 0.4s ease;
@@ -2393,7 +2399,38 @@
     pointer-events: auto;
     cursor: pointer;
   }
-  body:has(#dice-pending-badge.visible) #text-scroll { padding-top: 124px; }
+  /* The story has to clear the badge as well as the combat panel, and both are
+     fixed overlays measured at run time. This rule used to say 124px, which was
+     56px (the badge's top) plus the height of a one-request badge: 3px short of
+     the badge it was named after, 49px short of two requests and 100px short of
+     three, and 574px short of the combat panel sitting under it (measured at
+     698px at 1200x784). It also won on
+     specificity (`:has()` contributes its argument, so this computed to 2 ids
+     against the panel rule's 1), which is how a fixed number came to override a
+     measurement: with the panel up, --tx-bottom measured 698px and the inset
+     stayed at 124, so the panel covered the story for as long as a dice request
+     was outstanding, and `pad >= txb` could never hold on such a page.
+
+     Both extents are now measured and read back (--dpb-bottom here, --tx-bottom
+     in tactics.js) and the story clears whichever reaches lower. The badge's own
+     clearance is not a second copy of the panel's number, which is why this rule
+     is scoped to `:not(.tx-on)`: with the panel driving the inset, the max() in
+     tactics.css already folds the badge in, and two rules writing the same
+     padding-top would leave the winner to depend on load order. */
+  body:has(#dice-pending-badge.visible):not(.tx-on) #text-scroll {
+    /* A fallback, not a guess: the badge is display:none until a request
+       arrives, so there is no first paint of a visible badge before the extent
+       has been published, and 0px can only be read before it is. The + 28px is
+       the same gap the panel rule uses.
+
+       The max() starts from --text-top-inset, the page's OWN top inset, rather
+       than from a 72px written here. This rule outranks the base rule and the
+       narrow-width one on specificity, so whatever it computes is the inset the
+       story gets, and a badge may only ever push the story down: restating the
+       desktop number would have made it 17px shallower than the page below
+       1100px, where the inset is 172px to clear the settings row. */
+    padding-top: calc(max(var(--text-top-inset, 72px), var(--dpb-bottom, 0px)) + 28px);
+  }
   #dice-pending-badge .dpb-label {
     display: block;
     font-weight: 400;
@@ -3158,7 +3195,10 @@
      1100 is the width where 100vw - 340 - 340 still leaves a readable column
      (421px, 43 characters), so above it the desktop inset is the better trade. */
   @media (max-width: 1100px) {
-    #text-scroll { padding: 172px 20px 72px 20px; }
+    /* --text-top-inset is republished alongside the shorthand, so the badge
+       rule keeps starting from whatever this breakpoint settled on instead of
+       the desktop 72px it would otherwise carry over. */
+    #text-scroll { --text-top-inset: 172px; padding: 172px 20px 72px 20px; }
     #sidebar.has-data:not(.hidden) ~ main #text-scroll { padding-left: 232px; }
     #input-panel { right: 12px; bottom: 12px; width: min(300px, calc(100vw - 24px)); }
     /* With no side rail to sit beside, the settings column becomes one scrollable

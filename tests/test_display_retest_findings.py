@@ -14,6 +14,8 @@ Skipped when playwright or Chromium is absent.
   N-4  the reaction prompt names the acting creature, not the deciding one
   N-5  the roll banner omits the advantage the engine is rolling under
   N-6  a refusal is unreadable, contradicts the banner, and covers the log
+  N-7  a dice-pending badge pins the story's inset to 124px, overriding the
+       measured panel bottom and not clearing the badge either
 """
 import importlib.util
 import itertools
@@ -24,12 +26,14 @@ import threading
 import unittest
 
 from tests.display_sources import read_display_sources
+from tests.display_settle import NO_PADDING_TRANSITION
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 HARNESS = REPO / "display" / "evidence-panel.html"
 
 try:
     from playwright.sync_api import sync_playwright
+    from playwright.sync_api import TimeoutError as PlaywrightTimeout
     HAVE_PLAYWRIGHT = True
 except ImportError:                                        # pragma: no cover
     HAVE_PLAYWRIGHT = False
@@ -135,7 +139,12 @@ class Panel(unittest.TestCase):
     # Taking the transition off is what makes "wait until it stops changing"
     # mean something: with the transition live, "not changing yet" and "finished"
     # are the same observation, and the first is what you get. See settle().
-    NO_PADDING_TRANSITION = "#text-scroll { transition: none !important; }"
+    #
+    # The string is shared with the other two display browser files (which need it
+    # for the same reason) and lives in tests/display_settle.py with the rest of
+    # the waiting vocabulary. It is bound here as a class attribute so the tests
+    # that use it read the same as before.
+    NO_PADDING_TRANSITION = NO_PADDING_TRANSITION
 
     def open(self, size=DESKTOP, snap=None, narrate=True, **ctx):
         context = self.browser.new_context(viewport={"width": size[0], "height": size[1]}, **ctx)
@@ -154,18 +163,33 @@ class Panel(unittest.TestCase):
     # Poll padding-top, not --tx-bottom: the variable is published synchronously by
     # the ResizeObserver, so it is already final (`698px`) on the first read while
     # padding-top is still short of it. Polling the variable returns immediately.
+    #
+    # --dpb-bottom is the dice-pending badge's own measured bottom, published the
+    # same way by display.js. It is here for the same reason: on a page where the
+    # badge is what the story has to clear, it is the only number padding-top can
+    # be compared against. Both are read, and `pad >= max()` is the real
+    # lower bound for "arrived" -- which is the whole point, because a badge with
+    # a fixed 124px under it could never satisfy it.
     SETTLE = """() => {
+      const bs = getComputedStyle(document.body);
       const pad = parseFloat(getComputedStyle(
         document.getElementById('text-scroll')).paddingTop);
-      const txb = parseFloat(getComputedStyle(document.body)
-        .getPropertyValue('--tx-bottom')) || 0;
+      const txb = parseFloat(bs.getPropertyValue('--tx-bottom')) || 0;
+      const dpb = parseFloat(bs.getPropertyValue('--dpb-bottom')) || 0;
       // Both have to be true, and the second is the one that was missing:
       // --tx-bottom is what padding-top is computed FROM, so until it is
       // published there is nothing to be stable relative to, and a padding
       // reading of 72 or 172 is the untouched starting value rather than a
       // settled one. `open()` takes the transition off, so once this holds the
       // value is final rather than momentarily unmoved.
-      if (!txb || pad < txb) return false;
+      //
+      // "At least one", not "--tx-bottom specifically": a page with no combat
+      // panel publishes no --tx-bottom at all, and there the badge is the only
+      // extent there is to settle against. With neither published, padding-top
+      // is sitting on the base 72px inset, which is a constant, so it would read
+      // as perfectly stable and the measurement would be of an unbuilt layout.
+      if (!txb && !dpb) return false;
+      if (pad < Math.max(txb, dpb)) return false;
       const w = window;
       if (w.__mqLastPad === undefined || pad !== w.__mqLastPad) {
         w.__mqLastPad = pad; w.__mqStable = 0; return false;
@@ -216,6 +240,32 @@ class Panel(unittest.TestCase):
         """
         page.wait_for_function(self.SETTLE, polling="raf", timeout=8000)
         page.wait_for_timeout(50)
+
+    def try_settle(self, page, timeout=4000):
+        """settle() as a question rather than a wait, for a page that may not be
+        able to satisfy it.
+
+        The one case where it cannot: an overlay whose rule pins padding-top to a
+        fixed number while a deeper one is measured, so `pad >= max(txb, dpb)` is
+        unsatisfiable rather than merely slow. That is the badge defect below,
+        and settle() against it is four seconds per case ending in a timeout,
+        which is the least informative failure a layout test can produce: it says
+        the page did not settle and nothing about what is wrong with it. So the
+        wait is bounded, the result is discarded, and the geometry read that
+        follows is what names the defect.
+
+        Nothing is given up by not blocking. `open()` has already taken the
+        padding transition off, so on a page where the inset is already at its
+        final (wrong) value there is nothing left to wait for at all; and the
+        tests below assert `pad >= txb` in their own right rather than trusting
+        this to have blocked, so a wait that gave up early cannot hide anything.
+        """
+        try:
+            page.wait_for_function(self.SETTLE, polling="raf", timeout=timeout)
+            page.wait_for_timeout(50)
+        except PlaywrightTimeout:
+            pass
+        return page
 
     # ── N-2: the panel must not be an opaque lid on the story ────────────
     GEOMETRY = """() => {
@@ -495,6 +545,188 @@ class Panel(unittest.TestCase):
                            f"a 40-wide map was squeezed to fit instead of scrolling: {m}")
         self.assertGreaterEqual(round(m["svgW"] / 40), 40, m)
 
+    # ── the badge has to be cleared too, and by a measurement ─────────────
+    # The "Waiting on..." badge is the third fixed overlay over the story, and
+    # it is the newest: display.css answered with a fixed 124px while the panel
+    # beside it published a measured --tx-bottom. Because `:has()` contributes its
+    # argument, the badge rule computed to (2 ids) against the panel rule's (1
+    # id) and beat it outright, so a page with a dice request outstanding had its
+    # story inset pinned to 124px with the panel's bottom measured at 698px. The
+    # panel covered the story for as long as anything was pending, and
+    # `pad >= txb` could not hold, which is the predicate the file settles on.
+
+    BADGE = """(n) => {
+      // The real event handler, fed the shape gm-display-app.py's
+      // _dice_pending_snapshot() produces, rather than the `visible` class set
+      // by hand. The extent is published by the same call that shows the badge,
+      // so a test that added the class itself would be measuring a badge that
+      // nothing had measured, and the number under test would not exist.
+      const snap = [];
+      for (let i = 0; i < n; i++) {
+        snap.push({request_id: 'req-' + i, pending: ['Piper'],
+                   label: 'Fire Bolt, attack'});
+      }
+      _updateDicePendingBadge(snap);
+    }"""
+
+    BADGE_GEOMETRY = """() => {
+      const r = e => e.getBoundingClientRect();
+      const bs = getComputedStyle(document.body);
+      const b = document.getElementById('dice-pending-badge');
+      const p = document.getElementById('tx-panel');
+      const first = document.querySelector('#text-content .dm-block');
+      return {pad: parseFloat(getComputedStyle(
+                document.getElementById('text-scroll')).paddingTop),
+              txb: parseFloat(bs.getPropertyValue('--tx-bottom')) || 0,
+              dpb: parseFloat(bs.getPropertyValue('--dpb-bottom')) || 0,
+              visible: b.classList.contains('visible'),
+              badge: {h: Math.round(r(b).height), t: Math.round(r(b).top),
+                      b: Math.round(r(b).bottom)},
+              panelB: p.hidden ? 0 : Math.round(r(p).bottom),
+              prose: first ? Math.round(r(first).top) : null};
+    }"""
+
+    def show_badge(self, page, n=1):
+        """Show the badge through the real handler, then read the geometry.
+
+        try_settle() rather than settle(), deliberately: on the pre-fix CSS this
+        page cannot settle at all, and saying so in a message that carries the
+        numbers is the point of these tests.
+        """
+        page.evaluate(self.BADGE, n)
+        self.try_settle(page)
+        return page.evaluate(self.BADGE_GEOMETRY)
+
+    def assert_cleared(self, m):
+        """The invariant, in the order that makes the pre-fix failure readable.
+
+        The first two are geometry read off the elements themselves, so they hold
+        in any world: the inset has to be at least as deep as the badge that is
+        on screen, and the story's first line has to start below the deepest
+        overlay. The pre-fix CSS fails the first with "124 not >= 127" for a
+        one-request badge and "124 not >= 698" the moment the panel is up, which
+        is the defect stated in a sentence.
+
+        The last is the mechanism rather than the effect: the number the
+        stylesheet used IS the badge's measured bottom, so a larger constant
+        (300px would clear every badge in this file) cannot pass. Without it the
+        first two would only pin "big enough", which is how 124 got there.
+        """
+        self.assertGreaterEqual(m["pad"], m["badge"]["b"],
+                                f"the inset does not clear the badge: {m}")
+        self.assertGreaterEqual(m["prose"], m["badge"]["b"],
+                                f"the badge covers the story: {m}")
+        if m["txb"]:
+            self.assertGreaterEqual(m["pad"], m["txb"],
+                                    f"the inset stopped following the panel: {m}")
+            self.assertGreaterEqual(m["prose"], m["panelB"],
+                                    f"the panel covers the story: {m}")
+        if m["visible"]:
+            self.assertEqual(m["dpb"], m["badge"]["b"],
+                             f"the inset is not following the measured badge: {m}")
+
+    def test_a_visible_badge_does_not_unmeasure_the_panel_inset(self):
+        """The defect, in the shape it shipped: badge visible, panel up, story
+        under the board.
+
+        Every case here is a page where something is waiting on a roll, which is
+        exactly when a player is most likely to be reading the story. The
+        `pad >= txb` half is the predicate the rest of this file settles on, and
+        it is asserted rather than waited on, because a product that cannot
+        satisfy it is a defect and not a slow machine.
+        """
+        for size in (DESKTOP, (1024, 768), IFRAME, PHONE):
+            for n in (1, 3):
+                with self.subTest(size=size, pending=n):
+                    page = self.open(size, snapshot())
+                    m = self.show_badge(page, n)
+                    self.assertTrue(m["visible"], f"the badge never showed: {m}")
+                    self.assertTrue(m["txb"], f"--tx-bottom was never set: {m}")
+                    self.assert_cleared(m)
+
+    def test_the_badge_is_cleared_whatever_it_has_in_it(self):
+        """The other half, and the reason the value is measured rather than a
+        bigger constant: the badge is as tall as the requests in it, and it does
+        not stop at one. 124px is 56px (the badge's top) plus a one-request
+        badge, so it was already 3px short there, 49px short of two and 100px of
+        three, with the story's first line unmoved at y=157 throughout."""
+        for n in (1, 2, 3):
+            with self.subTest(pending=n):
+                page = self.open(DESKTOP, snapshot())
+                m = self.show_badge(page, n)
+                self.assert_cleared(m)
+                # A one-request badge is the case the 124 was sized for, and the
+                # only one where the old number was nearly right, so it is the
+                # one that would not have been noticed by eye.
+                if n == 1:
+                    self.assertGreaterEqual(m["pad"], 124, m)
+
+    def test_a_badge_on_a_page_with_no_panel_still_pushes_the_story_down(self):
+        """The case the 124 existed for, and the one a naive "only while the
+        panel is driving the inset" scoping would have thrown away.
+
+        There is no --tx-bottom here at all: `hide()` removes it along with the
+        panel (tactics.js:632,965), so the base 72px inset is what the story
+        would otherwise start under and the badge would sit on it. That is why
+        the badge rule is scoped to `:not(.tx-on)` rather than deleted, and why
+        settle() accepts --dpb-bottom as an extent to settle against.
+        """
+        page = self.open(DESKTOP, None, narrate=True)
+        self.assertFalse(page.evaluate("document.body.classList.contains('tx-on')"))
+        for n in (1, 3):
+            with self.subTest(pending=n):
+                m = self.show_badge(page, n)
+                self.assertEqual(m["txb"], 0, f"--tx-bottom should be gone: {m}")
+                self.assert_cleared(m)
+                if n == 1:
+                    self.assertGreaterEqual(m["pad"], 124, m)
+
+    def test_a_badge_never_shrinks_the_inset_the_page_already_had(self):
+        """The one way the measured badge can still be wrong while every other
+        assertion here passes.
+
+        The badge rule wins on specificity against BOTH the 72px base and the
+        172px narrow-width inset, and `max(72px, --dpb-bottom) + 28px` only knows
+        about the first. Below 1100px the page is inset to 172px to clear the
+        settings row across the top band, and a one-request badge measures 127px,
+        so the badge rule computes 155px: 17px SHALLOWER than the page it is
+        added to. Nothing overlaps, so assert_cleared() is silent about it, and
+        the story jumps up 17px when a dice request arrives, which is a visible
+        jump for the reader at the moment a roll is pending.
+
+        The invariant is about the direction of the change, not about a number:
+        showing a badge may only ever push the story DOWN, never up. The baseline
+        is read from the same page with no badge, so this cannot be satisfied by
+        picking a bigger constant in the badge rule.
+        """
+        for size in (PHONE, IFRAME):
+            with self.subTest(size=size):
+                page = self.open(size, None, narrate=True)
+                base = page.evaluate(self.BADGE_GEOMETRY)["pad"]
+                for n in (1, 3):
+                    m = self.show_badge(page, n)
+                    self.assert_cleared(m)
+                    self.assertGreaterEqual(
+                        m["pad"], base,
+                        f"a {n}-request badge made the inset shallower than the "
+                        f"page's own {base}px: {m}")
+                page.evaluate("() => _updateDicePendingBadge([])")
+                self.try_settle(page)
+                page.close()
+
+    def test_a_badge_that_goes_away_takes_its_inset_with_it(self):
+        """A stale --dpb-bottom would hold the story down for a badge that is no
+        longer on screen, which is the failure mode a publish-and-forget has. The
+        empty snapshot is what the server sends once the last request resolves."""
+        page = self.open(DESKTOP, snapshot())
+        self.show_badge(page, 2)
+        page.evaluate("() => _updateDicePendingBadge([])")
+        self.try_settle(page)
+        m = page.evaluate(self.BADGE_GEOMETRY)
+        self.assertFalse(m["visible"], m)
+        self.assertEqual(m["dpb"], 0, f"--dpb-bottom was left behind: {m}")
+        self.assert_cleared(m)
+
     # ── N-4 and N-5: the banner names the right creature and the right roll ──
     BANNER = """(pending) => ({
       banner: document.getElementById('tx-banner').textContent,
@@ -708,6 +940,59 @@ class ClientWording(unittest.TestCase):
     tactics = (REPO / "display" / "static" / "tactics.js").read_text(encoding="utf-8")
     cli = (REPO / "scripts" / "tactics" / "cli.py").read_text(encoding="utf-8")
     app = (REPO / "display" / "gm-display-app.py").read_text(encoding="utf-8")
+
+    def test_the_badge_inset_is_measured_and_never_a_fixed_padding(self):
+        """The static half of the badge defect, which is the half that runs when
+        playwright does not. Every browser test in the file skips to green on a
+        machine with no Chromium, and a stylesheet regression is exactly the kind
+        that would go unnoticed there.
+
+        Two things are pinned, and the second is the one that matters. The rule
+        that gives the story room for a visible badge must read --dpb-bottom
+        (display.js measures the badge and publishes its bottom) rather than a
+        number. And that rule must be scoped to `:not(.tx-on)`, so it cannot win
+        against the panel rule on specificity: `:has()` contributes its argument,
+        which is how a fixed 124px came to override a measured --tx-bottom of
+        698px and cover the story for as long as a dice request was outstanding.
+        """
+        rules = re.findall(r"((?:body:has\(#dice-pending-badge\.visible\)[^{]*)?"
+                           r"#text-scroll\s*\{)([^}]*)\}", self._src.css, re.S)
+        rules = [(s, b) for s, b in rules if "dice-pending-badge" in s]
+        self.assertEqual(len(rules), 1,
+                         f"expected exactly one badge inset rule, found {rules}")
+        selector, rule = rules[0]
+        self.assertIn(":not(.tx-on)", selector,
+                      f"the badge rule can still outrank the panel rule: {selector}")
+        self.assertIn("--dpb-bottom", rule,
+                      f"the badge inset is not measured: {rule}")
+        # Not a bare constant. `padding-top: 124px` is the defect, and so would
+        # be 300px, which clears every badge in this file: what has to be pinned
+        # is that the clearance is a function of the measurement. The 72px base
+        # inset and the 28px gap inside the calc() are deliberate and named (the
+        # 28 is the same gap the panel rule uses, and the 72 is the base inset
+        # from the #text-scroll rule above), so only a wholly literal value is
+        # refused here.
+        pad = re.search(r"padding-top:\s*([^;]+);", rule)
+        self.assertIsNotNone(pad, rule)
+        self.assertIsNone(re.fullmatch(r"\s*\d+px\s*", pad.group(1)),
+                          f"the badge inset is a fixed padding: {pad.group(1)!r}")
+        self.assertTrue(pad.group(1).count("(") >= 2 and "var(" in pad.group(1),
+                        f"the badge inset does not compute from the measurement: "
+                        f"{pad.group(1)!r}")
+
+    def test_the_badge_publishes_its_own_extent(self):
+        """Both halves of the publish, because either one alone leaves the other
+        broken: without the removeProperty a finished request holds the story
+        down for a badge that has gone, and without the ResizeObserver the first
+        measurement is all there ever is (a web font landing, or a window
+        narrowing and re-wrapping the label, changes the badge's height without
+        _updateDicePendingBadge running)."""
+        for name, src in (("display.js", self._src.js), ("tactics.js", self.tactics)):
+            self.assertIn("--dpb-bottom" if name == "display.js" else "--tx-bottom", src,
+                          f"{name} never publishes its panel extent")
+        self.assertIn("publishBadgeExtent", self._src.js)
+        self.assertIn("removeProperty('--dpb-bottom')", self._src.js)
+        self.assertIn("watchBadgeExtent", self._src.js)
 
     def test_no_em_dash_in_the_new_client_text(self):
         for name, text in (("display.js", self._src.js), ("tactics.js", self.tactics)):
