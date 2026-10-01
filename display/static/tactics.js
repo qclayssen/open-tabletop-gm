@@ -46,7 +46,16 @@
   const label = (x, y) => colLabel(x) + (y + 1);
   const parseSq = s => { const m = /^([A-Z]+)(\d+)$/.exec(s || ''); if (!m) return null;
     let x = 0; for (const ch of m[1]) x = x * 26 + (ch.charCodeAt(0) - 64); return [x - 1, +m[2] - 1]; };
-  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  // The one escape helper for the display is esc(), at the top of
+  // display/static/display.js. That file is a classic script, so esc() is a
+  // global, and index.html loads display.js before this one. This file is also
+  // loaded on its own by display/evidence-panel.html (the layout harness, which
+  // does not load display.js), hence the fallback: the same five characters, the
+  // same null handling, so the two definitions cannot drift in behaviour.
+  // tests/test_display_xss.py pins that they are equivalent.
+  const esc = window.esc || (s => String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;'));
   const svg = (tag, attrs, parent) => { const n = document.createElementNS(SVGNS, tag);
     for (const k in attrs) n.setAttribute(k, attrs[k]); if (parent) parent.appendChild(n); return n; };
   const tokenById = id => ((snap && snap.tokens) || []).find(t => t.id === id);
@@ -621,12 +630,17 @@
       c.setAttribute('role', 'listitem');
       if (id === snap.current) c.setAttribute('aria-current', 'true');
       if (tg.length) c.title = tg.join(', ');
+      // side.glyph and side.word are the constants in the SIDES table, so they
+      // need nothing. ac, hp and max_hp come from the snapshot, and /combat
+      // stores the posted dict as-is without validating it, so they are escaped
+      // here: hp and max_hp sit inside an aria-label attribute, where a quote
+      // would close it and start a tag.
       c.innerHTML = `<span class="tx-chip-top"><i class="tx-side-glyph" aria-hidden="true">${side.glyph}</i>` +
         `<span class="tx-sr">${side.word}.</span><span class="tx-chip-name">${esc(t.name)}</span>` +
-        `<span class="tx-ac" title="Armor Class">AC ${ac}</span></span>` +
+        `<span class="tx-ac" title="Armor Class">AC ${esc(ac)}</span></span>` +
         (id === snap.current ? econPips() : '') +
-        `<span class="tx-hpbar" role="img" aria-label="${t.hp} of ${t.max_hp} HP"><i class="${pct <= 25 ? 'tx-low' : ''}" style="width:${pct}%"></i></span>` +
-        `<span>${t.dead ? 'dead' : t.hp + '/' + t.max_hp + ' HP'}${tg.length ? ' · ' + esc(tg.join(', ')) : ''}</span>${pips}`;
+        `<span class="tx-hpbar" role="img" aria-label="${esc(t.hp)} of ${esc(t.max_hp)} HP"><i class="${pct <= 25 ? 'tx-low' : ''}" style="width:${pct}%"></i></span>` +
+        `<span>${t.dead ? 'dead' : esc(t.hp + '/' + t.max_hp) + ' HP'}${tg.length ? ' · ' + esc(tg.join(', ')) : ''}</span>${pips}`;
       el.strip.appendChild(c);
     }
   }

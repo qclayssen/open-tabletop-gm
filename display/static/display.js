@@ -1,6 +1,32 @@
 'use strict';
 
 // ═══════════════════════════════════════════════════════════════════
+// THE ONE HTML-ESCAPE HELPER
+// ═══════════════════════════════════════════════════════════════════
+// Every value that reaches innerHTML from the network (character names, race,
+// class, conditions, spell names, dice labels, UI-manifest strings) passes
+// through esc() here. There used to be three helpers in this file (_escHtml,
+// _esc, and a local copy inside _renderMarkdown) that disagreed about quotes,
+// and two of them were used inside HTML attributes, where an unescaped quote
+// is an injection. One helper, one set of characters, no per-callsite choices.
+//
+// Server-side sanitization for labels and character names strips shell
+// metacharacters (` $ \) but does NOT strip < > &, so escaping here is the
+// only thing standing between an LLM-chosen name and script in the DM's
+// browser, which holds the LAN token in <meta name="dnd-token">.
+//
+// display/static/tactics.js uses this same function (it is a global, because
+// this file is a classic script and tactics.js is loaded after it).
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // SCENE MANAGEMENT
 // ═══════════════════════════════════════════════════════════════════
 
@@ -1470,9 +1496,15 @@ function _renderInspirationBlockNow(name, reason) {
   block.className = 'inspiration-block';
   const title = document.createElement('div');
   title.className = 'inspiration-title';
-  title.innerHTML = `<img src="/icons/focus.png" style="width:22px;height:22px;vertical-align:middle;opacity:0.85;margin-right:10px;filter:drop-shadow(0 0 6px rgba(220,190,60,0.6))">` +
-    `${name}` +
-    `<img src="/icons/focus.png" style="width:22px;height:22px;vertical-align:middle;opacity:0.85;margin-left:10px;filter:drop-shadow(0 0 6px rgba(220,190,60,0.6))">`;
+  // The two focus icons are fixed markup (only their margins differ), and the
+  // award name between them is plain text. The name used to be interpolated
+  // straight into this template, unescaped: it arrives as payload.inspiration_award
+  // over SSE. Two fixed images plus one text node, no interpolation at all.
+  const ICON = (m) => '<img src="/icons/focus.png" style="width:22px;height:22px;vertical-align:middle;'
+    + `opacity:0.85;margin-${m}:10px;filter:drop-shadow(0 0 6px rgba(220,190,60,0.6))">`;
+  title.innerHTML = ICON('right');
+  title.appendChild(document.createTextNode(String(name == null ? '' : name)));
+  title.insertAdjacentHTML('beforeend', ICON('left'));
   const sub = document.createElement('div');
   sub.className = 'inspiration-sub';
   sub.textContent = 'Inspiration';
@@ -1504,8 +1536,8 @@ function _renderMilestoneBlockNow(name, label, reason, isReplay) {
   const header = document.createElement('div');
   header.className = 'milestone-header';
   header.innerHTML = `<span class="milestone-icon">✦</span>` +
-                     `<span class="milestone-name">${_escHtml(name)}</span>` +
-                     `<span class="milestone-label">${_escHtml(label)}</span>`;
+                     `<span class="milestone-name">${esc(name)}</span>` +
+                     `<span class="milestone-label">${esc(label)}</span>`;
   block.appendChild(header);
   if (reason) {
     const detail = document.createElement('div');
@@ -1805,9 +1837,13 @@ function _wBar(card, p, w) {
   const row = document.createElement('div');
   row.className = w.row_class || 'sb-hp-row';
   const maxLabel = (w.max === 'next') ? (max ?? '?') : (max ?? '—');
+  // w.icon and w.num_class come from the system UI manifest (systems/<system>/
+  // ui.json), so they are semi-trusted: not the network, but a file a campaign
+  // can ship. Both land inside an HTML attribute, so a quote in either one
+  // would close the attribute and start a tag. esc() covers the attribute case.
   row.innerHTML =
-    `${w.icon ? `<img src="${w.icon}" class="sb-row-icon" alt="">` : ''}<span class="sb-label">${_escHtml(w.label || '')}</span>
-    <span class="${w.num_class || 'sb-hp-nums'}">${_escHtml(cur ?? '—')} / ${_escHtml(maxLabel)}</span>`;
+    `${w.icon ? `<img src="${esc(w.icon)}" class="sb-row-icon" alt="">` : ''}<span class="sb-label">${esc(w.label || '')}</span>
+    <span class="${esc(w.num_class || 'sb-hp-nums')}">${esc(cur ?? '—')} / ${esc(maxLabel)}</span>`;
   card.appendChild(row);
   const track = document.createElement('div');
   track.className = 'sb-bar-track';
@@ -1834,9 +1870,9 @@ function _wStatLines(card, p, w) {
   (w.lines || []).forEach(ln => {
     const v = _bind(p, ln.bind);
     if (ln.format === 'hd') {
-      if (v) out.push(`${_escHtml(ln.label)} <span class="val">${_escHtml(v.remaining ?? '?')}/${_escHtml(v.max ?? '?')} ${_escHtml(v.die || '')}</span>`);
+      if (v) out.push(`${esc(ln.label)} <span class="val">${esc(v.remaining ?? '?')}/${esc(v.max ?? '?')} ${esc(v.die || '')}</span>`);
     } else if (v != null) {
-      out.push(`${_escHtml(ln.label)} <span class="val">${_escHtml(v)}</span>`);
+      out.push(`${esc(ln.label)} <span class="val">${esc(v)}</span>`);
     }
   });
   if (!out.length) return;
@@ -1947,7 +1983,7 @@ function _wFeatureFlags(card, p, w) {
   el.dataset.role = 'features';
   el.innerHTML = feats.map(f => {
     const dim = f.endsWith('✗');
-    return `<span style="color:${dim ? 'rgba(200,185,150,0.25)' : 'rgba(140,190,140,0.6)'}">${_escHtml(f)}</span>`;
+    return `<span style="color:${dim ? 'rgba(200,185,150,0.25)' : 'rgba(140,190,140,0.6)'}">${esc(f)}</span>`;
   }).join('<br>');
   card.appendChild(el);
 }
@@ -2007,8 +2043,8 @@ function _buildPlayerCard(p, solo) {
   const line1 = [];
   if (p.race)    line1.push(p.race);
   if (baseClass) line1.push(baseClass + (p.level ? ' ' + p.level : ''));
-  identEl.innerHTML = _escHtml(line1.join(' · ') || '—') +
-    (subLine ? `<br><span style="opacity:0.7">${_escHtml(subLine)}</span>` : '');
+  identEl.innerHTML = esc(line1.join(' · ') || '—') +
+    (subLine ? `<br><span style="opacity:0.7">${esc(subLine)}</span>` : '');
   card.appendChild(identEl);
 
   // Stat widgets — driven by the active system's UI manifest (systems/<system>/ui.json
@@ -2085,7 +2121,7 @@ function openSheet(name) {
   const _stripCell = (label, val) => {
     const cell = document.createElement('div');
     cell.className = 'sm-stat-cell';
-    cell.innerHTML = `<span class="sm-stat-label">${_escHtml(label)}</span><span class="sm-stat-val">${_escHtml(val)}</span>`;
+    cell.innerHTML = `<span class="sm-stat-label">${esc(label)}</span><span class="sm-stat-val">${esc(val)}</span>`;
     strip.appendChild(cell);
   };
   _stripDef.forEach(entry => {
@@ -2134,9 +2170,9 @@ function openSheet(name) {
       else { score = raw; }
       const cell = document.createElement('div');
       cell.className = 'sm-ab-cell';
-      cell.innerHTML = `<div class="sm-ab-name">${_escHtml(st.label || String(st.key).toUpperCase())}</div>
-        <div class="sm-ab-score">${_escHtml(score ?? '—')}</div>` +
-        (showMod ? `<div class="sm-ab-mod">${_escHtml(mod ?? '—')}</div>` : '');
+      cell.innerHTML = `<div class="sm-ab-name">${esc(st.label || String(st.key).toUpperCase())}</div>
+        <div class="sm-ab-score">${esc(score ?? '—')}</div>` +
+        (showMod ? `<div class="sm-ab-mod">${esc(mod ?? '—')}</div>` : '');
       grid.appendChild(cell);
     });
     content.appendChild(grid);
@@ -2173,8 +2209,8 @@ function openSheet(name) {
       if (a.name) { nameCell.dataset.srdName = a.name; nameCell.dataset.srdCategory = 'item'; }
       tr.appendChild(nameCell);
       tr.insertAdjacentHTML('beforeend',
-        `<td>${_escHtml(a.bonus||'—')}</td><td>${_escHtml(a.damage||'—')}</td>
-         <td>${_escHtml(a.type||'—')}</td><td class="atk-notes">${_escHtml(a.notes||'')}</td>`);
+        `<td>${esc(a.bonus||'—')}</td><td>${esc(a.damage||'—')}</td>
+         <td>${esc(a.type||'—')}</td><td class="atk-notes">${esc(a.notes||'')}</td>`);
       tbody.appendChild(tr);
     });
     table.appendChild(tbody);
@@ -2353,7 +2389,7 @@ function openSrdModal(name, category, level) {
         const refUrl   = data.reference_url || data.wikidot_url || '';
         const refLabel = data.reference_label || 'View on D&D 5e Wiki';
         const linkHtml = refUrl
-          ? `<br><a href="${_esc(refUrl)}" target="_blank" rel="noopener" style="color:#c9a84c;font-size:12px;opacity:0.85;text-decoration:none;">${_esc(refLabel)} ↗</a>`
+          ? `<br><a href="${esc(refUrl)}" target="_blank" rel="noopener" style="color:#c9a84c;font-size:12px;opacity:0.85;text-decoration:none;">${esc(refLabel)} ↗</a>`
           : `<br><span style="font-size:12px;opacity:0.6">May be from a supplement (Xanathar's, Tasha's, etc.)</span>`;
         // Near-miss "did you mean?" chips — tap one to re-run the lookup on the
         // closest matching name. Recovers a mistyped spell/condition/monster
@@ -2361,11 +2397,11 @@ function openSrdModal(name, category, level) {
         let didYouMean = '';
         if (Array.isArray(data.suggestions) && data.suggestions.length) {
           const chips = data.suggestions.map(s =>
-            `<button class="srd-suggest-chip" data-srd-name="${_esc(s.name)}" data-srd-category="${_esc(s.category || '')}">${_esc(s.name)}</button>`
+            `<button class="srd-suggest-chip" data-srd-name="${esc(s.name)}" data-srd-category="${esc(s.category || '')}">${esc(s.name)}</button>`
           ).join('');
           didYouMean = `<div class="srd-did-you-mean"><span class="srd-dym-label">Did you mean</span>${chips}</div>`;
         }
-        body.innerHTML = `<div id="srd-not-found">"${_esc(name)}" is not in the local dataset.${linkHtml}</div>${didYouMean}`;
+        body.innerHTML = `<div id="srd-not-found">"${esc(name)}" is not in the local dataset.${linkHtml}</div>${didYouMean}`;
         body.querySelectorAll('.srd-suggest-chip').forEach(chip => {
           chip.addEventListener('click', () => {
             openSrdModal(chip.dataset.srdName, chip.dataset.srdCategory || '', level);
@@ -2381,15 +2417,15 @@ function openSrdModal(name, category, level) {
       lines.forEach(line => {
         if (line.startsWith('## ')) {
           // Title line
-          html += `<div class="srd-title">${_esc(line.replace(/^## /, ''))}</div>`;
+          html += `<div class="srd-title">${esc(line.replace(/^## /, ''))}</div>`;
         } else if (line === '') {
           if (inDesc) html += '\n';
         } else if (!inDesc && line.match(/^[A-Z][a-z].*:/)) {
           // Key-value meta line
-          html += `<div class="srd-meta">${_esc(line)}</div>`;
+          html += `<div class="srd-meta">${esc(line)}</div>`;
         } else {
           if (!inDesc) { html += '<div class="srd-desc">'; inDesc = true; }
-          html += _esc(line) + '\n';
+          html += esc(line) + '\n';
         }
       });
       if (inDesc) html += '</div>';
@@ -2398,10 +2434,6 @@ function openSrdModal(name, category, level) {
     .catch(() => {
       body.innerHTML = '<div id="srd-not-found">Lookup unavailable — is the display running?</div>';
     });
-}
-
-function _esc(s) {
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
 function closeSrdModal() {
@@ -2649,7 +2681,7 @@ function updateStats(stats) {
         el.className = 'sb-turn-item sb-turn-has-icon' + (name === merged.current ? ' sb-turn-current' : '');
         const isPC = name in _playerData;
         const iconSrc = isPC ? '/icons/helmet.png' : '/icons/enemy.png';
-        el.innerHTML = `<img src="${iconSrc}" class="sb-turn-icon" alt="">${_escHtml(name)}`;
+        el.innerHTML = `<img src="${iconSrc}" class="sb-turn-icon" alt="">${esc(name)}`;
         list.appendChild(el);
       });
     }
@@ -3326,7 +3358,7 @@ function _renderQueueStatus(chars) {
     _waitingEl.innerHTML = '';
     return;
   }
-  const checks = chars.map(c => `<span class="queue-check">✓ ${_escHtml(c)}</span>`).join('');
+  const checks = chars.map(c => `<span class="queue-check">✓ ${esc(c)}</span>`).join('');
   _waitingEl.innerHTML = `<span class="queue-label">⏳ Queued — fires on DM Enter</span>${checks}`;
   _waitingEl.style.display = 'block';
 }
@@ -4131,7 +4163,9 @@ function _initModeSwitcher(inputMode) {
       const opt = document.createElement('button');
       opt.className = 'pm-opt';
       opt.type = 'button';
-      opt.textContent = _escHtml(name);  // safety: textContent already escapes, but keep symmetry
+      // textContent escapes by itself. Escaping first and then assigning would
+      // double-escape, so a name containing "&" showed up literally as "&amp;".
+      opt.textContent = name;
       opt.addEventListener('click', e => {
         e.stopPropagation();
         const url = new URL(window.location.href);
@@ -4230,7 +4264,10 @@ async function _loadCharacterSheet() {
 // and GitHub-style pipe tables. Not a full CommonMark implementation; deliberately
 // small so we don't drag in a dependency for one read-only viewer.
 function _renderMarkdown(md) {
-  const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  // The shared esc() from the top of this file, used deliberately: the sheet is
+  // markdown from the campaign folder, and this renderer emits no attributes of
+  // its own, so escaping first is enough. (A local copy used to shadow the
+  // shared helper here and escape fewer characters.)
   const inline = (s) => esc(s)
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/(^|[\s(])\*([^*\n]+)\*/g, '$1<em>$2</em>')
@@ -4296,21 +4333,6 @@ function _renderMarkdown(md) {
   return out.join('\n');
 }
 
-// ── Shared HTML-entity escape ────────────────────────────────────────────
-// Server-side input sanitization for labels and character names strips
-// shell metacharacters (` $ \) but does NOT strip < > & — so anything that
-// pours those server-supplied strings into innerHTML must escape here. Used
-// by the dice-pending badge below; safe to reuse anywhere else that does
-// the same template-literal-into-innerHTML pattern.
-function _escHtml(s) {
-  return String(s == null ? '' : s)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
 // ── DM-side "Waiting on Piper, Mira…" badge for unresolved dice-requests ──
 // Driven by the server's dice_pending SSE event (snapshot of all active
 // requests). Hidden when the snapshot is empty.
@@ -4324,12 +4346,12 @@ function _updateDicePendingBadge(snapshot) {
     return;
   }
   // Most recent request first (best-effort: snapshot order is insertion order on the server).
-  // Both `e.pending` member names and `e.label` go through _escHtml — server-side
+  // Both `e.pending` member names and `e.label` go through esc(): server-side
   // sanitization strips ` $ \ but not < > &, so any approved-phone caller could
   // otherwise inject script into the DM browser via those fields.
   const lines = entries.map(e => {
-    const who   = (e.pending || []).map(_escHtml).join(', ');
-    const label = e.label ? `<span class="dpb-label">${_escHtml(e.label)}</span>` : '';
+    const who   = (e.pending || []).map(esc).join(', ');
+    const label = e.label ? `<span class="dpb-label">${esc(e.label)}</span>` : '';
     return `Waiting on: ${who}${label}`;
   }).join('<hr style="border:none;border-top:1px solid rgba(180,140,60,0.25);margin:6px 0">');
   badge.innerHTML = lines;
@@ -4525,9 +4547,9 @@ function _initDicePad() {
     lockTo(displayFace);
 
     const line = document.getElementById('dp-result-line');
-    line.innerHTML = `${_escHtml(result.spec)}${result.modifier ? (result.modifier > 0 ? '+' : '') + _escHtml(result.modifier) : ''}` +
-                     ` &nbsp;→&nbsp; <span class="total">${_escHtml(result.total)}</span>` +
-                     (result.both ? ` &nbsp;<span style="opacity:.7">(${result.both.map(_escHtml).join(' / ')} ${_escHtml(result.advantage)})</span>` : '');
+    line.innerHTML = `${esc(result.spec)}${result.modifier ? (result.modifier > 0 ? '+' : '') + esc(result.modifier) : ''}` +
+                     ` &nbsp;→&nbsp; <span class="total">${esc(result.total)}</span>` +
+                     (result.both ? ` &nbsp;<span style="opacity:.7">(${result.both.map(esc).join(' / ')} ${esc(result.advantage)})</span>` : '');
     if (navigator.vibrate) navigator.vibrate(30);
     rollBtn.classList.remove('pulse');
     if (boundEl) {
