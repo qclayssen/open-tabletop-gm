@@ -1279,9 +1279,10 @@ def test_a_pending_reaction_never_shows_the_player_a_cli_instruction(tmp_path):
     assert "Re-run the same command" not in out and "--react" not in out
 
 
-def test_the_pre_roll_beat_may_not_state_the_outcome(tmp_path):
+def test_the_pre_roll_beat_may_not_state_the_outcome(tmp_path, monkeypatch):
     """N5: 'you find the latch' adjudicates the roll the engine is about to make, and
     the roll then contradicts the story the player was already told."""
+    monkeypatch.setattr(random, "randint", lambda a, b: b)   # a pass: not a failure draft
     replies = iter([
         'Kairos runs a finger along the desk until he finds the hidden latch.\n'
         '{"escalate": null, "command": null, "check": "Investigation 13"}',
@@ -1297,9 +1298,10 @@ def test_the_pre_roll_beat_may_not_state_the_outcome(tmp_path):
     assert c.dm_calls().__len__() == 3                    # draft, one retry, then the roll
 
 
-def test_a_clean_pre_roll_beat_is_not_rewritten(tmp_path):
+def test_a_clean_pre_roll_beat_is_not_rewritten(tmp_path, monkeypatch):
     """The guardrail costs a call when it trips, so a beat that is already clean must
     be left alone — this is the false-positive budget the other guardrails keep."""
+    monkeypatch.setattr(random, "randint", lambda a, b: b)   # a pass: not a failure draft
     replies = iter([
         'Kairos begins searching the desk, sliding papers aside.\n'
         '{"escalate": null, "command": null, "check": "Investigation 13"}',
@@ -1311,10 +1313,11 @@ def test_a_clean_pre_roll_beat_is_not_rewritten(tmp_path):
     assert len(c.dm_calls()) == 2                         # the beat, then the roll
 
 
-def test_narrating_a_rolled_outcome_is_never_rewritten(tmp_path):
+def test_narrating_a_rolled_outcome_is_never_rewritten(tmp_path, monkeypatch):
     """The guardrail is scoped to the beat BEFORE the roll. Once the engine has
     resolved the check, naming the outcome is the whole job — a blanket check would
     rewrite the correct sentence every single time."""
+    monkeypatch.setattr(random, "randint", lambda a, b: b)   # a pass: not a failure draft
     from localdm import reply
     replies = iter([
         'Kairos begins searching the desk.\n'

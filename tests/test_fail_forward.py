@@ -242,3 +242,93 @@ def test_the_probe_scores_exactly_what_the_runtime_retries_on():
     probe = (ROOT / "probe" / "narrative_probe.py").read_text(encoding="utf-8")
     assert "from localdm.reply import is_dead_stop" in probe
     assert "dead_stops = [" not in probe, "the probe kept its own copy of the list"
+
+
+# --- a failed check must also COST something (roadmap T2) --------------------
+#
+# is_dead_stop only asks "did the world move". A failure can move the world for
+# free: the lock gives, the door opens, nobody minds, and the character learns the
+# attempt is risk-free. The guard below asks the second question dm.md:49-52 puts
+# in writing ("cost something concrete"), and the engine hands the model the stakes
+# the check itself named plus how badly the roll missed.
+
+FREE_RIDE = ("The lock clicks halfway and the bolt slides back. The door stays shut, "
+             "but the way is clear.")
+PAID = "The pick snaps off in the lock and the crack echoes down the hall."
+
+
+def test_a_failure_that_changes_the_world_for_free_is_flagged_as_costless():
+    assert not reply.is_dead_stop(FREE_RIDE)             # it moved, so the old guard passes it
+    assert reply.is_costless_failure(FREE_RIDE)
+
+
+def test_a_failure_with_a_named_cost_is_not_costless():
+    for text in (
+        PAID,
+        "The pick slips and a guard turns at the noise.",
+        "You get it open, but it takes an hour and the torch is burned down to a stub.",
+        "The latch gives, and the scrape of metal alerts the patrol.",
+        "The lock yields at the price of your lockpicks, bent beyond use.",
+    ):
+        assert not reply.is_costless_failure(text), text
+
+
+def test_a_dead_stop_is_costless_too():
+    assert reply.is_costless_failure("Nothing happens.")
+    assert reply.is_costless_failure("")
+
+
+def _session(tmp_path, replies):
+    from tests.test_localdm_play import camp_dir
+    from tests.localdm_fakes import FakeBridge, FakeClient
+    from localdm import llm
+
+    models = llm.Models("dm-local", "dm-advisor", "dm-council")
+    it = iter(replies)
+    c = FakeClient(lambda m, msgs, role: next(it))
+    return Session("demo", c, models, camp_dir=camp_dir(tmp_path), bridge=FakeBridge()), c
+
+
+FAIL = "Kairos rolled a Sleight of Hand check: 3 against DC 15: failure."
+
+
+def test_a_free_failure_is_rewritten_once_with_the_stakes_named(tmp_path):
+    s, c = _session(tmp_path, [FREE_RIDE + NULLS, PAID + NULLS])
+    out = s._check_narration(FAIL, ok=False, margin=-12, stakes="the ferryman wakes")
+    assert len(c.calls) == 2, "one corrective retry, not a loop"
+    assert "snaps off" in out.narration
+    sent = str(c.calls[1])
+    assert "the ferryman wakes" in sent                     # the stake the check named
+    assert "missed badly" in sent                        # the magnitude, from the margin
+
+
+def test_the_stakes_reach_even_the_first_failure_draft(tmp_path):
+    s, c = _session(tmp_path, [PAID + NULLS])
+    s._check_narration(FAIL, ok=False, margin=-4, stakes="the ferryman wakes")
+    assert len(c.calls) == 1
+    assert "the ferryman wakes" in str(c.calls[0])
+
+
+def test_a_costly_failure_is_never_rewritten(tmp_path):
+    s, c = _session(tmp_path, [PAID + NULLS])
+    s._check_narration(FAIL, ok=False, margin=-4)
+    assert len(c.calls) == 1
+
+
+def test_if_the_rewrite_is_no_better_the_first_non_stall_draft_is_kept(tmp_path):
+    s, c = _session(tmp_path, [FREE_RIDE + NULLS, "Nothing happens." + NULLS])
+    out = s._check_narration(FAIL, ok=False, margin=-4)
+    assert "bolt slides back" in out.narration           # never swapped for a dead stop
+
+
+def test_a_success_ignores_stakes_and_cost(tmp_path):
+    s, c = _session(tmp_path, [FREE_RIDE + NULLS])
+    s._check_narration("Kairos rolled a check: 17 against DC 13: success.", ok=True,
+                       margin=4, stakes="the ferryman wakes")
+    assert len(c.calls) == 1
+    assert "the ferryman wakes" not in str(c.calls[0])
+
+
+def test_ability_check_passes_the_requests_stakes():
+    import inspect
+    assert "stakes=req.stakes" in inspect.getsource(Session._ability_check)

@@ -574,6 +574,46 @@ def is_dead_stop(narration: str) -> bool:
     return bool(_SOFT_STALL.search(text)) and not _FORWARD.search(text)
 
 
+# Guardrail: a failed check must COST something, not only move the world.
+#
+# `is_dead_stop` asks whether anything changed. A failure can change the world for
+# free (the lock gives, the door opens, nobody minds), and then the character learns
+# a miss is risk-free: dm.md's "cost something concrete" was in the prompt and nowhere
+# else. This is the second question, and it lives in script for the same reason the
+# first does. The vocabulary is the four costs dm.md names (noise, lost time, someone
+# noticing, a resource spent) plus the injuries and breakage that stand for them.
+#
+# Leans toward flagging. A false flag costs one rewrite and the caller keeps the
+# original draft unless the rewrite is an improvement (play._check_narration), while a
+# missed free ride ships the defect.
+_COST = re.compile(
+    # noise and alarm
+    r"\b(?:noise|noisy|loud|loudly|clatter\w*|crash\w*|echo\w*|alarm\w*|alert\w*|"
+    r"shout\w*|scream\w*|racket|din)\b"
+    # someone noticing
+    r"|\b(?:notice[sd]?|spotted|spots?|seen|heard|hears?|footsteps|boots|voices?|"
+    r"guards?|patrol|watchers?|attention|suspicio\w+|turns? (?:toward|to|on))\b"
+    # lost time
+    r"|\b(?:time|minutes?|hours?|days?|delay\w*|late|dawn|dusk|torch\w*|candle\w*)\b"
+    # a resource spent or broken
+    r"|\b(?:lost|loses?|losing|cost\w*|price|spent|spend|used up|snap(?:s|ped)?|"
+    r"break\w*|broke\w*|bent|ruin\w*|burn\w*|drain\w*|empt(?:y|ies|ied)|"
+    r"torn|tears?|stain\w*|smear\w*|spill\w*|dropp?ed|drops)\b"
+    # a hurt
+    r"|\b(?:bruis\w+|cuts?|wound\w*|hurt\w*|pain\w*|bleed\w*|blister\w*|"
+    r"sprain\w*|gash\w*|burns?)\b", re.I)
+
+
+def is_costless_failure(narration: str) -> bool:
+    """True when a failed check's narration names no cost at all.
+
+    A dead stop is costless by definition. Otherwise the narration must show one of
+    the costs in `_COST`. A heuristic, not a proof: it reads as "worth rewriting
+    once", never "must be rewritten"."""
+    text = narration or ""
+    return is_dead_stop(text) or not _COST.search(text)
+
+
 # Guardrail: when a check is requested, the beat before the roll must not state
 # the outcome. 5e leaves this to the die, so narration that says "you find the
 # latch" or "you fail to spot it" has quietly adjudicated the roll the engine is
