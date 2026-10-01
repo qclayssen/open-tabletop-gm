@@ -60,6 +60,7 @@ from localdm.memory import Memory                               # noqa: E402
 from localdm import notes as notes_mod                          # noqa: E402
 from localdm.summarizer import Summarizer                       # noqa: E402
 from localdm import canon as canon_mod                         # noqa: E402
+from localdm import recap as recap_mod                         # noqa: E402
 
 # The narration cap, in sentences. dm.md carries the same number: the prompt and the
 # length retry below have to agree, or the retry is asking the model to break a rule
@@ -903,6 +904,10 @@ class Session:
             return self._notes_cmd(line[len(line.split()[0]):])
         if line == "/usage":
             return self._usage()
+        if line == "/recap":
+            return [recap_mod.build_recap(self.camp_dir) or "(Nothing stored to recap yet.)"]
+        if line == "/prep":
+            return [recap_mod.build_prep(self.camp_dir)]
         if self.pending:                # the engine is waiting: free text must not reach the DM
             # Recorded anyway: the player said it, and a deferred move is a move the
             # DM must be able to acknowledge once the roll lands (audit report B3).
@@ -1324,6 +1329,12 @@ def main(argv=None) -> int:
                          "localhost:$GM_DISPLAY_PORT, display/.port, else localhost:5001)")
     ap.add_argument("--no-display", action="store_true",
                     help="send nothing to any display (narration or grid combat)")
+    ap.add_argument("--no-recap", action="store_true",
+                    help="skip the 'previously on...' recap when resuming after a gap")
+    ap.add_argument("--no-prep", action="store_true",
+                    help="skip the pre-session prep checklist (/prep shows it on demand)")
+    ap.add_argument("--recap-gap", type=float, default=None, metavar="HOURS",
+                    help="hours away before the recap shows (default: GM_RECAP_GAP_HOURS or 6)")
     args = ap.parse_args(argv)
     if args.campaign_pos and args.campaign_opt and args.campaign_pos != args.campaign_opt:
         ap.error(f"two campaigns given ({args.campaign_pos!r} and -c {args.campaign_opt!r})")
@@ -1357,6 +1368,13 @@ def main(argv=None) -> int:
             display.push_party(context.party_stats(camp_dir))
     else:
         os.environ["TACTICS_NO_DISPLAY"] = "1"
+    # Opening blocks: the gap is read from file times, which the first turn resets,
+    # so they are built before any turn is taken.
+    for block in recap_mod.session_start(camp_dir, recap=not args.no_recap,
+                                         prep=not args.no_prep, min_gap=args.recap_gap):
+        print(block + "\n")
+        if display and block.startswith("Previously"):
+            display.narrate(block)
     while True:
         try:
             line = input("> ")
