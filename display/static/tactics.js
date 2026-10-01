@@ -35,7 +35,7 @@
                spells: null, spell: null, singles: null, darts: null, dartsText: '',
                helpTarget: null, readyWhat: null, readyStep: null,
                cursor: null, ruler: { tool: null, a: null, b: null, fixed: false }, camMap: null, camTimer: 0,
-               sight: false, sightFrom: null, sightData: null, sightKey: '' };
+               sight: false, sightFrom: null, sightData: null, sightKey: '', layoutAt: null };
   const CONDITION_CODES = { blinded: 'Bl', charmed: 'Ch', deafened: 'De', exhaustion: 'Ex', frightened: 'Fr',
     grappled: 'Gr', incapacitated: 'In', invisible: 'Iv', paralyzed: 'Pa', petrified: 'Pe', poisoned: 'Po',
     prone: 'Pr', restrained: 'Re', stunned: 'St', unconscious: 'Un' };
@@ -145,20 +145,42 @@
     }
     return out.join(' · ');
   }
-  // The banner for a roll or reaction the engine is waiting on (turn.pending is
-  // "roll:<dice>" or "react:<key>"; "death_save" is handled by its own line).
-  // `who` is the name of the token whose turn it is. Returns '' when there is
-  // nothing to wait on.
-  function pendingBanner(p, who) {
+  // The banner for a roll or reaction the engine is waiting on. turn.pending is
+  // "roll:<notation>[|<advantage>]", "react:<id>:<what>" or "death_save".
+  // Returns '' when there is nothing to wait on. `byId` resolves a token id.
+  //
+  // Two things this used to get wrong, both of them about naming.
+  //
+  // The reaction named whoever was acting rather than whoever has to decide.
+  // Those are different creatures: while Kobold 2 acts, the engine can be
+  // waiting on Kairos to spend a reaction, and "Waiting on Kobold 2: silvery
+  // barbs?" asks a kobold to answer for a spell reaction it is the victim of.
+  // The key carries the reacting creature's id, so that is who gets named.
+  //
+  // The roll named the dice and nothing else. "roll 1d20+4" reads as a straight
+  // roll, and the player watches for one number, when the engine is holding two
+  // and keeping the lower. The advantage rides along in the marker
+  // (cli._push_pending) precisely so the wait can say so: it is part of what is
+  // being waited on, not a footnote to the result. Without it the only place
+  // the disadvantage appeared was the log line after the dice had landed, which
+  // is too late to plan around.
+  function pendingBanner(p, who, byId) {
     if (!p || p === 'death_save') return '';
-    const w = who || 'the party';
-    if (p.startsWith('roll:')) return `Waiting on ${w}: roll ${p.slice(5)}`;
+    const waiting = who || 'the party';
+    if (p.startsWith('roll:')) {
+      const bar = p.slice(5);
+      const cut = bar.indexOf('|');
+      const dice = cut === -1 ? bar : bar.slice(0, cut);
+      const adv = cut === -1 ? '' : bar.slice(cut + 1).trim();
+      return `Waiting on ${waiting}: roll ${dice}` + (adv ? ` with ${adv}` : '');
+    }
     if (p.startsWith('react:')) {
       const parts = p.slice(6).split(':');
       const what = parts[parts.length - 1];
-      return `Waiting on ${w}: ${what}? yes/no`;
+      const decider = parts.length > 1 && byId ? byId(parts[0]) : null;
+      return `Waiting on ${decider ? decider.name : waiting}: ${what}? yes/no`;
     }
-    return `Waiting on ${w}: ${p}`;
+    return `Waiting on ${waiting}: ${p}`;
   }
 
   // The two geometry seams for anything drawn or measured on the board. The ruler
@@ -341,11 +363,11 @@
     try {
       const r = await fetch('/combat/do', { method: 'POST', headers: headers(),
         body: JSON.stringify(Object.assign({ cmd, args }, extra || {})) });
-      if (r.status === 429) return { error: 'Too many actions at once. Try again in a moment.' };
       const body = await r.json().catch(() => null);
-      return body || { error: 'The display could not reach the engine (HTTP ' + r.status + ').' };
+      if (r.ok) return body || { ok: true };
+      return { error: refusal(r.status, body), status: r.status };
     } catch (e) {
-      return { error: 'The display could not reach the engine.' };
+      return { error: 'The display could not reach the engine. Is the server still running?' };
     }
   }
 
@@ -386,6 +408,7 @@
       const min = document.body.classList.toggle('tx-min');
       el.min.textContent = min ? 'Show map' : 'Hide map';
       el.min.setAttribute('aria-expanded', String(!min));
+      publishPanelExtent();          // folding changes the panel's height at once
     });
     document.addEventListener('keydown', e => {
       if (e.key !== 'Escape') return;
@@ -393,6 +416,7 @@
       if (ui.mode) { clearMode(); render(); }
     });
     el.cover.addEventListener('click', toggleSight);
+    watchPanel();
     for (const b of p.querySelectorAll('[data-ruler]')) b.addEventListener('click', () => setRuler(b.dataset.ruler));
     el.rulerOut = document.getElementById('tx-ruler-out');
     el.board.addEventListener('scroll', saveCameraSoon, { passive: true });
@@ -415,7 +439,35 @@
     el.toast.textContent = text; el.toast.hidden = false;
     el.toast.className = 'tx-toast' + (kind === 'error' ? ' tx-error' : '');
     clearTimeout(ui.toastTimer);
-    ui.toastTimer = setTimeout(() => { el.toast.hidden = true; }, kind === 'error' ? 6000 : 4500);
+    // Always transient, refusals included. A toast is a duplicate of the banner
+    // for a refusal and of the log for a roll, and a duplicate that outlives its
+    // twin is the thing that made a stale error look current.
+    ui.toastTimer = setTimeout(() => { el.toast.hidden = true; },
+                               kind === 'error' ? 6000 : 4500);
+  }
+
+  // A refusal, in the one place that is always visible.
+  //
+  // The toast sits at the bottom of the panel, which is where the combat log
+  // and the action bar are: it covered the log line that says the same thing
+  // more fully, and on a phone it covered the action bar outright. The banner
+  // is above the map with nothing under it, so that is where a refusal goes,
+  // and it is announced: it arrives without a page load and it is the answer to
+  // a click the player just made.
+  function refuse(message) {
+    el.banner.textContent = message;
+    el.banner.classList.add('tx-refusal');
+    el.banner.setAttribute('role', 'alert');
+    flash();
+  }
+
+  // Clear the refusal when the next snapshot is genuinely a new state. A push
+  // that is only a turn's own progress keeps it up until the player acts, since
+  // nothing they did was the cause and the banner is still the answer.
+  function clearRefusal() {
+    if (!el.banner.classList.contains('tx-refusal')) return;
+    el.banner.classList.remove('tx-refusal');
+    el.banner.setAttribute('role', 'status');
   }
 
   function clearMode() {
@@ -424,6 +476,50 @@
     ui.dartsText = '';
     ui.preview = {};
     clearTimeout(ui.hoverTimer);
+  }
+
+  // Why a refusal happened, in the reader's terms, before the engine's.
+  //
+  // "It is not a player's turn." arrives while the banner above the map is
+  // saying "Your turn, Kairos", which reads as the display being wrong rather
+  // than the click being refused, and the two were both true: the map's own
+  // snapshot had a player's turn open and the engine had moved on. A 409 while
+  // the display believes it is the player's turn is exactly that race.
+  //
+  // The status code is the honest signal here, not the message: the server
+  // already distinguishes "no campaign", "device not approved" and "not your
+  // turn", and each of those needs a different thing said about it. A message
+  // the display cannot act on is shown, not paraphrased into a guess.
+  function refusal(status, body) {
+    const why = (body && body.error) || '';
+    if (status === 404 || /no (active )?campaign/i.test(why)) {
+      return 'No fight is open for this display. Start one in the terminal ' +
+             '(combat start), then reload. Nothing was sent.';
+    }
+    if (status === 403 && /not approved|device/i.test(why)) {
+      return 'This device is not approved to act. The GM has to approve it in ' +
+             'the terminal (devices approve) before the map buttons do anything.';
+    }
+    if (status === 409) {
+      // The server already names the creature acting when there is one, and that
+      // is the sentence a player needs: "it is Kobold 2's turn" is the reason,
+      // and the old generic wording was read as the display disagreeing with
+      // itself. Kept verbatim, with only "Nothing was sent" appended when the
+      // server did not say it, so nothing the engine said is ever lost.
+      const turns = /\b([A-Z][\w' -]*?)'s turn\b/.exec(why);
+      if (turns) {
+        return /nothing was sent/i.test(why) ? why
+          : why.replace(/\s*$/, '') + ' Nothing was sent.';
+      }
+      if (/only .* can act now/i.test(why)) {
+        const m = /only (.*?) can act now/i.exec(why);
+        return `${m[1]}'s turn now, not yours. Nothing was sent; wait for your turn.`;
+      }
+      return 'It is not your turn: the engine has moved on since this map was ' +
+             'drawn. Nothing was sent; wait for the banner to say your turn.';
+    }
+    if (status === 429) return why;
+    return why || ('The engine refused that (HTTP ' + status + '). Nothing was sent.');
   }
 
   // ── snapshots ────────────────────────────────────────────────────────────
@@ -443,6 +539,9 @@
     if (!prev || prev.current !== snap.current) {
       clearMode(); ui.spells = null;
       const t = current();
+      // A new turn is new state, so any standing refusal is stale: the engine
+      // has moved, which is often the very thing the refusal was about.
+      clearRefusal();
       el.banner.textContent = t ? (t.controller === 'player' ? 'Your turn, ' + t.name : t.name + "'s turn") : snap.unseen_turn ? 'Enemy turn' : '';
       flash();
       if (t && t.controller === 'player') ui.sightFrom = t.id;
@@ -451,9 +550,17 @@
     render();
     animate();
     announceRolls();
+    publishPanelExtent();
   }
 
-  function hide() { el.panel.hidden = true; document.body.classList.remove('tx-on', 'tx-min'); clearMode(); }
+  function hide() {
+    el.panel.hidden = true;
+    document.body.classList.remove('tx-on', 'tx-min');
+    el.toast.hidden = true;
+    el.banner.classList.remove('tx-refusal');
+    clearMode();
+    publishPanelExtent();
+  }
   function flash() { el.banner.classList.remove('tx-flash'); void el.banner.offsetWidth; el.banner.classList.add('tx-flash'); }
 
   function announceRolls() {
@@ -558,10 +665,51 @@
     return 'var(--tx-' + base + ')';
   }
 
+  // The width the side column costs the board, the gap between them, and the
+  // panel's own horizontal padding. Named here and mirrored by the rules in
+  // tactics.css; a container query would read these straight off the box, but
+  // the split is decided before the map is measured, so the arithmetic is
+  // spelled out instead.
+  const SIDE_COL = 250, BODY_GAP = 10, PANEL_PAD_X = 12;
+
+  // Whether the side column sits beside the board or under it.
+  //
+  // It used to be a viewport breakpoint: two columns from 1101px, one below.
+  // That is the wrong question. The split is worth having only when the board
+  // can still hold the whole map at a square a player can read from across the
+  // room; below that it takes 260px the board needed and the map is clipped
+  // instead, which is how a 12x9 grid lost its right-hand two columns at
+  // 1200px while fitting whole at 768px -- a wider screen with less of the
+  // fight on it. So it is measured: the board gets the whole panel when the
+  // two-column split would clip the map.
+  //
+  // Never the reverse: a map too wide for the panel still scrolls. That is the
+  // table-display rule (boardCell's floor), and stacking would not make it fit.
+  function chooseLayout(W) {
+    // Measured from the panel, not the board: the board's own width is only
+    // meaningful once the split is decided, so reading it here would be circular
+    // and the two layouts would each keep re-deciding for the other.
+    const inner = el.panel.clientWidth - PANEL_PAD_X * 2;
+    // Held for as long as the panel is this wide. A decision taken from the
+    // current class name flips back on the next render and oscillates: stacked
+    // measures as fitting, which un-stacks it, which then measures as not
+    // fitting. Re-deciding only when the width itself changes is what makes it
+    // settle.
+    if (ui.layoutAt === inner) return el.panel.classList.contains('tx-stacked') ? 'stack' : 'side';
+    // The floor, not a guess: a square narrower than TABLE_MIN is the squint the
+    // table-display rule exists to prevent, so if the split cannot buy it the
+    // split has to go.
+    const sideBySide = inner - SIDE_COL - BODY_GAP >= W * TABLE_MIN;
+    el.panel.classList.toggle('tx-stacked', !sideBySide);
+    ui.layoutAt = inner;
+    return sideBySide ? 'side' : 'stack';
+  }
+
   function renderBoard() {
     const rows = (snap.grid && snap.grid.rows) || [];
     const H = rows.length, W = H ? rows[0].length : 0;
     ui.W = W; ui.H = H;
+    ui.layout = chooseLayout(W);
     const box = boardBox();
     const cell = boardCell(W, H, box.w, box.h, box.phone);
     const s = svg('svg', { viewBox: `0 0 ${W * C} ${H * C}`, width: W * cell, height: H * cell,
@@ -636,18 +784,48 @@
     let keepL = el.board.scrollLeft, keepT = el.board.scrollTop;
     // A map that has just mounted (page load, or a new battle) opens where the
     // table last left it; a re-render of the same map keeps the live scroll.
-    const camName = cameraName(), saved = camName !== ui.camMap ? cameraLoad()[camName] : null;
+    const camName = cameraName(), fresh = camName !== ui.camMap;
+    const saved = fresh ? cameraLoad()[camName] : null;
     if (saved) { keepL = saved.scrollL; keepT = saved.scrollT; }
     ui.camMap = camName;
     el.board.innerHTML = ''; el.board.appendChild(s);
     el.board.scrollLeft = keepL; el.board.scrollTop = keepT;   // a re-render must not snap back to the corner
     drawRuler();
-    if (!saved) keepActorInView(cell);
+    // First look at a map, with no camera to return to: show the whole fight,
+    // not the square the hero happens to be standing on. Anything else and a
+    // wide map opens on one corner with every enemy off-screen, which is the
+    // first thing a player sees and the one they have to notice is incomplete.
+    // A re-render of the map already on screen only nudges the view when the
+    // acting token has genuinely gone out of it, so a player who scrolled
+    // somewhere on purpose keeps that view.
+    if (fresh && !saved) frameEncounter(cell);
+    else ensureActorVisible(cell);
     saveCameraSoon();
     floaters();
   }
 
   const isPhone = () => !!(window.matchMedia && matchMedia(`(max-width: ${PHONE_MAX_W}px)`).matches);
+
+  // ── the panel's own geometry, published to the stylesheet ────────────────
+  //
+  // The panel is an overlay, and the reading column has to start below it. How
+  // much room it takes is decided by what is in it (the board, the spell list,
+  // the log, a header that wrapped), so the inset cannot be a constant in the
+  // stylesheet: a fixed guess was 25px short of the panel at 1200x784 and 116px
+  // short at 1024x768, which is how the opening lines of every scene ended up
+  // under the board. Measured here and read back as --tx-bottom.
+  //
+  // A ResizeObserver rather than a call after every render, because the panel
+  // changes height without tactics.js being involved: the header re-wraps when
+  // the banner text changes, "Hide map" folds it, the window resizes.
+  function publishPanelExtent() {
+    if (!el.panel || el.panel.hidden) { document.body.style.removeProperty('--tx-bottom'); return; }
+    document.body.style.setProperty('--tx-bottom', Math.round(el.panel.getBoundingClientRect().bottom) + 'px');
+  }
+  function watchPanel() {
+    if (!el.panel || !window.ResizeObserver) { publishPanelExtent(); return; }
+    new ResizeObserver(publishPanelExtent).observe(el.panel);
+  }
 
   // The space the board is drawn into. On a table display the height comes
   // from the board's CSS box, not from the map inside it, so a short map does
@@ -662,16 +840,54 @@
     };
   }
 
-  // A map larger than the box scrolls; bring the acting token into view when it is off-screen.
-  function keepActorInView(cell) {
+  // A map larger than the box scrolls. The scroll position is a choice the
+  // player made, so it is only ever moved to make something visible that is
+  // not: here, the acting token, and only when it has actually left the box.
+  // Framing around the acting token on every render is what threw the player's
+  // scroll away after each push, and a token already inside the box is exactly
+  // the case that used to trigger it.
+  function ensureActorVisible(cell) {
     const t = (snap.tokens || []).find(k => k.id === snap.current);
     const b = el.board;
     if (!t || !b.clientWidth || !b.clientHeight) return;
-    const x0 = t.x * cell, y0 = t.y * cell, pad = cell;
-    if (x0 - pad < b.scrollLeft) b.scrollLeft = Math.max(0, x0 - pad);
-    else if (x0 + cell + pad > b.scrollLeft + b.clientWidth) b.scrollLeft = x0 + cell + pad - b.clientWidth;
-    if (y0 - pad < b.scrollTop) b.scrollTop = Math.max(0, y0 - pad);
-    else if (y0 + cell + pad > b.scrollTop + b.clientHeight) b.scrollTop = y0 + cell + pad - b.clientHeight;
+    const x0 = t.x * cell, y0 = t.y * cell, left = b.scrollLeft, top = b.scrollTop;
+    // Already wholly inside the box: leave it alone. This is the whole point of
+    // the function, and the old version got it wrong in a way that lost the
+    // player's scroll on every push: it compared the token against a padded
+    // edge, so a hero standing in the first two columns always looked "out of
+    // view" however far right the player had scrolled, and the board was sent
+    // back to the left edge to fix it.
+    if (x0 >= left && x0 + cell <= left + b.clientWidth &&
+        y0 >= top && y0 + cell <= top + b.clientHeight) return;
+    const pad = cell;
+    if (x0 < left) b.scrollLeft = Math.max(0, x0 - pad);
+    else if (x0 + cell > left + b.clientWidth) b.scrollLeft = x0 + cell + pad - b.clientWidth;
+    if (y0 < top) b.scrollTop = Math.max(0, y0 - pad);
+    else if (y0 + cell > top + b.clientHeight) b.scrollTop = y0 + cell + pad - b.clientHeight;
+  }
+
+  // Every living token in the box, with a square of slack around them.
+  //
+  // The first view of a map has to answer "where is everyone" without a scroll.
+  // Centring the acting token, which is what this used to do, put the party in
+  // the middle of an empty floor at 1200px wide and left both kobolds past the
+  // right edge of the board. When the fight is wider than the box there is no
+  // framing that shows all of it, so the hero stays put: a fight you cannot see
+  // all of should open on the piece you control, and the board scrolls the rest.
+  function frameEncounter(cell) {
+    const alive = living();
+    const b = el.board;
+    if (!alive.length || !b.clientWidth || !b.clientHeight) return;
+    const xs = alive.map(t => t.x), ys = alive.map(t => t.y);
+    const left = Math.min(...xs) * cell, top = Math.min(...ys) * cell;
+    const right = (Math.max(...xs) + 1) * cell, bottom = (Math.max(...ys) + 1) * cell;
+    const pad = cell;
+    if (right - left + pad * 2 <= b.clientWidth && bottom - top + pad * 2 <= b.clientHeight) {
+      b.scrollLeft = Math.max(0, left - pad - (b.clientWidth - (right - left + pad * 2)) / 2);
+      b.scrollTop = Math.max(0, top - pad - (b.clientHeight - (bottom - top + pad * 2)) / 2);
+      return;
+    }
+    ensureActorVisible(cell);
   }
 
   // What the current mode says about a token: a ring class, a badge and words for screen readers.
@@ -1302,7 +1518,7 @@
     // turn.pending): shown on every turn, so spectators and the party do not
     // see a bare "Kairos's turn" while the engine is paused.
     const t = current();
-    const text = pendingBanner(snap.turn && snap.turn.pending, t && t.name);
+    const text = pendingBanner(snap.turn && snap.turn.pending, t && t.name, id => tokenById(id));
     return text ? `<br><span class="tx-warn">${esc(text)}</span>` : '';
   }
 
@@ -1786,7 +2002,7 @@
         else extra.rolls.push(answer.roll);
         continue;
       }
-      if (res.error) toast(res.error, 'error');
+      if (res.error) { refuse(res.error); toast(res.error, 'error'); }
       else {                                      // GM hints ("Next: options frog-1") are not for players
         const text = res.text.split('\n').filter(l => !/^(Next:|Then:|Waiting for)/.test(l))
           .map(l => l.replace(/\s*The GM runs: .*$/, '')).join(' ');
@@ -1946,11 +2162,14 @@
     let resizeTimer = 0;
     window.addEventListener('resize', () => {
       clearTimeout(resizeTimer);
-      resizeTimer = setTimeout(() => { if (snap) render(); }, 150);
+      resizeTimer = setTimeout(() => { if (snap) render(); publishPanelExtent(); }, 150);
     });
   }
 
-  window.Tactics = { update, init, state: () => snap };
+  // refusal() is exported so the wording is testable as a function rather than
+  // only through a click: it is a pure map from (status, body) to a sentence,
+  // and the cases that matter are the four the server can return.
+  window.Tactics = { update, init, state: () => snap, refusal, pendingBanner };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 })();

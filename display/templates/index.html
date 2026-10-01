@@ -133,7 +133,7 @@
     left: 50%;
     transform: translateX(-50%);
     font-family: 'Cinzel', serif;
-    font-size: 11px;
+    font-size: 12px;
     letter-spacing: 5px;
     text-transform: uppercase;
     color: rgba(180, 140, 60, 0.6);
@@ -211,7 +211,7 @@
        zoom reflows the measure; a text-size control has to do it explicitly.
        Clamped against the viewport so a large scale on a narrow window cannot
        push the column under the sidebar. */
-    max-width: min(calc(820px * var(--text-scale, 1)), 92vw);
+    max-width: min(72ch, 92vw);   /* ~68ch of prose + speaker-block padding; ch follows the text scale */
     margin: 0 auto;
     transition: opacity 0.35s ease;
     /* Reading text-size control — a font-size multiplier (NOT page zoom). The
@@ -265,6 +265,32 @@
     font-style: normal;
   }
 
+  /* Typesetting: ~68ch measure (from #text-content), 1.6 leading, real
+     paragraph rhythm, and the block-level markdown the DM writes. */
+  .dm-block p, .npc-block p, .player-block p { line-height: 1.6; margin: 0 0 0.75em; }
+  .dm-block p:last-of-type, .npc-block p:last-of-type { margin-bottom: 0.25em; }
+  .dm-block h2, .dm-block h3, .dm-block h4 {
+    font-family: 'Cinzel', serif; font-weight: 600; line-height: 1.3;
+    color: rgba(230, 205, 140, 0.95); margin: 1.1em 0 0.45em;
+    text-shadow: 0 1px 6px rgba(0,0,0,0.8);
+  }
+  .dm-block h2 { font-size: 1.25em; letter-spacing: 0.06em; }
+  .dm-block h3 { font-size: 1.1em; letter-spacing: 0.05em; }
+  .dm-block h4 { font-size: 1em; letter-spacing: 0.04em; }
+  .dm-block > :first-child { margin-top: 0; }
+  .dm-block ul.dm-list, .dm-block ol.dm-list, .npc-block ul.dm-list, .npc-block ol.dm-list {
+    margin: 0 0 0.8em; padding-left: 1.5em; line-height: 1.6;
+    color: #d4c4a0; text-shadow: 0 1px 6px rgba(0,0,0,0.8);
+  }
+  .npc-block ul.dm-list, .npc-block ol.dm-list { color: #ffffff; }
+  .dm-block li, .npc-block li { margin: 0 0 0.3em; padding-left: 0.2em; }
+  .dm-block code, .npc-block code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.86em; padding: 0.05em 0.35em; border-radius: 3px;
+    background: rgba(180, 140, 60, 0.16); color: #e6d3a0;
+  }
+  .dm-block strong, .npc-block strong { font-weight: 700; }
+
   /* Markdown tables inside narration */
   .dm-block table.dm-table {
     width: 100%;
@@ -305,8 +331,8 @@
 
   .player-name {
     font-family: 'Cinzel', serif;
-    font-size: 10px;
-    letter-spacing: 4px;
+    font-size: 12px;
+    letter-spacing: 3px;
     text-transform: uppercase;
     color: rgba(130, 185, 215, 0.75);
     margin-bottom: 0.45em;
@@ -334,7 +360,7 @@
 
   .action-tag {
     font-family: 'Cinzel', serif;
-    font-size: 9px;
+    font-size: 12px;
     letter-spacing: 3px;
     text-transform: uppercase;
     color: rgba(130, 185, 215, 0.5);
@@ -365,11 +391,16 @@
 
   .npc-name {
     font-family: 'Cinzel', serif;
-    font-size: 10px;
-    letter-spacing: 4px;
+    font-size: 12px;
+    letter-spacing: 3px;
     text-transform: uppercase;
-    color: rgba(200, 160, 64, 0.8);
-    margin-bottom: 0.45em;
+    color: rgba(215, 175, 75, 0.95);
+    display: inline-block;
+    padding: 2px 10px;
+    border: 1px solid rgba(200, 160, 64, 0.4);
+    border-radius: 999px;
+    background: rgba(200, 160, 64, 0.1);
+    margin-bottom: 0.55em;
   }
 
   .npc-block p {
@@ -381,6 +412,14 @@
   .npc-block p em {
     font-style: normal;
     color: #ffffff;
+  }
+
+  /* System lines (engine notices, XP, expiries) read as chrome, not story:
+     sans, small, tracked, muted, clearly not narration or speech. */
+  .action-block p, .xp-block, .effect-expired-block, .tutor-block .tutor-label {
+    font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    font-style: normal;
+    letter-spacing: 0.04em;
   }
 
   /* ── Dice result blocks ── */
@@ -429,14 +468,14 @@
   }
 
   .tutor-icon {
-    font-size: 10px;
+    font-size: 12px;
     color: rgba(130, 190, 130, 0.75);
     flex-shrink: 0;
   }
 
   .tutor-label {
     font-family: 'Cinzel', serif;
-    font-size: 8.5px;
+    font-size: 12px;
     letter-spacing: 3px;
     text-transform: uppercase;
     color: rgba(130, 190, 130, 0.65);
@@ -444,7 +483,7 @@
   }
 
   .tutor-chevron {
-    font-size: 9px;
+    font-size: 12px;
     color: rgba(130, 190, 130, 0.45);
     transition: transform 0.2s ease;
   }
@@ -513,7 +552,7 @@
     text-align: center;
     color: rgba(180, 140, 60, 0.4);
     font-family: 'Cinzel', serif;
-    font-size: 11px;
+    font-size: 12px;
     letter-spacing: 4px;
     margin: 2em 0;
     user-select: none;
@@ -564,7 +603,7 @@
     border: none;
     cursor: pointer;
     font-family: 'Cinzel', serif;
-    font-size: 9px;
+    font-size: 12px;
     letter-spacing: 2px;
     text-transform: uppercase;
     color: rgba(180,140,60,0.4);
@@ -593,6 +632,11 @@
     transform: translateX(0);
   }
   #sidebar.has-data { opacity: 1; }
+  /* An empty sidebar is still a 210px fixed box, and opacity: 0 does not stop it
+     taking clicks: it swallowed the left third of a narrow window, the story
+     included, and sat on top of the settings toggle. Nothing invisible should
+     be a pointer target. */
+  #sidebar:not(.has-data) { pointer-events: none; }
   #sidebar.hidden {
     transform: translateX(-210px);
     opacity: 0;
@@ -618,7 +662,7 @@
     padding-right: 34px;
   }
   .sb-identity {
-    font-size: 10px;
+    font-size: 12px;
     color: rgba(200,185,150,0.5);
     line-height: 1.4;
     margin-bottom: 8px;
@@ -633,7 +677,7 @@
   }
   .sb-label {
     font-family: 'Cinzel', serif;
-    font-size: 8px;
+    font-size: 12px;
     letter-spacing: 2px;
     text-transform: uppercase;
     color: rgba(180,140,60,0.5);
@@ -641,7 +685,7 @@
   }
   .sb-hp-nums {
     font-family: 'Cinzel', serif;
-    font-size: 10px;
+    font-size: 12px;
     color: rgba(220,200,160,0.75);
     margin-left: auto;
   }
@@ -658,7 +702,7 @@
     transition: width 0.6s ease, background-color 0.6s ease;
   }
   .sb-hp-temp-row {
-    font-size: 9px;
+    font-size: 12px;
     color: rgba(120,180,230,0.6);
     margin-bottom: 3px;
   }
@@ -672,7 +716,7 @@
   }
   .sb-xp-nums {
     font-family: 'Cinzel', serif;
-    font-size: 9px;
+    font-size: 12px;
     color: rgba(180,140,60,0.55);
     margin-left: auto;
   }
@@ -682,7 +726,7 @@
   .sb-quick-stats {
     margin-top: 6px;
     font-family: 'Cinzel', serif;
-    font-size: 9px;
+    font-size: 12px;
     letter-spacing: 1px;
     color: rgba(200,185,150,0.55);
     line-height: 1.8;
@@ -701,7 +745,7 @@
   }
   .sb-condition-pill {
     font-family: 'Cinzel', serif;
-    font-size: 7px;
+    font-size: 12px;
     letter-spacing: 0.5px;
     text-transform: uppercase;
     padding: 1px 5px;
@@ -733,7 +777,7 @@
   /* Concentration tag */
   .sb-concentrate {
     margin-top: 4px;
-    font-size: 8px;
+    font-size: 12px;
     color: rgba(160,120,220,0.75);
     font-style: italic;
     white-space: nowrap;
@@ -749,7 +793,7 @@
     margin-top: 4px;
   }
   .sb-effect-pill {
-    font-size: 9px;
+    font-size: 12px;
     padding: 2px 5px;
     border-radius: 3px;
     background: rgba(60,110,60,0.2);
@@ -784,7 +828,7 @@
   .effect-expired-result {
     display: inline-block;
     font-family: 'Cinzel', serif;
-    font-size: 11px;
+    font-size: 12px;
     letter-spacing: 1.5px;
     color: rgba(190,120,50,0.85);
     padding: 0.25em 1.2em;
@@ -796,7 +840,7 @@
   /* ── Features (Second Wind etc) ── */
   .sb-features {
     margin-top: 4px;
-    font-size: 9px;
+    font-size: 12px;
     color: rgba(200,185,150,0.4);
     line-height: 1.6;
   }
@@ -862,7 +906,7 @@
     height: 1px; background: rgba(180,140,60,0.12); margin: 15px 0;
   }
   .sm-section-title {
-    font-family: 'Cinzel', serif; font-size: 11px;
+    font-family: 'Cinzel', serif; font-size: 12px;
     letter-spacing: 3px; text-transform: uppercase;
     color: rgba(180,140,60,0.65); margin-bottom: 10px;
   }
@@ -871,7 +915,7 @@
   }
   .sm-stat-cell { text-align: center; }
   .sm-stat-label {
-    font-family: 'Cinzel', serif; font-size: 7.5px;
+    font-family: 'Cinzel', serif; font-size: 12px;
     letter-spacing: 2px; text-transform: uppercase;
     color: rgba(180,140,60,0.4); display: block;
   }
@@ -880,7 +924,7 @@
     color: rgba(220,200,160,0.88);
   }
   .sm-xp {
-    font-size: 10px; color: rgba(180,140,60,0.45);
+    font-size: 12px; color: rgba(180,140,60,0.45);
     font-family: 'Cinzel', serif; letter-spacing: 1px;
     margin-top: 4px;
   }
@@ -889,7 +933,7 @@
   }
   .sm-ab-cell { text-align: center; }
   .sm-ab-name {
-    font-family: 'Cinzel', serif; font-size: 7.5px;
+    font-family: 'Cinzel', serif; font-size: 12px;
     letter-spacing: 1px; color: rgba(180,140,60,0.4);
     text-transform: uppercase;
   }
@@ -897,12 +941,12 @@
     font-family: 'Cinzel', serif; font-size: 15px;
     color: rgba(220,200,160,0.85); line-height: 1.1;
   }
-  .sm-ab-mod { font-size: 11px; color: rgba(180,140,60,0.65); }
+  .sm-ab-mod { font-size: 12px; color: rgba(180,140,60,0.65); }
   .sm-attacks-table {
     width: 100%; border-collapse: collapse; font-size: 12px;
   }
   .sm-attacks-table th {
-    font-family: 'Cinzel', serif; font-size: 7.5px; letter-spacing: 1px;
+    font-family: 'Cinzel', serif; font-size: 12px; letter-spacing: 1px;
     text-transform: uppercase; color: rgba(180,140,60,0.45);
     text-align: left; padding: 0 10px 6px 0;
     border-bottom: 1px solid rgba(180,140,60,0.1);
@@ -913,21 +957,21 @@
   }
   .sm-attacks-table td.atk-name { color: rgba(220,200,160,0.95); }
   .sm-attacks-table td.atk-notes {
-    color: rgba(200,185,150,0.45); font-style: italic; font-size: 11px;
+    color: rgba(200,185,150,0.45); font-style: italic; font-size: 12px;
   }
   .sm-spell-meta {
-    font-size: 11px; color: rgba(200,185,150,0.45);
+    font-size: 12px; color: rgba(200,185,150,0.45);
     margin-bottom: 10px; font-style: italic;
   }
   .sm-sub-label {
-    font-family: 'Cinzel', serif; font-size: 8px; letter-spacing: 2px;
+    font-family: 'Cinzel', serif; font-size: 12px; letter-spacing: 2px;
     text-transform: uppercase; margin: 8px 0 5px;
   }
   .sm-sub-label.cantrip-label { color: rgba(160,120,220,0.4); }
   .sm-sub-label.prepared-label { color: rgba(180,140,60,0.4); }
   .sm-spell-grid { display: flex; flex-wrap: wrap; gap: 5px; }
   .sm-spell-tag {
-    font-size: 11px; color: rgba(200,185,150,0.8);
+    font-size: 12px; color: rgba(200,185,150,0.8);
     background: rgba(180,140,60,0.06);
     border: 1px solid rgba(180,140,60,0.15);
     border-radius: 2px; padding: 3px 8px;
@@ -990,7 +1034,7 @@
   }
   #srd-close:hover { color: rgba(180,140,60,0.85); }
   #srd-category-badge {
-    font-family: 'Cinzel', serif; font-size: 7px;
+    font-family: 'Cinzel', serif; font-size: 12px;
     letter-spacing: 3px; text-transform: uppercase;
     color: rgba(180,140,60,0.38); margin-bottom: 4px;
   }
@@ -1005,7 +1049,7 @@
     margin-bottom: 10px; line-height: 1.3;
   }
   #srd-body .srd-meta {
-    font-size: 11px; color: rgba(180,140,60,0.55);
+    font-size: 12px; color: rgba(180,140,60,0.55);
     margin-bottom: 12px; font-style: italic;
   }
   #srd-body .srd-desc { white-space: pre-wrap; }
@@ -1015,12 +1059,12 @@
     align-items: center; gap: 6px;
   }
   .srd-dym-label {
-    font-size: 10px; font-family: 'Cinzel', serif;
+    font-size: 12px; font-family: 'Cinzel', serif;
     letter-spacing: 1.5px; text-transform: uppercase;
     color: rgba(180,140,60,0.55); margin-right: 2px;
   }
   .srd-suggest-chip {
-    font-family: inherit; font-size: 11px;
+    font-family: inherit; font-size: 12px;
     color: rgba(210,180,90,0.92);
     background: rgba(180,140,60,0.12);
     border: 1px solid rgba(180,140,60,0.4);
@@ -1037,18 +1081,18 @@
   }
   :root[data-theme="light"] .srd-dym-label { color: rgba(110,75,20,0.7); }
   #srd-loading {
-    font-size: 11px; font-family: 'Cinzel', serif;
+    font-size: 12px; font-family: 'Cinzel', serif;
     letter-spacing: 2px; text-transform: uppercase;
     color: rgba(180,140,60,0.35); padding: 20px 0;
     text-align: center;
   }
   #srd-not-found {
-    font-size: 11px; color: rgba(200,185,150,0.3);
+    font-size: 12px; color: rgba(200,185,150,0.3);
     font-style: italic; padding: 16px 0;
   }
   .sm-feature { margin-bottom: 10px; }
   .sm-feature-name {
-    font-family: 'Cinzel', serif; font-size: 11px;
+    font-family: 'Cinzel', serif; font-size: 12px;
     color: rgba(200,165,80,0.75); margin-bottom: 2px;
   }
   .sm-feature-text {
@@ -1072,7 +1116,7 @@
   /* ── Inspiration badge (sidebar) ── */
   .sb-inspiration {
     display: block; margin-top: 5px;
-    font-family: 'Cinzel', serif; font-size: 7.5px; letter-spacing: 1.5px;
+    font-family: 'Cinzel', serif; font-size: 12px; letter-spacing: 1.5px;
     text-transform: uppercase; color: rgba(220,190,60,0.85);
     animation: inspBadgePulse 2.5s ease infinite;
   }
@@ -1103,7 +1147,7 @@
     color: rgba(220,190,60,0.55); margin-top: 3px;
   }
   .inspiration-detail {
-    font-size: 11px; font-style: italic;
+    font-size: 12px; font-style: italic;
     color: rgba(220,190,60,0.42); margin-top: 6px;
     line-height: 1.4;
   }
@@ -1121,7 +1165,7 @@
     letter-spacing: 1px; color: rgba(140,200,120,0.7);
   }
   .xp-detail {
-    font-size: 11px; color: rgba(140,200,120,0.4);
+    font-size: 12px; color: rgba(140,200,120,0.4);
     font-style: italic; margin-top: 2px;
   }
 
@@ -1133,14 +1177,14 @@
   }
   .sb-milestone-label {
     font-family: 'Cinzel', serif;
-    font-size: 8px;
+    font-size: 12px;
     letter-spacing: 1.2px;
     text-transform: uppercase;
     color: rgba(220, 180, 90, 0.75);
   }
   .sb-milestone-count {
     font-family: 'Cinzel', serif;
-    font-size: 9px;
+    font-size: 12px;
     color: #e0bf6e;
     background: rgba(220, 180, 90, 0.18);
     border: 1px solid rgba(220, 180, 90, 0.35);
@@ -1172,7 +1216,7 @@
   .milestone-icon { margin-right: 0.4em; opacity: 0.85; }
   .milestone-name { font-size: 13px; }
   .milestone-label {
-    font-size: 11px; opacity: 0.75; margin-left: 0.6em;
+    font-size: 12px; opacity: 0.75; margin-left: 0.6em;
     text-transform: uppercase; letter-spacing: 2px;
   }
   .milestone-detail {
@@ -1187,7 +1231,7 @@
   .sb-slots { margin-top: 5px; }
   .sb-slot-row { display: flex; align-items: center; gap: 3px; margin-bottom: 2px; }
   .sb-slot-level {
-    font-family: 'Cinzel', serif; font-size: 7px;
+    font-family: 'Cinzel', serif; font-size: 12px;
     color: rgba(160,120,220,0.5); width: 14px; text-align: right; flex-shrink: 0;
   }
   .sb-slot-pip {
@@ -1203,7 +1247,7 @@
     border-top: 1px solid rgba(180,140,60,0.08);
   }
   .sb-factions-header {
-    font-family: 'Cinzel', serif; font-size: 7.5px; letter-spacing: 2px;
+    font-family: 'Cinzel', serif; font-size: 12px; letter-spacing: 2px;
     text-transform: uppercase; color: rgba(180,140,60,0.35); margin-bottom: 6px;
   }
   .sb-faction-item {
@@ -1211,11 +1255,11 @@
     gap: 6px; padding: 2px 0;
   }
   .sb-faction-name {
-    font-size: 9px; color: rgba(200,185,150,0.6);
+    font-size: 12px; color: rgba(200,185,150,0.6);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1;
   }
   .sb-faction-standing {
-    font-family: 'Cinzel', serif; font-size: 7.5px;
+    font-family: 'Cinzel', serif; font-size: 12px;
     letter-spacing: 0.5px; text-transform: uppercase; white-space: nowrap;
   }
   .sb-faction-standing.allied    { color: rgba(80,200,130,0.80); }
@@ -1236,7 +1280,7 @@
   .sb-clock-seg { fill: transparent; stroke: rgba(180,140,60,0.45); stroke-width: 1; }
   .sb-clock-seg.filled { fill: rgba(220,120,50,0.75); }
   .sb-clock-name {
-    font-size: 9px; color: rgba(200,185,150,0.7);
+    font-size: 12px; color: rgba(200,185,150,0.7);
     overflow: hidden; text-overflow: ellipsis; flex: 1;
   }
 
@@ -1246,7 +1290,7 @@
     border-top: 1px solid rgba(180,140,60,0.08);
   }
   .sb-quests-header {
-    font-family: 'Cinzel', serif; font-size: 7.5px; letter-spacing: 2px;
+    font-family: 'Cinzel', serif; font-size: 12px; letter-spacing: 2px;
     text-transform: uppercase; color: rgba(180,140,60,0.35); margin-bottom: 6px;
   }
   .sb-quest-item {
@@ -1254,11 +1298,11 @@
     gap: 6px; padding: 2px 0;
   }
   .sb-quest-name {
-    font-size: 9px; color: rgba(200,185,150,0.6);
+    font-size: 12px; color: rgba(200,185,150,0.6);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1;
   }
   .sb-quest-status {
-    font-family: 'Cinzel', serif; font-size: 7.5px;
+    font-family: 'Cinzel', serif; font-size: 12px;
     letter-spacing: 0.5px; text-transform: uppercase; white-space: nowrap;
   }
   .sb-quest-status.active   { color: rgba(180,140,60,0.85); }
@@ -1270,14 +1314,14 @@
   /* ── Relationships (sheet modal) ── */
   .sm-relationship { display: flex; gap: 10px; align-items: baseline; margin-bottom: 8px; }
   .sm-rel-name {
-    font-family: 'Cinzel', serif; font-size: 11px;
+    font-family: 'Cinzel', serif; font-size: 12px;
     color: rgba(200,165,80,0.75); min-width: 90px; flex-shrink: 0;
   }
   .sm-rel-role {
-    font-size: 10px; font-style: italic;
+    font-size: 12px; font-style: italic;
     color: rgba(160,120,220,0.6); min-width: 60px; flex-shrink: 0;
   }
-  .sm-rel-note { font-size: 11px; color: rgba(200,185,150,0.5); line-height: 1.45; }
+  .sm-rel-note { font-size: 12px; color: rgba(200,185,150,0.5); line-height: 1.45; }
 
   /* ── Clickable sheet items ── */
   .sm-clickable { cursor: default; }
@@ -1290,14 +1334,14 @@
   }
   .sb-turn-header {
     font-family: 'Cinzel', serif;
-    font-size: 8px;
+    font-size: 12px;
     letter-spacing: 2px;
     text-transform: uppercase;
     color: rgba(180,140,60,0.55);
     margin-bottom: 6px;
   }
   .sb-turn-item {
-    font-size: 10px;
+    font-size: 12px;
     color: rgba(200,185,150,0.4);
     padding: 2px 0 2px 14px;
     line-height: 1.5;
@@ -1309,13 +1353,13 @@
   .sb-turn-item.sb-turn-current {
     color: rgba(220,200,160,0.95);
     font-family: 'Cinzel', serif;
-    font-size: 10px;
+    font-size: 12px;
   }
   .sb-turn-item.sb-turn-current::before {
     content: '▶';
     position: absolute;
     left: 0;
-    font-size: 7px;
+    font-size: 12px;
     color: rgba(180,140,60,0.8);
     top: 4px;
   }
@@ -1367,7 +1411,7 @@
   }
   #wc-date {
     font-family: 'Cinzel', serif;
-    font-size: 9px;
+    font-size: 12px;
     letter-spacing: 2px;
     text-transform: uppercase;
     color: rgba(180,140,60,0.65);
@@ -1375,7 +1419,7 @@
   }
   #wc-sub {
     font-family: 'Cinzel', serif;
-    font-size: 8px;
+    font-size: 12px;
     letter-spacing: 1.5px;
     text-transform: uppercase;
     color: rgba(180,140,60,0.38);
@@ -1390,7 +1434,7 @@
     margin-top: 6px;
     padding: 2px 7px;
     font-family: 'Cinzel', serif;
-    font-size: 8px;
+    font-size: 12px;
     letter-spacing: 1.5px;
     text-transform: uppercase;
     border: 1px solid rgba(180,140,60,0.35);
@@ -1433,7 +1477,7 @@
   .narrate-label,
   .theme-label {
     font-family: 'Cinzel', serif;
-    font-size: 7.5px;
+    font-size: 12px;
     letter-spacing: 1.5px;
     color: rgba(220,185,100,0.92);
     text-transform: uppercase;
@@ -1506,7 +1550,7 @@
   }
   .tts-voice-label {
     font-family: 'Cinzel', serif;
-    font-size: 7px;
+    font-size: 12px;
     letter-spacing: 0.12em;
     text-transform: uppercase;
     line-height: 1;
@@ -1531,7 +1575,7 @@
   .tts-voice-group {
     padding: 6px 13px 2px;
     font-family: 'Cinzel', serif;
-    font-size: 6.5px;
+    font-size: 12px;
     letter-spacing: 0.18em;
     text-transform: uppercase;
     color: rgba(180, 140, 60, 0.65);
@@ -1575,18 +1619,18 @@
     padding: 8px 14px; cursor: pointer; user-select: none;
   }
   #input-panel-label {
-    font-family: 'Cinzel', serif; font-size: 8px;
+    font-family: 'Cinzel', serif; font-size: 12px;
     letter-spacing: 2px; color: rgba(180,140,60,0.65);
     text-transform: uppercase; flex: 1;
   }
   #input-badge {
-    display: none; font-family: 'Cinzel', serif; font-size: 7px;
+    display: none; font-family: 'Cinzel', serif; font-size: 12px;
     letter-spacing: 1px; color: rgba(220,185,100,1);
     background: rgba(40,25,5,0.9); border: 1px solid rgba(180,140,60,0.55);
     border-radius: 10px; padding: 1px 8px;
   }
   #input-toggle-arrow {
-    font-size: 9px; color: rgba(180,140,60,0.45);
+    font-size: 12px; color: rgba(180,140,60,0.45);
   }
   #input-body {
     padding: 0 14px 14px;
@@ -1594,20 +1638,20 @@
   }
   #input-panel.collapsed #input-body { display: none; }
   #input-error {
-    font-family: 'Cinzel', serif; font-size: 9px; line-height: 1.4;
+    font-family: 'Cinzel', serif; font-size: 12px; line-height: 1.4;
     color: rgba(230,150,120,0.95); border: 1px solid rgba(210,110,80,0.45);
     border-radius: 3px; padding: 5px 8px;
   }
   /* Expanded, the panel must stay clear of the settings rows above it (they end
      near y=363). Its top is 100vh - 22px - header (~34px) - body, so capping the
      body at 100vh - 440px keeps the top at or below 384px; the body scrolls. */
-  body:not(.input-only) #input-body { max-height: min(60vh, calc(100vh - 440px)); min-height: 0; overflow-y: auto; }
+  body:not(.input-only) #input-body { max-height: min(60vh, calc(100vh - 500px)); min-height: 0; overflow-y: auto; }
   /* backdrop-filter makes the panel a containing block for fixed children; drop
      it while the dice pad is floated so the pad anchors to the viewport. */
   body.dice-pad-open #input-panel { backdrop-filter: none; }
   #char-tabs { display: flex; gap: 5px; flex-wrap: wrap; }
   .char-tab {
-    font-family: 'Cinzel', serif; font-size: 7.5px;
+    font-family: 'Cinzel', serif; font-size: 12px;
     letter-spacing: 1.5px; text-transform: uppercase;
     color: rgba(180,140,60,0.5);
     border: 1px solid rgba(180,140,60,0.22);
@@ -1632,7 +1676,7 @@
   #player-input-text::placeholder { color: rgba(180,140,60,0.28); }
   #input-footer { display: flex; align-items: center; gap: 10px; justify-content: flex-end; }
   #skip-turn-btn {
-    font-family: 'Cinzel', serif; font-size: 8px;
+    font-family: 'Cinzel', serif; font-size: 12px;
     letter-spacing: 1.8px; text-transform: uppercase;
     color: rgba(190,100,70,0.72); background: rgba(20,6,3,0.45);
     border: 1px dashed rgba(170,85,55,0.38);
@@ -1645,7 +1689,7 @@
     background: rgba(35,10,5,0.65);
   }
   #send-btn {
-    font-family: 'Cinzel', serif; font-size: 8px;
+    font-family: 'Cinzel', serif; font-size: 12px;
     letter-spacing: 1.8px; text-transform: uppercase;
     color: rgba(200,165,80,0.85); background: rgba(20,14,6,0.6);
     border: 1px solid rgba(180,140,60,0.48);
@@ -1666,17 +1710,17 @@
   }
   .sent-entry-body { flex: 1; min-width: 0; }
   .sent-char {
-    font-family: 'Cinzel', serif; font-size: 8.5px;
+    font-family: 'Cinzel', serif; font-size: 12px;
     letter-spacing: 1px; color: rgba(140,180,90,0.75);
     margin-bottom: 2px;
   }
   .sent-text {
-    font-family: 'IM Fell English', serif; font-size: 11.5px;
+    font-family: 'IM Fell English', serif; font-size: 12px;
     color: rgba(200,175,120,0.7); word-break: break-word;
   }
   .sent-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; margin-top: 2px; }
   .recall-btn {
-    font-family: 'Cinzel', serif; font-size: 7px;
+    font-family: 'Cinzel', serif; font-size: 12px;
     letter-spacing: 1.2px; text-transform: uppercase;
     color: rgba(180,140,60,0.55); background: transparent;
     border: 1px solid rgba(180,140,60,0.25); border-radius: 3px;
@@ -1684,22 +1728,22 @@
   }
   .recall-btn:hover { color: rgba(210,140,80,0.85); border-color: rgba(210,140,80,0.5); }
   #waiting-indicator {
-    font-family: 'Cinzel', serif; font-size: 7.5px;
+    font-family: 'Cinzel', serif; font-size: 12px;
     letter-spacing: 1.2px; color: rgba(180,140,60,0.45);
     text-align: center; padding: 4px 0;
     display: none; flex-direction: column; gap: 3px;
   }
   #waiting-indicator .queue-label {
-    color: rgba(180,140,60,0.5); font-size: 7px; letter-spacing: 1.5px;
+    color: rgba(180,140,60,0.5); font-size: 12px; letter-spacing: 1.5px;
   }
   #waiting-indicator .queue-check {
-    color: rgba(140,200,120,0.75); font-size: 8px; letter-spacing: 1px;
+    color: rgba(140,200,120,0.75); font-size: 12px; letter-spacing: 1px;
   }
 
   /* ── Autorun cycle indicator (lives inside party input panel header) ── */
   #autorun-indicator {
     display: none; align-items: center; gap: 5px;
-    font-family: 'Cinzel', serif; font-size: 7px;
+    font-family: 'Cinzel', serif; font-size: 12px;
     letter-spacing: 1.4px; color: rgba(180,140,60,0.55);
     text-transform: uppercase;
   }
@@ -1728,7 +1772,7 @@
     bottom: 22px; right: 24px;
     z-index: 6;
     font-family: 'Cinzel', serif;
-    font-size: 9px;
+    font-size: 12px;
     letter-spacing: 2px;
     text-transform: uppercase;
     color: rgba(200,165,80,0.82);
@@ -1766,16 +1810,16 @@
     backdrop-filter: blur(10px);
   }
   .device-card-label {
-    font-family: 'Cinzel', serif; font-size: 7.5px;
+    font-family: 'Cinzel', serif; font-size: 12px;
     letter-spacing: 1.5px; text-transform: uppercase;
     color: rgba(220,150,100,0.9); flex: 1;
   }
   .device-card-ip {
-    font-family: 'IM Fell English', serif; font-size: 11px;
+    font-family: 'IM Fell English', serif; font-size: 12px;
     color: rgba(200,160,120,0.7); margin-right: 4px;
   }
   .device-approve-btn, .device-deny-btn {
-    font-family: 'Cinzel', serif; font-size: 7px;
+    font-family: 'Cinzel', serif; font-size: 12px;
     letter-spacing: 1.2px; text-transform: uppercase;
     border-radius: 3px; padding: 4px 10px; cursor: pointer;
     transition: all 0.15s ease; white-space: nowrap;
@@ -1807,7 +1851,7 @@
   .audio-row:hover { background: rgba(180,140,60,0.10); }
   .audio-label {
     font-family: 'Cinzel', serif;
-    font-size: 7.5px;
+    font-size: 12px;
     letter-spacing: 1.8px;
     color: rgba(220,185,100,0.85);
     text-transform: uppercase;
@@ -2422,7 +2466,7 @@
     padding: 6px 11px;
     color: rgba(220, 185, 100, 0.85);
     font-family: 'Cinzel', serif;
-    font-size: 9.5px;
+    font-size: 12px;
     letter-spacing: 0.14em;
     text-transform: uppercase;
     cursor: pointer;
@@ -2441,9 +2485,15 @@
      folds every row away except the toggle row itself, so the narration
      reclaims the right side. */
   #audio-controls.collapsed .audio-row:not(#controls-toggle-row) { display: none; }
-  #controls-toggle-row { cursor: pointer; justify-content: flex-end; }
-  #controls-toggle-row .audio-label { color: rgba(180,140,60,0.5); }
-  #controls-toggle-row:hover .audio-label { color: rgba(180,140,60,0.9); }
+  /* A real button, not a div with a click handler: it is reached by Tab and
+     activated by Enter or Space like every other control on the page. */
+  #controls-toggle-row { cursor: pointer; justify-content: flex-end;
+                         align-items: center; }
+  /* 0.5 alpha put this at roughly a third of its own contrast against the
+     backdrop, which is where "HIDE >" was nearly-invisible text the report
+     flagged twice. Same amber as the other rail labels, at full strength. */
+  #controls-toggle-row .audio-label { color: rgba(220,185,100,0.9); }
+  #controls-toggle-row:hover .audio-label { color: rgba(245,215,130,1); }
 
   #phone-mode-menu {
     position: fixed;
@@ -2462,7 +2512,7 @@
   #phone-mode-menu .pm-header {
     padding: 6px 13px 4px;
     font-family: 'Cinzel', serif;
-    font-size: 7px;
+    font-size: 12px;
     letter-spacing: 0.18em;
     text-transform: uppercase;
     color: rgba(180, 140, 60, 0.65);
@@ -2505,7 +2555,7 @@
     padding: 5px 10px;
     color: rgba(180, 140, 60, 0.6);
     font-family: 'Cinzel', serif;
-    font-size: 8.5px;
+    font-size: 12px;
     letter-spacing: 0.14em;
     text-transform: uppercase;
     cursor: pointer;
@@ -2601,6 +2651,15 @@
     text-shadow: 0 1px 1px rgba(255, 250, 235, 0.6);
   }
   :root[data-theme="light"] .dm-block p em { color: rgb(110, 70, 20); }
+  :root[data-theme="light"] .dm-block ul.dm-list, :root[data-theme="light"] .dm-block ol.dm-list,
+  :root[data-theme="light"] .npc-block ul.dm-list, :root[data-theme="light"] .npc-block ol.dm-list {
+    color: rgb(40, 28, 14); text-shadow: 0 1px 1px rgba(255, 250, 235, 0.6);
+  }
+  :root[data-theme="light"] .dm-block h2, :root[data-theme="light"] .dm-block h3,
+  :root[data-theme="light"] .dm-block h4 { color: rgb(95, 62, 14); text-shadow: none; }
+  :root[data-theme="light"] .dm-block code, :root[data-theme="light"] .npc-block code {
+    background: rgba(140, 95, 20, 0.14); color: rgb(80, 52, 12);
+  }
   :root[data-theme="light"] .dm-block table.dm-table th {
     background: rgba(180, 140, 60, 0.18);
     color: rgb(70, 50, 18);
@@ -2941,6 +3000,15 @@
       text-shadow: 0 1px 1px rgba(255, 250, 235, 0.6);
     }
     :root:not([data-theme]) .dm-block p em { color: rgb(110, 70, 20); }
+    :root:not([data-theme]) .dm-block ul.dm-list, :root:not([data-theme]) .dm-block ol.dm-list,
+    :root:not([data-theme]) .npc-block ul.dm-list, :root:not([data-theme]) .npc-block ol.dm-list {
+      color: rgb(40, 28, 14); text-shadow: 0 1px 1px rgba(255, 250, 235, 0.6);
+    }
+    :root:not([data-theme]) .dm-block h2, :root:not([data-theme]) .dm-block h3,
+    :root:not([data-theme]) .dm-block h4 { color: rgb(95, 62, 14); text-shadow: none; }
+    :root:not([data-theme]) .dm-block code, :root:not([data-theme]) .npc-block code {
+      background: rgba(140, 95, 20, 0.14); color: rgb(80, 52, 12);
+    }
     :root:not([data-theme]) .dm-block table.dm-table th {
       background: rgba(180, 140, 60, 0.18);
       color: rgb(70, 50, 18);
@@ -3076,10 +3144,110 @@
     }
     :root:not([data-theme]) #dice-pending-badge .dpb-label { color: rgba(110, 75, 20, 0.85); }
   }
+
+  /* ── Wave 2: accessibility, input fit, target floor ───────────────────── */
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+  main#main-content { position: static; }
+  .skip-link {
+    position: fixed; left: 12px; top: -60px; z-index: 2000;
+    padding: 8px 14px; border-radius: 4px; font: 600 14px/1.2 system-ui, sans-serif;
+    background: #f2d98a; color: #1a1205; text-decoration: none;
+  }
+  .skip-link:focus { top: 12px; }
+  :focus-visible {
+    outline: 2px solid #f2d98a !important;
+    outline-offset: 2px !important;
+  }
+  #text-scroll:focus-visible { outline-offset: -4px !important; }
+
+  /* Composer: pinned to the bottom of the rail; the log above it scrolls and the
+     Roll row is sticky, so neither ever leaves the viewport. */
+  #input-body > * { flex-shrink: 0; }
+  #sent-log { max-height: 96px; overflow-y: auto; }
+  #player-input-text {
+    min-height: 3.4em; max-height: 9em; line-height: 1.4; font-size: 14px;
+    overflow-y: auto;
+  }
+  #input-panel-header, #send-btn, #skip-turn-btn, .char-tab { min-height: 32px; }
+
+  /* Dice pad: a compact bar (die + Roll) on the main view, options on demand. */
+  #dp-toggle {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    width: 100%; min-height: 32px; padding: 4px 10px; cursor: pointer;
+    font: 600 12px/1.2 'Cinzel', serif; letter-spacing: 1.5px; text-transform: uppercase;
+    color: rgba(220,185,100,0.95); background: rgba(20,14,6,0.6);
+    border: 1px solid rgba(180,140,60,0.4); border-radius: 6px;
+  }
+  #dp-toggle-sum { font-family: ui-monospace, monospace; letter-spacing: 0; }
+  body.input-only #dp-toggle { display: none; }
+  body:not(.input-only) #dice-pad { padding: 8px; gap: 8px; }
+  body:not(.input-only) #dice-pad:not(.open) #dp-options { display: none; }
+  body:not(.input-only) #dice-pad #dp-options { display: flex; flex-direction: column; gap: 8px; max-height: 38vh; overflow-y: auto; }
+  body:not(.input-only) #dice-pad #dp-roll { min-height: 40px; padding: 6px 12px; }
+  body:not(.input-only) #dp-reel-wrap { height: 56px; }
+  /* The Roll row stays pinned to the bottom of the scrolling panel body. */
+  body:not(.input-only) #dice-pad { position: sticky; bottom: 0; z-index: 1; background: rgba(10,7,3,0.98); }
+  body.dice-pad-open #dice-pad { position: fixed; max-height: calc(100vh - 48px); overflow-y: auto; }
+  body.dice-pad-open #dice-pad #dp-options { display: flex; max-height: none; }
+  body.dice-pad-open #dp-toggle { display: none; }
+
+  /* Narrow windows: the desktop inset (max(340px, 18vw) on each side) was sized
+     to clear the two rails, so below 1100px it ate the window instead: at 768px
+     it left the prose an 84px ribbon, one word per line. Below the breakpoint the
+     rails stop being side columns and the insets become a gutter, so the prose
+     takes the width. The sidebar still gets its own column when it has data, and
+     the settings column starts collapsed (see JS).
+     1100 is the width where 100vw - 340 - 340 still leaves a readable column
+     (421px, 43 characters), so above it the desktop inset is the better trade. */
+  @media (max-width: 1100px) {
+    #text-scroll { padding: 172px 20px 72px 20px; }
+    #sidebar.has-data:not(.hidden) ~ main #text-scroll { padding-left: 232px; }
+    #input-panel { right: 12px; bottom: 12px; width: min(300px, calc(100vw - 24px)); }
+    /* With no side rail to sit beside, the settings column becomes one scrollable
+       row across the top band the inset above already reserves. One row, so its
+       height does not depend on how many settings it is showing, and it can
+       never land on the prose the way a floating right-hand column did. */
+    #audio-controls, body:not(.input-only) #audio-controls {
+      top: 44px; right: 12px; left: 12px;
+      flex-direction: row; flex-wrap: nowrap; align-items: center;
+      justify-content: flex-start; gap: 10px;
+      overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain;
+      padding: 3px 8px; border-radius: 8px;
+      background: rgba(8, 5, 2, 0.55);
+    }
+    #audio-controls .audio-row { flex: none; }
+    /* A button carries the UA's own background and border, which would draw a
+       box round every setting in the row. */
+    #audio-controls button.audio-row { background: none; border: 0; font: inherit; }
+    /* The sidebar paints after the rail, so start the row past it rather than
+       letting the sheet cover the character card. */
+    body:has(#sidebar.has-data:not(.hidden)) #audio-controls { left: 232px; }
+    #phone-mode-menu { top: 96px; right: 12px; }
+  }
+
+  /* Target floor: 32px everywhere, 44px on touch. */
+  #sidebar-toggle, #controls-toggle-row, #phone-mode-btn, #dm-help-btn, .ts-btn,
+  .tts-play-btn, .tts-voice-btn, #new-content-pill, .dp-tab, .sm-tab,
+  #sheet-close, #srd-close { min-height: 32px; min-width: 32px; }
+  #vb-slider { height: 32px; }
+  @media (pointer: coarse) {
+    #sidebar-toggle, #controls-toggle-row, #phone-mode-btn, #dm-help-btn, .ts-btn,
+    .tts-play-btn, .tts-voice-btn, #new-content-pill, .dp-tab, .sm-tab,
+    #sheet-close, #srd-close, #input-panel-header, #send-btn, #skip-turn-btn,
+    .char-tab, #dp-toggle, .audio-row { min-height: 44px; min-width: 44px; }
+    body:not(.input-only) #dice-pad #dp-roll { min-height: 44px; }
+    #vb-slider { height: 44px; }
+  }
 </style>
 <link rel="stylesheet" href="/static/tactics.css">
 </head>
 <body>
+
+<a href="#player-input-text" class="skip-link" id="skip-link">Skip to party input</a>
+<a href="#text-scroll" class="skip-link" id="skip-story">Skip to story</a>
 
 <!-- Background layers -->
 <div id="bg-a" class="bg-layer"></div>
@@ -3117,9 +3285,11 @@
 
 <!-- Audio toggle controls — SFX triggered by narration text -->
 <div id="audio-controls">
-  <div class="audio-row" id="controls-toggle-row" title="Hide the settings column">
+  <button class="audio-row" id="controls-toggle-row" type="button"
+          aria-label="Show or hide the settings column" aria-expanded="true"
+          title="Hide the settings column">
     <span class="audio-label" id="controls-toggle">Hide ▶</span>
-  </div>
+  </button>
   <div class="audio-row" id="sfx-row" title="Sound effects (triggered by narration)">
     <span class="audio-label">Sound Effects</span>
     <div class="toggle-track" id="sfx-track"><div class="toggle-thumb"></div></div>
@@ -3192,7 +3362,7 @@
     <div id="char-tabs" data-tab-section="move">
       <button class="char-tab active" data-char="Everybody">Everybody</button>
     </div>
-    <textarea id="player-input-text" rows="2" placeholder="Enter action or dialogue…" maxlength="500"
+    <textarea id="player-input-text" rows="2" aria-label="Action or dialogue for the GM" placeholder="Enter action or dialogue…" maxlength="500"
               data-tab-section="move"></textarea>
     <div id="input-error" data-tab-section="move" role="alert" style="display:none"></div>
     <div id="input-footer" data-tab-section="move">
@@ -3201,13 +3371,16 @@
     </div>
     <!-- Phone-only dice pad (shown by ?view=input) -->
     <div id="dice-pad" data-tab-section="roll">
+      <button id="dp-toggle" type="button" aria-expanded="false" aria-controls="dp-options">
+        <span>Dice</span><span id="dp-toggle-sum">d20</span><span aria-hidden="true">&#9662;</span>
+      </button>
+      <div id="dp-options">
       <div id="dp-bound" style="display:none"></div>
       <div class="dp-row">
         <input id="dp-name" type="text" maxlength="24" placeholder="Name"
                autocomplete="off" autocorrect="off" autocapitalize="words" spellcheck="false">
       </div>
       <div id="dp-reel-wrap"><div id="dp-reel">d20</div></div>
-      <div id="dp-result-line"></div>
       <div class="dp-row" id="dp-die-row">
         <button class="dp-die active" data-spec="1d20">d20</button>
         <button class="dp-die" data-spec="1d4">d4</button>
@@ -3234,6 +3407,8 @@
         <input id="dp-label" type="text" maxlength="60" placeholder="Label (e.g. Stealth) — optional"
                autocomplete="off" autocorrect="off" autocapitalize="sentences" spellcheck="false">
       </div>
+      </div>
+      <div id="dp-result-line" role="status"></div>
       <div class="dp-row">
         <button id="dp-roll">Roll</button>
       </div>
@@ -3286,9 +3461,12 @@
 </div>
 
 <!-- Text -->
-<div id="text-scroll">
-  <div id="text-content"></div>
-</div>
+<main id="main-content">
+  <h1 class="sr-only">Open Tabletop GM display</h1>
+  <div id="text-scroll" role="log" aria-live="polite" aria-relevant="additions" aria-label="Story" tabindex="0">
+    <div id="text-content"></div>
+  </div>
+</main>
 <button id="new-content-pill" type="button" aria-label="Jump to newest narration">New ↓</button>
 <style>
   #conn-status { position: fixed; top: 8px; right: 8px; z-index: 900; padding: 3px 10px;
@@ -3879,13 +4057,31 @@ const skyRenderer = (() => {
 
 // ── Animation loop ────────────────────────────────────────────────
 
+// Honour prefers-reduced-motion (paint a still frame, refresh slowly) and stop
+// the loop entirely while the tab is hidden; visibilitychange restarts it.
+const _reducedMotionMQ = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
+let _loopRaf = 0, _loopTimer = 0;
 function loop() {
-  particleSystem.update();
+  _loopRaf = 0;
+  if (document.hidden) return;
+  const reduced = !!(_reducedMotionMQ && _reducedMotionMQ.matches);
+  if (!reduced) particleSystem.update();
   particleSystem.draw();
   skyRenderer.draw();
-  requestAnimationFrame(loop);
+  if (reduced) {
+    clearTimeout(_loopTimer);
+    _loopTimer = setTimeout(_kickLoop, 5000);
+  } else {
+    _loopRaf = requestAnimationFrame(loop);
+  }
 }
-loop();
+function _kickLoop() {
+  clearTimeout(_loopTimer);
+  if (!_loopRaf && !document.hidden) _loopRaf = requestAnimationFrame(loop);
+}
+document.addEventListener('visibilitychange', _kickLoop);
+if (_reducedMotionMQ && _reducedMotionMQ.addEventListener) _reducedMotionMQ.addEventListener('change', _kickLoop);
+_kickLoop();
 
 
 // ═══════════════════════════════════════════════════════════════════
@@ -3911,6 +4107,15 @@ let idleTimer       = null;
 function _mdParseInline(text, items) {
   let i = 0;
   while (i < text.length) {
+    // Inline code (`text`) -- literal, no nested emphasis
+    if (text[i] === '`') {
+      const end = text.indexOf('`', i + 1);
+      if (end === -1 || end === i + 1) { items.push(text[i]); i++; continue; }
+      items.push({open: 'code'});
+      for (let j = i + 1; j < end; j++) items.push(text[j]);
+      items.push({close: 'code'});
+      i = end + 1; continue;
+    }
     // Bold (**text**) — must check before single *
     if (text[i] === '*' && text[i + 1] === '*') {
       const end = text.indexOf('**', i + 2);
@@ -4008,22 +4213,143 @@ function _appendInlineSegments(parent, segments) {
   }
 }
 
-// Main parser: splits text into lines, detects table blocks, falls back to inline parsing.
+// Block-level line shapes. Headings, bullets and numbered items each start
+// their own block; everything else is prose.
+const _MD_HEADING = /^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$/;
+const _MD_BULLET  = /^\s{0,3}[-*+]\s+(.*)$/;
+const _MD_ORDERED = /^\s{0,3}(\d{1,4})[.)]\s+(.*)$/;
+
+// Main parser. Output items: chars, {open/close: tag} inline markers, {table},
+// {block: tag, list, start} block starters, {soft: true} for a single newline
+// (prose lines join into ONE paragraph) and '\n' for a real paragraph break.
+// Nothing here touches the DOM; the renderers below only ever create elements
+// and text nodes from these items, so raw LLM text is never parsed as HTML.
 function _mdParse(text) {
   const items = [];
   const lines = text.split('\n');
-  for (let li = 0; li < lines.length; li++) {
+  const lastIdx = lines.length - 1;
+  let prev = null;                     // 'text' | 'blank' | 'block' | null
+  for (let li = 0; li <= lastIdx; li++) {
+    const raw = lines[li];
+    const line = li > 0 ? raw.trim() : raw;
+    const atEnd = li === lastIdx;      // the segment after the final newline
+    if (!line.trim()) {
+      if (!atEnd && prev !== 'blank') { items.push('\n'); prev = 'blank'; }
+      continue;
+    }
     const tbl = _detectTable(lines, li);
     if (tbl) {
       items.push({ table: { headers: tbl.headers, rows: tbl.rows } });
       li = tbl.end - 1;
-      if (li < lines.length - 1) items.push('\n');
+      prev = 'block';
       continue;
     }
-    _mdParseInline(lines[li], items);
-    if (li < lines.length - 1) items.push('\n');
+    let m;
+    if (li > 0 || raw === line) {      // a mid-line streamed fragment is never a block start
+      if ((m = _MD_HEADING.exec(line))) {
+        items.push({ block: 'h' + Math.min(4, Math.max(2, m[1].length)) });
+        _mdParseInline(m[2], items);
+        prev = 'block';
+        if (!atEnd) items.push('\n');
+        continue;
+      }
+      if ((m = _MD_BULLET.exec(line))) {
+        items.push({ block: 'li', list: 'ul' });
+        _mdParseInline(m[1], items);
+        prev = 'block';
+        if (!atEnd) items.push('\n');
+        continue;
+      }
+      if ((m = _MD_ORDERED.exec(line))) {
+        items.push({ block: 'li', list: 'ol', start: parseInt(m[1], 10) });
+        _mdParseInline(m[2], items);
+        prev = 'block';
+        if (!atEnd) items.push('\n');
+        continue;
+      }
+    }
+    _mdParseInline(line, items);
+    prev = 'text';
+    if (!atEnd) items.push({ soft: true });
   }
   return items;
+}
+
+// The element the next character should land in: the last paragraph, heading
+// or list item of a block. Skips the badge <img>, the TTS bar and tables that
+// may sit after it.
+function _lastTextEl(block) {
+  if (!block) return null;
+  let e = block.lastElementChild;
+  while (e) {
+    if (e.tagName === 'UL' || e.tagName === 'OL') { e = e.lastElementChild; continue; }
+    if (/^(P|H[1-6]|LI)$/.test(e.tagName)) return e;
+    if (e.tagName === 'TABLE') return null;
+    e = e.previousElementSibling;
+  }
+  return null;
+}
+
+// Start a block-level element inside `block`. An untouched empty paragraph is
+// reused rather than left behind as a blank gap.
+function _mdStartBlock(block, item) {
+  const tag = item === '\n' ? 'p' : (item.block || 'p');
+  const last = _lastTextEl(block);
+  if (last && last.tagName === 'P' && !last.firstChild && last.parentNode === block) {
+    if (tag === 'p') return last;
+    block.removeChild(last);
+  }
+  let el;
+  if (tag === 'li') {
+    let list = block.lastElementChild;
+    while (list && !/^(UL|OL|P|H[1-6]|TABLE)$/.test(list.tagName)) list = list.previousElementSibling;
+    if (!list || list.tagName !== item.list.toUpperCase()) {
+      list = document.createElement(item.list);
+      list.className = 'dm-list';
+      if (item.list === 'ol' && item.start > 1) list.setAttribute('start', String(item.start));
+      block.appendChild(list);
+    }
+    el = document.createElement('li');
+    list.appendChild(el);
+  } else {
+    el = document.createElement(tag);
+    block.appendChild(el);
+  }
+  return el;
+}
+
+// Soft newline: a space between joined prose lines, never doubled.
+function _mdSoftSpace(el) {
+  if (!el) return;
+  const t = el.lastChild;
+  const txt = t ? (t.textContent || '') : '';
+  if (!t || /\s$/.test(txt)) return;
+  el.appendChild(document.createTextNode(' '));
+}
+
+// Render a whole text into a finished block, instantly (replay paths).
+function _mdFillBlock(block, text) {
+  let inline = null;
+  for (const item of _mdParse(text)) {
+    if (item === '\n' || (item && typeof item === 'object' && item.block)) {
+      inline = null;
+      _mdStartBlock(block, item);
+    } else if (item && item.soft) {
+      _mdSoftSpace(_lastTextEl(block));
+    } else if (item && item.table) {
+      inline = null;
+      block.appendChild(_buildTableNode(item.table));
+    } else if (item && item.open) {
+      const el = document.createElement(item.open);
+      (_lastTextEl(block) || _mdStartBlock(block, '\n')).appendChild(el);
+      inline = el;
+    } else if (item && item.close) {
+      inline = null;
+    } else {
+      const host = inline || _lastTextEl(block) || _mdStartBlock(block, '\n');
+      host.appendChild(document.createTextNode(item));
+    }
+  }
 }
 
 // Auto-scroll: only follow if the user hasn't scrolled up
@@ -4057,12 +4383,13 @@ function getOrCreateBlock() {
     textContent.appendChild(currentEl);
     scrollToBottom();
   }
-  return currentEl.querySelector('p:last-child');
+  return _lastTextEl(currentEl) || _mdStartBlock(currentEl, '\n');
 }
 
 function typeNextChar() {
   if (charQueue.length === 0) {
     isTyping = false;
+    textScroll.setAttribute('aria-busy', 'false');   // announce the finished text, not every letter
     return;
   }
 
@@ -4071,11 +4398,13 @@ function typeNextChar() {
 
   if (currentCursor) currentCursor.classList.remove('typing-cursor');
 
-  if (item === '\n') {
-    // New paragraph — reset inline state
+  if (item === '\n' || (item && typeof item === 'object' && item.block)) {
+    // New paragraph, heading or list item -- reset inline state
     _currentInlineEl = null;
-    const next = document.createElement('p');
-    currentEl.appendChild(next);
+    _mdStartBlock(currentEl, item);
+  } else if (item && typeof item === 'object' && item.soft) {
+    _mdSoftSpace(p);
+    _currentInlineEl = null;
   } else if (item && typeof item === 'object' && item.table) {
     _currentInlineEl = null;
     currentEl.appendChild(_buildTableNode(item.table));
@@ -4093,7 +4422,7 @@ function typeNextChar() {
     target.appendChild(document.createTextNode(item));
   }
 
-  currentCursor = currentEl.querySelector('p:last-child');
+  currentCursor = _lastTextEl(currentEl);
   if (currentCursor) currentCursor.classList.add('typing-cursor');
 
   scrollToBottom();
@@ -4104,6 +4433,7 @@ function startTyping() {
   if (isTyping) return;
   if (charDelay === 0) { instantFlush(); return; }
   isTyping = true;
+  textScroll.setAttribute('aria-busy', 'true');
   typeNextChar();
 }
 
@@ -4274,11 +4604,13 @@ function instantFlush() {
   const pending = charQueue.splice(0);  // atomically drain
   let flushInline = null;  // local inline tracker for this flush pass
   for (const item of pending) {
-    if (item === '\n') {
+    if (item === '\n' || (item && typeof item === 'object' && item.block)) {
       flushInline = null;
       if (!currentEl) getOrCreateBlock();
-      const next = document.createElement('p');
-      currentEl.appendChild(next);
+      _mdStartBlock(currentEl, item);
+    } else if (item && typeof item === 'object' && item.soft) {
+      flushInline = null;
+      if (currentEl) _mdSoftSpace(_lastTextEl(currentEl));
     } else if (item && typeof item === 'object' && item.table) {
       flushInline = null;
       if (!currentEl) getOrCreateBlock();
@@ -4299,7 +4631,7 @@ function instantFlush() {
   isTyping = false;
   _currentInlineEl = null;
   if (currentCursor) currentCursor.classList.remove('typing-cursor');
-  currentCursor = currentEl ? currentEl.querySelector('p:last-child') : null;
+  currentCursor = currentEl ? _lastTextEl(currentEl) : null;
 }
 
 // ── Shared: flush cursor and currentEl before inserting a non-DM block ──
@@ -4476,13 +4808,7 @@ function _renderNPCBlockNow(name, text, isReplay) {
     .replace(/\t/g, '  ')
     .trim();
 
-  cleaned.split('\n').forEach(line => {
-    const trimmed = line.trim();
-    if (!trimmed) return;
-    const p = document.createElement('p');
-    p.textContent = trimmed;
-    block.appendChild(p);
-  });
+  _mdFillBlock(block, cleaned);
   _addTtsBar(block);
   textContent.appendChild(block);
   _reanchorCursor();
@@ -4731,11 +5057,7 @@ function renderReplayBatch(items) {
       const block = document.createElement('div');
       block.className = 'dm-block';
       block.style.opacity = '0.75';
-      item.text.split('\n').forEach(line => {
-        const p = document.createElement('p');
-        _appendInlineSegments(p, _mdParse(line));
-        block.appendChild(p);
-      });
+      _mdFillBlock(block, item.text);
       _addTtsBar(block);
       textContent.appendChild(block);
     }
@@ -4847,11 +5169,7 @@ function renderReplay(text) {
   const block = document.createElement('div');
   block.className = 'dm-block';
   block.style.opacity = '0.75';   // subtle visual distinction for historical text
-  cleaned.split('\n').forEach(line => {
-    const p = document.createElement('p');
-    _appendInlineSegments(p, _mdParse(line));
-    block.appendChild(p);
-  });
+  _mdFillBlock(block, cleaned);
   _addTtsBar(block);
   textContent.appendChild(block);
 
@@ -5516,8 +5834,8 @@ function openSrdModal(name, category, level) {
         const refUrl   = data.reference_url || data.wikidot_url || '';
         const refLabel = data.reference_label || 'View on D&D 5e Wiki';
         const linkHtml = refUrl
-          ? `<br><a href="${_esc(refUrl)}" target="_blank" rel="noopener" style="color:#c9a84c;font-size:11px;opacity:0.85;text-decoration:none;">${_esc(refLabel)} ↗</a>`
-          : `<br><span style="font-size:10px;opacity:0.6">May be from a supplement (Xanathar's, Tasha's, etc.)</span>`;
+          ? `<br><a href="${_esc(refUrl)}" target="_blank" rel="noopener" style="color:#c9a84c;font-size:12px;opacity:0.85;text-decoration:none;">${_esc(refLabel)} ↗</a>`
+          : `<br><span style="font-size:12px;opacity:0.6">May be from a supplement (Xanathar's, Tasha's, etc.)</span>`;
         // Near-miss "did you mean?" chips — tap one to re-run the lookup on the
         // closest matching name. Recovers a mistyped spell/condition/monster
         // instead of dead-ending on the not-found notice.
@@ -6497,6 +6815,33 @@ function _renderQueueStatus(chars) {
 // Server refusals on /player-input/send and /skip come back as JSON
 // {error, message} (409 no_roster, 403 not_in_party). Show the message in the
 // panel; never fail silently. Pass null to clear.
+function _autosizeInput() {
+  const t = document.getElementById('player-input-text');
+  if (!t) return;
+  t.style.height = 'auto';
+  t.style.height = Math.min(t.scrollHeight + 2, 140) + 'px';
+}
+document.addEventListener('input', e => {
+  if (!e.target || e.target.id !== 'player-input-text') return;
+  _autosizeInput();
+  // Typing again retires a stale failure label and message.
+  const btn = document.getElementById('send-btn');
+  if (btn && /^Send failed/.test(btn.textContent)) btn.textContent = 'Send';
+  _showInputError(null);
+});
+(function _initDiceToggle() {
+  const pad = document.getElementById('dice-pad');
+  const tg = document.getElementById('dp-toggle');
+  if (!pad || !tg) return;
+  tg.addEventListener('click', () => {
+    const open = pad.classList.toggle('open');
+    tg.setAttribute('aria-expanded', open ? 'true' : 'false');
+  });
+  const sum = document.getElementById('dp-toggle-sum');
+  document.querySelectorAll('#dp-die-row .dp-die').forEach(b =>
+    b.addEventListener('click', () => { if (sum) sum.textContent = b.textContent.trim(); }));
+})();
+
 function _showInputError(msg) {
   const el = document.getElementById('input-error');
   if (!el) return;
@@ -6516,7 +6861,11 @@ async function _refusalMessage(res) {
 // One tap straight into the DM-gated queue. No staging, no Ready step.
 async function _sendAction() {
   const text = _inputText.value.trim();
-  if (!text) return;
+  if (!text) {
+    _showInputError('Type an action or line of dialogue first.');
+    _inputText.focus();
+    return;
+  }
   _sendBtn.disabled = true;
   _sendBtn.textContent = '…';
 
@@ -6564,6 +6913,9 @@ async function _sendAction() {
   }
   _sendBtn.disabled = false;
   if (refusal) _showInputError(refusal);
+  else if (!sent) _showInputError(lastStatus
+    ? `Could not send (server replied ${lastStatus}). Your text is kept; tap Send to retry.`
+    : 'Could not reach the GM display. Your text is kept; tap Send to retry.');
   if (sent) {
     _sendBtn.textContent = 'Send';
   } else {
@@ -6874,8 +7226,11 @@ _sidebarBtn.addEventListener('click', () => _setSidebarVisible(!_sidebarVisible)
 const _audioControls = document.getElementById('audio-controls');
 const _controlsBtn   = document.getElementById('controls-toggle');
 let _controlsVisible = true;
-function _setControlsVisible(visible) {
+function _setControlsVisible(visible, persist = true) {
   _controlsVisible = visible;
+  // aria-expanded is what says the column is showing, so it belongs on the
+  // control that toggles it and moves with it.
+  if (_controlsBtn) _controlsBtn.parentElement.setAttribute('aria-expanded', String(visible));
   if (visible) {
     _audioControls.classList.remove('collapsed');
     _textScroll.classList.remove('controls-hidden');
@@ -6885,11 +7240,19 @@ function _setControlsVisible(visible) {
     _textScroll.classList.add('controls-hidden');
     if (_controlsBtn) _controlsBtn.textContent = '◀ Settings';
   }
-  try { localStorage.setItem('otgm-controls-visible', visible ? '1' : '0'); } catch (e) {}
+  if (persist) { try { localStorage.setItem('otgm-controls-visible', visible ? '1' : '0'); } catch (e) {} }
 }
 if (_controlsBtn) {
-  _controlsBtn.addEventListener('click', () => _setControlsVisible(!_controlsVisible));
-  try { if (localStorage.getItem('otgm-controls-visible') === '0') _setControlsVisible(false); } catch (e) {}
+  // On the row, not the label: the row is the button, so a click anywhere in it
+  // and a keyboard activation of the button itself both land here. A listener on
+  // the inner span meant Enter and Space did nothing at all.
+  _controlsBtn.closest('.audio-row').addEventListener('click', () => _setControlsVisible(!_controlsVisible));
+  try {
+    const pref = localStorage.getItem('otgm-controls-visible');
+    if (pref === '0') _setControlsVisible(false);
+    // No stored choice on a narrow window: start collapsed so the rail does not sit on the prose.
+    else if (pref === null && window.matchMedia && window.matchMedia('(max-width: 1100px)').matches) _setControlsVisible(false, false);
+  } catch (e) {}
 }
 
 // Toggle button becomes visible once sidebar has data (called from SSE handler)

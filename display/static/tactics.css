@@ -48,13 +48,24 @@
 #tx-panel { overflow-y: auto; }
 #tx-panel .tx-head, #tx-panel .tx-strip { flex: none; }
 body.tx-sidebar-hidden #tx-panel { left: 60px; }
-body.tx-on #text-scroll { padding-top: calc(min(62vh, 640px) + 90px); }
-body.tx-on.tx-min #text-scroll { padding-top: 168px; }
+/* The narration starts below the panel. How much room the panel takes is
+   decided by what is in it -- the board, the spell list, the log -- so the
+   inset has to be measured, not guessed. tactics.js publishes --tx-bottom,
+   the panel's own bottom edge in px, and this reads it; the fallback is only
+   for the first paint, before the panel has been measured. The fixed
+   min(62vh, 640px) + 90px this replaced was 25px short of the panel at
+   1200x784 and 116px short at 1024x768, which is why the opening lines of
+   every scene sat under the board. */
+body.tx-on #text-scroll { padding-top: calc(var(--tx-bottom, 150px) + 28px); }
 /* "Hide map" folds the panel down to its header and the initiative strip, not
    to nothing: a folded panel still answers "whose turn is it" and "who is
-   left", which is what a table watches between moves. */
+   left", which is what a table watches between moves. It is then sized by what
+   is left rather than by a fixed height: 132px was enough on a screen where
+   the header fitted one row and not enough where the banner wrapped, so the
+   chips and their HP bars were cut off -- and the inset above followed the same
+   fixed number, so the story went back under the folded panel. */
 body.tx-min #tx-panel .tx-body { display: none; }
-body.tx-min #tx-panel { max-height: 132px; overflow: hidden; }
+body.tx-min #tx-panel { max-height: none; }
 
 .tx-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .tx-title { font-weight: 600; }
@@ -63,6 +74,10 @@ body.tx-min #tx-panel { max-height: 132px; overflow: hidden; }
 .tx-title .tx-sub { color: var(--tx-muted); font-weight: 400; }
 #tx-banner { flex: 1; text-align: center; font-weight: 700; color: var(--tx-banner); min-height: 1.4em; }
 #tx-banner.tx-flash { animation: tx-flash 1.4s ease; }
+/* A refusal. Above the map, where nothing else is, and it stays: the engine's
+   own sentence about why a click did nothing is the answer to that click, and
+   it is still true after the toast that repeated it has gone. */
+#tx-banner.tx-refusal { color: var(--tx-danger); font-weight: 600; }
 @keyframes tx-flash { 0% { transform: scale(1.25); opacity: 0; } 30% { opacity: 1; } 100% { transform: scale(1); } }
 .tx-btn {
   font: 600 13px Figtree, system-ui, sans-serif; border: 1px solid var(--tx-line);
@@ -106,9 +121,18 @@ body.tx-min #tx-panel { max-height: 132px; overflow: hidden; }
 .tx-slots { font-size: 11px; color: var(--tx-muted); white-space: nowrap; }
 
 .tx-body { display: grid; grid-template-columns: minmax(0, 1fr) 250px; gap: 10px; min-height: 0; }
+/* Stacked: the side column goes under the board and the board takes the whole
+   panel. Set by tactics.js chooseLayout(), which measures whether the map would
+   still fit beside a 250px column rather than guessing from the viewport. The
+   max-width media query is kept for the window before the first measurement,
+   so a narrow panel never starts in the two-column shape. */
 @media (max-width: 1100px) { .tx-body { grid-template-columns: 1fr; } }
-/* Side by side: the side column scrolls on its own so the map stays in view. */
+#tx-panel.tx-stacked .tx-body { grid-template-columns: minmax(0, 1fr); }
+/* Side by side: the side column scrolls on its own so the map stays in view.
+   Stacked, it does too, for the same reason and with the same ceiling: the
+   panel is a scroll box and the map should not grow to push the log off it. */
 @media (min-width: 1101px) { .tx-side { max-height: calc(100vh - 290px); overflow-y: auto; padding-right: 2px; } }
+#tx-panel.tx-stacked .tx-side { max-height: 30vh; overflow-y: auto; }
 .tx-side > * { flex: none; }
 /* On a phone the board is as tall as the map in it: see the phone block at the
    end of this sheet, which lifts this ceiling. */
@@ -272,10 +296,16 @@ body.tx-min #tx-panel { max-height: 132px; overflow: hidden; }
 .tx-float.tx-odds-float { font-size: 12px; fill: var(--tx-ink); }
 @keyframes tx-rise { from { transform: translateY(0); opacity: 1; } to { transform: translateY(-26px); opacity: 0; } }
 
+/* Above the map, not over the log. At the bottom of the panel it covered the
+   combat log entry that says the same thing in full, and on a phone it covered
+   the action bar, which is what the player was reaching for when the refusal
+   arrived. A roll toast floats over the board for its few seconds, which costs
+   nothing: nothing under it has to be read first. */
 .tx-toast {
-  position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); max-width: 90%;
+  position: absolute; left: 50%; top: 44px; transform: translateX(-50%); max-width: 90%;
   background: var(--tx-ink); color: var(--tx-paper); padding: 8px 12px; border-radius: 6px;
-  font-size: 14px; box-shadow: 0 6px 18px rgba(0,0,0,.3); z-index: 2;
+  font-size: 14px; box-shadow: 0 6px 18px rgba(0,0,0,.3); z-index: 6;
+  pointer-events: none;
 }
 .tx-toast[hidden] { display: none; }
 .tx-toast.tx-error { background: var(--tx-danger); }
@@ -289,16 +319,21 @@ body.tx-min #tx-panel { max-height: 132px; overflow: hidden; }
   /* No room beside the sidebar and settings here: sit above them (they are
      z-index 6 to 8) and below dialogs and device approvals (10 and up). */
   #tx-panel { z-index: 9; left: 6px; right: 6px; top: 6px; max-height: calc(100dvh - 84px); }
-  /* The narration starts below a panel that can fill the screen. The folded
-     panel is 132px tall and keeps its own padding (see body.tx-min above). */
-  body.tx-on #text-scroll { padding-top: calc(100dvh - 72px); }
-  body.tx-on.tx-min #text-scroll { padding-top: 168px; }
-  /* One column, and both parts as tall as they need to be: the board is as
-     tall as the map the script drew into it (sizing it from the leftover height
-     would be circular), the side column is as tall as its text. The panel
-     scrolls if that is more than the screen. */
-  .tx-body { display: flex; flex-direction: column; min-height: 0; }
-  .tx-board { max-height: none; align-self: stretch; flex: 0 0 auto; }
+  /* The narration starts below a panel that can fill the screen, by the same
+     measured inset as everywhere else: the panel is a screen's worth minus its
+     own margins, and the old 100dvh - 72px ignored that the panel is also
+     bounded by 100dvh - 84px, which put the story 12px under its edge. */
+  body.tx-on #text-scroll { padding-top: calc(var(--tx-bottom, 100dvh - 84px) + 28px); }
+  /* One column, and the panel fits. It is a scroll box with a ceiling, and on a
+     short window the board plus the action bar were taller than the box: 907px
+     of content in 692px, so the Move/Attack row started below the fold with
+     nothing to say so. The body now takes what the panel has left and the board
+     gives up the height, which is what leaves the action bar somewhere to
+     stick to. The board is still as tall as the map the script drew into it --
+     sizing it from the leftover height would be circular, and it scrolls
+     internally instead, which is the one surface allowed to. */
+  .tx-body { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; }
+  .tx-board { max-height: none; align-self: stretch; flex: 0 1 auto; min-height: 120px; }
   .tx-side { flex: 0 0 auto; }
   .tx-side .tx-log { max-height: 4.5em; }
   /* The actions become a bar along the bottom of the panel. It scrolls inside
@@ -306,7 +341,10 @@ body.tx-min #tx-panel { max-height: 132px; overflow: hidden; }
      and the padding keeps it clear of the iOS home indicator. */
   #tx-actions {
     order: 9; position: sticky; bottom: 0; z-index: 4;
-    max-height: 46dvh; overflow-y: auto; overscroll-behavior: contain;
+    /* Half the panel, not half the screen: the bar shares the panel with the
+       board, and a ceiling set from the viewport let the two together outgrow
+       the panel and push End turn under the fold again. */
+    max-height: 40dvh; overflow-y: auto; overscroll-behavior: contain;
     margin: 0 -12px -10px; padding: 6px 12px calc(6px + env(safe-area-inset-bottom, 0px));
     background: var(--tx-panel); border-top: 1px solid var(--tx-line);
     box-shadow: 0 -6px 14px rgba(0,0,0,.22);
@@ -327,8 +365,8 @@ body.tx-min #tx-panel { max-height: 132px; overflow: hidden; }
   #tx-actions [data-tx="end"] { order: 99; position: sticky; bottom: 0; z-index: 1;
     box-shadow: 0 -7px 0 0 var(--tx-panel), 0 -6px 6px -5px rgba(0,0,0,.4); }
   .tx-actions .tx-spell { flex: 1 1 120px; }
-  /* The roll toast sits over the map rather than over the bar. */
-  .tx-toast { top: 38%; bottom: auto; }
+  /* Just under the header, over the map rather than over the action bar. */
+  .tx-toast { top: 40px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

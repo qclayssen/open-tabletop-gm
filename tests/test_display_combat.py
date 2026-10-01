@@ -70,12 +70,17 @@ class CombatEndpoints(unittest.TestCase):
         self.assertEqual(self.calls, [])
 
     def test_only_the_player_whose_turn_it_is_can_act(self):
+        # A GM creature's turn: the reply has to name what IS acting, or the
+        # panel shows a refusal beside a banner that disagrees with it.
         self.push(dict(SNAP, current="frog-1"))
         code, body = self.do({"cmd": "move", "args": ["frog-1", "D5"]})
         self.assertEqual(code, 409)
+        self.assertIn("Giant Frog 1's turn", body["error"])
+        self.assertIn("Nothing was sent", body["error"])
         self.push(SNAP)
         code, body = self.do({"cmd": "move", "args": ["frog-1", "D5"]})
-        self.assertEqual((code, body["error"]), (409, "Only Kairos can act now."))
+        self.assertEqual((code, body["error"]),
+                         (409, "Only Kairos can act now. Nothing was sent."))
         self.assertEqual(self.calls, [])
 
     def test_a_move_runs_the_engine_and_queues_the_result_for_the_gm(self):

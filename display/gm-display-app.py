@@ -3158,6 +3158,12 @@ _COMBAT_MAX_REACT = 4         # reaction answers in one re-run (--react, in the 
 _COMBAT_ARG_FLAGS = {"cast": ("--level",), "preview-area": ("--level",),
                      "ready": ("--level", "--target", "--trigger")}
 
+# What a refusal says when the display has no campaign to talk to. The engine's
+# "No active campaign." named a state a player cannot act on and could not be
+# told apart from any other refusal; this one says what to do about it.
+NO_CAMPAIGN = ("No fight is open for this display. Start one in the terminal "
+               "(combat start), then reload the display.")
+
 
 @app.route("/combat", methods=["POST"])
 def combat_push():
@@ -3174,10 +3180,16 @@ def combat_push():
 
 
 def _run_tactics(args: list, extra: list = ()) -> tuple:
-    """Run the tactics CLI for the active campaign. (exit code, stdout)."""
+    """Run the tactics CLI for the active campaign. (exit code, stdout).
+
+    With no campaign set, says so in the reader's terms. "No active campaign."
+    is the engine's phrasing and the display could not tell it apart from any
+    other refusal, so it landed in the combat log as a line that meant nothing
+    to a player and stayed there after the toast had gone.
+    """
     camp = _active_campaign_name()
     if not camp:
-        return 1, "No active campaign."
+        return 1, NO_CAMPAIGN
     cmd = [sys.executable, TACTICS_CLI, "-c", camp, *args, *extra]
     with _combat_run_lock:
         try:
@@ -3245,15 +3257,28 @@ def combat_do():
         if not _rate_ok(request.remote_addr):
             return "Too Many Requests", 429
         if _device_ok(request.headers.get("X-DND-Device", ""), request.remote_addr) != "approved":
-            return jsonify({"error": "This device is not approved yet."}), 403
+            # The panel cannot fix this by retrying, so the reply says what would
+            # (a player used to see only this sentence in the log, with nothing
+            # anywhere on screen explaining it).
+            return jsonify({"error": "This device is not approved to act yet. "
+                                     "The GM has to approve it in the terminal "
+                                     "(devices approve) before the map buttons "
+                                     "do anything."}), 403
         with _combat_lock:
             snap = _current_combat or {}
         tokens = {t.get("id"): t for t in snap.get("tokens", [])}
         actor = tokens.get(snap.get("current"))
         if not actor or actor.get("controller") != "player":
-            return jsonify({"error": "It is not a player's turn."}), 409
+            # Name the creature that IS acting when there is one. "It is not a
+            # player's turn." next to a banner reading "Your turn, Kairos" left
+            # the reader with two contradictory true sentences and no way to
+            # tell which was stale.
+            acting = snap.get("current")
+            whose = f" It is {tokens[acting]['name']}'s turn." if acting in tokens else ""
+            return jsonify({"error": f"There is no player's turn open right now.{whose} "
+                                     "Nothing was sent; wait for your turn."}), 409
         if cmd not in ("undo-move", "end-turn") and (not args or args[0] != actor["id"]):
-            return jsonify({"error": f"Only {actor['name']} can act now."}), 409
+            return jsonify({"error": f"Only {actor['name']} can act now. Nothing was sent."}), 409
     extra = ["--json"]
     rolls = [int(r) for r in (data.get("rolls") or [])[:6]
              if isinstance(r, int) or (isinstance(r, str) and r.isdigit())]
