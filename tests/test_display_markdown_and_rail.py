@@ -28,7 +28,14 @@ def _render(md: str) -> str:
         pytest.skip("node not available")
     m = re.search(r"(function _renderMarkdown\(md\) \{.*?\n\}\n)", JS, re.S)
     assert m, "_renderMarkdown not found"
-    script = m.group(1) + "\nprocess.stdout.write(_renderMarkdown(%s));\n" % __import__("json").dumps(md)
+    # _renderMarkdown calls the display's one esc() rather than a local copy
+    # (W1), and esc() is a global in the browser. Running the function alone
+    # under node therefore needs the helper supplied alongside it, or the
+    # extraction tests a renderer that could not exist in the page.
+    e = re.search(r"(function esc\(s\) \{.*?\n\}\n)", JS, re.S)
+    assert e, "esc() not found; _renderMarkdown depends on it"
+    script = (e.group(1) + m.group(1)
+              + "\nprocess.stdout.write(_renderMarkdown(%s));\n" % __import__("json").dumps(md))
     with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False, encoding="utf-8") as f:
         f.write(script)
     try:
