@@ -24,33 +24,21 @@ Two layers of test, because each catches what the other cannot:
 
 The server strips ` \\ $ from a name but never < > & " (see _chunk and
 /dice-request), so escaping in the browser is the only control there is.
+
+The browser and the display server come from tests/_browser.py (W15).
 """
 from __future__ import annotations
 
-import importlib.util
 import json
 import pathlib
 import re
-import threading
 import unittest
+
+from tests._browser import BrowserTestCase
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 JS = REPO / "display" / "static" / "display.js"
 TACTICS = REPO / "display" / "static" / "tactics.js"
-
-try:
-    from playwright.sync_api import sync_playwright
-    HAVE_PLAYWRIGHT = True
-except ImportError:                                        # pragma: no cover
-    HAVE_PLAYWRIGHT = False
-
-
-def _load_app(name):
-    spec = importlib.util.spec_from_file_location(
-        name, str(REPO / "display" / "gm-display-app.py"))
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
 
 
 # ── the payloads ─────────────────────────────────────────────────────────────
@@ -528,48 +516,27 @@ class OneHelper(unittest.TestCase):
 
 
 # ── the real thing, in a real browser ────────────────────────────────────────
-@unittest.skipUnless(HAVE_PLAYWRIGHT, "playwright is not installed")
-class XssInBrowser(unittest.TestCase):
+class XssInBrowser(BrowserTestCase):
     """Push the payloads through the real endpoints and ask the page what it did."""
 
     maxDiff = None
 
-    @classmethod
-    def setUpClass(cls):
-        from werkzeug.serving import make_server
-        mod = _load_app("gm_display_xss")
-        cls.mod = mod
-        try:
-            cls.httpd = make_server("127.0.0.1", 0, mod.app, threaded=True)
-        except OSError as exc:
-            raise unittest.SkipTest(f"cannot bind: {exc}") from exc
-        cls.port = cls.httpd.server_port
-        threading.Thread(target=cls.httpd.serve_forever, daemon=True).start()
-        try:
-            cls.pw = sync_playwright().start()
-            cls.browser = cls.pw.chromium.launch()
-        except Exception as exc:                          # no browser downloaded
-            cls.httpd.shutdown()
-            raise unittest.SkipTest(f"chromium is not available: {exc}") from exc
+    module_name = "gm_display_xss"
 
-    @classmethod
-    def tearDownClass(cls):
-        cls.browser.close()
-        cls.pw.stop()
-        cls.httpd.shutdown()
-        cls.httpd.server_close()
+    @property
+    def mod(self):
+        """The app module the live server is serving, so the test client posts
+        into the very instance this page is subscribed to."""
+        return self.server.module
 
     def setUp(self):
-        self.client = self.mod.app.test_client()
+        self.client = self.server.app.test_client()
         # The app module is shared by the whole class, so a payload posted by
         # one test is still in _current_stats when the next one opens its page
         # and replays the state. Wipe first, or a failure names the wrong test.
         self.client.post("/clear")
         self.mod._current_combat = None
-        self.page = self.browser.new_page()
-        self.addCleanup(self.page.close)
-        self.page.goto(f"http://127.0.0.1:{self.port}/", wait_until="load")
-        self.page.wait_for_timeout(400)
+        self.page = self.open_page(wait=400)
 
     def post(self, path, body):
         """Post through the app's own test client, which is the same module the
