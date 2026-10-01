@@ -37,9 +37,12 @@ class StaticSinks(unittest.TestCase):
     _src = read_display_sources()
 
     def test_known_sinks_go_through_escape_helper(self):
-        for needle in ("${_escHtml(name)}", "${_escHtml(label)}",
-                       "_escHtml(line1.join", "${_escHtml(subLine)}",
-                       "${_escHtml(val)}", "${_escHtml(a.notes||'')}"):
+        # W1 collapsed _escHtml and _esc into the single shared esc(); the
+        # sinks are unchanged, only the helper they call. The exhaustive check
+        # that every sink is escaped now lives in tests/test_display_xss.py.
+        for needle in ("${esc(name)}", "${esc(label)}",
+                       "esc(line1.join", "${esc(subLine)}",
+                       "${esc(val)}", "${esc(a.notes||'')}"):
             self.assertIn(needle, self._src.js)
 
     def test_dispatcher_isolates_branches_and_shows_status(self):
