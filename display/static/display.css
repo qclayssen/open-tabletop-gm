@@ -1591,6 +1591,12 @@
     color: rgba(230,150,120,0.95); border: 1px solid rgba(210,110,80,0.45);
     border-radius: 3px; padding: 5px 8px;
   }
+  /* The engine's own answer to a fight question; nothing was queued for the GM. */
+  #input-answer {
+    font-family: 'Cinzel', serif; font-size: 12px; line-height: 1.4;
+    color: rgba(200,215,170,0.95); border: 1px solid rgba(150,180,110,0.45);
+    border-radius: 3px; padding: 5px 8px;
+  }
   /* Expanded, the panel must stay clear of the settings rows above it (they end
      near y=363). Its top is 100vh - 22px - header (~34px) - body, so capping the
      body at 100vh - 440px keeps the top at or below 384px; the body scrolls. */

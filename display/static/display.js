@@ -3347,6 +3347,7 @@ document.addEventListener('input', e => {
   const btn = document.getElementById('send-btn');
   if (btn && /^Send failed/.test(btn.textContent)) btn.textContent = 'Send';
   _showInputError(null);
+  _showInputAnswer([]);
 });
 (function _initDiceToggle() {
   const pad = document.getElementById('dice-pad');
@@ -3361,6 +3362,13 @@ document.addEventListener('input', e => {
     b.addEventListener('click', () => { if (sum) sum.textContent = b.textContent.trim(); }));
 })();
 
+function _showInputAnswer(lines) {
+  const el = document.getElementById('input-answer');
+  if (!el) return;
+  el.textContent = '';
+  lines.forEach(l => { const d = document.createElement('div'); d.textContent = l; el.appendChild(d); });
+  el.style.display = lines.length ? 'block' : 'none';
+}
 function _showInputError(msg) {
   const el = document.getElementById('input-error');
   if (!el) return;
@@ -3418,6 +3426,14 @@ async function _sendAction() {
         localStorage.removeItem('dnd_awaiting_approval');
         _inputText.value = '';
         sent = true;
+        // A fight question is answered by the engine on the spot: show the
+        // answer here and note that nothing was queued for the GM.
+        if (res.status === 200) {
+          try {
+            const j = await res.clone().json();
+            if (j && j.answered && Array.isArray(j.lines)) _showInputAnswer(j.lines);
+          } catch (_) { /* 204: queued as usual */ }
+        }
         break;
       }
       // Non-retriable error (403, 400, 409, etc.)

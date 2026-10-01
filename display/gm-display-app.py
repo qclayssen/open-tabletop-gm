@@ -2952,6 +2952,43 @@ def _roster_refusal(character: str):
     return None
 
 
+# Words that make a line a command rather than a question (the localdm loop's
+# list): "attack the frog" is an action for the GM, "how far is the frog" is not.
+_FIGHT_VERBS = ("move", "attack", "cast", "dash", "disengage", "dodge", "stand",
+                "death-save", "end-turn")
+
+
+def _fight_answer(character: str, text: str) -> Optional[list]:
+    """Answer a fight-time question from the engine, or None to queue the line.
+
+    "How far is the nearest kobold" and "what can I do" are facts the engine
+    already holds, so they never need a model call (tactics/fightq.py, the same
+    classifier the terminal loops use). Only while a fight is active and only
+    for the asking character's own token. Read-only: nothing is rolled, moved
+    or queued, and any failure falls back to queueing the line as before.
+    """
+    camp = _active_campaign_name()
+    if not camp:
+        return None
+    try:
+        from tactics import fightq, state as _state
+        q = fightq.classify(text, _FIGHT_VERBS, scope="fight")
+        if q is None:
+            return None
+        enc = _state.load(_state.encounter_path(_find_campaign(camp)))
+        if enc.status != "active":
+            return None
+        want = character.strip().lower()
+        pc = next((t for t in enc.tokens.values() if t.side == "pc"
+                   and want in (t.name.lower(), t.id.lower(), t.name.lower().split(" ")[0])), None)
+        if pc is None:
+            return None
+        lines = fightq.answer(enc, pc.id, q)
+        return [str(x) for x in lines] or None
+    except Exception:       # a bad save or an engine surprise must not eat the player's line
+        return None
+
+
 @app.route("/player-input/send", methods=["POST"])
 def send_input():
     """Send a player action straight to the DM-gated queue (.input_queue).
@@ -2984,6 +3021,10 @@ def send_input():
     refusal = _roster_refusal(character)
     if refusal is not None:
         return refusal
+
+    lines = _fight_answer(character, text)
+    if lines is not None:
+        return jsonify({"answered": True, "lines": lines})
 
     if not _send(character, text):
         return "Error", 500
@@ -3200,18 +3241,38 @@ def _run_tactics(args: list, extra: list = ()) -> tuple:
     return proc.returncode, (proc.stdout or proc.stderr or "").strip()
 
 
-@app.route("/combat/state", methods=["GET"])
-def combat_state():
+def _combat_snapshot() -> dict:
+    """The live fight's snapshot, asking the engine when none has been pushed.
+
+    The engine pushes a snapshot to POST /combat after every command, so a
+    display started (or restarted) after the fight began holds none. The map
+    still drew, because GET /combat/state asked the engine, but /combat/do
+    read the empty cache and refused every click with 409 "no player's turn
+    open" while the banner said "Your turn". Every reader goes through here,
+    and what the engine reports is cached, as a push would have done.
+    """
+    global _current_combat
     with _combat_lock:
         snap = _current_combat
     if snap is None:
         code, out = _run_tactics(["status"], ["--json"])
         if code == 0:
             try:
-                snap = json.loads(out).get("combat")
-            except ValueError:
-                snap = None
-    return jsonify(snap if snap and snap.get("status") == "active" else {})
+                fetched = json.loads(out).get("combat")
+            except (ValueError, AttributeError):
+                fetched = None
+            if isinstance(fetched, dict) and fetched.get("status") == "active":
+                with _combat_lock:
+                    if _current_combat is None:
+                        _current_combat = fetched
+                    snap = _current_combat
+    return snap or {}
+
+
+@app.route("/combat/state", methods=["GET"])
+def combat_state():
+    snap = _combat_snapshot()
+    return jsonify(snap if snap.get("status") == "active" else {})
 
 
 @app.route("/combat/do", methods=["POST"])
@@ -3239,8 +3300,7 @@ def combat_do():
     actor = None
     if cmd in ("spells", "preview-area"):
         # A monster's spell list and what an area would reveal are the GM's.
-        with _combat_lock:
-            snap = _current_combat or {}
+        snap = _combat_snapshot()
         tokens = {t.get("id"): t for t in snap.get("tokens", [])}
         who = tokens.get(args[0]) if args else None
         if not who or who.get("controller") != "player":
@@ -3248,8 +3308,7 @@ def combat_do():
     if cmd == "sight":
         # Cover shading from a creature the players can see (the snapshot leaves
         # out hidden and unseen ones), counting only the creatures they can see.
-        with _combat_lock:
-            snap = _current_combat or {}
+        snap = _combat_snapshot()
         if not args or args[0] not in {t.get("id") for t in snap.get("tokens", [])}:
             return jsonify({"error": "No such creature on the map."}), 403
         args = [args[0], "--players"]
@@ -3264,8 +3323,7 @@ def combat_do():
                                      "The GM has to approve it in the terminal "
                                      "(devices approve) before the map buttons "
                                      "do anything."}), 403
-        with _combat_lock:
-            snap = _current_combat or {}
+        snap = _combat_snapshot()
         tokens = {t.get("id"): t for t in snap.get("tokens", [])}
         actor = tokens.get(snap.get("current"))
         if not actor or actor.get("controller") != "player":
