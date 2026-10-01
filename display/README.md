@@ -93,7 +93,12 @@ to the sidebar on load.
 | `check_input.py` | Drains the player input queue (autorun mode) — called at turn start |
 | `dm_help.py` | One-shot hint fired by the ◈ GM Help button on the display |
 | `audio.py` | Scans narration for SFX triggers; serves synthesized WAV files to browsers |
-| `index.html` | Typewriter rendering, sky canvas, particle system, CSS gradient crossfades |
+| `templates/index.html` | The page markup, plus the four server-rendered values (LAN token, narrator voice, TTS flag, UI manifest) |
+| `static/display.js` | Typewriter rendering, sky canvas, particle system, scene crossfades |
+| `static/display.css` | Every rule for the page except the combat panel's, which is in `static/tactics.css` |
+
+The two static files are a verbatim move out of the template (audit item W2, 2026-09-30):
+the browser now caches and re-parses them separately from the Jinja-rendered markup.
 
 ### Scene detection
 
@@ -304,7 +309,7 @@ The Sound Effects toggle in the top-right corner of the display enables/disables
 - Check browser console for fetch errors to `/audio/sfx/<name>`
 
 **Particles are slow / choppy**
-- Reduce particle count in `index.html` → `PARTICLE_COUNT` object
+- Reduce particle count in `static/display.js` → `PARTICLE_COUNT` object
 - Mist and ripples use canvas ellipses; leaves use `save()/restore()` — reduce these first
 
 **LAN mode — browsers on other devices can't connect**

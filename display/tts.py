@@ -31,7 +31,7 @@ KEY_FILE = Path.home() / ".config" / "open-tabletop-gm" / "tts.key"
 
 # Curated 9-voice catalog. The full Gemini API exposes 30 voices; this set
 # is held to keep the per-block dropdown scannable. Extend VALID_VOICES and
-# the matching arrays in display/templates/index.html if you want the full
+# the matching arrays in display/static/display.js if you want the full
 # catalog.
 VALID_VOICES = frozenset({
     # Male

@@ -13,11 +13,11 @@ Nothing anywhere failed. Flask returns 404 for an unrouted path, the browser
 renders a blank box for a broken <img>, and the server keeps serving. The only
 detector was a user looking at the screen and saying the icons were missing.
 
-So this file is the detector: it reads the icon names out of the template the
-same way the browser does — static `/icons/x.png` hrefs, plus the three tables
-the JS builds names from at runtime — and asserts each one is a real file.
-A dynamic name is exactly the kind that survives review, because grepping for
-its literal path finds nothing.
+So this file is the detector: it reads the icon names out of the display's own
+sources the same way the browser does — static `/icons/x.png` hrefs in the
+template, plus the three tables the JS builds names from at runtime — and
+asserts each one is a real file. A dynamic name is exactly the kind that
+survives review, because grepping for its literal path finds nothing.
 """
 
 from __future__ import annotations
@@ -25,17 +25,22 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from tests.display_sources import read_display_sources
+
 DISPLAY = Path(__file__).resolve().parents[1] / "display"
-TEMPLATE = DISPLAY / "templates" / "index.html"
 ICONS = DISPLAY / "icons"
 APP = DISPLAY / "gm-display-app.py"
 
-HTML = TEMPLATE.read_text(encoding="utf-8")
+_SRC = read_display_sources()
+# The favicon links are in the template; everything the script builds at runtime
+# moved to display/static/display.js with the rest of it (W2).
+HTML = _SRC.template
+JS = _SRC.js
 
 
 def _static_refs() -> set[str]:
     """`href="/icons/app_icon_32.png"`, `src="/icons/focus.png"`, ..."""
-    return set(re.findall(r"/icons/([A-Za-z0-9_\-]+\.(?:png|ico))", HTML))
+    return set(re.findall(r"/icons/([A-Za-z0-9_\-]+\.(?:png|ico))", HTML + JS))
 
 
 def _runtime_refs() -> set[str]:
@@ -48,15 +53,15 @@ def _runtime_refs() -> set[str]:
     """
     names: set[str] = set()
 
-    cls = re.search(r"_CLASS_ICONS\s*=\s*\{(.*?)\}", HTML, re.S)
-    assert cls, "_CLASS_ICONS table not found — did the template change shape?"
+    cls = re.search(r"_CLASS_ICONS\s*=\s*\{(.*?)\}", JS, re.S)
+    assert cls, "_CLASS_ICONS table not found — did display.js change shape?"
     names |= {f"{m}.png" for m in re.findall(r"'(class_[a-z_]+)'", cls.group(1))}
 
-    badges = re.search(r"_BLOCK_BADGES\s*=\s*\[(.*?)\n\];", HTML, re.S)
+    badges = re.search(r"_BLOCK_BADGES\s*=\s*\[(.*?)\n\];", JS, re.S)
     assert badges, "_BLOCK_BADGES table not found"
     names |= {f"{m}.png" for m in re.findall(r"icon:\s*'([a-z_]+)'", badges.group(1))}
 
-    dice = re.search(r"function _diceRollIcon\(.*?\n\}", HTML, re.S)
+    dice = re.search(r"function _diceRollIcon\(.*?\n\}", JS, re.S)
     assert dice, "_diceRollIcon not found"
     names |= {f"{m}.png" for m in re.findall(r"return\s+'([a-z_]+)';", dice.group(0))}
 

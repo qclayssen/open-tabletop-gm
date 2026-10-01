@@ -20,6 +20,8 @@ import pathlib
 import tempfile
 import unittest
 
+from tests.display_sources import read_display_sources
+
 REPO = pathlib.Path(__file__).resolve().parent.parent
 
 
@@ -154,11 +156,17 @@ class DicePadIsReachableOnTheMainView(ClearBase):
 
     @classmethod
     def setUpClass(cls):
-        cls.html = (REPO / "display" / "templates" / "index.html").read_text(encoding="utf-8")
+        # The markup stays in the template; the pad's rules moved to
+        # display/static/display.css and its wiring to display/static/display.js
+        # (W2). The panel's collapsed class is the one thing still in the markup.
+        src = read_display_sources()
+        cls.html = src.all
+        cls.css = src.css
+        cls.js = src.js
 
     def test_the_waiting_badge_is_clickable_outside_input_only_view(self):
-        self.assertIn("body:not(.input-only) #dice-pending-badge.visible {", self.html)
-        self.assertRegex(self.html,
+        self.assertIn("body:not(.input-only) #dice-pending-badge.visible {", self.css)
+        self.assertRegex(self.css,
                          r"body:not\(\.input-only\) #dice-pending-badge\.visible\s*\{[^}]*"
                          r"pointer-events:\s*auto")
 
@@ -167,19 +175,19 @@ class DicePadIsReachableOnTheMainView(ClearBase):
         A position:fixed child renders nothing inside a display:none ancestor, so
         the collapse has to be overridden for as long as the pad is floated."""
         self.assertIn('id="input-panel" class="collapsed"', self.html)
-        self.assertIn("#input-panel.collapsed #input-body { display: none; }", self.html)
-        self.assertIn("body.dice-pad-open #input-panel.collapsed #input-body {", self.html)
+        self.assertIn("#input-panel.collapsed #input-body { display: none; }", self.css)
+        self.assertIn("body.dice-pad-open #input-panel.collapsed #input-body {", self.css)
 
     def test_the_pad_hides_everything_else_in_the_panel_when_floated(self):
         """Otherwise un-hiding the body dumps the character tabs and the action
         textarea over the narration as well."""
-        self.assertRegex(self.html,
+        self.assertRegex(self.css,
                          r"body\.dice-pad-open #input-panel\.collapsed #input-body > "
                          r"\*:not\(#dice-pad\)\s*\{\s*display:\s*none\s*!important")
 
     def test_the_badge_click_handler_is_bound_at_startup(self):
-        self.assertIn("function _initDiceBadgeClick()", self.html)
-        self.assertIn("_initDiceBadgeClick();", self.html)
+        self.assertIn("function _initDiceBadgeClick()", self.js)
+        self.assertIn("_initDiceBadgeClick();", self.js)
 
     def test_the_pad_is_initialised_outside_the_input_only_guard(self):
         """The one that matters, and the one the first version of this test missed.
@@ -194,32 +202,35 @@ class DicePadIsReachableOnTheMainView(ClearBase):
         and specifically that the call site is not inside the input-only guard.
         """
         import re
+        # The guard and the call site are both in display/static/display.js (W2);
+        # reading the template here would find neither.
+        js = self.js
         # Match only a real statement line, never a `//` comment: the fix's own
         # comment names the function with a semicolon, so a bare substring search
         # matches prose as well as code.
         calls = []
-        for m in re.finditer(r"^([ \t]*)_initDicePad\(\);[ \t]*$", self.html, re.M):
-            line_start = self.html.rfind("\n", 0, m.start()) + 1
-            if self.html[line_start:m.start()].lstrip().startswith("//"):
+        for m in re.finditer(r"^([ \t]*)_initDicePad\(\);[ \t]*$", js, re.M):
+            line_start = js.rfind("\n", 0, m.start()) + 1
+            if js[line_start:m.start()].lstrip().startswith("//"):
                 continue                      # a comment, not a call
             calls.append(m)
         self.assertEqual(len(calls), 1,
                          f"expected exactly one _initDicePad() call site, found {len(calls)}")
         call = calls[0]
-        line_no = self.html[:call.start()].count("\n") + 1
+        line_no = js[:call.start()].count("\n") + 1
 
         # Find the `if (_inputMode) {` block and the offset at which it closes, by
         # brace counting. A substring search for "is it between the guard and the
         # next call" is not the question — the question is whether the call's own
         # indentation puts it inside that block.
-        guard_at = self.html.rfind("if (_inputMode) {", 0, call.start())
+        guard_at = js.rfind("if (_inputMode) {", 0, call.start())
         self.assertNotEqual(guard_at, -1, "the _inputMode guard is gone; re-check this test")
-        depth, i = 0, self.html.index("{", guard_at)
+        depth, i = 0, js.index("{", guard_at)
         start = i
-        while i < len(self.html):
-            if self.html[i] == "{":
+        while i < len(js):
+            if js[i] == "{":
                 depth += 1
-            elif self.html[i] == "}":
+            elif js[i] == "}":
                 depth -= 1
                 if depth == 0:
                     break
@@ -234,11 +245,11 @@ class DicePadIsReachableOnTheMainView(ClearBase):
 
     def test_the_pad_closes_when_nothing_is_waiting_any_more(self):
         """Otherwise it keeps covering the narration with a roll nobody is asked for."""
-        self.assertIn("new MutationObserver", self.html)
-        self.assertIn("document.body.classList.remove('dice-pad-open')", self.html)
+        self.assertIn("new MutationObserver", self.js)
+        self.assertIn("document.body.classList.remove('dice-pad-open')", self.js)
 
     def test_escape_closes_the_pad(self):
-        self.assertRegex(self.html, r"e\.key === 'Escape'[^\n]*remove\('dice-pad-open'\)")
+        self.assertRegex(self.js, r"e\.key === 'Escape'[^\n]*remove\('dice-pad-open'\)")
 
 
 if __name__ == "__main__":

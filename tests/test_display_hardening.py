@@ -12,8 +12,9 @@ import re
 import threading
 import unittest
 
+from tests.display_sources import read_display_sources
+
 REPO = pathlib.Path(__file__).resolve().parent.parent
-INDEX = REPO / "display" / "templates" / "index.html"
 
 try:
     from playwright.sync_api import sync_playwright
@@ -31,18 +32,21 @@ def _load_app(name):
 
 
 class StaticSinks(unittest.TestCase):
-    src = INDEX.read_text(encoding="utf-8")
+    # The sinks and the dispatcher are in display/static/display.js; the pill they
+    # drive is still markup in the template (W2). Hence two readers, not one.
+    _src = read_display_sources()
 
     def test_known_sinks_go_through_escape_helper(self):
         for needle in ("${_escHtml(name)}", "${_escHtml(label)}",
                        "_escHtml(line1.join", "${_escHtml(subLine)}",
                        "${_escHtml(val)}", "${_escHtml(a.notes||'')}"):
-            self.assertIn(needle, self.src)
+            self.assertIn(needle, self._src.js)
 
     def test_dispatcher_isolates_branches_and_shows_status(self):
-        self.assertIn("const _try = (name, fn)", self.src)
-        self.assertIn('id="conn-status" role="status" aria-live="polite"', self.src)
-        self.assertIn("'since=' + _lastSeq", self.src)
+        self.assertIn("const _try = (name, fn)", self._src.js)
+        self.assertIn('id="conn-status" role="status" aria-live="polite"',
+                      self._src.template)
+        self.assertIn("'since=' + _lastSeq", self._src.js)
 
 
 class Headers(unittest.TestCase):

@@ -1,7 +1,7 @@
 """N10 markdown rendering, N5 input panel placement and B8 dice-pad naming.
 
 _renderMarkdown is a pure helper, so it runs under node; the CSS and pad
-naming are pinned against the template source.
+naming are pinned against display/static/display.css and display.js.
 """
 from __future__ import annotations
 
@@ -13,16 +13,20 @@ import tempfile
 
 import pytest
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
-HTML = ROOT / "display" / "templates" / "index.html"
+from tests.display_sources import read_display_sources
+
 NODE = shutil.which("node")
-SRC = HTML.read_text(encoding="utf-8")
+# _renderMarkdown and the dice-pad init are in display/static/display.js; the
+# rail rules are in display/static/display.css (W2).
+_SRC = read_display_sources()
+JS = _SRC.js
+CSS = _SRC.css
 
 
 def _render(md: str) -> str:
     if not NODE:
         pytest.skip("node not available")
-    m = re.search(r"(function _renderMarkdown\(md\) \{.*?\n\}\n)", SRC, re.S)
+    m = re.search(r"(function _renderMarkdown\(md\) \{.*?\n\}\n)", JS, re.S)
     assert m, "_renderMarkdown not found"
     script = m.group(1) + "\nprocess.stdout.write(_renderMarkdown(%s));\n" % __import__("json").dumps(md)
     with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False, encoding="utf-8") as f:
@@ -59,18 +63,18 @@ def test_bullets_still_work():
 
 
 def test_input_panel_is_in_the_right_rail():
-    rule = re.search(r"\n  #input-panel \{(.*?)\}", SRC, re.S).group(1)
+    rule = re.search(r"\n  #input-panel \{(.*?)\}", CSS, re.S).group(1)
     assert "right: 28px" in rule
     assert "left: 50%" not in rule and "translateX" not in rule
 
 
 def test_pill_fudge_is_retired_and_no_bottom_reservation():
-    assert "50% + 106px" not in SRC
-    assert "_reserveInputSpace" not in SRC
+    assert "50% + 106px" not in CSS
+    assert "_reserveInputSpace" not in JS
 
 
 def test_main_view_dice_pad_does_not_bind_stored_name():
-    body = re.search(r"function _initDicePad\(\) \{.*?\n\}\n", SRC, re.S).group(0)
+    body = re.search(r"function _initDicePad\(\) \{.*?\n\}\n", JS, re.S).group(0)
     assert "input-only" in body
     # the stored name is only read inside the phone-view branch
     assert body.index("input-only") < body.index("localStorage.getItem('gm_player_name')")

@@ -30,21 +30,22 @@ import subprocess
 import tempfile
 import unittest
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
-HTML = ROOT / "display" / "templates" / "index.html"
+from tests.display_sources import read_display_sources
+
 NODE = shutil.which("node")
 
-#: Pull just the deferral machinery out of the template. Keeping the slice
-#: narrow means this test does not need the DOM.
+#: Pull just the deferral machinery out of the display's script. Keeping the
+#: slice narrow means this test does not need the DOM. The slice used to be cut
+#: from the template; W2 moved the script to display/static/display.js.
 _SLICE = re.compile(
     r"(const PENDING_BLOCK_GAP.*?)\n// ── Shared: after inserting", re.S)
 
 
 def _harness(script: str) -> dict:
-    src = HTML.read_text(encoding="utf-8")
+    src = read_display_sources().js
     m = _SLICE.search(src)
     if not m:
-        raise AssertionError("deferral block not found in the template")
+        raise AssertionError("deferral block not found in display.js")
     prelude = """
 let isTyping = false;
 let charQueue = [];
