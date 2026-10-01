@@ -27,6 +27,7 @@ it arrives, on clean `origin/main` as well (see KNOWN PRE-EXISTING BUG below).
 The replay dedupe test therefore counts rendered blocks, which the bug does not
 touch, and asserts the count does not double across a reconnect.
 """
+import contextlib
 import json
 import os
 import pathlib
@@ -44,6 +45,10 @@ from tests._browser import BrowserTestCase, BrowserUnavailable, shared_browser
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 APP = ROOT / "display" / "gm-display-app.py"
 
+# How long to wait for a display to accept a connection. Local it is under a
+# second; the budget exists for a loaded runner, not for a healthy start.
+START_TIMEOUT = 30
+
 
 # ── a real display process, so it can actually be killed ────────────────────
 
@@ -53,14 +58,53 @@ def _free_port() -> int:
         return s.getsockname()[1]
 
 
-def _port_is_open(port: int, timeout: float = 0.4) -> bool:
-    with socket.socket() as s:
+def _connect(host: str, port: int, timeout: float = 0.4):
+    """True if something accepts a connection there, else the OSError saying why.
+
+    The refusal reason is kept rather than flattened to False. "Connection
+    refused" and "timed out" are different diagnoses: refused means nothing is
+    listening on that address, timed out means something is and it is not
+    answering.
+    """
+    family = socket.AF_INET6 if ":" in host else socket.AF_INET
+    with socket.socket(family) as s:
         s.settimeout(timeout)
         try:
-            s.connect(("127.0.0.1", port))
+            s.connect((host, port))
             return True
-        except OSError:
-            return False
+        except OSError as exc:
+            return exc
+
+
+def _port_is_open(port: int, timeout: float = 0.4) -> bool:
+    return _connect("127.0.0.1", port, timeout) is True
+
+
+@contextlib.contextmanager
+def _no_core_dumps():
+    """RLIMIT_CORE 0 across the Popen, so a SIGABRT leaves nothing behind.
+
+    POSIX only, hence the guard. The soft limit is what a core dump is charged
+    against and the child inherits it, so this costs nothing when no dump is
+    wanted and prevents a several-hundred-megabyte file appearing in the repo
+    when one is.
+    """
+    try:
+        import resource
+    except ImportError:
+        yield
+        return
+    try:
+        soft, hard = resource.getrlimit(resource.RLIMIT_CORE)
+        resource.setrlimit(resource.RLIMIT_CORE, (0, hard))
+    except (ValueError, OSError):
+        yield
+        return
+    try:
+        yield
+    finally:
+        with contextlib.suppress(ValueError, OSError):
+            resource.setrlimit(resource.RLIMIT_CORE, (soft, hard))
 
 
 class DisplayProcess:
@@ -70,12 +114,20 @@ class DisplayProcess:
     the defect under test needs the server to stop existing. Werkzeug's
     shutdown() leaves the SSE response thread serving, so the page carries on
     receiving and nothing is being tested. SIGKILL is what a reader does.
+
+    This is the only file in the suite that starts the real app this way, which
+    is why it keeps everything the process says. Sent to DEVNULL, a display that
+    dies at import, or hangs before it binds, leaves no evidence at all and the
+    test can only report that a port stayed shut. That is a symptom, and a
+    symptom is what makes a red run impossible to act on and a green local run
+    look like the last word.
     """
 
     def __init__(self, state_dir=None) -> None:
         self.port = _free_port()
         self.proc = None
         self.state_dir = pathlib.Path(state_dir) if state_dir else None
+        self._log = None
 
     def _env(self) -> dict:
         env = dict(os.environ, GM_DISPLAY_PORT=str(self.port), TACTICS_NO_DISPLAY="1")
@@ -90,18 +142,95 @@ class DisplayProcess:
             # left inset, so a stray roster makes an unrelated layout test fail.
             env["GM_TEXT_LOG_FILE"] = str(self.state_dir / "text_log.json")
             env["GM_STATS_FILE"] = str(self.state_dir / "stats.json")
+        # For _await_port's SIGABRT. Without it an abort kills the child silently
+        # and the one case that most needs explaining, a display that is alive
+        # and not listening, is the one case that explains nothing.
+        env["PYTHONFAULTHANDLER"] = "1"
         return env
 
-    def start(self) -> "DisplayProcess":
-        self.proc = subprocess.Popen(
-            [sys.executable, str(APP)], cwd=str(ROOT), env=self._env(),
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        deadline = time.time() + 30
-        while time.time() < deadline:
+    def _transcript(self, limit: int = 6000) -> str:
+        """Everything the display has written so far, oldest first."""
+        if self._log is None:
+            return "(there was no process to read output from)"
+        try:
+            self._log.flush()
+            self._log.seek(0)
+            data = self._log.read()
+        except (OSError, ValueError):
+            return "(the display's output could not be read back)"
+        text = data.decode("utf-8", "replace").strip()
+        if not text:
+            return "(the display wrote nothing to stdout or stderr)"
+        if len(text) > limit:
+            text = f"[{len(data) - limit} earlier bytes elided]\n{text[-limit:]}"
+        return text
+
+    def _stack_dump(self) -> str:
+        """Abort a live-but-silent display and keep the traceback it prints.
+
+        PYTHONFAULTHANDLER turns SIGABRT into Python's own all-threads dump, so
+        the report names the call the process is stuck in instead of leaving
+        that to be guessed at from the outside. The process is already a failed
+        test at this point, so aborting it costs nothing that matters.
+        """
+        if self.proc is None or self.proc.poll() is not None:
+            return ""
+        try:
+            self.proc.send_signal(signal.SIGABRT)
+            self.proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            return "\n\n(it did not respond to SIGABRT either)"
+        except OSError as exc:
+            return f"\n\n(SIGABRT could not be delivered: {exc})"
+        return ""
+
+    def _spawn(self) -> None:
+        # One unlinked temporary file for both streams, so the banner and any
+        # traceback interleave in the order the process wrote them. Unlinked
+        # means a child that has to be killed cannot leave a log behind.
+        self._log = tempfile.TemporaryFile()
+        with _no_core_dumps():
+            self.proc = subprocess.Popen(
+                [sys.executable, str(APP)], cwd=str(ROOT), env=self._env(),
+                stdout=self._log, stderr=subprocess.STDOUT)
+
+    def _await_port(self) -> "DisplayProcess":
+        started = time.time()
+        while time.time() - started < START_TIMEOUT:
             if _port_is_open(self.port):
                 return self
+            if self.proc.poll() is not None:
+                raise RuntimeError(
+                    f"the display on port {self.port} exited with code "
+                    f"{self.proc.returncode} after {time.time() - started:.1f}s, "
+                    f"without ever accepting a connection.\n"
+                    f"started: {sys.executable} {APP}\n"
+                    f"cwd: {ROOT}\n"
+                    f"GM_DISPLAY_PORT={self.port}\n\n"
+                    f"--- everything it wrote ---\n{self._transcript()}")
             time.sleep(0.2)
-        raise RuntimeError(f"the display on port {self.port} never came up")
+        # Alive, and still not listening. That is a different failure from a
+        # crash and it is the one that has to be told apart, so ask the process
+        # itself where it is before saying anything about the port. Everything
+        # is read before the abort, because the abort ends the process.
+        v4 = _connect("127.0.0.1", self.port)
+        v6 = _connect("::1", self.port)
+        was_alive = self.proc.poll() is None
+        stacks = self._stack_dump()
+        raise RuntimeError(
+            f"the display on port {self.port} was {'still running' if was_alive else 'not running'} "
+            f"after {START_TIMEOUT}s and had accepted no connection on 127.0.0.1.\n"
+            f"pid {self.proc.pid}\n"
+            f"127.0.0.1: {v4 if v4 is not True else 'accepted'}\n"
+            f"[::1]:     {v6 if v6 is not True else 'accepted'}\n"
+            f"started: {sys.executable} {APP}\n"
+            f"cwd: {ROOT}\n\n"
+            f"--- everything it wrote, and where it was stuck ---\n"
+            f"{self._transcript()}{stacks}")
+
+    def start(self) -> "DisplayProcess":
+        self._spawn()
+        return self._await_port()
 
     def url(self, path: str = "/") -> str:
         return f"http://127.0.0.1:{self.port}{path}"
@@ -121,15 +250,9 @@ class DisplayProcess:
         """
         self.kill()
         self.proc = None
-        self.proc = subprocess.Popen(
-            [sys.executable, str(APP)], cwd=str(ROOT), env=self._env(),
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        deadline = time.time() + 30
-        while time.time() < deadline:
-            if _port_is_open(self.port):
-                return self
-            time.sleep(0.2)
-        raise RuntimeError(f"the display on port {self.port} never came back")
+        self._log = None
+        self._spawn()
+        return self._await_port()
 
     def push(self, text: str, **extra) -> None:
         body = json.dumps({"text": text, **extra}).encode("utf-8")
