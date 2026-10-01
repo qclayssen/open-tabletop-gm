@@ -268,6 +268,18 @@ def check_margin_note(margin: int) -> str:
             "undo. The intent does not land.")
 
 
+def check_stakes_note(stakes: str) -> str:
+    """The failure cost the check named when it was asked for, as a line for the
+    failure task. The check request carries `stakes` ("the guard turns") and nothing
+    used it after the roll was asked; this is where a miss pays what was put on the
+    table. Empty stakes add nothing."""
+    stakes = " ".join((stakes or "").split())
+    if not stakes:
+        return ""
+    return (f"The stakes named for this check were: {stakes}. A failure makes that cost "
+            "real, sized to how far the roll missed.")
+
+
 def combat_consequences(engine_text: str) -> str:
     """What the engine decided about the fight, as a line for the narration task.
 
@@ -388,7 +400,8 @@ class Session:
                      "(no gold, heal, crit, XP, item or stat change), emit no system log, "
                      "heading, bold or code, and change no number the sheet or Engine "
                      "section does not show.")
-    FAIL_FORWARD_FIX = ("Your last draft stalled: the check failed and nothing changed. "
+    FAIL_FORWARD_FIX = ("Your last draft stalled or let the check fail for free: nothing "
+                        "was lost, spent or noticed. "
                         "Rewrite it so the miss has consequences. Let the attempt partly "
                         "land, cost the character something concrete and named, and end on "
                         "the new situation they now have to deal with. Do not write 'you "
@@ -971,29 +984,40 @@ class Session:
         result = (f"{who or 'The player'} rolled {article} {skill} check: {total} against DC "
                   f"{dc}: {'success' if ok else 'failure'}.")
         self.memory.add("engine", result)
-        r = self._check_narration(result, ok, margin=total - dc)
+        r = self._check_narration(result, ok, margin=total - dc, stakes=req.stakes or "")
         if r.narration:
             self._say(r.narration)
             return [f"({result})", r.narration]
         return [f"({result})"]
 
-    def _check_narration(self, result: str, ok: bool, margin: int = 0) -> reply.DMReply:
+    def _check_narration(self, result: str, ok: bool, margin: int = 0,
+                         stakes: str = "") -> reply.DMReply:
         """Narrate a check outcome, then make sure it is one.
 
         Applied Standard 16 is a rule about the fiction, so it is enforced here
         rather than trusted to the prompt: a failed check that was narrated as a
-        stall is detected in script and rewritten once. That costs a second call
-        only when the model actually stalled, and leaves the success path with a
-        shorter task, since it never carries the failure instructions.
+        stall, or that moved the world for free, is detected in script and rewritten
+        once. That costs a second call only when the model actually fell short, and
+        leaves the success path with a shorter task, since it never carries the
+        failure instructions.
+
+        A failure is told what it must cost: the stakes the check itself named when it
+        was asked for, and how far the roll missed (`check_margin_note`), so the price
+        is sized by the engine's own margin instead of left for the model to invent.
         """
-        base = _join(CHECK_OK if ok else CHECK_FAIL, check_margin_note(margin))
+        base = _join(CHECK_OK if ok else CHECK_FAIL, check_margin_note(margin),
+                     "" if ok else check_stakes_note(stakes))
         r = self._dm(engine=result, task=base)
-        if not ok and reply.is_dead_stop(r.narration):
-            retry = self._dm(engine=result,
-                             task=f"{base}\n{self.FAIL_FORWARD_FIX}".strip())
-            if not reply.is_dead_stop(retry.narration):
-                return retry
-        return r
+        if ok or not reply.is_costless_failure(r.narration):
+            return r
+        retry = self._dm(engine=result, task=f"{base}\n{self.FAIL_FORWARD_FIX}".strip())
+        # Keep the best draft: a rewrite that pays wins; otherwise the first draft if it
+        # at least moved the world; otherwise a rewrite that at least is not a stall.
+        if not reply.is_costless_failure(retry.narration):
+            return retry
+        if not reply.is_dead_stop(r.narration):
+            return r
+        return retry if not reply.is_dead_stop(retry.narration) else r
 
     def _cast_lookup(self, spell_name: str):
         """Resolve a `cast` field against the sheet. Returns (R, sheet, caster, spec, why):
