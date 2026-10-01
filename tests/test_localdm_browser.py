@@ -102,7 +102,11 @@ def test_ability_check_rolls_then_the_dm_narrates_the_outcome(tmp_path, monkeypa
 
 
 def test_check_is_rolled_in_the_browser_when_a_display_is_up(tmp_path):
-    replies = iter(['You watch her face.\n{"check": "Insight 16"}', "Her eyes flick away." + NULLS])
+    # The outcome narration names a cost (reply.is_costless_failure): the guard in
+    # _check_narration rewrites a failure that moved the world for free, which costs a
+    # second DM call. This test is about the roll reaching the display, not the rewrite.
+    replies = iter(['You watch her face.\n{"check": "Insight 16"}',
+                    "Her eyes flick away, and the guard beside her turns toward you." + NULLS])
     c, s = session(tmp_path, lambda m, msgs, role: next(replies))
 
     class Display:
