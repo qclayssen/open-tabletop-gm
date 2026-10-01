@@ -129,11 +129,20 @@ class Panel(unittest.TestCase):
         cls.httpd.server_close()
 
     # ── helpers ───────────────────────────────────────────────────────────
+    # `#text-scroll` transitions padding-top over 0.4s, and --tx-bottom (the
+    # measured panel bottom) feeds it. Every measurement in this file is a
+    # geometry read, so it wants the settled layout, not a frame of an animation.
+    # Taking the transition off is what makes "wait until it stops changing"
+    # mean something: with the transition live, "not changing yet" and "finished"
+    # are the same observation, and the first is what you get. See settle().
+    NO_PADDING_TRANSITION = "#text-scroll { transition: none !important; }"
+
     def open(self, size=DESKTOP, snap=None, narrate=True, **ctx):
         context = self.browser.new_context(viewport={"width": size[0], "height": size[1]}, **ctx)
         self.addCleanup(context.close)
         page = context.new_page()
         page.goto(f"http://127.0.0.1:{self.port}/", wait_until="load")
+        page.add_style_tag(content=self.NO_PADDING_TRANSITION)
         page.wait_for_timeout(400)
         if narrate:
             page.evaluate("t => { handleIncomingText(t); instantFlush(); }", NARRATION)
@@ -142,16 +151,21 @@ class Panel(unittest.TestCase):
             self.settle(page)
         return page
 
-    # `#text-scroll` has `transition: padding 0.4s ease`, and --tx-bottom (the
-    # measured panel bottom) feeds its padding-top. So the inset this file asserts
-    # on is *animating* for 400ms after Tactics.update(), and the previous
-    # `wait_for_timeout(400)` slept for exactly the transition's own duration --
-    # landing on either side of the boundary by machine speed. It passed here and
-    # failed on the GitHub runner with `603 not greater than or equal to 698`,
-    # invisible for as long as this file skipped for lack of Playwright.
+    # Poll padding-top, not --tx-bottom: the variable is published synchronously by
+    # the ResizeObserver, so it is already final (`698px`) on the first read while
+    # padding-top is still short of it. Polling the variable returns immediately.
     SETTLE = """() => {
       const pad = parseFloat(getComputedStyle(
         document.getElementById('text-scroll')).paddingTop);
+      const txb = parseFloat(getComputedStyle(document.body)
+        .getPropertyValue('--tx-bottom')) || 0;
+      // Both have to be true, and the second is the one that was missing:
+      // --tx-bottom is what padding-top is computed FROM, so until it is
+      // published there is nothing to be stable relative to, and a padding
+      // reading of 72 or 172 is the untouched starting value rather than a
+      // settled one. `open()` takes the transition off, so once this holds the
+      // value is final rather than momentarily unmoved.
+      if (!txb || pad < txb) return false;
       const w = window;
       if (w.__mqLastPad === undefined || pad !== w.__mqLastPad) {
         w.__mqLastPad = pad; w.__mqStable = 0; return false;
@@ -160,7 +174,7 @@ class Panel(unittest.TestCase):
     }"""
 
     def settle(self, page):
-        """Block until padding-top stops moving, then let it paint.
+        """Block until padding-top has caught up with the published panel bottom.
 
         Three things this has to get right, each of which I got wrong first:
 
@@ -175,6 +189,30 @@ class Panel(unittest.TestCase):
           the third one -- measuring before the animation began.
         - Three identical samples, not one: a single match can be two samples
           inside the same easing step.
+
+        The bug that made this file red on `main`, and the reason the first two
+        are not enough on their own: "three samples in a row and none of them
+        moved" is ALSO what an animation looks like in its first 50ms, before it
+        has travelled anywhere. So the predicate could return true while padding
+        was still at its starting value, and the geometry read that followed was
+        of a half-built layout. It passed in isolation because a lightly loaded
+        machine got its first poll after the transition had begun, and it failed
+        at the fourth viewport when run after the rest of the file because by
+        then there were three stale pages open and everything was slower. That is
+        the worst shape for a timing bug: green when you run the test, red when
+        you run the suite.
+
+        The fix is to stop inferring "finished" from motion. `--tx-bottom` is
+        published synchronously and padding-top is `calc(var(--tx-bottom) + 28px)`,
+        so `pad >= txb` is a real lower bound for "arrived" rather than a guess
+        about easing curves, and `open()` removes the transition so that arriving
+        is the only thing left to observe.
+
+        This does not weaken what the file checks. On the broken tree the new
+        predicate fails `test_the_story_starts_below_the_panel` at (1440, 900) and
+        (390, 844) exactly as the old one did, and it still fails when the inset
+        is merely 12px short, which is the off-by-N bug this whole mechanism
+        exists to catch and which a pure stability check cannot see.
         """
         page.wait_for_function(self.SETTLE, polling="raf", timeout=8000)
         page.wait_for_timeout(50)
