@@ -84,7 +84,9 @@ systems/dnd5e/
   lookup.py                  SRD lookup (data/ is generated and gitignored)
 display/                     Flask companion: gm-display-app.py (SSE /stream, JSON
                              messages keyed by type), send.py, push_stats.py,
-                             check_input.py, templates/index.html (single file)
+                             check_input.py, templates/index.html (markup plus the
+                             server-rendered values), static/display.js and
+                             static/display.css (the renderer and its rules)
 display/static/reference/    strixhaven_map_table.html: visual reference for the grid
 display/maps/images/        map artwork (gitignored: third-party, large). Install
                              with scripts/art_import.py

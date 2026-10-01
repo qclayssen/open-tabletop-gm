@@ -23,8 +23,9 @@ import re
 import threading
 import unittest
 
+from tests.display_sources import read_display_sources
+
 REPO = pathlib.Path(__file__).resolve().parent.parent
-INDEX = REPO / "display" / "templates" / "index.html"
 HARNESS = REPO / "display" / "evidence-panel.html"
 
 try:
@@ -626,13 +627,15 @@ class Panel(unittest.TestCase):
 class ClientWording(unittest.TestCase):
     """The static half: wording the browser test cannot reach, pinned in source."""
 
-    src = INDEX.read_text(encoding="utf-8")
+    # The refusal wording is in display/static/display.js after W2 moved the
+    # script out of the template; the markup it renders into is still there.
+    _src = read_display_sources()
     tactics = (REPO / "display" / "static" / "tactics.js").read_text(encoding="utf-8")
     cli = (REPO / "scripts" / "tactics" / "cli.py").read_text(encoding="utf-8")
     app = (REPO / "display" / "gm-display-app.py").read_text(encoding="utf-8")
 
     def test_no_em_dash_in_the_new_client_text(self):
-        for name, text in (("index.html", self.src), ("tactics.js", self.tactics)):
+        for name, text in (("display.js", self._src.js), ("tactics.js", self.tactics)):
             # "—" was already in tactics.js (the CRIT/fumble suffix) before this
             # work, so only the strings added here are checked.
             for line in text.splitlines():

@@ -9,8 +9,9 @@ import re
 import threading
 import unittest
 
+from tests.display_sources import read_display_sources
+
 REPO = pathlib.Path(__file__).resolve().parent.parent
-INDEX = REPO / "display" / "templates" / "index.html"
 
 try:
     from playwright.sync_api import sync_playwright
@@ -37,7 +38,11 @@ SAMPLE = ("## Station 2 - The Note\n### Scene 0\n"
 
 class TypeFloor(unittest.TestCase):
     def test_no_font_size_declaration_under_12px(self):
-        src = INDEX.read_text(encoding="utf-8")
+        # Every font-size declaration is CSS, and the CSS is display.css since W2
+        # split it out of the template. The script sets two inline sizes, so it is
+        # scanned too rather than trusted.
+        _src = read_display_sources()
+        src = _src.css + "\n" + _src.js
         src = re.sub(r"<!--.*?-->", "", src, flags=re.S)
         bad = []
         for m in re.finditer(r"font-size:\s*(\d+(?:\.\d+)?)px", src):
@@ -49,8 +54,9 @@ class TypeFloor(unittest.TestCase):
         self.assertEqual(bad, [], "font-size under 12px: " + "; ".join(bad[:10]))
 
     def test_no_em_dash_in_new_markup(self):
+        # <main> is markup, so it stayed in the template (W2).
         self.assertNotIn("—", re.search(r"<main id=\"main-content\">.*?</main>",
-                                             INDEX.read_text(encoding="utf-8"), re.S).group(0))
+                                         read_display_sources().template, re.S).group(0))
 
 
 @unittest.skipUnless(HAVE_PLAYWRIGHT, "playwright is not installed")

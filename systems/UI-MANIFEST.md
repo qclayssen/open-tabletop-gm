@@ -6,11 +6,11 @@ system without touching the front-end. It's the UI-layer companion to
 
 ## The design
 
-One renderer, many manifests. The front-end (`display/templates/index.html`) is a
-single generic renderer. Each system ships a small declarative
-`systems/<name>/ui.json` describing *what to show* — which stat widgets sit in the
-sidebar, what the combat strip and attribute grid contain. The renderer reads the
-manifest for the loaded campaign's system and draws from it.
+One renderer, many manifests. The front-end (`display/static/display.js`, markup in
+`display/templates/index.html`) is a single generic renderer. Each system ships a
+small declarative `systems/<name>/ui.json` describing *what to show* — which stat
+widgets sit in the sidebar, what the combat strip and attribute grid contain. The
+renderer reads the manifest for the loaded campaign's system and draws from it.
 
 Why declarative manifest instead of per-system HTML: shipping HTML/CSS per system
 fragments the front-end and forces every contributor to write display code. A
