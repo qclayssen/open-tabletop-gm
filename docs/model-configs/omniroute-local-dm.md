@@ -54,9 +54,11 @@ GM_LLM_URL=http://localhost:11434 GM_DM_MODEL=qwen3:14b GM_ADVISOR_MODEL=qwen3:1
 ```
 
 `GM_NO_THINK=0` stops the `/no_think` suffix (only Qwen3 understands it).
-`GM_REASONING` sets `reasoning_effort` on local calls: `none` (default; Qwen3.5
+`GM_REASONING` sets `reasoning_effort` on local calls: `none` (Qwen3.5
 ignores `/no_think` and otherwise returns empty turns), `low`/`medium`/`high` to
-let it think, `off` to send nothing.
+let it think, `off` to send nothing. It always wins. When unset, the value comes
+from the DM model name (`llm.REASONING_BY_MODEL`: qwen3.x `none`, space-bunny and
+gpt-oss `medium`), and unknown names or combo names such as `dm-local` get `none`.
 `GM_SHADOW=0` (or `--no-shadow`) turns off the background advisor review.
 
 ## Display
