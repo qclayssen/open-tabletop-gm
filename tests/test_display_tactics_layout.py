@@ -20,6 +20,7 @@ import pathlib
 import unittest
 
 from tests._browser import BrowserTestCase
+from tests.display_settle import present
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 
@@ -49,6 +50,10 @@ PROBE = """() => {
     leadsPinned: inBar(leads), endTurnInBar: inBar(end),
     endTurnOnScreen: r(end).bottom <= innerHeight && r(end).top >= 0,
     buttonH: Math.round(r(leads.querySelector('button')).height),
+    // What the spell list actually put on the page. A count of zero here is a
+    // broken stub rather than a tidy layout, and the test that cares says so
+    // before it measures the bar.
+    spells: document.querySelectorAll('.tx-spells .tx-spell').length,
     chipStripes: [...new Set([...document.querySelectorAll('.tx-chip')]
       .map(c => getComputedStyle(c).borderLeftWidth))],
     frames,
@@ -58,8 +63,18 @@ PROBE = """() => {
 SPELLS = ("() => { window.__spells = Array.from({length: 14}, (_, i) => ({name: 'Spell ' + i,"
           " level: i % 4, mode: 'save', area: {shape: 'sphere', size: 20},"
           " targeting: 'single', range: 60, ok: true}));"
+          # `ok: true` on the RESPONSE, not only on each spell. tactics.js
+          # call() is `if (r.ok) return body || {ok: true}` and returns the
+          # refusal for anything else, so a response without it made
+          # loadSpells() bail: ui.spells stayed null, spellChoices() drew
+          # "Loading spells..." for ever, and the fourteen spells this stub
+          # builds were never on the page at all. Nothing failed, because the
+          # test below measures the action BAR and an empty spell list is a
+          # short bar. The count is asserted before the bar now, so a stub that
+          # stops reaching the panel cannot pass as a tidy layout.
           " window.fetch = u => u === '/combat/do'"
-          " ? Promise.resolve({json: () => Promise.resolve({text: '', result: {spells: window.__spells}})})"
+          " ? Promise.resolve({ok: true, status: 200,"
+          "     json: () => Promise.resolve({text: '', result: {spells: window.__spells}})})"
           " : Promise.reject(new Error('offline')); }")
 
 
@@ -73,7 +88,10 @@ class MeasuredLayout(BrowserTestCase):
         if spell_list:
             page.evaluate(SPELLS)
             page.click("#tx-leads button:has-text('Cast')")
-            page.wait_for_timeout(500)
+            # The list arrives through a fetch the stub answers with a promise,
+            # so wait for the list itself rather than for a length of time.
+            present(page, "() => document.querySelectorAll('.tx-spells .tx-spell').length > 0",
+                    "the spell list to render")
         return page.evaluate(PROBE)
 
     # ── must-have 6: a table display reads from across the table ───────────
@@ -100,8 +118,18 @@ class MeasuredLayout(BrowserTestCase):
 
     def test_a_phone_keeps_end_turn_on_screen_with_a_long_spell_list(self):
         """The bug: the spell list wrapped the bar to three rows and End turn
-        fell under the fold."""
+        fell under the fold.
+
+        The count comes first because the measurement that follows cannot tell an
+        empty spell list from a short one. The stub's fetch response had no
+        `ok`, and tactics.js call() answers anything without one with a
+        refusal, so the fourteen spells it builds were never drawn and the bar
+        being measured was the bar of a panel that had failed to load.
+        """
         got = self.panel("phone", spell_list=True)
+        self.assertEqual(got["spells"], 14,
+                         f"the spell list did not render, so the bar is not being "
+                         f"measured under a long list: {got}")
         self.assertTrue(got["leadsPinned"], "the lead row scrolled out of the bar")
         self.assertTrue(got["endTurnInBar"], "End turn scrolled out of the bar")
         self.assertTrue(got["endTurnOnScreen"])
