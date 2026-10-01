@@ -1608,6 +1608,47 @@ def map_features(name):
 #     consult. The precedent is _clocks_payload() just above.
 
 
+@app.route("/scene", methods=["GET"])
+def current_scene():
+    """The campaign's persistent scene, with the marker filtered.
+
+    A scene is campaign state in `<campaign>/scene.json` (`tactics/scenes.py`),
+    authored by the GM in a shell with `combat.py scene MAP` and `combat.py here
+    PLACE`. It is read from here, and like the clocks and the pins, it is
+    filtered in this layer rather than in `sync.snapshot()`: a scene outlives
+    the encounter, so no snapshot call can carry it, and the route fires with no
+    combat running at all.
+
+    The filter is `scenes.revealed()`, and it is `marker.revealed is True` rather
+    than truthiness, because a hand-edited scene.json is a supported input and an
+    absent key, a `null` and a `"yes"` are all different things to a browser.
+
+    The payload is the map and its background either way, and the marker only
+    when it is revealed. An unrevealed marker is absent rather than flagged: one
+    browser audience, no `is_gm`, no viewer parameter, no second port. The GM
+    reads a hidden marker from the terminal, not from here.
+    """
+    camp = _pin_campaign()
+    if camp is None:
+        return jsonify({"scene": None})
+    try:
+        from tactics import scenes as _scenes
+    except Exception:
+        return jsonify({"scene": None})
+    spec = _scenes.load(camp)
+    if spec is None:
+        return jsonify({"scene": None})
+    marker = _scenes.revealed(spec)
+    payload = {"map": spec["map"], "name": spec.get("name") or spec["map"],
+               "background": spec["background"],
+               "extent": [{"width": spec["extent"][0], "height": spec["extent"][1]}],
+               "marker": None}
+    if marker is not None:
+        payload["marker"] = {"name": marker["name"], "place": marker.get("place"),
+                             "x": marker["x"], "y": marker["y"]}
+    return jsonify({"scene": payload})
+
+
 @app.route("/pins/<slug>", methods=["GET"])
 def pins_for_map(slug):
     """The pins on one map, for the board to draw.

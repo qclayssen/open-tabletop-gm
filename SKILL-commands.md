@@ -24,6 +24,8 @@ Do NOT run `git init` or any git commands in campaign directories.
 | `/gm combat start` | Start combat. Follow `/gm combat start` branch. |
 | `/gm combat grid <map>` | Start grid combat (the engine runs the rules). Follow `/gm combat grid` branch. |
 | `/gm rest <short\|long>` | Process a rest. Follow `/gm rest` branch. |
+| `/gm scene <map> [--show]` | Make a Chartdown map the campaign's persistent scene, in `<campaign>/scene.json`. Maps to: `python3 <skill-base>/scripts/tactics/combat.py scene <map>`. See `scripts/tactics.md` "The scene". |
+| `/gm here <place>` | Snap the party marker onto a named place in the scene's `.cd`, stored as a fraction of the map's extent. Maps to: `python3 <skill-base>/scripts/tactics/combat.py here <place>`. `--hide` keeps it off every browser. |
 | `/gm recap` | Read session-log.md; deliver 3-5 sentence in-character recap. |
 | `/gm prep` | Player-facing pre-session checklist (spells prepared, consumables, marching and watch order, open threads). Local DM: `/prep`, and `/recap` for the stored-state recap (shown on resume after a gap; `--no-recap`, `--no-prep`). |
 | `/gm pin [<fact> \| list \| remove <fact-or-number>]` | Manage `state.md → ## Pinned Facts` — the stable soft canon read at every `/gm load`. See `/gm pin` procedure below. |
