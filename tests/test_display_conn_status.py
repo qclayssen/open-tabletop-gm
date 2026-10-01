@@ -44,6 +44,9 @@ from tests._browser import BrowserTestCase, BrowserUnavailable, shared_browser
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 APP = ROOT / "display" / "gm-display-app.py"
+# The display as its own killable process. See its docstring for why the app's
+# own entry point is not used here.
+CHILD = pathlib.Path(__file__).resolve().parent / "_display_child.py"
 
 # How long to wait for a display to accept a connection. Local it is under a
 # second; the budget exists for a loaded runner, not for a healthy start.
@@ -108,19 +111,25 @@ def _no_core_dumps():
 
 
 class DisplayProcess:
-    """gm-display-app.py as its own process, on a port nothing else is using.
+    """The display over real HTTP, in a process that can be killed.
 
     A subprocess rather than tests/_browser.py's DisplayServer for one reason:
     the defect under test needs the server to stop existing. Werkzeug's
     shutdown() leaves the SSE response thread serving, so the page carries on
     receiving and nothing is being tested. SIGKILL is what a reader does.
 
-    This is the only file in the suite that starts the real app this way, which
-    is why it keeps everything the process says. Sent to DEVNULL, a display that
-    dies at import, or hangs before it binds, leaves no evidence at all and the
-    test can only report that a port stayed shut. That is a symptom, and a
-    symptom is what makes a red run impossible to act on and a green local run
-    look like the last word.
+    tests/_display_child.py is what gets run. It is the same WSGI app from the
+    same file, but it is reached through werkzeug's make_server on 127.0.0.1
+    rather than through the app's own `app.run(host="localhost")`, because that
+    one blocks on a name lookup before it will listen and the port never opens.
+    Its docstring has the traceback and the whole account.
+
+    This is also the only file in the suite that starts a display in a process
+    of its own, which is why it keeps everything the process says. Sent to
+    DEVNULL, a display that dies at import, or hangs before it binds, leaves no
+    evidence at all and the test can only report that a port stayed shut. That
+    is a symptom, and a symptom is what makes a red run impossible to act on
+    and a green local run look like the last word.
     """
 
     def __init__(self, state_dir=None) -> None:
@@ -191,7 +200,7 @@ class DisplayProcess:
         self._log = tempfile.TemporaryFile()
         with _no_core_dumps():
             self.proc = subprocess.Popen(
-                [sys.executable, str(APP)], cwd=str(ROOT), env=self._env(),
+                [sys.executable, str(CHILD)], cwd=str(ROOT), env=self._env(),
                 stdout=self._log, stderr=subprocess.STDOUT)
 
     def _await_port(self) -> "DisplayProcess":
@@ -204,7 +213,8 @@ class DisplayProcess:
                     f"the display on port {self.port} exited with code "
                     f"{self.proc.returncode} after {time.time() - started:.1f}s, "
                     f"without ever accepting a connection.\n"
-                    f"started: {sys.executable} {APP}\n"
+                    f"started: {sys.executable} {CHILD}\n"
+                    f"serving: {APP}\n"
                     f"cwd: {ROOT}\n"
                     f"GM_DISPLAY_PORT={self.port}\n\n"
                     f"--- everything it wrote ---\n{self._transcript()}")
@@ -223,7 +233,8 @@ class DisplayProcess:
             f"pid {self.proc.pid}\n"
             f"127.0.0.1: {v4 if v4 is not True else 'accepted'}\n"
             f"[::1]:     {v6 if v6 is not True else 'accepted'}\n"
-            f"started: {sys.executable} {APP}\n"
+            f"started: {sys.executable} {CHILD}\n"
+            f"serving: {APP}\n"
             f"cwd: {ROOT}\n\n"
             f"--- everything it wrote, and where it was stuck ---\n"
             f"{self._transcript()}{stacks}")
