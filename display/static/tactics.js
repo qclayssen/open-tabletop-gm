@@ -2282,8 +2282,22 @@
     return meta.slug || '';
   }
 
+  // A map pin navigates to the target map's page. `/maps/<slug>` is the ARTWORK
+  // route (send_from_directory, gm-display-app.py:1476) -- going there opens a
+  // JPEG, not a map -- so the destination is the editor page, which is the only
+  // page that renders one named map.
+  //
+  // Deliberately not a preview. An inline SVG built from `rows` would be a
+  // second renderer, wrong for hex the moment SPEC-grid-and-map.md 4.2 lands, and
+  // it needs a route that compiles an arbitrary map and serves it to every phone
+  // on the LAN. `architect` cut it and that stands; see the brief's follow-ups.
   function navigateToMap(p) {
-    el.board.parentNode && window.location.assign('/maps/' + encodeURIComponent(p.target));
+    // The same confirm() idiom clickSquare uses for a move that costs an action:
+    // leaving the encounter's map mid-turn is the same class of "are you sure",
+    // and this file already has the pattern rather than needing a new mechanism.
+    const target = p.label || p.target;
+    if (!confirm(`Open the map "${target}"? This leaves the fight on this map.`)) return;
+    window.location.assign('/maps/' + encodeURIComponent(p.target) + '/edit');
   }
 
   // The note panel. Its body goes in through textContent and nowhere else:
