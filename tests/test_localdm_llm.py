@@ -146,3 +146,23 @@ def test_a_genuinely_empty_answer_without_reasoning_is_returned_as_empty():
     c = llm.Client(base_url="http://x", api_key="", transport=transport)
     assert c.chat("m", [{"role": "user", "content": "hi"}], max_tokens=400,
                   role="advisor:arbiter").text == "   "
+
+
+@pytest.mark.parametrize("model,expected", [
+    ("qwen3.5:4b", "none"),
+    ("qwen3:14b", "none"),
+    ("space-bunny-alpha", "medium"),
+    ("openai/gpt-oss-20b", "medium"),
+    ("dm-local", "none"),        # opaque combo name: safe fallback
+    (None, "none"),
+])
+def test_reasoning_default_follows_model_family(monkeypatch, model, expected):
+    monkeypatch.delenv("GM_REASONING", raising=False)
+    assert llm.reasoning_from_env(model) == expected
+
+
+def test_env_override_beats_model_detection(monkeypatch):
+    monkeypatch.setenv("GM_REASONING", "low")
+    assert llm.reasoning_from_env("space-bunny-alpha") == "low"
+    monkeypatch.setenv("GM_REASONING", "off")
+    assert llm.reasoning_from_env("space-bunny-alpha") is None

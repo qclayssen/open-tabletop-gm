@@ -305,7 +305,7 @@ class Session:
         self.memory = Memory(self.camp_dir)
         self.memory.seed_from_tail()
         # reasoning_effort for local-tier calls; advisors (cloud) get none sent.
-        self.reasoning = llm.reasoning_from_env() if reasoning == "env" else reasoning
+        self.reasoning = llm.reasoning_from_env(models.dm) if reasoning == "env" else reasoning
         self.summarizer = Summarizer(self.local, models.fast, self.memory,
                                      reasoning=self.reasoning)
         # Canon: the verbatim lines, kept in their own append-only file so the

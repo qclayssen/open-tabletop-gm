@@ -15,9 +15,11 @@ Environment:
     GM_COUNCIL_MODEL  /advise council                      (default dm-council)
     GM_FAST_MODEL     enemy picks and summaries            (default: GM_DM_MODEL)
     GM_REASONING      reasoning_effort sent on local-tier calls (dm, picks,
-                      summaries): none (default), low, medium, high, or off to
-                      send nothing. Qwen3.5 ignores /no_think and spends its
-                      whole budget reasoning unless this is "none".
+                      summaries): none, low, medium, high, or off to send
+                      nothing. Always wins when set. When unset, the default is
+                      looked up from the DM model name (REASONING_BY_MODEL),
+                      falling back to none. Qwen3.5 ignores /no_think and
+                      spends its whole budget reasoning unless this is "none".
 """
 from __future__ import annotations
 
@@ -150,8 +152,33 @@ class Client:
                 f.write(json.dumps(row) + "\n")
 
 
-def reasoning_from_env() -> str | None:
-    value = os.environ.get("GM_REASONING", "none").strip().lower()
+# Known model families -> reasoning_effort. First substring match on the
+# lowercased model name wins, so put specific names before general ones.
+# Combo names (dm-local) say nothing about the model behind them and fall
+# through to the default; set GM_REASONING for those.
+REASONING_BY_MODEL = (
+    ("qwen3.5", "none"),        # ignores /no_think, burns the budget reasoning
+    ("qwen3", "none"),          # /no_think works, but thinking buys little here
+    ("space-bunny", "medium"),  # needs some reasoning to produce a turn
+    ("gpt-oss", "medium"),      # cannot turn reasoning off, so none is invalid
+)
+DEFAULT_REASONING = "none"      # safe: never starves the answer of its budget
+
+
+def reasoning_for_model(model: str | None) -> str:
+    name = (model or "").lower()
+    for needle, setting in REASONING_BY_MODEL:
+        if needle in name:
+            return setting
+    return DEFAULT_REASONING
+
+
+def reasoning_from_env(model: str | None = None) -> str | None:
+    """GM_REASONING if set (even to off), else the table's pick for `model`."""
+    value = os.environ.get("GM_REASONING")
+    if value is None:
+        value = reasoning_for_model(model)
+    value = value.strip().lower()
     return None if value in ("", "off") else value
 
 
