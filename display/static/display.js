@@ -4352,6 +4352,27 @@ function _renderMarkdown(md) {
 // ── DM-side "Waiting on Piper, Mira…" badge for unresolved dice-requests ──
 // Driven by the server's dice_pending SSE event (snapshot of all active
 // requests). Hidden when the snapshot is empty.
+
+// The badge's own geometry, published to the stylesheet as --dpb-bottom.
+//
+// The story starts below this badge for as long as it is showing, and the badge
+// is as tall as the list of people it is naming: one request measures 71px and
+// every further one adds 49px, and the "Tap to roll" hint wraps onto extra
+// lines as the window narrows, so a one-request badge ends at 127px on a
+// desktop and 146px on a phone. A number in the stylesheet is a guess about a
+// box this function sizes, and the guess that was there (124px) was 3px short
+// of the one-request badge it had been written for. Measured here instead, the
+// way tactics.js publishes --tx-bottom for the combat panel.
+function _publishBadgeExtent() {
+  const badge = document.getElementById('dice-pending-badge');
+  if (!badge || !badge.classList.contains('visible')) {
+    document.body.style.removeProperty('--dpb-bottom');
+    return;
+  }
+  document.body.style.setProperty('--dpb-bottom',
+    Math.round(badge.getBoundingClientRect().bottom) + 'px');
+}
+
 function _updateDicePendingBadge(snapshot) {
   const badge = document.getElementById('dice-pending-badge');
   if (!badge) return;
@@ -4359,6 +4380,7 @@ function _updateDicePendingBadge(snapshot) {
   if (entries.length === 0) {
     badge.classList.remove('visible');
     badge.innerHTML = '';
+    _publishBadgeExtent();
     return;
   }
   // Most recent request first (best-effort: snapshot order is insertion order on the server).
@@ -4377,6 +4399,9 @@ function _updateDicePendingBadge(snapshot) {
   if (!document.body.classList.contains('input-only')) {
     badge.innerHTML += '<span class="dpb-label">Tap to roll</span>';
   }
+  // After the innerHTML above, so the measurement is of the badge that is on
+  // screen rather than the empty box that was.
+  _publishBadgeExtent();
 }
 
 /* N2: the dice pad lives inside the Party Input panel, which is collapsed on the
@@ -4399,8 +4424,19 @@ function _initDiceBadgeClick() {
     if (!badge.classList.contains('visible')) {
       document.body.classList.remove('dice-pad-open');
     }
+    // A class change is one of the two ways the badge's box changes. The other
+    // is its own size, which the class observer cannot see: the label re-wraps
+    // when the window narrows, and the same one request ends 19px lower on a
+    // phone than on a desktop.
+    _publishBadgeExtent();
   });
   obs.observe(badge, { attributes: true, attributeFilter: ['class'] });
+  if (window.ResizeObserver) {
+    // The badge is display:none while nothing is waiting, so it has to be
+    // observed rather than re-measured on a timer.
+    new ResizeObserver(_publishBadgeExtent).observe(badge);
+  }
+  _publishBadgeExtent();
 }
 
 // ── Phone dice pad: server-side roll + slot-machine reveal ───────────────

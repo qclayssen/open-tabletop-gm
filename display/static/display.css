@@ -101,9 +101,16 @@
     position: fixed; inset: 0;
     overflow-y: auto;
     overflow-x: hidden;
+    /* The top inset is a variable and not just a number in `padding`, because the
+       two overlays that cover the story (the combat panel and the dice-pending
+       badge) each publish their own measured bottom edge and the stylesheet has
+       to take the largest of the three. A number restated here would be the
+       base case and nothing more: both overlay rules outrank this one, so the
+       variable is the only part of the inset they can all see. */
+    --text-top-inset: 72px;
     /* Symmetric insets keep the prose centred on the screen: each side reserves the
        larger of the two rails (sidebar left, settings and party input right). */
-    padding: 72px max(340px, 18vw) 48px max(340px, 18vw);
+    padding: var(--text-top-inset) max(340px, 18vw) 48px max(340px, 18vw);
     z-index: 4;
     scroll-behavior: smooth;
     transition: padding 0.4s ease;
@@ -2393,7 +2400,29 @@
     pointer-events: auto;
     cursor: pointer;
   }
-  body:has(#dice-pending-badge.visible) #text-scroll { padding-top: 124px; }
+  /* Measured, not guessed. The badge is as tall as the list of people it is
+     naming, so its height is decided by the script: one request measures 71px
+     and every further one adds 49px, and the "Tap to roll" hint wraps onto extra
+     lines as the window narrows, so the same one request ends at 127px on a
+     desktop and 146px on a phone. The number that was here, 124px, was 3px short
+     of the one-request badge it had been sized for, and it was short in the
+     direction that matters: a restated constant outranks the combat panel's own
+     inset whenever `:has()` contributes an id, so with the panel up and a roll
+     outstanding the story started at 124 and 698px of board sat on the prose
+     for as long as anything was pending.
+
+     display.js measures the badge and publishes its bottom edge as --dpb-bottom,
+     the way tactics.js publishes --tx-bottom for the panel. The 12px is the gap
+     between the badge's border and the first line: enough that the prose is not
+     flush against it, small enough that one waiting player does not shove the
+     opening of the scene down the screen. The rule is scoped `:not(.tx-on)`
+     rather than given a max() of the panel's own: two rules writing padding-top
+     leave the winner to load order, and the whole defect was a specificity
+     contest. With the panel up, tactics.css's `body.tx-on` rule is the one that
+     writes the inset and it takes the badge into account there. */
+  body:has(#dice-pending-badge.visible):not(.tx-on) #text-scroll {
+    padding-top: max(var(--text-top-inset, 72px), calc(var(--dpb-bottom, 0px) + 12px));
+  }
   #dice-pending-badge .dpb-label {
     display: block;
     font-weight: 400;
@@ -3158,7 +3187,7 @@
      1100 is the width where 100vw - 340 - 340 still leaves a readable column
      (421px, 43 characters), so above it the desktop inset is the better trade. */
   @media (max-width: 1100px) {
-    #text-scroll { padding: 172px 20px 72px 20px; }
+    #text-scroll { --text-top-inset: 172px; padding: var(--text-top-inset) 20px 72px 20px; }
     #sidebar.has-data:not(.hidden) ~ main #text-scroll { padding-left: 232px; }
     #input-panel { right: 12px; bottom: 12px; width: min(300px, calc(100vw - 24px)); }
     /* With no side rail to sit beside, the settings column becomes one scrollable
