@@ -152,7 +152,9 @@
     position: fixed; inset: 0;
     overflow-y: auto;
     overflow-x: hidden;
-    padding: 72px max(340px, 18vw) 48px 230px;  /* left: sidebar+gap; right: clears the settings column */
+    /* left: sidebar+gap. right: the input-panel rail, widened 340 -> 440px to
+       match the panel's 300 -> 400px, plus its 28px offset. */
+    padding: 72px 440px 48px 230px;
     z-index: 4;
     scroll-behavior: smooth;
     transition: padding 0.4s ease;
@@ -161,17 +163,18 @@
   }
   #text-scroll::-webkit-scrollbar { display: none; }
   #text-scroll.sidebar-hidden { padding-left: 60px; }
-  /* When the settings column is collapsed, the prose reclaims the right space
-     (only the small toggle row remains up there). */
-  #text-scroll.controls-hidden { padding-right: 160px; }  /* clears Phone Mode and the Settings toggle */
+  /* Phone mode and the settings column moved to the bottom-left, so the
+     collapse toggle no longer frees any right-hand space. The rule is kept
+     (and made a no-op) so the JS toggle that drives it does not break. */
+  #text-scroll.controls-hidden { padding-right: 440px; }
 
   /* ── "New ↓" pill — appears when the reader has scrolled up and fresh
        narration has arrived below. Tap to jump back to the newest text. ── */
   #new-content-pill {
     position: fixed;
     /* centred over the reading column: midpoint of the left padding (sidebar)
-       and right padding (settings rail) of #text-scroll */
-    left: calc(50% + (230px - max(340px, 18vw)) / 2);
+       and right padding (input-panel rail) of #text-scroll */
+    left: calc(50% + (230px - 440px) / 2);
     bottom: 96px;
     transform: translateX(-50%) translateY(8px);
     z-index: 20;
@@ -194,7 +197,7 @@
     background: rgba(60, 42, 12, 0.96);
     border-color: rgba(230, 200, 110, 0.85);
   }
-  #text-scroll.sidebar-hidden ~ #new-content-pill { left: calc(50% + (60px - max(340px, 18vw)) / 2); }
+  #text-scroll.sidebar-hidden ~ #new-content-pill { left: calc(50% + (60px - 440px) / 2); }
   #text-scroll.controls-hidden ~ #new-content-pill { left: calc(50% + (230px - 160px) / 2); }
   #text-scroll.sidebar-hidden.controls-hidden ~ #new-content-pill { left: calc(50% + (60px - 160px) / 2); }
   :root[data-theme="light"] #new-content-pill {
@@ -1408,11 +1411,23 @@
     box-shadow: 0 0 6px rgba(245,200,90,0.25);
   }
 
-  /* ── Audio toggle controls ── */
+  /* ── Audio toggle controls ──
+     Moved to the BOTTOM-LEFT corner. They used to sit in the right-hand rail
+     (top: 96px; right: 28px), stacked above #input-panel — which cost the
+     party-input panel a hard 440px height reserve to dodge them, and that
+     reserve is what made the input body scroll on short windows. With the
+     settings cluster on the left, the right rail belongs to #input-panel
+     alone and the panel can use the full height. #phone-mode-btn moved with
+     it so the two never separate. */
   #audio-controls {
     position: fixed;
-    top: 96px; right: 28px;
+    bottom: 104px; left: 24px;
     z-index: 6;
+    /* Rows read top-down (Sound Effects, Type Speed, … Narration, Text Size) with
+       the collapse toggle first in the DOM. Bottom-left, the last row is now the
+       one nearest the corner logo, so the toggle label is left-aligned rather
+       than pushed away from the cluster. */
+    align-items: flex-start;
     display: flex;
     flex-direction: column;
     gap: 7px;
@@ -1557,13 +1572,17 @@
 
   /* ── Player input panel ── */
   #input-panel {
-    /* Lives in the right-hand rail (under Phone mode / settings) so it never
-       paints over the reading column. */
+    /* The right-hand rail, so it never paints over the reading column. It used
+       to share this rail with Phone mode and the settings column, which forced
+       the hard 440px height reserve below and made the body scroll. Both moved
+       to the bottom-left, so the panel now owns the rail and can use the full
+       height. Widened 300 -> 400px for the same reason: a 300px rail forced
+       the textarea, the sent-log and the dice pad to wrap and scroll. */
     position: fixed;
     bottom: 22px;
     right: 28px;
     z-index: 6;
-    width: min(300px, calc(100vw - 56px));
+    width: min(400px, calc(100vw - 56px));
     background: rgba(10, 7, 3, 0.92);
     border: 1px solid rgba(180,140,60,0.28);
     border-radius: 6px;
@@ -1599,10 +1618,26 @@
     color: rgba(230,150,120,0.95); border: 1px solid rgba(210,110,80,0.45);
     border-radius: 3px; padding: 5px 8px;
   }
-  /* Expanded, the panel must stay clear of the settings rows above it (they end
-     near y=363). Its top is 100vh - 22px - header (~34px) - body, so capping the
-     body at 100vh - 440px keeps the top at or below 384px; the body scrolls. */
-  body:not(.input-only) #input-body { max-height: min(60vh, calc(100vh - 440px)); min-height: 0; overflow-y: auto; }
+  /* Expanded, the panel now has the right rail to itself — Phone mode and the
+     settings column live in the bottom-left — so the old 440px reserve (which
+     existed only to dodge them, and cost the body most of its height on short
+     windows) is gone. What remains is the floor for the two bottom-left
+     clusters, so the panel's top never crosses the reading column, plus the
+     header and the panel's own footer. */
+  /* Expanded, the panel has the right rail to itself. The reserve below is the
+     panel's own header (~34px) + its 22px bottom offset + the top rail the
+     world clock and ruleset badge occupy (~96px), so the panel's top edge can
+     never reach them. overflow is now hidden rather than auto: #sent-log is the
+     single scroll region (see its rule), and letting the body scroll as well
+     is what made the panel feel like it scrolled no matter how tall it got.
+     The dice-pad-open case lifts the cap so the pad, which is a fixed child,
+     still fits. */
+  body:not(.input-only) #input-body {
+    max-height: calc(100vh - 152px);
+    min-height: 0;
+    overflow-y: hidden;
+  }
+  body:not(.input-only).dice-pad-open #input-body { max-height: calc(100vh - 420px); }
   /* backdrop-filter makes the panel a containing block for fixed children; drop
      it while the dice pad is floated so the pad anchors to the viewport. */
   body.dice-pad-open #input-panel { backdrop-filter: none; }
@@ -1631,6 +1666,23 @@
   }
   #player-input-text:focus { border-color: rgba(180,140,60,0.45); }
   #player-input-text::placeholder { color: rgba(180,140,60,0.28); }
+  /* The action box is the one control in the panel a player reaches for, and
+     rows="2" is about 40px — too small to write a real action into without the
+     field scrolling internally. It is flex-shrink: 0 so the panel's own height
+     math cannot squeeze it, and capped via max-height so a long entry scrolls
+     the field rather than growing the panel past its reserve. */
+  body:not(.input-only) #player-input-text {
+    flex-shrink: 0;
+    min-height: 72px;
+    max-height: 160px;
+    overflow-y: auto;
+  }
+  /* The waiting indicator and char tabs are single rows; keep them from being
+     crushed when the panel is short (dice pad open on a small window). */
+  body:not(.input-only) #waiting-indicator,
+  body:not(.input-only) #char-tabs,
+  body:not(.input-only) #input-error,
+  body:not(.input-only) #input-footer { flex-shrink: 0; }
   #input-footer { display: flex; align-items: center; gap: 10px; justify-content: flex-end; }
   #skip-turn-btn {
     font-family: 'Cinzel', serif; font-size: 8px;
@@ -1658,7 +1710,27 @@
     background: rgba(30,20,8,0.75);
   }
   #send-btn:disabled { opacity: 0.4; pointer-events: none; }
-  #sent-log { display: flex; flex-direction: column; gap: 5px; }
+  /* The sent-log is the only part of the panel that grows without bound — one
+     .sent-entry per submitted action, forever. It is therefore the ONLY scroll
+     region in the panel: capped, and scrolling it scrolls the history, not the
+     textarea and send button sitting below it. Before this, #input-body carried
+     the overflow and the whole panel scrolled, which pushed the send button off
+     the bottom as the run went on. flex-shrink: 0 keeps the cap from being
+     ignored when the panel is short on height. */
+  #sent-log {
+    display: flex; flex-direction: column; gap: 5px;
+    max-height: min(22vh, 200px);
+    overflow-y: auto;
+    flex-shrink: 0;
+    /* A hairline so it reads as a bounded region rather than a cut-off list. */
+    scrollbar-width: thin;
+  }
+  #sent-log:empty { display: none; }
+  #sent-log::-webkit-scrollbar { width: 5px; }
+  #sent-log::-webkit-scrollbar-track { background: rgba(0,0,0,0.3); }
+  #sent-log::-webkit-scrollbar-thumb {
+    background: rgba(180,140,60,0.4); border-radius: 3px;
+  }
   .sent-entry {
     display: flex; align-items: flex-start; gap: 8px;
     background: rgba(18,10,3,0.65);
@@ -1724,9 +1796,12 @@
   }
 
   /* ── DM Help button ── */
+  /* Moved off the bottom-right: the input panel now occupies that corner, and
+     two fixed panels at bottom-right overlapped. It joins the bottom-left
+     cluster, below Phone mode. */
   #dm-help-btn {
     position: fixed;
-    bottom: 22px; right: 24px;
+    bottom: 22px; left: 24px;
     z-index: 6;
     font-family: 'Cinzel', serif;
     font-size: 9px;
@@ -2218,16 +2293,31 @@
      main (TV) view is collapsed. A player watching the big screen has no way to
      roll, so opening the pad is allowed to lift it out of the panel — see
      body.dice-pad-open below. */
+  /* Floated out of the panel on the TV view, since the panel ships collapsed
+     and a big-screen viewer has no other way to roll. It used to sit at
+     right: 24px / bottom: 24px / z-index: 120 — directly on top of
+     #input-panel (right: 28px, bottom: 22px, z-index: 6) in the same corner,
+     burying the send button under a 320px box at 20x the stacking order.
+     It now docks immediately LEFT of the panel, clear of it, and inherits a
+     z-index just above the panel so the seam reads as adjacent rather than
+     stacked. The panel's body cap is reduced while the pad is open (see
+     body.dice-pad-open #input-body) so neither can overflow the other. */
   body.dice-pad-open #dice-pad {
     display: flex;
     position: fixed;
-    right: 24px;
+    right: 456px;
     bottom: 24px;
-    z-index: 120;
+    z-index: 7;
     width: min(320px, calc(100vw - 48px));
     border: 1px solid rgba(180,140,60,0.45);
     border-radius: 14px;
     box-shadow: 0 12px 40px rgba(0,0,0,0.6);
+  }
+  /* Narrow windows: the pad cannot sit beside a 400px panel, so fall back to
+     the left rail and shrink the panel's body cap harder rather than overlap. */
+  @media (max-width: 900px) {
+    body.dice-pad-open #dice-pad { right: 24px; bottom: 24px; }
+    body:not(.input-only).dice-pad-open #input-body { max-height: calc(100vh - 560px); }
   }
   /* The panel ships collapsed, so #input-body — the pad's ancestor — is
      display:none and a position:fixed child would render nothing. Un-hide the
@@ -2443,10 +2533,16 @@
   body.input-only #dice-pending-badge { display: none !important; }
 
   /* ── Mode switcher (full-view button + input-view "back to full" button) ── */
+  /* Bottom-left, above the #audio-controls cluster. It used to be top-right
+     with the settings column, and both moved together to the left so the
+     right rail is free for #input-panel. */
+  /* Bottom-left cluster, bottom row. #dm-help-btn sits at bottom: 22px and this
+     above it, so the three left-corner elements (Help, Phone mode, settings)
+     stack without collision. */
   #phone-mode-btn {
     position: fixed;
-    top: 96px;
-    right: 28px;
+    bottom: 64px;
+    left: 24px;
     z-index: 7;
     background: rgba(10, 6, 2, 0.65);
     border: 1px solid rgba(180, 140, 60, 0.45);
@@ -2466,21 +2562,24 @@
     color: rgba(240, 210, 120, 1);
     background: rgba(20, 12, 4, 0.85);
   }
-  /* Make room for the existing #audio-controls cluster — push down when both render */
-  body:not(.input-only) #audio-controls { top: 138px; }
+  /* The old "push down when both render" nudge is obsolete: the three
+     bottom-left elements (DM Help 22px, Phone mode 64px, settings 104px) stack
+     vertically and never collide. */
 
   /* Settings-column hide toggle (mirrors the left sidebar's toggle). Collapsed
-     folds every row away except the toggle row itself, so the narration
-     reclaims the right side. */
+     folds every row away except the toggle row itself, freeing the bottom-left
+     corner. */
   #audio-controls.collapsed .audio-row:not(#controls-toggle-row) { display: none; }
-  #controls-toggle-row { cursor: pointer; justify-content: flex-end; }
+  #controls-toggle-row { cursor: pointer; justify-content: flex-start; }
   #controls-toggle-row .audio-label { color: rgba(180,140,60,0.5); }
   #controls-toggle-row:hover .audio-label { color: rgba(180,140,60,0.9); }
 
   #phone-mode-menu {
+    /* Anchored above its button, which is now in the bottom-left cluster. The
+       dropdown opens upward so it never runs off the bottom of a short window. */
     position: fixed;
-    top: 132px;
-    right: 28px;
+    bottom: 100px;
+    left: 24px;
     z-index: 8;
     background: rgba(8, 5, 2, 0.98);
     border: 1px solid rgba(180, 140, 60, 0.55);
@@ -3150,7 +3249,7 @@
 <!-- Audio toggle controls — SFX triggered by narration text -->
 <div id="audio-controls">
   <div class="audio-row" id="controls-toggle-row" title="Hide the settings column">
-    <span class="audio-label" id="controls-toggle">Hide ▶</span>
+    <span class="audio-label" id="controls-toggle">Hide ▼</span>
   </div>
   <div class="audio-row" id="sfx-row" title="Sound effects (triggered by narration)">
     <span class="audio-label">Sound Effects</span>
@@ -6903,11 +7002,13 @@ function _setControlsVisible(visible) {
   if (visible) {
     _audioControls.classList.remove('collapsed');
     _textScroll.classList.remove('controls-hidden');
-    if (_controlsBtn) _controlsBtn.textContent = 'Hide ▶';
+    // Bottom-left cluster: rows stack upward from this toggle, so "hide" points
+    // down and "show" points up.
+    if (_controlsBtn) _controlsBtn.textContent = 'Hide ▼';
   } else {
     _audioControls.classList.add('collapsed');
     _textScroll.classList.add('controls-hidden');
-    if (_controlsBtn) _controlsBtn.textContent = '◀ Settings';
+    if (_controlsBtn) _controlsBtn.textContent = '▲ Settings';
   }
   try { localStorage.setItem('otgm-controls-visible', visible ? '1' : '0'); } catch (e) {}
 }

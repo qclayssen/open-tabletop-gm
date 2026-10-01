@@ -243,6 +243,50 @@ def test_note_names_the_file_it_came_from(by_name):
     assert "dnd5e_srd.json" not in other_note
 
 
+# ── the portrait address ─────────────────────────────────────────────────────
+#
+# The image is a URL to art that is NOT in this repository and is not licensed
+# into it, so the only honest thing a note can carry is the address. These tests
+# are the ones that stop it becoming a claim of local presence, and the one that
+# stops a URL being written unquoted into YAML.
+
+def test_a_creature_with_an_upstream_portrait_records_the_address(monsters):
+    with_image = [m for m in monsters if str(m.get("image") or "").strip()]
+    assert with_image, "no SRD creature carries an image address"
+    for monster in with_image:
+        assert monster["image"].startswith("https://"), monster["name"]
+
+
+def test_the_portrait_goes_in_the_fence_and_never_the_frontmatter(by_name):
+    """`statblock_art.stamp_image` owns the frontmatter `image:` and strips any
+    key written there, so an address emitted there would be deleted on its next
+    run. The fence is the one place both tools can write without a fight."""
+    note = eb.note_for(by_name["Goblin"])
+    front, _, rest = note.partition("```statblock\n")
+    assert "image:" not in front
+    assert "image:" in rest
+
+
+def test_the_portrait_address_is_yaml_quoted(monsters):
+    """A URL holds a colon, and an unquoted one is a YAML error FSB swallows
+    silently: the note parses as having no portrait at all."""
+    for monster in monsters[:20]:
+        if not str(monster.get("image") or "").strip():
+            continue
+        body = eb.note_for(monster).split("```statblock\n", 1)[1].rsplit("\n```", 1)[0]
+        line = next(l for l in body.splitlines() if l.startswith("image:"))
+        assert line.count('"') == 2, line
+        assert yaml.safe_load(body)["image"].startswith("https://")
+
+
+def test_a_creature_with_no_portrait_emits_no_image_key(by_name):
+    """The Strixhaven and homebrew records carry none, and an `image: ""` line
+    would claim a portrait that renders as nothing."""
+    record = dict(by_name["Goblin"])
+    record.pop("image", None)
+    assert "image:" not in eb.note_for(record)
+
+
 def test_default_provenance_is_the_srd(by_name):
     assert "`dnd5e_srd.json`" in eb.note_for(by_name["Goblin"])
 

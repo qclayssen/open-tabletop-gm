@@ -167,8 +167,15 @@ def register(vault: pathlib.Path, art_dir: pathlib.Path, collection: str,
                       f"Known: {known}. Registering into a collection Atlas does "
                       f"not have would put the tokens somewhere invisible.")
 
+    # A leading underscore means "not a creature". `faculty_sheets.py --check`
+    # writes `_contact-sheet.png` into the very folder this reads, and that sheet
+    # is a grid of every portrait -- registering it would put a picture of the
+    # whole faculty into the token list as a seventeenth professor. The underscore
+    # is that module's own convention for its diagnostic output, so honouring it
+    # here costs nothing and is the difference between a checker and a mistake.
     pictures = sorted(p for p in art_dir.iterdir()
-                      if p.is_file() and p.suffix.lower() in IMAGE_SUFFIXES)
+                      if p.is_file() and not p.name.startswith("_")
+                      and p.suffix.lower() in IMAGE_SUFFIXES)
     if not pictures:
         raise Refused(f"no images in {art_dir} (looked for {', '.join(IMAGE_SUFFIXES)})")
 

@@ -192,12 +192,19 @@ def test_every_approval_is_reported_with_its_reason(tmp_path):
     assert sa.APPROVED["Jadzi, Steward of Fate (Oracle of Strixhaven)"][1] in text
 
 
-def test_an_approval_naming_a_missing_file_is_refused_not_substituted(tmp_path):
+def test_an_approval_naming_a_missing_file_is_reported_not_substituted(tmp_path):
     """A stale line in APPROVED must fail loudly.
 
     Falling back to "whatever else is in the pool" is precisely the guess the
     table exists to prevent, and it would fail silently: the record would report
     covered.
+
+    Loudly used to mean `Refused`, and that was wrong: both art pools are
+    gitignored, so a machine that has never run an installer has neither, and the
+    first reviewed line then stopped the whole run. Absent art is now reported
+    under a heading that names the file wanted, which is what makes a stale line
+    visible without making an uninstalled clone unusable. The no-substitution half
+    of the contract is unchanged and is what this test now pins.
     """
     index = index_for(tmp_path, ("display-tokens", ["oracle-of-strixhaven.png"]))
     monkey = dict(sa.APPROVED)
@@ -206,12 +213,17 @@ def test_an_approval_naming_a_missing_file_is_refused_not_substituted(tmp_path):
     try:
         sa.APPROVED.clear()
         sa.APPROVED.update(monkey)
-        with pytest.raises(sa.Refused) as excinfo:
-            sa.match_record("Jadzi, Steward of Fate (Oracle of Strixhaven)", index, {})
+        record = sa.match_record("Jadzi, Steward of Fate (Oracle of Strixhaven)", index, {})
     finally:
         sa.APPROVED.clear()
         sa.APPROVED.update(monkey)
-    assert "oracle-of-arcavios.png" in str(excinfo.value)
+    # NOT substituted: the other oracle art is sitting right there in the pool.
+    assert "art" not in record
+    assert "oracle-of-strixhaven.png" not in str(record)
+    # LOUDLY: the file it wanted is named, so a rename shows up as a stale line
+    # rather than as a record that quietly has no portrait.
+    assert record["art_named"] == "oracle-of-arcavios.png"
+    assert "oracle-of-arcavios.png" in record["problem"]
 
 
 def test_no_approval_names_a_generic_token():

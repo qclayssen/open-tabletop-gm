@@ -180,9 +180,16 @@ IMAGE_SUFFIXES = rt.IMAGE_SUFFIXES
 # `bestiary` first: it is the campaign's own curated monster collection, it is
 # where `_age-substitutions.json` lives, and it is where the already-registered art
 # came from. `faculty` next: measured crops off one college sheet, with
-# `_extraction.json` recording the boxes. `display-tokens` last: canon Strixhaven
-# faces, correct, but the broadest pool and the most likely to collide.
-POOLS: tuple[str, ...] = ("bestiary", "faculty", "display-tokens")
+# `_extraction.json` recording the boxes. `display-tokens` after that: canon
+# Strixhaven faces, correct, but the broadest pool and the most likely to collide.
+#
+# `srd-art` LAST, and last matters more here than anywhere else in the list. It is
+# the only pool that is machine-generated, unlicensed, and of visibly uneven
+# quality, so anything a human chose for a creature must beat it. Last place means
+# a curated portrait, a reviewed approval, or a recorded substitution all win over
+# a downloaded one, and `build_report` prints the pair by name when they collide so
+# the choice is visible rather than assumed.
+POOLS: tuple[str, ...] = ("bestiary", "faculty", "display-tokens", "srd-art")
 
 # Where each pool lives, relative to the vault or to the engine checkout. A pool
 # added by `--token-art-dir` or `--token-art-zip` sorts after these.
@@ -190,6 +197,10 @@ POOL_DIRS = {
     "bestiary": ("vault", "atlas-vtt/assets/bestiary"),
     "faculty": ("vault", "atlas-vtt/assets/faculty"),
     "display-tokens": ("engine", "display/tokens"),
+    # Installed by scripts/install_srd_art.py, gitignored, absent on a fresh
+    # clone -- and `add_pool` reads a missing directory as an empty pool, so its
+    # absence costs nothing and is not an error.
+    "srd-art": ("engine", "display/srd-art"),
 }
 
 # The file the collection uses to record which portraits stand in for which
@@ -251,6 +262,112 @@ APPROVED: dict[str, tuple[str, str]] = {
             "Melentor III, and the picture agrees: a single student mage, which is what "
             "a statblock that casts mage hand and prestidigitation is."
         )),
+    "Lorehold Professor of Chaos": (
+        "plargg-dean-of-chaos.png",
+        (
+            "The one retired dean this campaign is allowed to show. The record names an "
+            "office, the file names its holder, and the two agree on college AND "
+            "discipline from independent sources: the pack files Plargg as Lorehold's "
+            "dean of chaos, and maps/art/CREDITS.md:182 records 'Augusta Tullus (Order), "
+            "Plargg (Chaos)' for Lorehold. world.md:134 permits him specifically -- "
+            "'Kianne, Imbraham and Plargg may appear as cameo professors' -- while "
+            "retiring the rest, so this line is a cameo and must not become standing "
+            "faculty. The other six named-dean portraits are withheld on purpose: "
+            "Kianne and Imbraham are deceased (CREDITS.md:210), and Shaile, Embrose, "
+            "Uvilda and Nassari sit behind the unresolved Silverquill/Prismari dean "
+            "conflict (CREDITS.md:192)."
+        )),
+    # ── species-correct art for the campaign-original cast ────────────────────
+    #
+    # Three of the main cast are creatures, and a picture of the right creature
+    # is a better answer than a generic student token: it is the same claim the
+    # age-substitutions already make, where the picture is of the right KIND of
+    # thing and the notes say not to read further into it.
+    #
+    # Each of these three was chosen by LOOKING at the file, not by matching its
+    # name. That is the whole reason this block is three lines and not six.
+    "Ninefold": (
+        "wandering-archaic.png",
+        (
+            "A creature, so the right creature is a better answer than a generic "
+            "token, and this one was picked by eye rather than by filename: a "
+            "towering, faceless, many-armed robed figure standing in a place whose "
+            "geometry is wrong. That is Ninefold -- Gargantuan (Bestiary/Archaic.md:13), "
+            "'face is absence where light behaves strangely' "
+            "(npc-files/ninefold.md:93), shelves bending and shadows falling at "
+            "impossible angles around it (npc-files/ninefold.md:26). The ARC AVIOS "
+            "one is also a fair candidate and is left unchosen deliberately. "
+            "Species-correct, not individuated: this is not the Biblioplex's Archaic "
+            "and the token must not be read as showing the campaign's plot."
+        )),
+    "Vess the Tallykeeper": (
+        "daemogoth-woe-eater.png",
+        (
+            "A daemogoth, and this is the better of the two daemogoth portraits in "
+            "the pack: antlered, lichen-green, many-armed, standing in a bog. The "
+            "vault describes Vess as 'huge, antlered, lichen-coated' "
+            "(source/2.3.md:10) with antlers that gain weight as it feeds "
+            "(npc-files/vess-tallykeeper.md:25). The face-that-is-turning-pages is "
+            "NOT depicted, and cannot be at this scale -- so read this as the right "
+            "sort of fiend and not as Vess's face. The plain 'daemogoth.png' is "
+            "left unchosen; the woe-eater is the greener, wetter, more bog-bound of "
+            "the two."
+        )),
+    "Magister Hesper Vael": (
+        "owlin-arithmancer.png",
+        (
+            "An owlin, and a scholar rather than a duellist: a feathered owl-faced "
+            "figure in robes with geometric light across it, which is what an "
+            "archaeomancer at a Magister's chain looks like. Hesper is a white-"
+            "plumaged owlin (prose/PLUMAGE.md:3) and THIS ONE IS NOT WHITE, so the "
+            "plumage is simply wrong and the claim stops at species and occupation. "
+            "That is still a better token than a generic Lorehold scholar, which is "
+            "not a bird at all. The plumage rule is load-bearing enough that a GM "
+            "who cannot live with that should generate her instead of accepting "
+            "this line."
+        )),
+}
+
+# Statblock note name -> art FILENAME, for the creatures where the NOTE and the
+# ART are named from two different halves of the same upstream record.
+#
+# The SRD splits several creatures across one record per form: the record is
+# named "Werebear, Bear Form" and its `index` is `werebear-bear`. The exporter
+# names a note after the record's NAME and `safe_name` drops the punctuation, so
+# the note is "Werebear Bear Form" and its slug is `werebear-bear-form`. The art
+# pool is keyed on the INDEX, where the file is `werebear-bear.png`. Neither name
+# is wrong; they are two keys for one row of the dataset, and the matcher was
+# only ever handed one of them.
+#
+# This is not a similarity table and there is no scoring in it. Every line is a
+# pair the generated dataset itself asserts -- one record carrying both `name`
+# and `index`. `test_every_line_is_a_pair_the_dataset_asserts` re-derives all of
+# them from the data and fails if a line stops being a fact about the dataset,
+# which is what keeps this from rotting into a table of guesses.
+#
+# Nineteen creatures, each one a single creature wearing two names. Every one of
+# these is an exact match in substance: the picture is of the creature the
+# statblock is for, not of something near it.
+FORM_VARIANT_ART: dict[str, str] = {
+    "SuccubusIncubus": "succubus-incubus.png",
+    "Vampire Bat Form": "vampire-bat.png",
+    "Vampire Mist Form": "vampire-mist.png",
+    "Vampire Vampire Form": "vampire-vampire.png",
+    "Werebear Bear Form": "werebear-bear.png",
+    "Werebear Human Form": "werebear-human.png",
+    "Werebear Hybrid Form": "werebear-hybrid.png",
+    "Wereboar Boar Form": "wereboar-boar.png",
+    "Wereboar Human Form": "wereboar-human.png",
+    "Wereboar Hybrid Form": "wereboar-hybrid.png",
+    "Wererat Human Form": "wererat-human.png",
+    "Wererat Hybrid Form": "wererat-hybrid.png",
+    "Wererat Rat Form": "wererat-rat.png",
+    "Weretiger Human Form": "weretiger-human.png",
+    "Weretiger Hybrid Form": "weretiger-hybrid.png",
+    "Weretiger Tiger Form": "weretiger-tiger.png",
+    "Werewolf Human Form": "werewolf-human.png",
+    "Werewolf Hybrid Form": "werewolf-hybrid.png",
+    "Werewolf Wolf Form": "werewolf-wolf.png",
 }
 
 # The campaign's own cast: label -> the record name it must be found under.
@@ -509,6 +626,35 @@ def age_substitutions(vault: pathlib.Path) -> dict:
 
 # ── one record, matched ─────────────────────────────────────────────────────
 
+def _unavailable(name: str, target: str, filename: str, table: str,
+                 reason: str) -> dict:
+    """A reviewed line whose art is named correctly but is not on this machine.
+
+    THIS IS NOT A STALE-LINE ERROR, and treating it as one broke a clone.
+
+    `display/tokens/` and `display/srd-art/` are both gitignored, so a clone that
+    has never run an installer has neither. Every reviewed line in APPROVED then
+    named a file that was not in any pool, and the original code raised `Refused`
+    on the first one -- so `statblock_art.py` could not run at all on a fresh
+    checkout. That is the opposite of what the rest of the repository promises:
+    `token_portraits.py` says a clone without the art "still knows the set exists,
+    still credits the artist, and still draws every token correctly from its side
+    colour alone", `install_tokens.py --check` exists to audit exactly this
+    absence, and `add_pool` reads a missing directory as an empty pool rather than
+    an error. The matcher was the one place that treated absent art as fatal.
+
+    So a named-but-absent file is REPORTED and the record is left uncovered: no
+    `art` key, so nothing registers it and no caller mistakes it for a match. A
+    typo is still visible, because the report prints the name it wanted, which is
+    exactly the information needed to see that the line has gone stale.
+    """
+    return {"name": name, "slug": target, "how": f"{table.lower()}-unavailable",
+            "art_named": filename, "reason": reason,
+            "problem": f"{table} names {filename!r} and it is not installed in "
+                       f"any art pool; the art is gitignored, so run the "
+                       f"installer, or check the line has not gone stale"}
+
+
 def match_record(name: str, index: ArtIndex, subs: dict) -> dict:
     """One match record for one statblock name.
 
@@ -547,13 +693,21 @@ def match_record(name: str, index: ArtIndex, subs: dict) -> dict:
         filename, reason = approval
         found = index.by_file(filename)
         if found is None:
-            raise Refused(
-                f"APPROVED maps {name.strip()!r} to {filename!r}, which is in none "
-                f"of the art pools. An approval naming a file that is not there is "
-                f"a stale line in that table, and matching the record to something "
-                f"else instead would be the guess the table exists to prevent.")
+            return _unavailable(name, slug(target), filename, "APPROVED", reason)
         return {"name": name, "slug": slug(target), "art": found.name,
                 "pool": found.pool, "how": "approved", "reason": reason}
+
+    variant = FORM_VARIANT_ART.get(name.strip())
+    if variant:
+        found = index.by_file(variant)
+        if found is None:
+            return _unavailable(name, slug(target), variant, "FORM_VARIANT_ART",
+                                "one creature under two names in the SRD dataset")
+        return {"name": name, "slug": slug(target), "art": found.name,
+                "pool": found.pool, "how": "form-variant",
+                "reason": ("one creature under two names in the SRD dataset: the "
+                           "note is named from the record's `name` and the art from "
+                           "its `index`")}
 
     return {"name": name, "slug": slug(target), "how": None}
 
@@ -736,6 +890,16 @@ def build_report(sources: list[tuple[str, list[dict]]], index: ArtIndex,
             add(f"  {record['name']} -> {record['art']} (from {record['pool']})")
             add(f"    {record['reason']}")
 
+    form_variants = [r for _, records in sources for r in records
+                     if r.get("how") == "form-variant"]
+    if form_variants:
+        add("\none creature under two names: the note is named from the record's "
+            "`name`, the art from its `index`")
+        add("  These are the same creature, not a substitute for one. The pairs are "
+            "asserted by the SRD dataset and re-derived from it in the tests.")
+        for record in form_variants:
+            add(f"  {record['name']} -> {record['art']} (from {record['pool']})")
+
     add("\nthe main cast is campaign-original and no collection here draws them")
     by_slug: dict[str, dict] = {}
     for _, records in sources:
@@ -759,6 +923,18 @@ def build_report(sources: list[tuple[str, list[dict]]], index: ArtIndex,
         add(f"    {line}")
     add("  No generic student, scholar, apprentice or mascot token is standing in "
         "for any of them.")
+
+    unavailable = [(src, r) for src, records in sources for r in records
+                   if str(r.get("how", "")).endswith("-unavailable")]
+    if unavailable:
+        add("\nreviewed lines whose art is named but NOT installed")
+        add("  These are not gaps in the tables. The art pools are gitignored, so a "
+            "machine that has not run an installer holds none of them and these "
+            "creatures are simply uncovered here. No `art` was written and nothing "
+            "was registered for any of them.")
+        for src, record in unavailable:
+            add(f"  {record['name']} wants {record['art_named']} [{src}]")
+            add(f"    {record['problem']}")
 
     for name, records in sources:
         missing = [r for r in records if not r.get("art")]

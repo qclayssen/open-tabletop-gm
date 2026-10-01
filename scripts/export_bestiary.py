@@ -390,6 +390,20 @@ def build_fields(monster: dict) -> dict:
 
     fields: dict = {"name": monster["name"]}
 
+    # The portrait, when the record knows where one lives upstream. FSB reads
+    # `image` in the fence and renders it above the statblock, so this is what
+    # puts a face in the note WITHOUT touching the note frontmatter -- which
+    # `statblock_art.stamp_image` owns, and which strips an `image:` key written
+    # here. Writing it in the fence is the only place both tools can coexist.
+    #
+    # This is an address, not a file. Nothing downloads it and nothing promises
+    # it is on this machine: see build_srd.IMAGE_BASE for why the art cannot be
+    # committed, and why "the record knows a portrait exists" has to stay a
+    # different claim from "a portrait is installed".
+    image = str(monster.get("image") or "").strip()
+    if image.startswith(("http://", "https://")):
+        fields["image"] = image
+
     # Only emitted when the record actually carries the value. `size: ""` is not
     # rendered by FSB (falsy properties are hidden) but it IS a line in the note,
     # and a stat-LESS record -- a campaign civilian, a corpse -- has no size to

@@ -51,6 +51,27 @@ OUT_FILE  = os.path.join(DATA_DIR, "dnd5e_srd.json")
 # and a build that still reported success.
 RAW_5EBITS   = "https://raw.githubusercontent.com/5e-bits/5e-srd-api/main/packages/5e-database/src/2014/en"
 RAW_FVTT     = "https://raw.githubusercontent.com/foundryvtt/dnd5e/master"
+
+# Where the upstream `image` path resolves to. 5e-database stores it
+# root-relative ("/api/images/monsters/aboleth.png") because the field was
+# written to be served by the API that ships it, not to be read from a JSON file
+# on disk, so it is not a usable URL on its own and prefixing it is a decision
+# about a host rather than a string operation.
+#
+# WHAT THIS FIELD IS NOT: it is not SRD artwork, and the SRD licence does not
+# reach it. SRD 5.1's OGL defines Product Identity to include "artwork ... and
+# other visual ... representations" and lists those as NOT Open Content, so no
+# SRD term grants any right here in either direction. The PNGs are AI-generated
+# (their own text chunks name stable-diffusion-1.5) and carry no published
+# licence at all, so this is recorded as a REFERENCE to a place the art may be
+# fetched from, never as a licence, and never as a promise the file is present.
+#
+# The repository therefore stores the URL and nothing else. It does not download
+# the art, and `display/tokens/` -- where any such art lives -- is gitignored, so
+# nothing here puts unlicensed art into the repository. A note carrying this URL
+# is a creature whose portrait EXISTS UPSTREAM; whether a file for it is on this
+# machine is a separate question the art matcher asks and answers separately.
+IMAGE_BASE = "https://www.dnd5eapi.co"
 FVTT_TREE    = "https://api.github.com/repos/foundryvtt/dnd5e/git/trees/master?recursive=1"
 BITS_COMMITS = "https://api.github.com/repos/5e-bits/5e-srd-api/commits?sha=main&path=packages/5e-database&per_page=1"
 FVTT_COMMITS = "https://api.github.com/repos/foundryvtt/dnd5e/commits/master?per_page=1"
@@ -381,9 +402,25 @@ def _norm_monster(r: dict) -> dict:
         parts.append(f"Action — {a.get('name','')}: {a.get('desc','')}")
     for a in r.get("legendary_actions", []):
         parts.append(f"Legendary — {a.get('name','')}: {a.get('desc','')}")
+    # The upstream art reference, carried through rather than dropped. It was
+    # being discarded here for as long as this function existed, and dropping it
+    # is what made 264 of the SRD creatures look like creatures with no art
+    # anywhere when the address of that art was in the payload the whole time.
+    # Hosted, not stored: see IMAGE_BASE for why this is a pointer and not a file.
+    # Typed, because upstream is not guaranteed to: `r.get("image") or ""` hands a
+    # dict straight to `.startswith` and takes the whole build down. A field that
+    # is not an address is not coerced into one, because `str({'src': ...})` is
+    # truthy and would reach a note as if it were a URL.
+    image = r.get("image")
+    image = image.strip() if isinstance(image, str) else ""
+    if image.startswith("/"):
+        image = IMAGE_BASE + image
+    elif image and not image.startswith(("http://", "https://")):
+        image = ""          # a relative path we cannot resolve is not a reference
     return {
         "name":  r.get("name", ""),
         "index": r.get("index", _slugify(r.get("name", ""))),
+        "image": image,
         "description": "\n\n".join(parts),
         "cr":    r.get("challenge_rating", "?"),
         "xp":    r.get("xp", "?"),

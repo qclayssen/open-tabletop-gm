@@ -57,7 +57,8 @@ class ExistingOutputUnchanged(unittest.TestCase):
     def test_every_other_field_is_unchanged(self):
         for index, raw in BY_INDEX.items():
             rec = build_srd._norm_monster(raw)
-            for key in ("actions", "saves", "skills", "passive_perception"):   # engine-only fields
+            for key in ("actions", "saves", "skills", "passive_perception",   # engine-only fields
+                        "image"):   # an art ADDRESS, added after this snapshot was taken
                 rec.pop(key, None)
             self.assertEqual(rec, GOLDEN[index]["record"], index)
 

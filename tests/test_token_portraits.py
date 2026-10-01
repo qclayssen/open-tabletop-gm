@@ -85,6 +85,154 @@ def test_resolve_returns_none_rather_than_guessing():
     assert token_portraits.resolve(None) is None
 
 
+# ─── faculty, whose files are named for the office ──────────────────────────
+#
+# A portrait file is named for the person AND the office (`augusta-dean-of-order`)
+# because that is what tells two of them apart. A token is named for the person.
+# So the office could not be dropped from the filenames, and the match had to
+# learn the other half of the name instead.
+
+def test_the_artist_faculty_resolve_by_the_persons_name_alone():
+    """The reason the fourth pass exists. Every one of these returned None before
+    it, which meant the portraits were installed, indexed, credited and never
+    shown -- the failure mode is invisible, not loud.
+
+    These are the deans and founders the artist's set holds under
+    `<person>-<role>`. The name is a prefix of the key rather than a segment of
+    it, because the office is in the filename to tell two of them apart."""
+    assert token_portraits.resolve("Nassari") == "nassari-dean-of-expression.png"
+    assert token_portraits.resolve("Galazeth") == "galazeth-prismari.png"
+    assert token_portraits.resolve("Lisette") == "lisette-dean-of-the-root.png"
+    assert token_portraits.resolve("Uvilda") == "uvilda-dean-of-perfection.png"
+    assert token_portraits.resolve("Valentin") == "valentin-dean-of-the-vein.png"
+
+
+def test_a_person_with_two_portraits_resolves_to_neither():
+    """The 2026-09-30 archive ships alt-art of four of them, and that has to make
+    the bare name resolve to NOTHING rather than to one of the two.
+
+    `Beledros` is `beledros-witherbloom` and `beledros-witherbloom-alt-art`, which
+    are two pictures of one dragon. Picking either is a coin toss the GM cannot
+    see, and the fourth pass exists to answer "the only one that is him", so with
+    two the honest answer is None and the GM types the one they meant. This is the
+    whole design working, not a regression from installing more art.
+    """
+    for person in ("Kianne", "Velomachus", "Beledros", "Tanazir"):
+        assert token_portraits.resolve(person) is None, person
+    # The two slugs that create each tie, so a future rename cannot quietly
+    # resolve one of these again.
+    assert {"beledros-witherbloom", "beledros-witherbloom-alt-art"} <= set(
+        token_portraits.PORTRAITS)
+    assert {"kianne-dean-of-substance", "kianne-dead-of-substance"} <= set(
+        token_portraits.PORTRAITS)
+
+
+def test_where_two_portraits_exist_the_sheet_crop_wins():
+    """Five professors are in both sets: Augusta, Plargg, Hofri, Embrose and
+    Shaile. The sheet crop is the one with its box measured and committed in
+    faculty_sheets.py, so the bare name resolves to it and the artist's file stays
+    reachable by its own key. Neither is wrong; the point is that this is a
+    decision rather than whichever dict happened to be searched first."""
+    assert token_portraits.resolve("Augusta") == "lorhold-augusta.png"
+    assert token_portraits.resolve("Plargg") == "lorhold-plargg.png"
+    assert token_portraits.resolve("Hofri") == "lorhold-hofri.png"
+    assert token_portraits.resolve("Embrose") == "silverquill-embrose.png"
+    assert token_portraits.resolve("Shaile") == "silverquill-shaile.png"
+    # and the artist's own key still resolves to the artist's own art
+    assert token_portraits.resolve("Augusta Dean of Order") == "augusta-dean-of-order.png"
+    assert token_portraits.resolve("Embrose Dean of Shadow") == "embrose-dean-of-shadow.png"
+
+
+def test_sheet_cut_faculty_resolve_by_their_own_key():
+    """`scripts/faculty_sheets.py` names these `<college>-<person>`, so the
+    college prefix does the disambiguating. This is the naming the sheet extractor
+    settled on and the one its BOXES produce."""
+    assert token_portraits.resolve("lorhold-osgir") == "lorhold-osgir.png"
+    assert token_portraits.resolve("Lorehold Scholar 4") == "lorehold-scholar-4.png"
+    assert token_portraits.resolve("quandrix-kainne") == "quandrix-kainne.png"
+    assert token_portraits.resolve("silverquill-nils") == "silverquill-nils.png"
+
+
+def test_sheet_cut_faculty_also_resolve_by_the_person_alone():
+    """A token is named for the professor, not for the college, so `resolve` needs
+    a way back from `lorhold-osgir` to the word "Osgir". No professor is on two
+    faculties, which is what makes this a lookup rather than a guess."""
+    assert token_portraits.resolve("Osgir") == "lorhold-osgir.png"
+    assert token_portraits.resolve("osgir") == "lorhold-osgir.png"
+    assert token_portraits.resolve("Breena") == "silverquill-breena.png"
+    assert token_portraits.resolve("Mavinda") == "silverquill-mavinda.png"
+    assert token_portraits.resolve("Fain") == "silverquill-fain.png"
+    assert token_portraits.resolve("Kainne") == "quandrix-kainne.png"
+
+
+def test_the_person_index_never_guesses():
+    """Only `<college>-<person>` is indexed, so a college name, a type or a
+    numbered variant is not a person and does not become one."""
+    assert "scholar" not in token_portraits._PERSON
+    assert "lorehold" not in token_portraits._PERSON
+    assert "osgir" in token_portraits._PERSON
+
+
+def test_a_full_office_name_still_resolves_exactly():
+    """Pass 1 is unchanged: the manifest key is still a working lookup, which is
+    what the sheet route and Atlas both rely on."""
+    assert token_portraits.resolve("Augusta Dean of Order") == "augusta-dean-of-order.png"
+    assert token_portraits.resolve("Embrose Dean of Shadow") == "embrose-dean-of-shadow.png"
+
+
+def test_a_college_is_not_a_person():
+    """The college prefix is load-bearing. Five colleges now have faculty keyed
+    by them, and `resolve` on a bare college name must not pick one of its own
+    professors: that is the wrong-face lie the fallback refuses."""
+    assert token_portraits.resolve("Lorehold") is None
+    assert token_portraits.resolve("Silverquill") is None
+    assert token_portraits.resolve("Quandrix") is None
+    assert token_portraits.resolve("Shadrix") is None      # two: the dragon, and -alt
+    assert token_portraits.resolve("First") is None        # six first-years
+
+
+def test_every_ambiguous_first_segment_really_is_ambiguous():
+    """Pin the set, so adding a portrait that makes a new tie has to be a
+    deliberate edit to this test rather than a silent behaviour change.
+
+    Raised from 10 to 47 when the 2026-09-30 archive (267 files) was installed
+    beside the 98 it extends. The new ties are almost all COLLEGE names --
+    `silverquill` now heads 29, `lorehold` 19 -- because that archive ships
+    per-college faculty the first one summarised as `<college>-scholar-N`. It
+    also ships alt-art of four people, which is why `beledros`, `tanazir`,
+    `velomachus` and `kianne` are ties now and did not have to be.
+    """
+    ties = {seg for seg, slugs in token_portraits._FIRST_SEGMENT.items() if len(slugs) > 1}
+    assert ties == {
+        "ancient", "arcanist", "augusta", "beledros", "biblioplex",
+        "blood", "bog", "cogwork", "combat", "daemogoth", "dina",
+        "dragonsguard", "duplicated", "elemental", "elf", "embrose",
+        "first", "fractal", "frog", "gnome", "inkling", "kasmina",
+        "kianne", "lorehold", "lorhold", "lukka", "mage", "orc", "oriq",
+        "owlin", "pest", "prismari", "quandrix", "shadrix",
+        "silverquill", "spirit", "strixhaven", "student", "studious",
+        "summoned", "tanazir", "vedalken", "veinwitch", "velomachus",
+        "witherbloom", "wolf", "zimone",
+    }
+    # `lorehold` (the artist's scholars) and `lorhold` (the sheet-cut faculty) are
+    # separate keys on purpose. The sheets file is misspelled on disk, so a college
+    # can be spelled two ways in one repo, and merging them would make `resolve`
+    # unable to say which spelling a GM typed.
+    assert "lorehold-scholar-1" in token_portraits.PORTRAITS
+    assert "lorhold-osgir" in token_portraits.PORTRAITS
+
+
+def test_every_manifest_entry_is_reachable_by_some_name():
+    """No portrait should be reachable only by typing its whole filename. This is
+    the property that was false for all 17 faculty entries, and it is the one
+    worth keeping true as the set grows."""
+    for slug in token_portraits.PORTRAITS:
+        first = slug.split("-", 1)[0]
+        hit = (token_portraits.resolve(slug)
+               or token_portraits.resolve(first.replace("-", " ")))
+        assert hit == f"{slug}.png", slug
+
+
 def test_a_stray_file_is_not_the_art(tmp_path):
     """The condition the skips in this file use, asserted on its own.
 

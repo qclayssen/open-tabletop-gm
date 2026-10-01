@@ -109,6 +109,24 @@ BOXES: dict[str, list[tuple[str, tuple[int, int, int, int]]]] = {
     # that no later check could tell from a person. Five correct portraits and
     # a missing sixth is a gap the GM can see. A sixth that looks like a
     # portrait and is not is the failure this whole module exists to refuse.
+    #
+    # Re-attempted 2026-10-01, because shipping four prismari portraits from a
+    # second, unmeasured extraction made the refusal look like an oversight
+    # rather than a decision. Re-measured at 3x over nine tiles covering the
+    # whole panel, and the reason above holds and is now specific. What the
+    # painting contains, all of it confirmed by eye at that magnification:
+    #
+    #   x 1400-1500 y 1180-1280   crown and back of the head, dark blue-grey,
+    #                             seen from behind and above
+    #   below it                   the white ruff, where a collar would be
+    #   upper left                 arm and shoulder, foreshortened
+    #   centre                     the chin, turned away into her chest
+    #
+    # No face is present anywhere in the panel. Every square crop constructible
+    # here is the back of her head, her collar, or her torso -- a person seen
+    # from behind themselves, which no later check could tell from a portrait.
+    # Prismari therefore cannot reach six and stays held, and the four prismari
+    # portraits that a parallel extraction had produced were withdrawn.
     "prismari": [],
 }
 
