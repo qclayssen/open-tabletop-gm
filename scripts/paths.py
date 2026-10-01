@@ -187,6 +187,100 @@ def require_campaign(name: str, migrate: bool = True) -> pathlib.Path:
     )
 
 
+# ── Reading one file inside a campaign ─────────────────────────────────────
+#
+# Everything above resolves a *location*: a campaign, a character, a data file.
+# `campaign_path` is different. It takes a campaign-relative path that came from
+# somewhere else -- a note pin authored in a browser, a link in state.md -- and
+# answers whether that path may be read at all. So it is the one function here
+# that refuses, and the only one whose answer is worth an attacker's effort.
+#
+# It is here rather than in the caller's module because it is the third path
+# guard in this repo (the other two are the allowlist regexes and the
+# `npc_path.parent == npc_dir` check in display/gm-display-app.py), and the
+# duplication that produced `image_size` living in two files is exactly the
+# failure this module exists to prevent.
+#
+# Containment only. What a *particular* caller may read -- which suffixes, which
+# folders, which names are sealed -- is policy, and policy belongs to the caller
+# where it can be read as a list. There is one caller today; if a second appears
+# that needs a different policy, these rules become parameters then, not now.
+
+
+def campaign_path(root, rel) -> pathlib.Path:
+    """Resolve `rel` inside `root`, or raise ValueError. Never reads anything.
+
+    The returned path is absolute and resolved, so the caller can open it
+    without re-deriving containment. It is not required to exist: this decides
+    whether a path is *readable*, not whether a file is there, and a caller that
+    needs to know wants a different answer than one that needs a safe path.
+
+    Refused, with one ValueError for all of them:
+      * a path that is not relative, or is absolute (``/etc/passwd``,
+        ``C:\\Windows``, ``\\\\server\\share``)
+      * a NUL byte anywhere, which truncates the path in every C library the
+        OS will eventually hand it to
+      * an empty segment (``a//b.md``) or a ``.`` segment (``a/./b.md``), which
+        are normalising tricks rather than mistakes
+      * any ``..`` segment, refused *before* touching the filesystem rather than
+        resolved-and-checked after, so a path never gets to exist first
+      * anything that resolves outside `root`, which is what catches a symlink
+        that points out of the campaign -- the case a textual check misses and
+        the reason containment is re-asserted after ``resolve()``
+
+    Backslashes are refused outright rather than treated as separators: on
+    Windows they *are* separators, so ``notes\\..\\..\\state.md`` is a traversal
+    there while looking flat everywhere else. Refusing them on every platform
+    means one rule instead of two that disagree.
+
+    The suffix is deliberately not checked. Callers that read markdown want
+    ``.md``; callers that read anything want nothing. That is the caller's
+    decision to make and its list to own.
+    """
+    if not isinstance(rel, str):
+        raise ValueError("campaign path must be a string")
+    if not isinstance(root, pathlib.Path):
+        root = pathlib.Path(root)
+    if "\x00" in rel:
+        raise ValueError("campaign path contains a NUL byte")
+    if "\\" in rel:
+        raise ValueError("campaign path contains a backslash")
+    if not rel or not rel.strip():
+        raise ValueError("campaign path is empty")
+    # pathlib.is_absolute covers "/x" and, on Windows, "C:\\x" and "\\\\host\\share".
+    # On POSIX a bare "C:/x" is *not* absolute, so the drive-letter form is
+    # refused explicitly rather than relying on the platform to notice it.
+    if rel.startswith("/") or pathlib.PurePosixPath(rel).is_absolute():
+        raise ValueError("campaign path must be relative")
+    if len(rel) >= 2 and rel[1] == ":" and rel[0].isalpha():
+        raise ValueError("campaign path looks like a drive letter")
+
+    segments = rel.split("/")
+    for seg in segments:
+        if seg == "":
+            raise ValueError("campaign path has an empty segment")
+        if seg == ".":
+            raise ValueError("campaign path has a '.' segment")
+        if seg == "..":
+            raise ValueError("campaign path has a '..' segment")
+
+    base = root.expanduser()
+    try:
+        base_real = base.resolve()
+    except OSError as exc:                    # unreadable root, not a bad path
+        raise ValueError(f"campaign root could not be resolved: {exc}") from exc
+    try:
+        target = (base_real / rel).resolve()
+    except OSError as exc:
+        raise ValueError(f"campaign path could not be resolved: {exc}") from exc
+
+    # The re-assertion. Every check above was textual; this one is what the
+    # filesystem agrees with, and it is the only check that sees a symlink.
+    if target != base_real and base_real not in target.parents:
+        raise ValueError("campaign path escapes the campaign directory")
+    return target
+
+
 # ── System version selection (system-agnostic) ────────────────────────────
 # A campaign declares an optional version string for its game system on the
 # state.md header line, e.g.:
