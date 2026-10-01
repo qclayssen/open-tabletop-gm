@@ -13,8 +13,8 @@ permissions:
 
 concurrency:
   # Cancel an in-flight run when the branch moves. Without this, five pushes in a
-  # row queue five seven-minute suites and the answer that arrives is the answer
-  # to the wrong commit -- the same stale-head failure as everything else here.
+  # row queue five full suites and the answer that arrives is the answer to the
+  # wrong commit -- the same stale-head failure as everything else here.
   group: tests-${{ github.ref }}
   cancel-in-progress: true
 
@@ -38,6 +38,33 @@ jobs:
         # pyyaml: scripts/graph_extract_deterministic.py sys.exit(2)s at import
         # without it, which crashes pytest's collector with INTERNALERROR
         # rather than a readable failure.
-        run: python -m pip install --upgrade pip pytest flask pyyaml
+        # playwright: WITHOUT IT 80 DISPLAY TESTS SILENTLY SKIP. That is why it
+        # is here -- not for speed. The five *_display_* browser files guard on
+        # `HAVE_PLAYWRIGHT` and skip wholesale when the import fails, so a runner
+        # without it reported a green run that had checked none of the layout,
+        # a11y or XSS work. A skipped suite and a passing suite look identical
+        # in a check mark. Chromium is the only browser installed: the display is
+        # chromium-rendered and nothing else is claimed to work.
+        run: |
+          python -m pip install --upgrade pip pytest flask pyyaml playwright pytest-xdist
+          python -m playwright install chromium
       - name: pytest
-        run: python -m pytest tests/ -q
+        # -n 4 measured, not guessed. Serial is 603s on this tree; -n 4 is 227s.
+        # Two runs of each, and the spread across -n 4 runs was 6s, so the 2.7x
+        # is real rather than one lucky run.
+        #
+        # -n 8 is NOT faster (239s) and is left off deliberately: the suite is
+        # dominated by a handful of unsplittable tests, so extra workers only
+        # add contention. GitHub's macos-latest has 3 cores, so 4 is already at
+        # the edge.
+        #
+        # xdist safety was checked rather than assumed, because the obvious
+        # hazards here are ports and pidfiles. Each worker is a separate
+        # process, so os.environ writes cannot cross workers; every
+        # make_server binds port 0; the gm-watch tests copy into their own
+        # TemporaryDirectory. The process-and-port-heavy files were run under -n
+        # 8 five times (test_gm_watch_sh, test_receipts, test_send_dice_wait,
+        # test_block_deferral, test_faction_widget, test_display_authorship_queue,
+        # test_campaign_lint) with no collision, and the full suite passes under
+        # both serial and -n 4 with identical counts.
+        run: python -m pytest tests/ -q -n 4
