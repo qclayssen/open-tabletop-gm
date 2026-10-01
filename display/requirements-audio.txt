@@ -1,0 +1,17 @@
+# Optional heavy dependencies. Nothing in open-tabletop-gm needs this file.
+# The display companion, the DM, the tactics engine and the whole test suite
+# run on Flask and the standard library alone (see requirements.txt).
+#
+#     pip3 install -r requirements-audio.txt
+#
+# numpy   Display sound effects. display/audio.py synthesizes the WAVs that
+#         /audio/sfx/<name> serves, so without it those routes answer 404 and
+#         the Sound Effects toggle does nothing. Also used by
+#         scripts/faculty_sheets.py to trim lore panels out of portrait boxes.
+# Pillow  Portrait cropping in scripts/faculty_sheets.py and webp thumbnails
+#         in scripts/register_tokens.py. The display itself never needs it.
+#
+# Both are imported behind a guard, so a machine without one loses a feature
+# rather than failing to start. tests/test_display_requirements.py pins that.
+numpy
+Pillow

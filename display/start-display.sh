@@ -53,7 +53,7 @@ done
 if ! python3 -c "import flask" 2>/dev/null; then
   echo "Error: Flask is not installed for $(command -v python3 || echo python3)."
   echo "Install it with:  pip3 install -r \"$DISPLAY_DIR/requirements.txt\""
-  echo "(numpy is optional and only adds audio.)"
+  echo "(numpy is optional and only adds audio: pip3 install -r \"$DISPLAY_DIR/requirements-audio.txt\")"
   exit 1
 fi
 

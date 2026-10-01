@@ -81,6 +81,12 @@ cd display
 pip3 install -r requirements.txt
 ```
 
+For display sound effects and the portrait cropping scripts, two more, both optional:
+
+```bash
+pip3 install -r requirements-audio.txt
+```
+
 ### 4. Configure OpenCode
 
 Point OpenCode at this skill by adding the following to your OpenCode config (`~/.config/opencode/opencode.json`):
@@ -358,7 +364,7 @@ Narration text is scanned server-side for 11 SFX categories. Matches trigger a s
 impact · sword · arrow · shout · thud · magic · coins · door · low_hum · fire · breath
 ```
 
-SFX synthesis requires numpy. If numpy is not installed the feature degrades silently. Toggle via the **Sound Effects** switch in the top-right of the display.
+SFX synthesis requires numpy (`pip3 install -r display/requirements-audio.txt`). If numpy is not installed the feature degrades silently. Toggle via the **Sound Effects** switch in the top-right of the display.
 
 ### Character sheet modal
 

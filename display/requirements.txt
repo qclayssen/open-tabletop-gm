@@ -1,4 +1,4 @@
+# The display companion's only always-needed package. Optional heavy packages,
+# which buy display audio and portrait cropping and nothing else, are listed in
+# requirements-audio.txt; the display runs without them.
 flask
-# Optional: numpy only adds display audio (display/audio.py) and portrait
-# cropping in scripts/faculty_sheets.py. Everything else runs without it.
-# numpy

@@ -142,8 +142,20 @@ def trim_panels(im, box):
     cream paper is not. So a column or row of the box that is more than half
     panel is dropped, which trims the paper off the edge and stops well short
     of the figure next to it.
+
+    numpy is optional (display/requirements-audio.txt) and the import used to sit
+    bare in the body, so a machine without it got a ModuleNotFoundError from the
+    middle of a crop loop. It cannot fall back to the untrimmed box: this function
+    is the reason a portrait is not a page of prose, so degrading to `box` would
+    ship exactly the wrong crop this script refuses to guess. It refuses instead,
+    which main() already reports per college.
     """
-    import numpy as np
+    try:
+        import numpy as np
+    except ImportError:
+        raise Refused("numpy is needed to trim lore panels out of the portrait "
+                      "boxes; install it with: pip3 install -r "
+                      "display/requirements-audio.txt") from None
     x0, y0, x1, y1 = box
     a = np.asarray(im).astype(float)[y0:y1, x0:x1]
     mx, mn = a.max(2), a.min(2)

@@ -11,6 +11,13 @@ pip3 install -r display/requirements.txt
 python3 systems/dnd5e/build_srd.py --no-fvtt     # SRD data for grid combat (network)
 ```
 
+Flask is the only thing the display needs. If you want the Sound Effects toggle to
+make a noise, install the optional pair as well:
+
+```bash
+pip3 install -r display/requirements-audio.txt
+```
+
 ## 2. Start the display
 
 From the repo root:

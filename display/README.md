@@ -26,6 +26,14 @@ cd display
 pip3 install -r requirements.txt
 ```
 
+That is the whole required set: Flask, nothing else. Sound effects and the portrait
+cropping scripts need two heavy optional packages, which nothing in the display
+requires:
+
+```bash
+pip3 install -r requirements-audio.txt   # numpy (SFX), Pillow (portrait crops)
+```
+
 ### 2. Start the Flask server
 
 ```bash
@@ -268,7 +276,7 @@ If no backend is found, the hint feature simply no-ops — a missing or misconfi
 
 **12 effect types:** impact · sword · arrow · shout · thud · magic · coins · door · low_hum · fire · breath
 
-Requires `numpy`. If numpy is not installed the module degrades silently — WAV endpoints return 404 and the Sound Effects toggle in the browser has no effect.
+Requires `numpy`, from `pip3 install -r requirements-audio.txt`. If numpy is not installed the module degrades silently — WAV endpoints return 404 and the Sound Effects toggle in the browser has no effect. Nothing else in the display changes.
 
 The Sound Effects toggle in the top-right corner of the display enables/disables SFX. The first click also satisfies the browser's autoplay policy for Web Audio.
 
@@ -305,7 +313,7 @@ The Sound Effects toggle in the top-right corner of the display enables/disables
 
 **Sound effects not playing**
 - Click the Sound Effects toggle once to enable; this also unlocks the Web Audio context
-- Confirm numpy is installed: `python3 -c "import numpy; print(numpy.__version__)"`
+- Confirm numpy is installed: `python3 -c "import numpy; print(numpy.__version__)"` (`pip3 install -r display/requirements-audio.txt`)
 - Check browser console for fetch errors to `/audio/sfx/<name>`
 
 **Particles are slow / choppy**

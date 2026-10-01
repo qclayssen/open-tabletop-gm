@@ -360,6 +360,10 @@ If output is present, use it as the player action for this turn. If both queued 
 cd <skill-base>/display
 pip3 install -r requirements.txt
 
+# Optional: display sound effects (numpy) and portrait cropping (Pillow).
+# The display runs without either.
+pip3 install -r requirements-audio.txt
+
 # Start display (force-kills any previous instance):
 bash <skill-base>/display/start-display.sh
 
