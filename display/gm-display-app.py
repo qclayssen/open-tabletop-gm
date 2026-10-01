@@ -1586,6 +1586,110 @@ def map_features(name):
     })
 
 
+# ─── Note pins ───────────────────────────────────────────────────────────────
+#
+# A pin is a marker on a map that opens a campaign note (or another map). Pins
+# are campaign state in <campaign>/pins/<map-slug>.json, authored by the GM in a
+# shell -- `scripts/pin.py` -- and read from here.
+#
+# Two things about this block are worth stating, because they are the reason it
+# is shaped this way rather than the obvious way:
+#
+#   * There is no POST here. The obvious design is a write route next to the
+#     read route, and the display's own write gate is `_token_ok()` -- which is
+#     true for every browser on the LAN, because index() hands the token to
+#     every page it serves. A player at the table could plant a pin that the GM
+#     then clicked in good faith, on the players' screen. So the only pins that
+#     exist are ones the GM made.
+#
+#   * Pins are filtered in this layer, not in sync.snapshot(). Pins are not
+#     encounter state, so no snapshot() call can carry them; and the note-read
+#     route fires with no combat active, so there would be no snapshot to
+#     consult. The precedent is _clocks_payload() just above.
+
+
+@app.route("/pins/<slug>", methods=["GET"])
+def pins_for_map(slug):
+    """The pins on one map, for the board to draw.
+
+    An unrevealed pin is absent rather than flagged: the display has one
+    audience and no way to tell a GM from a player, so "not on the players'
+    board" is the only distinction that means anything here. See
+    docs/specs/SPEC-grid-and-map.md section 10, question 4.
+    """
+    camp = _pin_campaign()
+    if camp is None:
+        return jsonify({"pins": []})
+    if _mapeditor.find(slug) is None:
+        return jsonify({"error": "no such map"}), 404
+    try:
+        import pins as _pins
+        return jsonify({"pins": _pins.revealed(_pins.load(camp, slug))})
+    except _pins.PinError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except OSError:
+        # A campaign that has gone away between the check and the read is not a
+        # 500 the table needs to see; an empty board is.
+        return jsonify({"pins": []})
+
+
+@app.route("/pins/note", methods=["GET"])
+def pin_note():
+    """The markdown one note pin opens, as text. Query: ?map=<slug>&id=<pin id>.
+
+    Read-only and deliberately dull: every refusal is the same 404 with the same
+    body, so this route cannot be used to ask whether a sealed file exists. The
+    allow-list, the containment check and the visibility rule all live in
+    scripts/pins.py and are re-run here on every request -- a pin record is not
+    trusted, because the GM edits that file in a text editor.
+    """
+    camp = _pin_campaign()
+    if camp is None:
+        return jsonify({"error": "no such note"}), 404
+    slug = (request.args.get("map") or "").strip()
+    pin_id = (request.args.get("id") or "").strip()
+    if not slug or not pin_id:
+        return jsonify({"error": "no such note"}), 404
+    try:
+        import pins as _pins
+        found = next((p for p in _pins.load(camp, slug) if p["id"] == pin_id), None)
+        if found is None:
+            return jsonify({"error": "no such note"}), 404
+        body = _pins.note_body(camp, found)
+    except _pins.PinError:
+        # One answer for every refusal. A message that distinguished "sealed"
+        # from "absent" would turn this into an oracle over the campaign's
+        # spoiler files, which is the one thing the allow-list exists to stop.
+        return jsonify({"error": "no such note"}), 404
+    except OSError:
+        return jsonify({"error": "no such note"}), 404
+    return Response(body, mimetype="text/markdown; charset=utf-8")
+
+
+def _pin_campaign():
+    """The active campaign's directory, or None when there is no campaign.
+
+    Resolved the way every other per-campaign read in this app is resolved
+    (CAMP_FILE, then paths.find_campaign, which honours GM_CAMPAIGN_ROOT), rather
+    than through a root of our own. world.py documents at length what happens
+    the second time a script keeps its own idea of where campaigns live.
+    """
+    try:
+        camp = open(CAMP_FILE, encoding="utf-8").read().strip()
+    except OSError:
+        return None
+    if not camp:
+        return None
+    # CAMP_FILE is writable from inside the LAN trust boundary, so the campaign
+    # name is reduced to a plain slug before it reaches a path. Same rule as
+    # get_character_sheet above.
+    camp = re.sub(r"[^A-Za-z0-9_-]", "", camp)[:50]
+    if not camp:
+        return None
+    found = _find_campaign(camp)
+    return found if found.is_dir() else None
+
+
 @app.route("/srd-lookup")
 def srd_lookup():
     """Look up a spell, item, condition, feature, or monster by name.
