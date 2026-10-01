@@ -1118,13 +1118,75 @@ def test_casting_mage_armor_with_no_slots_left_is_reported_not_invented(real_cam
     assert context.party_stats(real_camp)[0]["ac"] == 12   # unchanged: nothing was applied
 
 
-def test_casting_a_spell_not_on_the_sheet_is_a_no_op(real_camp):
+def _teach(camp, spell):
+    """Put a spell on the sheet's spellbook line, so the lookup reaches the mode check."""
+    path = camp / "characters" / "Kairos.md"
+    path.write_text(path.read_text(encoding="utf-8").replace(
+        "Mage Armor, Magic Missile", f"Mage Armor, {spell}, Magic Missile"),
+        encoding="utf-8")
+
+
+def test_casting_a_spell_not_on_the_sheet_is_refused_loudly(real_camp):
     c = FakeClient(lambda m, msgs, role:
-                   'Nothing happens.\n{"escalate": null, "command": null, "cast": "Fireball"}')
+                   'Kairos gestures.\n{"escalate": null, "command": null, "cast": "Fireball"}')
     s = Session("demo", c, MODELS, camp_dir=real_camp, bridge=FakeBridge())
     out = s.handle("I cast Fireball.")
-    assert out == ["Nothing happens."]                     # no second (engine) call, no crash
-    assert c.roles().count("dm") == 1
+    joined = " ".join(out)
+    assert "Fireball is not a spell on the character sheet" in joined
+    assert "nothing changed" in joined
+    assert c.roles().count("dm") == 1                      # no second (engine) call, no crash
+
+
+@pytest.mark.parametrize("spell", ["Shield of Faith", "Bless"])
+def test_a_lasting_buff_the_engine_cannot_resolve_is_not_dropped_silently(real_camp, spell):
+    """Roadmap T2: `cast` named a spell the engine does not resolve and it returned [],
+    so the narration described a buff that never applied and nobody was told."""
+    c = FakeClient(lambda m, msgs, role:
+                   'Kairos murmurs a prayer.\n{"escalate": null, "command": null, '
+                   f'"cast": "{spell}"}}')
+    s = Session("demo", c, MODELS, camp_dir=real_camp, bridge=FakeBridge())
+    _teach(real_camp, spell)
+    sheet_before = (real_camp / "characters" / "Kairos.md").read_text(encoding="utf-8")
+    out = s.handle(f"I cast {spell} on myself.")
+    joined = " ".join(out)
+    assert spell in joined and "was not applied" in joined
+    assert "Mage Armor" in joined                          # says what it does resolve
+    assert (real_camp / "characters" / "Kairos.md").read_text(encoding="utf-8") == sheet_before
+    assert any("was not applied" in str(turn) for turn in s.memory.turns())  # next turn knows
+
+
+def test_an_unresolvable_cast_with_a_number_is_still_caught_by_the_guardrail(real_camp):
+    """`states_an_unbacked_cast_result` was gated on `not r.cast`, so naming Bless in
+    `cast` switched off the one guard that catches the invented number."""
+    replies = iter([
+        'Your AC climbs from 12 to 15 as the blessing settles.'
+        '\n{"escalate": null, "command": null, "cast": "Bless"}',
+        "A warm light settles over you." + NULLS,
+    ])
+    c = FakeClient(lambda m, msgs, role: next(replies))
+    s = Session("demo", c, MODELS, camp_dir=real_camp, bridge=FakeBridge())
+    _teach(real_camp, "Bless")
+    out = s.handle("I cast Bless on myself.")
+    joined = " ".join(out)
+    assert "AC climbs" not in joined
+    assert "warm light" in joined
+    assert "was not applied" in joined
+
+
+def test_a_cast_while_a_fight_runs_is_refused_loudly_and_spends_nothing(real_camp, monkeypatch):
+    """dm.md says Mage Armor is cast only outside a fight. The cast used to run (and spend
+    the slot) on the engine's turn, and was silently dropped on the player's."""
+    monkeypatch.setattr(Session, "_autopilot", lambda self, line: None)
+    c = FakeClient(lambda m, msgs, role:
+                   'Kairos weaves a ward.\n{"escalate": null, "command": null, '
+                   '"cast": "Mage Armor"}')
+    b = FakeBridge([fight(current="frog-1", controller="gm")],
+                   {"status": lambda a: Result(0, "Round 1.")})
+    s = Session("demo", c, MODELS, camp_dir=real_camp, bridge=b, combat="engine")
+    out = s.handle("I cast Mage Armor on myself.")
+    assert any("Mage Armor was not cast" in line and "fight" in line for line in out)
+    sheet = (real_camp / "characters" / "Kairos.md").read_text(encoding="utf-8")
+    assert re.search(r"\|\s*1st\s*\|\s*2\s*\|\s*0\s*\|", sheet)   # no slot spent
 
 
 # ── B2: an advisor that failed is not a note, and is never reported as one ─────

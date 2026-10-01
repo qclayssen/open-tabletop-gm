@@ -138,6 +138,18 @@ CHECK_BEAT = ("You are asking for a check, so this beat is what happens BEFORE t
 NO_STAKES = ("The attempt was asked for with no stakes, so no roll happens. Narrate it in "
              "1 to 3 sentences as succeeding at a small cost, or as turning up a new clue. "
              "Do not say a check was made. Then the JSON line with null for every field.")
+# A cast the engine did not apply is said out loud. `cast` used to return [] for these, so
+# the narration described a buff that never took hold and nothing told the player or the
+# next turn's DM. Shield of Faith and Bless are 2014 SRD spells, but they need concentration,
+# a target and a per-attack or per-save bonus tracked and expired by the engine; until that
+# exists the honest move is to refuse in the open (roadmap T2).
+CAST_NOT_ON_SHEET = ("(engine) {spell} is not a spell on the character sheet, so nothing was "
+                     "cast and nothing changed.")
+CAST_UNRESOLVED = ("(engine) {spell} was not applied: out of a fight the engine resolves "
+                   "only {resolved}. No AC, bonus, slot or duration changed.")
+CAST_MID_FIGHT = ("(engine) {spell} was not cast: a fight is running and the engine owns "
+                  "every spell in it. Say what your character casts and the engine will "
+                  "resolve it.")
 CAST_TASK = ("Narrate the casting in 1 to 3 sentences, using only the numbers the Engine "
              "section gives (never a different AC, duration or slot count). Then the JSON "
              "line with null for every field.")
@@ -983,26 +995,41 @@ class Session:
                 return retry
         return r
 
+    def _cast_lookup(self, spell_name: str):
+        """Resolve a `cast` field against the sheet. Returns (R, sheet, caster, spec, why):
+        `spec` is the spell entry the engine can apply, or None with `why` the line that
+        says so. One lookup for both the guardrail and the cast, so they cannot disagree."""
+        from tactics import rules as rules_mod
+        sheet = context.first_sheet_path(self.camp_dir)
+        if sheet is None:
+            return None, None, None, None, CAST_NOT_ON_SHEET.format(spell=spell_name)
+        R = rules_mod.load("dnd5e")
+        caster = R.token_from_sheet(sheet, "pc", (0, 0))
+        known = {s.lower() for s in R.known_spells(caster)}
+        if spell_name.strip().lower() not in known:
+            return R, sheet, caster, None, CAST_NOT_ON_SHEET.format(spell=spell_name)
+        try:
+            spec = R.spell(caster, spell_name)
+        except ValueError:                  # on the sheet, but the engine has no data for it
+            spec = {"name": spell_name}
+        if spec.get("mode") != "effect":
+            return R, sheet, caster, None, CAST_UNRESOLVED.format(
+                spell=spec.get("name") or spell_name, resolved="Mage Armor")
+        return R, sheet, caster, spec, ""
+
     def _cast_spell(self, spell_name: str) -> list:
         """B4: the DM said the player cast a spell with a lasting mechanical effect
         (e.g. Mage Armor) outside a fight. Resolve it on the engine (spend the slot,
         apply the effect, write the sheet and tracker.json) instead of letting the DM
-        narrate numbers that never actually happen, mirroring _ability_check."""
+        narrate numbers that never actually happen, mirroring _ability_check. A cast the
+        engine cannot apply is refused in a visible engine line, never dropped."""
         import tracker
-        from tactics import rules as rules_mod
         from tactics import spells as spells_mod
         from tactics.core import CombatError
-        sheet = context.first_sheet_path(self.camp_dir)
-        if sheet is None:
-            return []
-        R = rules_mod.load("dnd5e")
-        caster = R.token_from_sheet(sheet, "pc", (0, 0))
-        try:
-            spec = R.spell(caster, spell_name)
-        except ValueError:
-            return []                       # not a spell on the sheet: nothing to apply
-        if spec.get("mode") != "effect":
-            return []                       # attacks/saves/heals need a target: out of scope here
+        R, sheet, caster, spec, why = self._cast_lookup(spell_name)
+        if spec is None:
+            self.memory.add("engine", why)
+            return [why]
         try:
             lv = spells_mod._check_slot(caster, spec)
             result = spells_mod._effect(caster, caster, spec)
@@ -1214,6 +1241,8 @@ class Session:
             # never rolled it: `r.check` is simply not read here, which is the
             # engine's own rule (COMBAT_PARSE) and not code.
             refused = [CHECK_MID_FIGHT.format(spec=r.check)] if r.check else []
+            if r.cast:                   # same refusal for a spell: say it, never drop it
+                refused.append(CAST_MID_FIGHT.format(spell=r.cast))
             args = parse_player_command(r.command) if r.command else None
             if not args:
                 return refused + [NO_ACTION]
@@ -1248,7 +1277,11 @@ class Session:
         # AC moved and it did not. Gated on `not r.cast` so the engine-resolved
         # case, where the numbers ARE real and come from the Engine section, is
         # left alone. Same shape and same reasoning as the N5 check above.
-        if (r.narration and not r.cast
+        # An unresolvable `cast` (Bless, a spell off the sheet) backs nothing either, so it
+        # counts as no cast here: the field being set used to switch this guard off.
+        cast_named = r.cast                  # a rewrite below returns a draft with cast null
+        backed_cast = bool(cast_named) and self._cast_lookup(cast_named)[3] is not None
+        if (r.narration and not backed_cast
                 and reply.states_an_unbacked_cast_result(r.narration)):
             retry = self._dm(player=line, engine=engine, notes=notes,
                              task=f"{CAST_BEAT}\n{self.CAST_FIX}".strip())
@@ -1271,8 +1304,11 @@ class Session:
             out.append(CHECK_MID_FIGHT.format(spec=r.check))
         elif r.check and not self._players_turn():
             out += self._ability_check(r.check, line, r.check_meta)
-        if r.cast and not self._players_turn():
-            out += self._cast_spell(r.cast)
+        if cast_named and self.bridge.is_combat_active():
+            out.append(CAST_MID_FIGHT.format(spell=cast_named))   # dm.md: out of a fight only
+        elif cast_named:
+            out += self._cast_spell(cast_named)
+
         args = parse_player_command(r.command) if r.command else None
         if args and self._players_turn():
             out += self._run_command(args)
