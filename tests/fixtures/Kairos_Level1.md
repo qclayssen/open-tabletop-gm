@@ -2,7 +2,7 @@
 **Player:** Quentin  **Campaign:** strixhaven-kairos  **Last Updated:** 2026-09-26
 
 ## Identity
-- **Race:** Kenku (Multiverse; Kairos CAN speak) | **Class:** Wizard 1 (Chronurgy at 2) | **Level:** 1 | **Background:** Sage (reflavoured: Biblioplex Ward) → **Quandrix Student at 2.1** (`BACKGROUND-QUANDRIX.md`)
+- **Race:** Kenku (Multiverse; Kairos CAN speak) | **Class:** Wizard 1 / Fighter 1 (Chronurgy at 3) | **Level:** 1 | **Background:** Sage (reflavoured: Biblioplex Ward) → **Quandrix Student at 2.1** (`BACKGROUND-QUANDRIX.md`)
 - **Alignment:** Neutral Good (leaning) | **XP:** 0 (milestone levelling; see world.md)
 
 ## Character Pillar
@@ -96,7 +96,7 @@
 ### Wizard
 - **Arcane Recovery** (1/day, short rest: recover slots totalling up to half wizard level, rounded up).
 - **Level 2, Chronurgy Magic:** Chronal Shift (reaction, 2/long rest: force a creature within 30 ft to reroll an attack, check or save you saw it make). Temporal Awareness (add INT mod to initiative).
-- **Level plan:** Wizard 1-5 (levels 1-5), Fighter/Echo Knight 1-3 (levels 6-8, trained at Strixhaven; the first Fighter level is mandatory, taken at level 6), Wizard 6-7 (levels 9-10). Ends Wizard 7 / Fighter 3, ready to become Fighter 3 / Wizard 10 in Avernus.
+- **Level plan:** **Wizard 1 at level 1; Fighter 1 at level 2; Wizard 2-5 at levels 3-6; Fighter 2-3 at levels 7-8; Wizard 6-7 at levels 9-10.** Ends Wizard 7 / Fighter 3 at level 10, ready to become Fighter 3 / Wizard 10 in Avernus.
 - **Feat log:** Observant at Wizard 4 (level 4, INT 19 to 20). Strixhaven Initiate (Quandrix) is a story grant at the start of Year Two (Guidance, Mage Hand, Shield once per long rest without a slot, INT casting, plus the Quandrix spell list). War Caster at Wizard 8, in the Descent into Avernus campaign. No other feats. The Windfall (Chapter 1.2) is a boon, not a feat, and uses no ASI; the final feats are unchanged.
 
 ### Kenku Racial (Multiverse)

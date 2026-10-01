@@ -356,7 +356,7 @@ def test_a_sheet_with_no_slot_table_is_filled_from_class_and_level():
     sheet = KAIROS_MD.replace("| 1st | 2 | 0 |", "| 1st |  |  |")
     t = sheet_mod.read_sheet(sheet, "kairos", (0, 0))
     assert t.extra["slots"] == {"1": {"total": 2, "used": 0}}, "Wizard 1: two 1st-level slots"
-    assert t.extra["spellcasting"] == {"class": "Wizard 1 (Chronurgy at 2)", "level": 1}
+    assert t.extra["spellcasting"] == {"class": "Wizard 1 / Fighter 1 (Chronurgy at 3)", "level": 1}
 
 
 def test_a_sheet_with_a_table_is_never_overwritten():
@@ -365,7 +365,7 @@ def test_a_sheet_with_a_table_is_never_overwritten():
 
 
 def test_a_non_casting_class_gets_no_slots_from_the_table():
-    sheet = KAIROS_MD.replace("**Class:** Wizard 1 (Chronurgy at 2)", "**Class:** Fighter 3")
+    sheet = KAIROS_MD.replace("**Class:** Wizard 1 / Fighter 1 (Chronurgy at 3)", "**Class:** Fighter 3")
     sheet = sheet.replace("| 1st | 2 | 0 |", "| 1st |  |  |")
     t = sheet_mod.read_sheet(sheet, "kairos", (0, 0))
     assert t.extra["slots"] == {}
@@ -375,7 +375,7 @@ def test_a_non_casting_class_gets_no_slots_from_the_table():
 def test_a_homebrew_class_keeps_whatever_the_sheet_says():
     """No SRD table means no opinion: a campaign's own class is the sheet's
     business, and the engine fills in nothing rather than zeroing it."""
-    sheet = KAIROS_MD.replace("**Class:** Wizard 1 (Chronurgy at 2)", "**Class:** Loremaster 3")
+    sheet = KAIROS_MD.replace("**Class:** Wizard 1 / Fighter 1 (Chronurgy at 3)", "**Class:** Loremaster 3")
     t = sheet_mod.read_sheet(sheet, "kairos", (0, 0))
     assert t.extra["slots"] == {"1": {"total": 2, "used": 0}}
 
@@ -396,7 +396,7 @@ def test_the_srd_tables_themselves():
     assert srd_slots.for_level("fighter", 5) == {}
     assert srd_slots.for_level("wizard", 0) == {} and srd_slots.for_level("wizard", 21) == {}
     assert srd_slots.for_level("wizard", "five") == {}
-    assert srd_slots.normalise_class("Wizard 1 (Chronurgy at 2)") == "wizard"
+    assert srd_slots.normalise_class("Wizard 1 / Fighter 1 (Chronurgy at 3)") == "wizard"
     assert srd_slots.normalise_class("Rogue 3 / Sorcerer 2") == "sorcerer"
     assert srd_slots.normalise_class("cook") == ""
     assert srd_slots.spent_table("wizard", 1) == {"1": {"total": 2, "used": 0}}
