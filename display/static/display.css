@@ -3226,9 +3226,31 @@
     #vb-slider { height: 44px; }
   }
 
+  /* Connection pill.
+     Three states, and each one is a sentence the reader can act on rather than
+     a colour. `connected` fades out because a display that is working has
+     nothing to say, but it stays in the accessibility tree: opacity 0 on a
+     role="status" region still announces, which is what makes the pill honest
+     to a screen reader while quiet on screen.
+
+     No transition on opacity, deliberately. The 0.4s fade was why a reader
+     measuring computed style during a reconnect saw `opacity: 0` on a pill that
+     was plainly visible: the animation was still at its start. A status that
+     is also a measurement should not be mid-animation when it is read. */
   #conn-status { position: fixed; top: 8px; right: 8px; z-index: 900; padding: 3px 10px;
     border-radius: 999px; font: 12px/1.4 sans-serif; pointer-events: none;
-    background: rgba(20,16,10,0.85); color: #e8d9b0; border: 1px solid rgba(180,140,60,0.5);
-    transition: opacity 0.4s; }
+    background: rgba(20,16,10,0.85); color: #e8d9b0; border: 1px solid rgba(180,140,60,0.5); }
   #conn-status[data-state="connected"] { opacity: 0; }
   #conn-status[data-state="reconnecting"] { opacity: 1; border-color: #d9822b; color: #ffcf8a; }
+  /* Offline is a different fact from reconnecting, not a louder version of it:
+     the server may well be fine, the network is not. */
+  #conn-status[data-state="offline"] { opacity: 1; border-color: #c04a3a; color: #ffc2b4; }
+
+  /* A payload the display could not render. Deliberately its own element and
+     not the combat panel's toast: that one is positioned inside the map, so a
+     stream error with no fight open had nowhere to appear at all. */
+  #stream-toast { position: fixed; top: 38px; right: 8px; z-index: 901; max-width: 30ch;
+    padding: 7px 11px; border-radius: 6px; font: 13px/1.45 sans-serif; pointer-events: none;
+    background: #3a1410; color: #ffd9d0; border: 1px solid #a33a2c;
+    box-shadow: 0 4px 14px rgba(0,0,0,.4); }
+  #stream-toast[hidden] { display: none; }
