@@ -198,10 +198,11 @@ class StaleTurnOrder(Base):
         if enc is not None:
             (camp / "combat" / "encounter.json").write_text(json.dumps(enc), encoding="utf-8")
         self.mod._find_campaign = lambda name: camp
+        self.mod._campaign_dir_for_name = lambda name: camp
         pathlib.Path(self.mod.CAMP_FILE).write_text("c1", encoding="utf-8")
 
     def _load(self):
-        pathlib.Path(self.mod.STATS_FILE).write_text(
+        pathlib.Path(self.mod._get_stats_file()).write_text(
             json.dumps({"players": [{"name": "A"}], "turn_order": {"order": [{"name": "Giant Frog"}]}}),
             encoding="utf-8")
         self.mod._current_stats = {}

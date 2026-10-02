@@ -67,7 +67,7 @@ class ClearBase(unittest.TestCase):
                      self.mod.QUEUE_FILE, self.mod.TRIGGER_FILE):
             pathlib.Path(path).write_text("{}", encoding="utf-8")
 
-    def _assert_wiped(self):
+    def _assert_wiped(self, *, stats=True):
         self.assertEqual(self.mod._sent, {})
         self.assertEqual(self.mod._input_queue, [])
         self.assertEqual(self.mod._queue_status, [])
@@ -77,8 +77,10 @@ class ClearBase(unittest.TestCase):
         self.assertEqual({k: v for k, v in self.mod._current_stats.items()
                           if k != "system_version"}, {})
         self.assertEqual(self.mod._current_scene_name, self.mod._DEFAULT_SCENE)
-        for path in (self.mod.LOG_FILE, self.mod.STATS_FILE,
-                     self.mod.QUEUE_FILE, self.mod.TRIGGER_FILE):
+        paths = (self.mod.LOG_FILE, self.mod.QUEUE_FILE, self.mod.TRIGGER_FILE)
+        if stats:
+            paths += (self.mod._get_stats_file(),)
+        for path in paths:
             self.assertFalse(pathlib.Path(path).exists(), f"{path} survived the clear")
 
 
@@ -119,9 +121,12 @@ class CampaignSwitchClearsAutomatically(ClearBase):
     def test_switching_campaigns_wipes_state_with_no_manual_clear(self):
         pathlib.Path(self.mod.CAMP_FILE).write_text("ember-hollow", encoding="utf-8")
         self._dirty_everything()
+        legacy_stats = pathlib.Path(self.mod.STATS_FILE).read_text(encoding="utf-8")
         r = self._chunk_campaign("strixhaven-kairos")
         self.assertEqual(r.status_code, 204)
-        self._assert_wiped()
+        self._assert_wiped(stats=False)
+        self.assertEqual(pathlib.Path(self.mod.STATS_FILE).read_text(encoding="utf-8"),
+                         legacy_stats, "legacy shared stats must remain as a safety copy")
         self.assertEqual(pathlib.Path(self.mod.CAMP_FILE).read_text(encoding="utf-8").strip(),
                          "strixhaven-kairos")
 

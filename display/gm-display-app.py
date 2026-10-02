@@ -131,9 +131,8 @@ def _apply_campaign_sfx_languages() -> None:
 
 HELP_LOCK     = os.path.join(_DISPLAY_DIR, ".help-lock")
 CAMP_FILE     = os.path.join(_DISPLAY_DIR, ".campaign")
-# The roster the sidebar is built from. GM_STATS_FILE moves it, for the same
-# reason as GM_TEXT_LOG_FILE above: it is gitignored runtime state that every
-# display loads at startup and replays into its sidebar.
+# Legacy/unassigned-display fallback. Once a campaign is registered, its roster
+# lives in that campaign directory so concurrent displays cannot overwrite it.
 STATS_FILE    = os.environ.get("GM_STATS_FILE") or os.path.join(_DISPLAY_DIR, "stats.json")
 TOKEN_FILE    = os.path.join(_DISPLAY_DIR, ".token")
 # Port override so a second display (tests, a demo) can run beside a live one.
@@ -1249,11 +1248,22 @@ _current_stats: dict = {}
 _stats_lock = threading.Lock()
 
 
+def _get_stats_file() -> str:
+    """Return the active campaign's roster path, or the legacy fallback."""
+    try:
+        camp = open(CAMP_FILE, encoding="utf-8").read().strip()
+        if camp:
+            return str(_campaign_dir_for_name(camp) / "stats.json")
+    except Exception:
+        pass
+    return STATS_FILE
+
+
 def _persist_stats() -> None:
     try:
         with _stats_lock:
             data = dict(_current_stats)
-        with open(STATS_FILE, "w", encoding="utf-8") as f:
+        with open(_get_stats_file(), "w", encoding="utf-8") as f:
             json.dump(data, f)
     except Exception:
         pass
@@ -1261,7 +1271,7 @@ def _persist_stats() -> None:
 
 def _load_stats() -> None:
     try:
-        with open(STATS_FILE, encoding="utf-8") as f:
+        with open(_get_stats_file(), encoding="utf-8") as f:
             data = json.load(f)
         with _stats_lock:
             _current_stats.update(data)
@@ -2092,9 +2102,12 @@ def chunk():
             # campaigns never requires a manual /clear. Re-registering the same
             # campaign (a play.py restart re-sends it) leaves state intact.
             if new_camp and new_camp != prev_camp:
-                _do_clear()
+                _do_clear(preserve_stats=True)
             with open(CAMP_FILE, "w", encoding="utf-8") as f:
                 f.write(new_camp)
+            if new_camp and new_camp != prev_camp:
+                _load_stats()
+                _broadcast({"stats": dict(_current_stats)})
             _load_log()
             _load_tail()
         except Exception:
@@ -2753,8 +2766,8 @@ def audio_sfx(name):
                     headers={"Cache-Control": "public, max-age=3600"})
 
 
-def _do_clear() -> None:
-    """Wipe text log, stats, sent input and the queued-input files.
+def _do_clear(*, preserve_stats: bool = False) -> None:
+    """Wipe transient display state and, unless requested, the active roster.
 
     Shared by the manual /clear route and the automatic clear that fires when /chunk
     registers a different campaign. Without the input half, a party's queued actions
@@ -2783,7 +2796,10 @@ def _do_clear() -> None:
         _input_queue = []
     with _queue_status_lock:
         _queue_status.clear()
-    for path in (LOG_FILE, STATS_FILE, QUEUE_FILE, TRIGGER_FILE):
+    paths_to_clear = (LOG_FILE, QUEUE_FILE, TRIGGER_FILE)
+    if not preserve_stats:
+        paths_to_clear += (_get_stats_file(),)
+    for path in paths_to_clear:
         try:
             os.remove(path)
         except FileNotFoundError:
