@@ -69,6 +69,8 @@ _SCRIPTS = pathlib.Path(__file__).resolve().parent
 if str(_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS))
 
+from slug import slug as shared_slug
+
 ATLAS_SCHEMA = "atlas-vtt"
 # MapPersistence.ts: ATLAS_VERSION. Written into the file so a future Atlas
 # migrates it rather than misreading it; the reconciler adopts the file as it
@@ -263,7 +265,7 @@ def load_map(name: str, maps_dir: Path) -> dict:
 
 def token_image_name(colour: str) -> str:
     """A safe, stable file name for a side's disc."""
-    slug = re.sub(r"[^a-z0-9]+", "-", colour.strip().lower()).strip("-")
+    slug = shared_slug(colour)
     return f"{slug or 'token'}.png"
 
 
@@ -273,7 +275,7 @@ IMAGE_SUFFIXES = (".png", ".webp", ".jpg", ".jpeg")
 
 
 def slug(name: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "-", name.strip().lower()).strip("-")
+    return shared_slug(name)
 
 
 def find_token_art(spec: dict, spawn: dict, art_dir: Path | None,

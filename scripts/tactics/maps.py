@@ -14,6 +14,8 @@ import json
 import pathlib
 import re
 
+from slug import slug as shared_slug
+
 from .grid import DEFAULT_LEGEND, TERRAIN, Grid, label
 
 MAPS_DIR = pathlib.Path(__file__).resolve().parents[2] / "display" / "maps"
@@ -43,7 +45,7 @@ def _find(name: str) -> pathlib.Path:
 
 
 def _slug(text) -> str:
-    return re.sub(r"[^a-z0-9]+", "-", str(text).strip().lower()).strip("-")
+    return shared_slug(text)
 
 
 def _landmarks(features: list, owner: list) -> list:

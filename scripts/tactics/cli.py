@@ -74,6 +74,7 @@ import re
 import sys
 
 from paths import find_campaign            # scripts/paths.py (on sys.path via tactics/__init__)
+from slug import slug as shared_slug
 
 from . import (actions, ai, effects, encounter, engine, formations, maps, policy, receipts,
                  rest, roller, scenes, sight, slots, spells, state, statecard, sync)
@@ -256,7 +257,7 @@ def _turn_hint(enc) -> str:
 
 
 def _slug(text: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+    return shared_slug(text)
 
 
 def _placement(spec: str):

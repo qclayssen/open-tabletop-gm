@@ -45,6 +45,8 @@ from __future__ import annotations
 
 import re
 
+from slug import slug as shared_slug
+
 # The directory the display serves portraits from. Absolute, like every other
 # path in the engine, because Flask derives its root from __name__ and only gets
 # that right when run as __main__ (see display/gm-display-app.py).
@@ -72,7 +74,7 @@ COLLEGES = {
 def slugify(name: str) -> str:
     """'Quandrix Scholar 3' -> 'quandrix-scholar-3'. The one rule the filenames
     and the manifest share, kept here so nothing else has to re-derive it."""
-    return re.sub(r"[^a-z0-9]+", "-", str(name or "").lower()).strip("-")
+    return shared_slug(name or "")
 
 
 # Every portrait in the set, by the name the artist gave the file. This is the

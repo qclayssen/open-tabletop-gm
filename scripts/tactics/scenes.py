@@ -87,6 +87,7 @@ import pathlib
 import re
 
 import safeio   # scripts/safeio.py (on sys.path via tactics/__init__)
+from slug import slug as shared_slug
 
 from .schemas import (BooleanField, ListField, NumberField, OptionalField,
                       SchemaField, StringField)
@@ -164,7 +165,7 @@ SCENE_FIELDS = SchemaField({
 
 def slug(name: str) -> str:
     """The handle a place or a scene is written and looked up under."""
-    return re.sub(r"[^a-z0-9]+", "-", str(name).strip().lower()).strip("-")
+    return shared_slug(name)
 
 
 def _plain_slug(name, what: str) -> str:

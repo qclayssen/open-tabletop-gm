@@ -73,6 +73,8 @@ import json
 import pathlib
 import re
 
+from slug import slug as shared_slug
+
 from . import grid as grid_mod
 from .schemas import (AnyField, ListField, NumberField, OptionalField, SchemaField,
                       StringField)
@@ -159,7 +161,7 @@ FORMATION_SCHEMA_FIELDS = SchemaField({
 # ─── naming and paths ─────────────────────────────────────────────────────────
 
 def slug(name: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "-", str(name).strip().lower()).strip("-")
+    return shared_slug(name)
 
 
 def encounters_dir(camp_dir) -> pathlib.Path:

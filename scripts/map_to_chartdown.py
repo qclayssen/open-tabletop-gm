@@ -67,6 +67,7 @@ if str(_SCRIPTS) not in sys.path:
 
 from tactics.grid import TERRAIN, col_label  # noqa: E402
 from tactics.maps import compile_map  # noqa: E402
+from slug import slug as shared_slug  # noqa: E402
 
 CHARTDOWN_VERSION = "0.8"
 
@@ -110,7 +111,7 @@ class Refused(ValueError):
 
 
 def slug(text: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "-", str(text).lower()).strip("-")
+    return shared_slug(text)
 
 
 def _string(text: str) -> str:
