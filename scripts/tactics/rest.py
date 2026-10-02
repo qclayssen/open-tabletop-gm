@@ -36,7 +36,7 @@ import subprocess
 import sys
 
 from . import effects, slots
-from .core import CombatError
+from .core import CombatError, rules_for
 from .roller import Roller
 from .state import Encounter, Token
 
@@ -179,9 +179,12 @@ def long_rest(enc: Encounter, token_ids: list = None) -> list:
             lines.append(f"{token.name} is dead; long rest has no effect.")
             continue
         if token.hp < token.max_hp:
-            healed = token.max_hp - token.hp
-            token.hp = token.max_hp
-            lines.append(f"{token.name}: healed {healed} HP (now {token.max_hp}/{token.max_hp}).")
+            # Through Rules.heal, not a direct write: heal is the one path that
+            # clears `unconscious` when a creature at 0 HP comes back up. Writing
+            # token.hp here healed the HP and left the condition, so the creature
+            # stayed asleep and can_act refused every later action.
+            healed = rules_for(enc).heal(token, token.max_hp - token.hp)["healed"]
+            lines.append(f"{token.name}: healed {healed} HP (now {token.hp}/{token.max_hp}).")
         if token.temp_hp > 0:
             token.temp_hp = 0
             lines.append(f"{token.name}: temporary HP cleared.")
