@@ -8,6 +8,7 @@ the player's own, and queue each result so the GM sees it.
 import importlib.util
 import json
 import pathlib
+import tempfile
 import unittest
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
@@ -31,10 +32,14 @@ class CombatEndpoints(unittest.TestCase):
     def setUpClass(cls):
         cls.mod = _import_app()
         cls.mod._token_ok = lambda: True
-        cls.mod._persist_input_queue = lambda: None     # never touch the real queue file
         cls.client = cls.mod.app.test_client()
 
     def setUp(self):
+        # Never touch the real display/.input_queue: every test gets its own.
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.queue_file = pathlib.Path(self._tmp.name) / ".input_queue"
+        self.mod.QUEUE_FILE = str(self.queue_file)
         self.sent, self.calls = [], []
         self.mod._broadcast = self.sent.append
         self.mod._input_queue.clear()
@@ -44,6 +49,12 @@ class CombatEndpoints(unittest.TestCase):
                                      "result": {"feet": 10}}))
         self.mod._run_tactics = lambda args, extra=(): (self.calls.append((args, list(extra)))
                                                         or self.reply)
+
+    def queued(self):
+        """The lines a GM front-end would claim from .input_queue."""
+        if not self.queue_file.exists():
+            return []
+        return self.queue_file.read_text(encoding="utf-8").splitlines()
 
     def push(self, snap):
         return self.client.post("/combat", data=json.dumps({"combat": snap}),
@@ -92,6 +103,8 @@ class CombatEndpoints(unittest.TestCase):
         self.assertEqual(self.mod._input_queue[-1]["character"], "Kairos")
         self.assertEqual(self.mod._input_queue[-1]["text"],
                          "(grid) Kairos moves B7 to D5 (10 ft, 20 ft left).")
+        self.assertEqual(self.queued(),
+                         ["[Kairos]: (grid) Kairos moves B7 to D5 (10 ft, 20 ft left)."])
 
     def test_rolls_are_passed_as_the_players_own(self):
         self.push(SNAP)
@@ -152,6 +165,9 @@ class CombatEndpoints(unittest.TestCase):
             self.assertEqual(code, 200, cmd)
         self.assertEqual([c[0] for c in self.calls], bodies)
         self.assertEqual(len(self.mod._input_queue), len(bodies) - 1)   # reactions is a setting
+        # Every grid outcome is its own line: a later one never replaces an
+        # earlier one, or the GM would narrate the attack and not the move.
+        self.assertEqual(len(self.queued()), len(bodies) - 1)
 
     def test_new_actions_refuse_another_token(self):
         self.push(SNAP)
@@ -265,4 +281,5 @@ if __name__ == "__main__":
         code, body = self.do({"cmd": "reactions", "args": ["kairos", "auto"]})
         self.assertTrue(body["ok"])
         self.assertEqual(list(self.mod._input_queue), [])
+        self.assertEqual(self.queued(), [])
 

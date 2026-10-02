@@ -5,15 +5,17 @@ check_input.py — Non-blocking check for queued player input.
 Drains the display companion's player input queue and prints any pending
 actions to stdout, then exits. If the queue is empty, exits silently.
 
-Primary path — HTTP drain endpoint (display running):
-  POSTs to /player-input/drain, which clears both the in-memory queue and
-  the persisted .input_queue file atomically. Follows send.py's token/scheme
-  pattern for auth and TLS.
+There is one queue: .input_queue, one "[Char]: text" line per action. Every
+producer writes it (Party Input Send and Skip, the legacy POST /player-input,
+and grid clicks via POST /combat/do), and every consumer takes it by atomic
+rename through queue_claim (this script, wrapper.py, autorun_wait.py,
+drain_queue.py), so each action reaches exactly one GM session.
 
-Fallback path — file read (only when the display cannot be reached at all):
-  Reads player_input.json (the file the app persists that same queue to)
-  directly and writes [] to clear it. Useful after a display crash or when
-  running without the companion.
+This script claims .input_queue directly first, so it works with the display
+down. It then POSTs /player-input/drain, which claims the same file
+server-side and returns only what was sent in between, and clears the
+display's pending indicators. Follows send.py's token/scheme pattern for auth
+and TLS.
 
 Output format (when non-empty):
   [CharName]: action text
@@ -56,11 +58,7 @@ def _display_port() -> int:
 _PORT = _display_port()
 DRAIN_URL    = f"{_SCHEME}://localhost:{_PORT}/player-input/drain"
 TOKEN_FILE   = _DIR / ".token"
-# The queue the drain endpoint serves; gm-display-app.py persists it here.
-QUEUE_FILE   = _DIR / "player_input.json"
-# Send on the display's Party Input panel writes this plain-text file instead
-# ("[Char]: text" per line). wrapper.py and autorun_wait.py read it too;
-# whoever reads it first deletes it, so each action is delivered once.
+# The shared queue claimed by the drain endpoint, wrapper.py, and autorun_wait.py.
 READY_FILE   = _DIR / ".input_queue"
 CONSUMED_URL = f"{_SCHEME}://localhost:{_PORT}/queue/consumed"
 NARRATION_TARGET = _DIR / "narration_target"   # set by the display's Narration slider
@@ -149,8 +147,12 @@ def utf8_stdout() -> None:
 def main() -> None:
     utf8_stdout()
     token = TOKEN_FILE.read_text(encoding="utf-8").strip() if TOKEN_FILE.exists() else ""
+    # Claim the shared queue directly first, so a refused or unreachable drain
+    # never strands an action. The rename makes this safe beside wrapper.py.
     ready = _take_ready_queue(token)
-    # Primary: HTTP drain — clears memory and file atomically
+    # Then the HTTP drain, which claims the same file server-side and so only
+    # returns what was sent in the gap. Any failure here loses nothing: whatever
+    # is still queued stays in .input_queue for the next call.
     try:
         req = urllib.request.Request(
             DRAIN_URL, method="POST",
@@ -158,29 +160,14 @@ def main() -> None:
         )
         with urllib.request.urlopen(req, context=_SSL_CTX, timeout=2) as resp:
             entries = json.loads(resp.read())
-        _print_entries(entries + ready)
+        _print_entries(ready + entries)
         return
     except urllib.error.HTTPError as e:
-        # The display answered: it still owns the queue. Reading the file now
-        # would deliver the same actions again on the next successful drain.
         print(f"check_input: display refused the drain ({e.code})", file=sys.stderr)
-        _print_entries(ready)
-        return
     except urllib.error.URLError:
         pass                    # could not connect: the display is not running
-    except Exception as e:      # read timeout, bad JSON: the app may already have drained
+    except Exception as e:      # read timeout, bad JSON
         print(f"check_input: drain failed ({e.__class__.__name__})", file=sys.stderr)
-        _print_entries(ready)
-        return
-
-    # Fallback: read queue file directly (display not running or unreachable)
-    try:
-        if QUEUE_FILE.exists():
-            entries = json.loads(QUEUE_FILE.read_text(encoding="utf-8"))
-            QUEUE_FILE.write_text("[]", encoding="utf-8")   # clear without deleting: the app loads an empty queue on restart
-            ready = entries + ready
-    except Exception:
-        pass
     _print_entries(ready)
 
 

@@ -41,7 +41,6 @@ def rig(tmp_path, monkeypatch):
     m._find_campaign = lambda name: camp
     m._token_ok = lambda: True
     m._device_ok = lambda d, ip: "approved"
-    m._persist_input_queue = lambda: None
     m._broadcast = lambda payload: None
     m._current_stats = {"players": [{"name": "Kairos"}]}
     m._current_combat = None

@@ -21,6 +21,7 @@ import pathlib
 import tempfile
 import threading
 import unittest
+from unittest import mock
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 
@@ -67,11 +68,33 @@ class SendEndpoints(unittest.TestCase):
     def queue(self):
         return self.qf.read_text(encoding="utf-8") if self.qf.exists() else ""
 
-    # ── one tap lands in the queue ────────────────────────────────────
+    # ── every action producer feeds both consumer paths ───────────────
 
-    def test_a_single_send_reaches_the_queue_with_no_second_step(self):
+    def test_party_input_send_is_visible_to_both_consumers(self):
         self.assertEqual(self.send("Kairos", "watches the innkeeper").status_code, 204)
         self.assertEqual(self.queue(), "[Kairos]: watches the innkeeper\n")
+
+    def test_legacy_player_input_is_visible_to_both_consumers(self):
+        r = self.client.post("/player-input", json={"character": "Kairos", "text": "takes cover"})
+        self.assertEqual(r.status_code, 204)
+        self.assertEqual(self.queue(), "[Kairos]: takes cover\n")
+
+    def test_grid_action_is_visible_to_both_consumers(self):
+        # Scoped to this test: the module is shared by the whole class.
+        for name, value in (
+                ("_current_combat", {
+                    "status": "active", "current": "kairos",
+                    "tokens": [{"id": "kairos", "name": "Kairos", "controller": "player"}]}),
+                ("_run_tactics", lambda args, extra=(): (
+                    0, json.dumps({"text": "Kairos moves to D5", "result": {}})))):
+            patcher = mock.patch.object(self.mod, name, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        response = self.client.post(
+            "/combat/do", json={"cmd": "move", "args": ["kairos", "D5"]},
+            headers={"X-DND-Device": "test-device"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.queue(), "[Kairos]: (grid) Kairos moves to D5\n")
 
     def test_the_old_staging_endpoints_are_gone(self):
         # If these ever come back, someone has re-added the two-tap flow.

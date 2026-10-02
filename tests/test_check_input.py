@@ -1,16 +1,7 @@
-"""check_input.py must actually reach the queue it is meant to drain.
+"""check_input.py drains the same shared queue as wrapper.py.
 
-Two bugs made queued player input disappear in --lan mode:
-
-1. The drain request sent the token as `X-Token`, but gm-display-app.py's
-   `_token_ok()` reads `X-DND-Token`. With a LAN token set, every drain was
-   rejected with 403.
-2. The fallback then read `.input_queue`, a plain-text file owned by
-   wrapper.py, and parsed it as JSON. That failed silently, so nothing was
-   printed and the real queue (`player_input.json`) was never read.
-
-These tests pin the header name and fallback file to what the app uses,
-reading them from the app source so the two cannot drift apart again.
+The HTTP route and offline fallback both claim `.input_queue` with the shared
+queue_claim primitive, so competing consumers cannot double-deliver actions.
 """
 
 from __future__ import annotations
@@ -49,9 +40,9 @@ def _app_token_header() -> str:
     return m.group(1)
 
 
-def _app_input_file() -> str:
-    m = re.search(r'INPUT_FILE\s*=\s*os\.path\.join\(_DISPLAY_DIR,\s*"([^"]+)"\)', APP_SRC)
-    assert m, "INPUT_FILE not found in gm-display-app.py"
+def _app_queue_file() -> str:
+    m = re.search(r'QUEUE_FILE\s*=\s*os\.path\.join\(_DISPLAY_DIR,\s*"([^"]+)"\)', APP_SRC)
+    assert m, "QUEUE_FILE not found in gm-display-app.py"
     return m.group(1)
 
 
@@ -63,7 +54,6 @@ class CheckInputTest(unittest.TestCase):
         self.mod.NARRATION_TARGET = self.tmp / "narration_target"
         self.mod.ROLL_PREFS = self.tmp / "roll_prefs.json"
         self.mod.TOKEN_FILE = self.tmp / ".token"
-        self.mod.QUEUE_FILE = self.tmp / "player_input.json"
         self.mod.READY_FILE = self.tmp / ".input_queue"
         self.mod.CONSUMED_URL = "http://127.0.0.1:9/unreachable"
 
@@ -104,22 +94,18 @@ class CheckInputTest(unittest.TestCase):
             server.shutdown()
             server.server_close()
 
-    def test_fallback_file_is_the_one_the_app_persists(self):
-        self.assertEqual(_load_check_input().QUEUE_FILE.name, _app_input_file())
+    def test_fallback_uses_the_shared_file_the_app_writes(self):
+        self.assertEqual(_load_check_input().READY_FILE.name, _app_queue_file())
 
-    def test_fallback_reads_and_clears_the_persisted_queue(self):
+    def test_fallback_claims_and_clears_the_shared_queue(self):
         self.mod.DRAIN_URL = "http://127.0.0.1:9/unreachable"
-        self.mod.QUEUE_FILE.write_text(
-            json.dumps([{"character": "Kairos", "text": "moves to D5"}]), encoding="utf-8")
+        self.mod.READY_FILE.write_text("[Kairos]: moves to D5\n", encoding="utf-8")
         self.assertIn("[Kairos]: moves to D5", self._run())
-        self.assertEqual(json.loads(self.mod.QUEUE_FILE.read_text(encoding="utf-8")), [])
+        self.assertFalse(self.mod.READY_FILE.exists())
 
 
 class ReadyPanelQueue(unittest.TestCase):
-    """Send on the display's Party Input panel writes `.input_queue` (the file
-    wrapper.py and autorun_wait.py read), not the drain queue. In a plain
-    `claude` session neither runs, so check_input.py must read it too or the
-    player's typed action never reaches the GM."""
+    """The wrapper and check_input both consume `.input_queue` exactly once."""
 
     def setUp(self):
         self.mod = _load_check_input()
@@ -127,14 +113,12 @@ class ReadyPanelQueue(unittest.TestCase):
         self.mod.NARRATION_TARGET = self.tmp / "narration_target"
         self.mod.ROLL_PREFS = self.tmp / "roll_prefs.json"
         self.mod.TOKEN_FILE = self.tmp / ".token"
-        self.mod.QUEUE_FILE = self.tmp / "player_input.json"
         self.mod.READY_FILE = self.tmp / ".input_queue"
         self.mod.DRAIN_URL = "http://127.0.0.1:9/unreachable"
         self.mod.CONSUMED_URL = "http://127.0.0.1:9/unreachable"
 
     def test_ready_file_is_the_one_the_app_writes(self):
-        m = re.search(r'QUEUE_FILE\s*=\s*os\.path\.join\(_DISPLAY_DIR,\s*"([^"]+)"\)', APP_SRC)
-        self.assertEqual(_load_check_input().READY_FILE.name, m.group(1))
+        self.assertEqual(_load_check_input().READY_FILE.name, _app_queue_file())
 
     def test_ready_actions_are_printed_once(self):
         self.mod.READY_FILE.write_text(
@@ -165,7 +149,7 @@ class NonUtf8Console(unittest.TestCase):
         mod = _load_check_input()
         tmp = Path(tempfile.mkdtemp())
         mod.NARRATION_TARGET, mod.ROLL_PREFS = tmp / "n", tmp / "r"
-        mod.TOKEN_FILE, mod.QUEUE_FILE = tmp / ".token", tmp / "player_input.json"
+        mod.TOKEN_FILE = tmp / ".token"
         mod.READY_FILE, mod.DRAIN_URL = tmp / ".input_queue", "http://127.0.0.1:9/unreachable"
         mod.CONSUMED_URL = "http://127.0.0.1:9/unreachable"
         mod.READY_FILE.write_text("[Kairos]: I point → north", encoding="utf-8")
@@ -195,17 +179,18 @@ class NonUtf8Console(unittest.TestCase):
 
 
 class NoDoubleDelivery(unittest.TestCase):
-    """If the display answers with an error it still owns the queue, so the
-    file must not be read (the app would deliver the same actions again)."""
+    """A refused drain must neither strand nor repeat an action. There is one
+    queue and the local claim already owns what it took, so the actions print
+    once and the next run prints nothing."""
 
-    def test_http_error_does_not_fall_back_to_the_file(self):
+    def test_http_error_delivers_the_claimed_queue_once(self):
         mod = _load_check_input()
         tmp = Path(tempfile.mkdtemp())
         mod.NARRATION_TARGET, mod.ROLL_PREFS = tmp / "n", tmp / "r"
-        mod.TOKEN_FILE, mod.QUEUE_FILE = tmp / ".token", tmp / "player_input.json"
+        mod.TOKEN_FILE = tmp / ".token"
         mod.READY_FILE, mod.CONSUMED_URL = tmp / ".input_queue", "http://127.0.0.1:9/unreachable"
-        queued = json.dumps([{"character": "Kairos", "text": "moves to D5"}])
-        mod.QUEUE_FILE.write_text(queued, encoding="utf-8")
+        queued = "[Kairos]: moves to D5\n"
+        mod.READY_FILE.write_text(queued, encoding="utf-8")
 
         class Handler(BaseHTTPRequestHandler):
             def do_POST(self):
@@ -225,9 +210,14 @@ class NoDoubleDelivery(unittest.TestCase):
         finally:
             server.shutdown()
             server.server_close()
-        self.assertEqual(out.getvalue(), "")
+        self.assertEqual(out.getvalue(), "[Kairos]: moves to D5\n")
         self.assertIn("500", err.getvalue())
-        self.assertEqual(mod.QUEUE_FILE.read_text(encoding="utf-8"), queued)
+        self.assertFalse(mod.READY_FILE.exists())
+        mod.DRAIN_URL = "http://127.0.0.1:9/unreachable"
+        again = io.StringIO()
+        with contextlib.redirect_stdout(again):
+            mod.main()
+        self.assertEqual(again.getvalue(), "")
 
 
 if __name__ == "__main__":

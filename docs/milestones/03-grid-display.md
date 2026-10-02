@@ -17,7 +17,7 @@ The battle map in the display companion: it appears when grid combat starts, upd
 - **Roll for me** first switched the whole action to engine dice, discarding a d20 the player had already rolled. It now rolls only what is missing.
 - **Phone layout.** The page's sidebar and settings (z-index 6 to 8) drew over the panel. Below 860 px the panel sits at z-index 9, under dialogs and device approvals.
 - **Browser tool quirks** (not app bugs): screenshots can be taken before the SSE update paints; a synthetic hover can fire `pointerleave` and clear the path preview; a ref click on an SVG `<g>` can miss. Check state with JavaScript before assuming a bug.
-- Test runs leave `display/player_input.json`, `stats.json` and other runtime files (gitignored). Remove them, or the GM will drain stale test actions in a real session.
+- Test runs leave `display/.input_queue`, `stats.json` and other runtime files (gitignored). (Grid actions used to land in a separate `display/player_input.json`; since C1 every action shares `.input_queue`.) Remove them, or the GM will drain stale test actions in a real session.
 
 ## Decisions
 
