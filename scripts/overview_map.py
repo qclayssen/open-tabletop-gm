@@ -152,6 +152,76 @@ def validate(spec) -> dict:
             "image": image, "extent": extent, "pins": clean}
 
 
+def _fraction(point, what: str) -> tuple:
+    """A normalized image point as an ``(x, y)`` pair."""
+    if not isinstance(point, (list, tuple)) or len(point) != 2:
+        raise OverviewMapError(f"{what} is an (x, y) fraction pair")
+    x, y = (_number(value, f"{what} {axis}")
+            for value, axis in zip(point, ("x", "y")))
+    if not 0.0 <= x <= 1.0 or not 0.0 <= y <= 1.0:
+        raise OverviewMapError(f"{what} coordinates must be fractions of the image (0..1)")
+    return x, y
+
+
+def _image_size(size) -> tuple:
+    """A positive ``(width, height)`` image extent."""
+    if not isinstance(size, (list, tuple)) or len(size) != 2:
+        raise OverviewMapError("image size is a [width, height] pair")
+    width, height = (_number(value, "image size") for value in size)
+    if width <= 0 or height <= 0:
+        raise OverviewMapError("image size must have positive width and height")
+    return width, height
+
+
+def fraction_to_feet(start, end, image_size, ft_per_px: float) -> float:
+    """Distance in feet between image-fraction points at a supplied scale.
+
+    ``image_size`` is the source image's ``(width, height)`` in pixels;
+    ``ft_per_px`` is an explicit scale, commonly from :func:`calibrate`.
+    """
+    x1, y1 = _fraction(start, "start")
+    x2, y2 = _fraction(end, "end")
+    width, height = _image_size(image_size)
+    scale = _number(ft_per_px, "ft_per_px")
+    if scale <= 0:
+        raise OverviewMapError("ft_per_px must be positive")
+    return math.hypot((x2 - x1) * width, (y2 - y1) * height) * scale
+
+
+def bearing(start, end, image_size, north_deg: float = 0) -> str:
+    """Eight-point compass bearing from one image fraction to another.
+
+    Image y increases downward. ``north_deg`` is the true bearing of image-up,
+    measured clockwise from north, so zero means image-up is north. Ties at
+    sector boundaries round clockwise.
+    """
+    x1, y1 = _fraction(start, "start")
+    x2, y2 = _fraction(end, "end")
+    width, height = _image_size(image_size)
+    north = _number(north_deg, "north_deg")
+    east = (x2 - x1) * width
+    northing = -(y2 - y1) * height
+    if east == 0 and northing == 0:
+        raise OverviewMapError("bearing points are coincident")
+    degrees = (math.degrees(math.atan2(east, northing)) + north) % 360.0
+    index = int(math.floor((degrees + 22.5 + 1e-12) / 45.0)) % 8
+    return ("N", "NE", "E", "SE", "S", "SW", "W", "NW")[index]
+
+
+def calibrate(start, end, real_feet: float, image_size) -> float:
+    """Calculate feet per pixel from two image fractions and a real distance."""
+    x1, y1 = _fraction(start, "first reference pin")
+    x2, y2 = _fraction(end, "second reference pin")
+    width, height = _image_size(image_size)
+    distance = _number(real_feet, "real distance")
+    if distance <= 0:
+        raise OverviewMapError("real distance must be positive")
+    pixels = math.hypot((x2 - x1) * width, (y2 - y1) * height)
+    if pixels == 0:
+        raise OverviewMapError("calibration pins are coincident")
+    return distance / pixels
+
+
 def revealed(spec: dict) -> dict:
     """The spec as a players' page may carry it: unrevealed pins are absent.
 
