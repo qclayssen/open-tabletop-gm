@@ -326,6 +326,29 @@ APPROVED: dict[str, tuple[str, str]] = {
             "who cannot live with that should generate her instead of accepting "
             "this line."
         )),
+    # Two more, where the portrait was generated for the character and the record
+    # carries an office the filename does not. Same shape as Augusta and Jadzi
+    # above: one person, two names, the second being the job.
+    "Professor Dace Orrin": (
+        "dace-orrin.png",
+        (
+            "Generated for this campaign from his own character file, and named for "
+            "the person. The record says 'Professor' because that is his office; "
+            "nothing else in the vault calls him anything else, and npcs-full.md "
+            "gives no surname. The tiefling, the horns and the brass-and-glass "
+            "essence gauge all come from npc-files/dace-orrin.md and "
+            "prose/CH-1.5-finals-in-the-fractal-conservatory.md:203, which is what "
+            "makes this an identity rather than a resemblance."
+        )),
+    "Tam, Observant Sequencer (Quandrix)": (
+        "tam.png",
+        (
+            "Generated for this campaign from her own character file. The record "
+            "carries the office and the college -- 'Observant Sequencer (Quandrix)' "
+            "-- and the only 'Tam' in the vault is the gorgon who holds it "
+            "(npcs-full.md:243, source/1.2.md:58). She is the only gorgon in the "
+            "campaign, so there is no second Tam for this to be."
+        )),
 }
 
 # Statblock note name -> art FILENAME, for the creatures where the NOTE and the

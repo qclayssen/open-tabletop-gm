@@ -141,35 +141,74 @@ def test_an_unavailable_line_is_reported_rather_than_only_absent():
     assert "0/1" in report or " 0/" in report
 
 
-def test_three_cast_members_take_species_correct_art_and_three_refuse_to():
-    """The full 360-portrait pack was installed and every candidate for the main
-    cast was looked at, not just matched by filename. Three survived and three did
-    not, and the refusals are the interesting half:
+def test_three_cast_members_take_species_correct_pack_art():
+    """Ninefold, Vess and Hesper are creatures, and a picture of the right
+    creature beats a generic student token -- the same claim the age-
+    substitutions already make, where the picture is of the right KIND of thing
+    and the notes say not to read further into it.
 
-      * Tam is a gorgon and `gorgon.png` exists, but its eyes are LIT -- the
-        petrifying-gaze signal. `npc-files/tam.md:147` says her eyes "don't
-        actually petrify" and `:183` says "Must not use gorgon gaze as weapon.
-        She watches without blinking. That is all." The one thing the notes are
-        most careful about is exactly what that token shouts.
-      * Mabli and Hollis are both dwarves and `lorehold-dwarf-student` is the
-        ONLY dwarf in 360 files, so approving it for both would put the same
-        face on two different characters -- and it is a whooping, laughing dwarf
-        with a shield, which is nobody in this cast.
-      * Theodric is an elf and `elf-first-year-student` exists, but it is a
-        traveller in a leather harness with a pack. Theodric is immaculate
-        Silverquill-blue, over-posed, hands behind his back
-        (`prose/CH-1.1-orientation-night.md:33`).
-
-    These are recorded here because the instinct that produced them is the wrong
-    one: the right creature beats a generic student, but only if the creature is
-    actually right, and "it is a dwarf" is not the whole of being Mabli.
+    Each was chosen by LOOKING at the file, not by matching its name. That is
+    why these three and not six: `wandering-archaic` is towering and faceless,
+    `daemogoth-woe-eater` is antlered and lichen-green in a bog, and
+    `owlin-arithmancer` is a scholar rather than a duellist. Hesper's plumage is
+    NOT white, and the APPROVED line says so in as many words.
     """
     approved = set(sa.APPROVED)
     for species_correct in ("Ninefold", "Vess the Tallykeeper", "Magister Hesper Vael"):
         assert species_correct in approved, species_correct
-    for refused in ("Tam, Observant Sequencer (Quandrix)", "Mabli Quenn",
-                    "Coach Ambrin Hollis", "Theodric Vane"):
-        assert refused not in approved, \
-            f"{refused} has approved art, but the candidate file was looked at " \
-            "and rejected on the grounds in this test's docstring"
+    # The plumage is wrong and the line has to say so, because
+    # `prose/PLUMAGE.md:3` is load-bearing: a GM reading only the approval table
+    # would otherwise assume a white owl.
+    assert "THIS ONE IS NOT WHITE" in sa.APPROVED["Magister Hesper Vael"][1]
+
+
+def test_tam_is_never_matched_to_the_gorgon_statue():
+    """Tam is a gorgon and `gorgon.png` exists in the bestiary pool, so an exact
+    match on "gorgon" is one typo away and would be catastrophic.
+
+    Its eyes are LIT -- the petrifying-gaze signal. `npc-files/tam.md:147` says
+    her eyes "don't actually petrify" and `:183` says "Must not use gorgon gaze
+    as weapon. She watches without blinking. That is all." The one thing the
+    notes are most careful about is exactly what that picture shouts.
+
+    So she takes `tam.png`, a portrait generated from her own character file with
+    flat unlit eyes, and never the monster art. This is the whole reason the
+    GENERATED art was worth making: it is the only Tam token that does not
+    contradict her.
+    """
+    tam = sa.APPROVED["Tam, Observant Sequencer (Quandrix)"]
+    assert tam[0] == "tam.png", tam[0]
+    assert "gorgon" not in tam[0].lower()
+
+
+def test_hollis_is_still_uncovered_because_the_generated_hand_was_wrong():
+    """His portrait was generated and NOT installed, and the reason is recorded
+    here so nobody re-adds the file: `source/2.2.md:7` states he is missing two
+    fingers, four separate times, and the generated image has a full five on both
+    hands. That is the most-repeated fact the vault has about him, so a token
+    without it is a loud cheerful dwarf, which is a different character.
+
+    The file is not in the pool, so the absence cannot be a manifest slip.
+    """
+    assert "Coach Ambrin Hollis" not in sa.APPROVED
+    assert "ambrin-hollis" not in sa.APPROVED.values()
+    assert "Coach Ambrin Hollis" in sa.MAIN_CAST.values()
+
+
+def test_generated_cast_art_is_matched_by_exact_slug_not_by_approval():
+    """Mabli, Theodric and Petra need no APPROVED line at all: their generated
+    files are named for the record, so the ordinary exact match finds them.
+
+    That is the property worth pinning. The generated art was designed to be
+    named by the slug the matcher already uses, precisely so that adding a
+    portrait would not need a table entry, and a future generated portrait should
+    not acquire one by accident either.
+    """
+    index = sa.ArtIndex()
+    index.add_pool("display-tokens", pathlib.Path(
+        str(ROOT / "display" / "tokens")))
+    for name in ("Mabli Quenn", "Theodric Vane", "Petra Lune"):
+        record = sa.match_record(name, index, {"substitutions": {}})
+        assert record.get("how") == "exact", f"{name}: {record.get('how')}"
+        assert name not in sa.APPROVED, f"{name} needed an approval it should not"
 

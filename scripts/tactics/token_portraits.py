@@ -407,6 +407,26 @@ PORTRAITS = {
     "witherbloom-ritualist": "witherbloom-ritualist",
     "witherbloom-treefolk-druid": "witherbloom-treefolk-druid",
 
+    # Generated cast portraits (6) -- the campaign's own characters.
+    #
+    # DIFFERENT PROVENANCE FROM EVERYTHING ABOVE, and the only art in this file
+    # the repository could commit if it wanted to. Every other portrait here is
+    # a third party's unlicensed or licensed-by-permission work; these were
+    # generated from descriptions of characters the campaign owns, so the output
+    # is the campaign's. They live in the same gitignored directory anyway, so
+    # nothing changes today -- the distinction is recorded so that moving them is
+    # a decision somebody can make with the reason to hand.
+    #
+    # Cut from one 3x2 reference sheet by scripts/cut_portraits.py. `stopped-hand`
+    # is not a statblock: it is Ysolde Marrow's mask, kept because it is the face
+    # players see for two years and the one a 3.5 spoiler-free table cannot use.
+    "dace-orrin": "dace-orrin",
+    "mabli-quenn": "mabli-quenn",
+    "petra-lune": "petra-lune",
+    "stopped-hand": "stopped-hand",
+    "tam": "tam",
+    "theodric-vane": "theodric-vane",
+
     # Earlier pack (93) -- the 98-file set this one extended, and the
     # faculty-sheet crops. NOT in the 2026-09-30 archive, so they are listed
     # separately rather than dropped: several are the same person under a
