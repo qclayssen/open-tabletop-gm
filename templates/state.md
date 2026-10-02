@@ -37,6 +37,10 @@
 # judges; nothing here fires on its own.
 ```
 
+## Permanent Losses
+*Append-only record of enduring losses and costs. Add entries with `python3 scripts/tolls.py -c <campaign> add --loss "<loss>"`. Never remove or rewrite an established loss.*
+*(none recorded)*
+
 ## Recent Events
 *(Session 1 pending)*
 

@@ -42,7 +42,7 @@ PROMPTS = pathlib.Path(__file__).resolve().parent / "prompts"
 # combat/encounter.json"), never HP or positions, so it cannot contradict the
 # Engine section.
 DIGEST_SECTIONS = ("Current Situation", "Pinned Facts", "World State", "Faction Moves",
-                   "Live State Flags", "Active Quests", "Open Threads & Rumours",
+                   "Live State Flags", "Permanent Losses", "Active Quests", "Open Threads & Rumours",
                    "Recent Events", "Active Combat", "GM Style Notes", "World Queue")
 # Sections in DIGEST_SECTIONS that older campaigns legitimately lack; the linter
 # does not call their absence an error.

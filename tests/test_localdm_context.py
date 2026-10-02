@@ -100,6 +100,18 @@ def test_a_digest_that_fits_is_not_marked():
     assert "[truncated" not in context.state_digest(STATE)
 
 
+def test_permanent_losses_reach_the_digest_generically():
+    text = "## Permanent Losses\n- Mira was collected at the horn.\n- The west gate was forfeited.\n"
+    digest = context.state_digest(text)
+    assert "### Permanent Losses" in digest
+    assert "Mira was collected at the horn" in digest
+    assert "The west gate was forfeited" in digest
+
+
+def test_campaign_without_permanent_losses_has_no_digest_change():
+    assert "Permanent Losses" not in context.state_digest(STATE)
+
+
 def test_the_faction_log_the_engine_writes_reaches_the_dm(tmp_path):
     """world.py writes faction moves to faction_log.md; it used to be in neither
     NOTE_FILES nor the digest, so the clocks were computed and thrown away."""
