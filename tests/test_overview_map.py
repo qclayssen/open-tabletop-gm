@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import math
 import os
 import pathlib
 import shutil
@@ -50,6 +51,67 @@ def _write_campaign(campaign: pathlib.Path, spec=None) -> pathlib.Path:
     (campaign / "maps" / "overview" / "campus.json").write_text(
         json.dumps(spec or _spec()), encoding="utf-8")
     return campaign
+
+
+# ── pure geometry ──────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("end, expected", [
+    ((0.5, 0.0), "N"), ((1.0, 0.0), "NE"), ((1.0, 0.5), "E"),
+    ((1.0, 1.0), "SE"), ((0.5, 1.0), "S"), ((0.0, 1.0), "SW"),
+    ((0.0, 0.5), "W"), ((0.0, 0.0), "NW"),
+])
+def test_bearing_compass_points(end, expected):
+    assert overview_map.bearing((0.5, 0.5), end, (100, 100)) == expected
+
+
+@pytest.mark.parametrize("degrees, expected", [
+    (-22.5, "N"), (22.5, "NE"), (67.5, "E"), (112.5, "SE"),
+    (157.5, "S"), (202.5, "SW"), (247.5, "W"), (292.5, "NW"),
+])
+def test_bearing_sector_boundaries_round_clockwise(degrees, expected):
+    angle = math.radians(degrees)
+    end = (0.5 + math.sin(angle) * 0.2, 0.5 - math.cos(angle) * 0.2)
+    assert overview_map.bearing((0.5, 0.5), end, (100, 100)) == expected
+
+
+def test_bearing_north_rotation_and_coincident_refusal():
+    assert overview_map.bearing((0.5, 0.5), (0.5, 0.0), (100, 100), north_deg=90) == "E"
+    with pytest.raises(overview_map.OverviewMapError, match="coincident"):
+        overview_map.bearing((0.5, 0.5), (0.5, 0.5), (100, 100))
+    with pytest.raises(overview_map.OverviewMapError, match="image size"):
+        overview_map.bearing((0.5, 0.5), (0.5, 0.0), None)
+
+
+def test_fraction_to_feet_scales_each_axis_by_image_extent():
+    assert overview_map.fraction_to_feet((0.0, 0.0), (0.5, 0.5),
+                                         (200, 100), 2) == pytest.approx(math.hypot(100, 50) * 2)
+
+
+@pytest.mark.parametrize("args", [
+    ((-0.1, 0), (0.5, 0.5), (100, 100), 1),
+    ((0, 0), (0.5, 0.5), (0, 100), 1),
+    ((0, 0), (0.5, 0.5), (100, 100), 0),
+    ((0, 0), (0.5, 0.5), None, 1),
+])
+def test_fraction_to_feet_refuses_invalid_geometry(args):
+    with pytest.raises(overview_map.OverviewMapError):
+        overview_map.fraction_to_feet(*args)
+
+
+def test_calibrate_two_reference_pins():
+    assert overview_map.calibrate((0.0, 0.0), (1.0, 0.0), 300,
+                                  (600, 400)) == pytest.approx(0.5)
+
+
+@pytest.mark.parametrize("args", [
+    ((0.5, 0.5), (0.5, 0.5), 10, (100, 100)),
+    ((0, 0), (1, 1), 0, (100, 100)),
+    ((0, 0), (1, 1), 10, None),
+    ((0, 0), (1.1, 1), 10, (100, 100)),
+])
+def test_calibrate_refuses_invalid_geometry(args):
+    with pytest.raises(overview_map.OverviewMapError):
+        overview_map.calibrate(*args)
 
 
 # ── the spec ──────────────────────────────────────────────────────────────────
