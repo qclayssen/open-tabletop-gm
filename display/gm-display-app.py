@@ -11,8 +11,8 @@ Endpoints:
     GET  /stream             → SSE stream to browser (text + scene + stats events)
     GET  /ping               → health check
     POST /clear              → wipe text log and broadcast clear event
-    POST /player-input         → legacy queue endpoint (check_input.py compat)
-    POST /player-input/drain   → drain legacy queue (check_input.py compat)
+    POST /player-input         → legacy: append an action to .input_queue
+    POST /player-input/drain   → claim .input_queue and return it (check_input.py)
     POST /player-input/send    → send an action straight to the DM-gated queue
     POST /player-input/recall  → pull a not-yet-consumed action back out
     POST /player-input/skip    → skip a character's turn (sends a skip entry)
@@ -70,6 +70,7 @@ from tactics import mapeditor as _mapeditor
 import sys as _sys
 if _DISPLAY_DIR not in _sys.path:
     _sys.path.insert(0, _DISPLAY_DIR)
+import queue_claim  # (needs the sys.path line above it)
 try:
     import audio as _audio
     _audio.init()
@@ -124,7 +125,6 @@ TOKEN_FILE    = os.path.join(_DISPLAY_DIR, ".token")
 # The GM scripts find a non-default port in display/.port, which only
 # start-display.sh writes: a test display must not take over the live one.
 _PORT         = int(os.environ.get("GM_DISPLAY_PORT", "5001") or 5001)
-INPUT_FILE    = os.path.join(_DISPLAY_DIR, "player_input.json")
 TRIGGER_FILE  = os.path.join(_DISPLAY_DIR, ".input_trigger")
 QUEUE_FILE    = os.path.join(_DISPLAY_DIR, ".input_queue")
 NARRATION_TARGET = os.path.join(_DISPLAY_DIR, "narration_target")  # set by display's Narration slider
@@ -321,7 +321,9 @@ def _device_ok(device_id: str, ip: str) -> str:
 # Players type an action on the display companion UI and tap Send. It is
 # appended to QUEUE_FILE (.input_queue) straight away — no staging, no Ready
 # step, no "wait for N players" threshold. The DM still gates *when* the
-# actions reach Claude: wrapper.py injects .input_queue on the next Enter.
+# actions reach the model: wrapper.py injects .input_queue on the next Enter,
+# check_input.py drains it at the start of a GM turn. Grid clicks (/combat/do)
+# land in the same file, so there is one queue for every front-end.
 
 _sent: dict[str, dict] = {}     # {char_name: {text, timestamp}} — sent log
 _sent_lock = threading.Lock()
@@ -367,14 +369,38 @@ def _sent_snapshot() -> dict:
     return {k: {"text": v["text"]} for k, v in _sent.items()}
 
 
-def _queue_append(char_names: dict[str, str]) -> bool:
+# A grid click's outcome, queued by /combat/do. The engine has already applied
+# it, so it is a fact for the GM to narrate rather than a request: a later Send
+# never replaces it and Recall never removes it.
+_GRID_PREFIX = "(grid) "
+
+
+def _recallable_line(line: str, character: Optional[str] = None) -> Optional[str]:
+    """The character on a `[name]: text` line a player may still revise or
+    recall, or None for a grid outcome or a line that is not an action."""
+    m = re.match(r"^\[([^\]]+)\]:\s?(.*)$", line)
+    if not m or m.group(2).startswith(_GRID_PREFIX):
+        return None
+    if character is not None and m.group(1) != character:
+        return None
+    return m.group(1)
+
+
+def _queue_append(char_names: dict[str, str], replace: bool = True) -> bool:
     """Write `[char]: text` lines into .input_queue, one line per character.
+
+    .input_queue is the only player-input queue. Every producer writes it and
+    every consumer claims it through queue_claim, so an action reaches whichever
+    GM front-end is running (check_input.py, wrapper.py, autorun_wait.py,
+    drain_queue.py, or POST /player-input/drain) exactly once.
 
     Sends arrive per-character and independently, so this must not truncate the
     file — two players tapping Send in the same second both have to reach the
-    DM. A character sending again REPLACES their own pending line instead of
-    adding a second one, so a player who revises an action never leaves the DM
-    holding both the old and new version.
+    DM. With `replace`, a character sending again REPLACES their own pending
+    line instead of adding a second one, so a player who revises an action never
+    leaves the DM holding both the old and new version. Grid outcomes are never
+    replaced, and are written with `replace=False` so a move and then an attack
+    both reach the GM.
 
     The whole read-modify-write runs under _queue_lock so concurrent sends
     can't clobber each other, and writes via tmp+os.replace because
@@ -389,8 +415,9 @@ def _queue_append(char_names: dict[str, str]) -> bool:
             if os.path.exists(QUEUE_FILE):
                 with open(QUEUE_FILE, encoding="utf-8") as f:
                     existing = f.read().splitlines()
-            replaced = {re.escape(c) for c in char_names}
-            kept = [ln for ln in existing if not re.match(rf"^\[(?:{ '|'.join(replaced) })\]:", ln)]
+            kept = existing
+            if replace:
+                kept = [ln for ln in existing if _recallable_line(ln) not in char_names]
             content = "\n".join([*kept, *(f"[{c}]: {t}" for c, t in char_names.items())])
             tmp = QUEUE_FILE + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
@@ -413,8 +440,7 @@ def _queue_remove(character: str) -> bool:
                 return False
             with open(QUEUE_FILE, encoding="utf-8") as f:
                 lines = f.read().splitlines()
-            kept = [ln for ln in lines
-                    if not re.match(rf"^\[{re.escape(character)}\]:", ln)]
+            kept = [ln for ln in lines if _recallable_line(ln, character) is None]
             if len(kept) == len(lines):
                 return False
             if not kept:
@@ -430,19 +456,18 @@ def _queue_remove(character: str) -> bool:
 
 
 def _queued_characters() -> set:
-    """Names that currently have a `[name]: ...` line in .input_queue."""
+    """Names that currently have a recallable `[name]: ...` line in .input_queue.
+
+    Grid outcomes do not count: they are not in the sent log and cannot be
+    recalled, so they must not keep a QUEUED badge or a Recall alive.
+    """
     with _queue_lock:
         try:
             with open(QUEUE_FILE, encoding="utf-8") as f:
                 lines = f.read().splitlines()
         except OSError:
             return set()
-    names = set()
-    for ln in lines:
-        m = re.match(r"^\[([^\]]+)\]:", ln)
-        if m:
-            names.add(m.group(1))
-    return names
+    return {name for name in map(_recallable_line, lines) if name}
 
 
 def _reconcile_queue_state() -> bool:
@@ -1276,9 +1301,11 @@ _load_stats()
 
 
 # ─── Player input queue ───────────────────────────────────────────────────────
-# Stores actions submitted from the display companion (iPad etc.) until the DM
-# triggers the next turn. Drained by check_input.py via /player-input/drain.
-
+# The queue itself is QUEUE_FILE (.input_queue): see _queue_append. This list
+# is only what the pending_input broadcast shows. Nothing is ever delivered to
+# the GM from it, so it cannot hold an action the GM's front-end does not see.
+# It used to be a second queue persisted to player_input.json, read only by
+# check_input.py, which is how a grid click never reached a wrapper.py GM.
 _input_queue: list[dict] = []
 _input_lock = threading.Lock()
 
@@ -1311,25 +1338,6 @@ def _dice_pending_snapshot() -> list:
             for rid, e in _dice_pending.items() if e["chars"]
         ]
 
-
-def _load_input_queue() -> None:
-    global _input_queue
-    try:
-        with open(INPUT_FILE, encoding="utf-8") as f:
-            _input_queue = json.load(f)
-    except Exception:
-        _input_queue = []
-
-
-def _persist_input_queue() -> None:
-    try:
-        with open(INPUT_FILE, "w", encoding="utf-8") as f:
-            json.dump(_input_queue, f)
-    except Exception:
-        pass
-
-
-_load_input_queue()
 
 
 # SSE sequencing. Every broadcast payload gets a monotonically increasing `seq`.
@@ -2745,37 +2753,38 @@ def help_request():
 
 @app.route("/player-input", methods=["POST"])
 def player_input():
-    """Queue a player action submitted from the display companion.
+    """Queue a player action (legacy; the companion UI uses /player-input/send).
 
     Body: {"character": "Mira", "text": "I draw my rapier", "hold": false}
-    Broadcasts pending_input event to all connected browsers.
+    Appends to the same .input_queue every consumer claims, so a GM running
+    wrapper.py sees it as well as one running check_input.py. Broadcasts
+    pending_input event to all connected browsers.
     """
     if not _token_ok():
         return "Forbidden", 403
 
-    import time
     data = request.get_json(force=True, silent=True) or {}
-    character = str(data.get("character", "Party"))[:50]
-    text = str(data.get("text", ""))[:500]
-    hold = bool(data.get("hold", False))
-
-    # Strip shell metacharacters — input is player dialogue/action, not commands
-    text = re.sub(r"[`\\$]", "", text).strip()
+    character = str(data.get("character", "Party"))[:50].strip()
+    # One `[Char]: text` line: a bracket or newline here would forge a second
+    # action, and wrapper.py drops a whole batch over one malformed line.
+    text = _sanitize_input(str(data.get("text", "")))
+    if not _CHAR_NAME_RE.match(character):
+        return "Bad Request", 400
     if not text:
         return "empty", 400
 
     entry = {
         "character": character,
         "text": text,
-        "hold": hold,
-        "timestamp": time.time(),
+        "hold": bool(data.get("hold", False)),
+        "timestamp": _time.time(),
     }
 
+    if not _queue_append({character: text}, replace=False):
+        return "Error", 500
     with _input_lock:
         _input_queue.append(entry)
         current = list(_input_queue)
-
-    _persist_input_queue()
     _broadcast({"pending_input": current})
     return "", 204
 
@@ -3312,7 +3321,10 @@ def queue_consumed():
         _queue_status.clear()
     with _sent_lock:
         _sent.clear()
-    _broadcast({"queue_status": [], "sent_log": {}, "dm_processing": True})
+    with _input_lock:
+        _input_queue.clear()
+    _broadcast({"queue_status": [], "sent_log": {}, "pending_input": [],
+                "dm_processing": True})
     return "", 204
 
 
@@ -3350,20 +3362,33 @@ def submit_now():
 
 @app.route("/player-input/drain", methods=["POST"])
 def drain_player_input():
-    """Read and clear the player input queue. Called by check_input.py at turn start.
+    """Claim .input_queue and return its actions. Called by check_input.py.
 
-    Returns the drained entries as JSON, then broadcasts pending_input: [] to
-    clear the indicator on all connected displays.
+    This is the same file wrapper.py and the other consumers claim, taken with
+    the same queue_claim rename, so an action is returned here or injected
+    there, never both and never neither. Returns the entries as JSON
+    ([{"character", "text", "hold"}], the shape this route always had), then
+    clears the pending and QUEUED indicators on every display. A read that
+    fails after the claim restores the file and answers 503, so the caller
+    delivers nothing and the next drain retries.
     """
     if not _token_ok():
         return "Forbidden", 403
 
-    with _input_lock:
-        drained = list(_input_queue)
-        _input_queue.clear()
+    raw, delivered = queue_claim.claim_and_read(QUEUE_FILE)
+    if not delivered:
+        return "Queue read failed; it was restored", 503
+    drained = []
+    for line in raw.splitlines():
+        match = re.match(r"^\[([^\]]+)\]:\s*(.*)", line.strip())
+        if match and match.group(2):
+            drained.append({"character": match.group(1), "text": match.group(2),
+                            "hold": False})
 
-    _persist_input_queue()
+    with _input_lock:
+        _input_queue.clear()
     _broadcast({"pending_input": []})
+    _reconcile_queue_state()
     return jsonify(drained), 200
 
 
@@ -3373,7 +3398,8 @@ def drain_player_input():
 #   POST /combat        the engine's snapshot after each command -> SSE {"combat": ...}
 #   GET  /combat/state  the current snapshot, for a page opened mid-fight
 #   POST /combat/do     a player's click, run through the same CLI the GM uses;
-#                       the result is queued so the GM sees it and narrates it
+#                       the result is appended to .input_queue so the GM sees it
+#                       and narrates it, whichever front-end the GM runs
 
 TACTICS_CLI = os.path.join(SCRIPTS_DIR, "tactics", "combat.py")
 _combat_lock = threading.Lock()
@@ -3555,12 +3581,19 @@ def combat_do():
         return jsonify({"error": "Unreadable engine output."})
     if cmd in _COMBAT_WRITE and cmd != "reactions":   # a setting, not an action to narrate
         # Queue the outcome as the player's action so the GM narrates it.
-        text = re.sub(r"[`\\$]", "", res.get("text", ""))[:500]
+        # One line: every consumer reads `[Char]: text` per line, and wrapper.py
+        # rejects a whole batch over one unprefixed line.
+        text = " ".join(re.sub(r"[`\\$]", "", res.get("text", "")).split())[:500]
+        queued_text = f"{_GRID_PREFIX}{text}"
+        if not _queue_append({actor["name"]: queued_text}, replace=False):
+            # The engine already applied the action, so the click succeeded;
+            # only the GM's copy failed. Say so where the GM will see it.
+            print(f"[display] could not queue grid action for the GM: "
+                  f"[{actor['name']}]: {queued_text}", file=sys.stderr, flush=True)
         with _input_lock:
-            _input_queue.append({"character": actor["name"], "text": f"(grid) {text}",
+            _input_queue.append({"character": actor["name"], "text": queued_text,
                                  "hold": False, "timestamp": _time.time()})
             current = list(_input_queue)
-        _persist_input_queue()
         _broadcast({"pending_input": current})
     return jsonify({"ok": True, "text": res.get("text", ""), "result": res.get("result", {})})
 
