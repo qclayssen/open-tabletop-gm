@@ -26,6 +26,16 @@ def fight(*tokens, order=None):
 
 # ─── spell attacks and saves ──────────────────────────────────────────────────
 
+
+def test_castable_exposes_action_and_slot_costs():
+    enc = fight(caster(), frog("frog-1", (4, 0)))
+    rows = {row["name"]: row for row in spells.castable(enc, "kairos")}
+    assert rows["Fire Bolt"]["action_cost"] == "action"
+    assert rows["Fire Bolt"]["slot_cost"] is None
+    assert rows["Magic Missile"]["action_cost"] == "action"
+    assert rows["Magic Missile"]["slot_cost"] == 1
+
+
 def test_fire_bolt_is_a_spell_attack_with_the_players_dice():
     k, f = caster(), frog("frog-1", (4, 0))
     enc = fight(k, f)

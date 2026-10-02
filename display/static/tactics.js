@@ -339,6 +339,21 @@
     return out;
   }
 
+  // Describe the cost fields the engine sent. Missing fields stay silent; the
+  // display never infers action economy, slot use, movement cost or provocation.
+  function actionCost(row) {
+    const r = row || {}, bits = [];
+    const words = { action: 'Action', bonus: 'Bonus action', reaction: 'Reaction' };
+    if (r.action_cost === 'movement' && typeof r.feet === 'number' && isFinite(r.feet))
+      bits.push(r.feet + ' ft movement');
+    else if (typeof r.action_cost === 'string' && words[r.action_cost]) bits.push(words[r.action_cost]);
+    if (Number.isInteger(r.slot_cost) && r.slot_cost > 0) bits.push('level ' + r.slot_cost + ' slot');
+    if (r.action_cost !== 'movement' && typeof r.feet === 'number' && isFinite(r.feet))
+      bits.push(r.feet + ' ft movement');
+    if (r.action_cost === 'movement' && r.provokes === true) bits.push('provokes opportunity attack');
+    return bits.join(' · ');
+  }
+
   // One target's forecast: the chance in the engine's own direction, the expected
   // damage, the chips behind them and whether walking away provokes it.
   function forecast(row) {
@@ -1829,8 +1844,10 @@
     if (!f) return '';
     const chips = f.chips.map(c => `<li class="tx-why tx-why-${c.kind}">${c.glyph ? `<i aria-hidden="true">${c.glyph}</i>` : ''}${esc(c.text)}</li>`);
     if (f.provokes) chips.push('<li class="tx-why tx-why-warn"><i aria-hidden="true">\u26A0 </i>moving away provokes an opportunity attack</li>');
+    const cost = actionCost(row);
     return `<div class="tx-forecast" role="group" aria-label="Forecast against ${esc(name)}">` +
       `<div class="tx-fc-head"><strong>${esc(name)}</strong> <span class="tx-fc-pct">${esc(f.phrase)}</span>` +
+      (cost ? ` <span class="tx-fc-cost">${esc(cost)}</span>` : '') +
       (f.expected !== null ? ` <span class="tx-fc-exp">about ${f.expected} damage</span>` : '') + '</div>' +
       (chips.length ? `<ul class="tx-whys">${chips.join('')}</ul>` : '') + '</div>';
   }
@@ -1989,8 +2006,10 @@
     for (const name of names) {
       const legal = ui.targets.filter(r => r.attack === name && r.legal);
       const best = legal.reduce((m, r) => Math.max(m, r.hit_percent), 0);
+      const cost = legal.length ? actionCost(legal[0]) : '';
       button(name + (legal.length ? ` (up to ${best}%)` : ' (no target)'), () => { ui.attack = name; render(); },
-        { key: 'attack:' + name, pressed: ui.attack === name, disabled: !legal.length, parent: b });
+        { key: 'attack:' + name, pressed: ui.attack === name, disabled: !legal.length, parent: b,
+          meta: cost, title: cost || undefined });
     }
   }
 
@@ -2010,7 +2029,8 @@
 
   function describe(sp) {
     const bits = [];
-    if (sp.casting === 'bonus') bits.push('bonus action');
+    const cost = actionCost(sp);
+    if (cost) bits.push(cost);
     if (sp.area) bits.push(`${sp.area.size} ft ${sp.area.shape}`);
     bits.push({ attack: 'spell attack', save: 'save', darts: 'auto-hit darts', heal: 'healing',
                 effect: 'on yourself', narrate: 'GM narrates', unknown: 'not readable' }[sp.mode] || sp.mode);

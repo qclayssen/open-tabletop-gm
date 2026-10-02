@@ -73,6 +73,14 @@ class Chips(unittest.TestCase):
 
 @unittest.skipUnless(NODE, "node is not installed")
 class Forecast(unittest.TestCase):
+    def test_action_cost_label_uses_only_engine_fields(self):
+        self.assertEqual(run('actionCost({action_cost: "action", slot_cost: 2})'),
+                         "Action · level 2 slot")
+        self.assertEqual(run('actionCost({action_cost: "bonus"})'), "Bonus action")
+        self.assertEqual(run('actionCost({action_cost: "movement", feet: 15, provokes: true})'),
+                         "15 ft movement · provokes opportunity attack")
+        self.assertEqual(run('actionCost({})'), "")
+
     def test_the_engines_percent_direction_and_damage_are_quoted(self):
         f = run(f"forecast({json.dumps(ROW)})")
         self.assertEqual((f["percent"], f["phrase"], f["expected"], f["provokes"]),
@@ -96,7 +104,8 @@ class Wiring(unittest.TestCase):
 
     def test_every_class_the_new_ui_sets_is_styled(self):
         for cls in ("tx-econ", "tx-pip", "tx-spent", "tx-forecast", "tx-fc-pct", "tx-whys", "tx-why",
-                    "tx-why-adv", "tx-why-dis", "tx-why-warn", "tx-why-cover", "tx-forecast-slot"):
+                    "tx-why-adv", "tx-why-dis", "tx-why-warn", "tx-why-cover", "tx-forecast-slot",
+                    "tx-fc-cost"):
             self.assertIn("." + cls, self.css, cls)
         for cls in ("tx-econ", "tx-pip", "tx-spent", "tx-forecast", "tx-fc-pct", "tx-whys",
                     "tx-why", "tx-why-warn", "tx-forecast-slot"):

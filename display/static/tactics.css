@@ -187,6 +187,8 @@ body.tx-min #tx-panel { max-height: none; }
 .tx-forecast { border: 1px solid var(--tx-line); border-left: 4px solid var(--tx-brass); border-radius: 6px;
   background: var(--tx-paper); padding: 6px 8px; font-size: 13px; color: var(--tx-ink); margin-bottom: 4px; }
 .tx-fc-pct { font-weight: 700; }
+.tx-fc-cost { display: inline-block; padding: 1px 5px; border: 1px solid var(--tx-line);
+  border-radius: 3px; color: var(--tx-muted); font-size: .9em; }
 .tx-fc-exp { color: var(--tx-muted); }
 .tx-whys { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px; }
 .tx-why { border: 1px solid var(--tx-line); border-radius: 10px; padding: 1px 7px; font-size: 12px; background: var(--tx-panel); }

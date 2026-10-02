@@ -381,6 +381,8 @@ def preview(enc, caster_ref, spell: str, target=None, level: int = None) -> dict
     spec = _spec(enc, c, spell, level)
     R = rules_for(enc)
     out = {"spell": spec["name"], "mode": spec["mode"], "squares": [], "affected": [],
+           "action_cost": spec["casting"],
+           "slot_cost": (spec["slot"] or None) if spec["mode"] != "reaction" else None,
            "legal": True, "reason": ""}
     try:
         tg = _targets(enc, c, spec, [target] if isinstance(target, str) else (target or []))
@@ -423,6 +425,9 @@ def preview(enc, caster_ref, spell: str, target=None, level: int = None) -> dict
                          "ally": not hostile(c, t), "darts": n,
                          "expected": round(n * average(spec["dart"]["dice"])
                                            * R.damage_multiplier(t, spec["dart"].get("type")), 1)})
+    for row in rows:
+        row["action_cost"] = spec["casting"]
+        row["slot_cost"] = (spec["slot"] or None) if spec["mode"] != "reaction" else None
     out["affected"] = rows
     out["text"] = _preview_text(spec, rows, out["squares"])
     return out
@@ -458,6 +463,8 @@ def castable(enc, caster_ref) -> list:
                         "targeting": "none", "level": None, "casting": None, "area": None})
             continue
         row = {"name": spec["name"], "level": spec["level"], "casting": spec["casting"],
+               "action_cost": spec["casting"],
+               "slot_cost": (spec["slot"] or None) if spec["mode"] != "reaction" else None,
                "mode": spec["mode"], "range": spec["range"], "area": spec["area"],
                "concentration": spec["concentration"],
                "targeting": ("area" if spec["area"] else "darts" if spec["mode"] == "darts"

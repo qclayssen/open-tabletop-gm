@@ -368,6 +368,7 @@ def preview_move(enc: Encounter, token_ref, square) -> dict:
     if hazards:
         text += f" Crosses hazard at {', '.join(hazards)}."
     return {"path": [label(p) for p in path], "feet": feet, "legal": legal,
+            "action_cost": "movement", "provokes": bool(warnings),
             "opportunity_attacks": warnings, "hazards": hazards, "text": text}
 
 
@@ -595,7 +596,8 @@ def attack_options(enc: Encounter, attacker_ref) -> list:
                 continue
             ctx, why = _attack_context(enc, a, t, atk)
             row = {"attack": atk["name"], "target": t.id, "target_name": t.name,
-                   "square": t.square, "legal": ctx is not None, "reason": why}
+                   "square": t.square, "legal": ctx is not None, "reason": why,
+                   "action_cost": "action"}
             if ctx:
                 hc = R.hit_chance(a, t, atk, ctx)
                 row.update(hit_percent=hc["percent"], advantage=hc["advantage"],

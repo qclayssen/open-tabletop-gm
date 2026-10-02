@@ -217,6 +217,7 @@ def test_attack_options_rank_targets_with_hit_chance():
     bolt = [o for o in opts if o["attack"] == "Fire Bolt"]
     assert {o["target"] for o in bolt} == {"frog-1", "frog-2"}
     assert all(o["hit_percent"] == 80 for o in bolt)
+    assert all(o["action_cost"] == "action" for o in opts)
     assert opts[0]["legal"] and opts[0]["attack"] == "Fire Bolt"     # 80% x 5.5 beats the dagger
 
 
