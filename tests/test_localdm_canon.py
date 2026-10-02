@@ -56,6 +56,19 @@ def test_a_reveal_without_a_key_still_gets_one():
     assert out[0]["key"] == "it-is-a-receipt"
 
 
+def test_death_requires_a_named_subject_and_verbatim_text():
+    narration = "The guard dies at the gate."
+    out = verify(parse('[{"kind":"death","speaker":"The guard",'
+                       '"text":"The guard dies at the gate."}]'), narration, turn=9)
+    assert out == [{"kind": "death", "speaker": "The guard",
+                    "key": "the-guard", "dead": True,
+                    "text": narration, "turn": 9}]
+    assert verify(parse('[{"kind":"death","text":"The guard dies at the gate."}]'),
+                  narration) == []
+    assert verify(parse('[{"kind":"death","speaker":"The guard",'
+                        '"text":"The guard falls."}]'), narration) == []
+
+
 # ── tolerating what a small model actually sends back ─────────────────────────
 
 def test_parse_accepts_a_fenced_or_wrapped_array():
@@ -98,6 +111,17 @@ def test_a_reveal_is_never_recorded_twice_however_it_is_worded(tmp_path):
     again = c.add([{"kind": "reveal", "key": "Moonstone Nature",
                     "text": "That rock is basically a receipt.", "turn": 90}])
     assert again == [] and len(c.records()) == 1
+
+
+def test_death_is_persisted_as_an_explicit_dead_flag_and_deduped_by_subject(tmp_path):
+    c = Canon(tmp_path)
+    first = {"kind": "death", "speaker": "The Guard",
+             "text": "The Guard dies at the gate.", "turn": 2}
+    saved = c.add([first])
+    assert saved == [{**first, "key": "the-guard", "dead": True}]
+    again = c.add([{**first, "text": "The Guard is dead.", "turn": 12}])
+    assert again == []
+    assert Canon(tmp_path).records() == saved
 
 
 def test_an_identical_repeated_line_costs_no_budget(tmp_path):
@@ -152,19 +176,25 @@ def test_the_block_does_not_double_quote_a_line_that_arrived_quoted():
 def test_render_labels_each_kind_so_the_dm_knows_what_it_is():
     out = render([{"kind": "dialogue", "speaker": "Maribeth", "text": '"It is a receipt."'},
                   {"kind": "reveal", "text": "It is a receipt."},
-                  {"kind": "interaction", "speaker": "Maribeth", "text": "counts the coin"}])
+                  {"kind": "interaction", "speaker": "Maribeth", "text": "counts the coin"},
+                  {"kind": "death", "speaker": "Maribeth", "dead": True,
+                   "text": "Maribeth died at the gate."}])
     assert "- Maribeth: It is a receipt." in out
     assert "- already revealed: It is a receipt." in out
     assert "said or done" in out
+    assert "- DEAD, stays dead: Maribeth: Maribeth died at the gate." in out
     assert render([]) == ""
 
 
 def test_build_messages_carries_the_canon_between_summary_and_turns():
     msgs = build_messages("sys", "", "We met a tollkeeper.", [{"role": "dm", "text": "She nods."}],
-                          canon=[{"kind": "dialogue", "speaker": "Maribeth", "text": "Not again."}])
+                          canon=[{"kind": "dialogue", "speaker": "Maribeth", "text": "Not again."},
+                                 {"kind": "death", "speaker": "The Guard", "dead": True,
+                                  "text": "The Guard died at the gate."}])
     user = msgs[1]["content"]
     assert user.index("Story so far") < user.index("Canon") < user.index("Recent turns")
     assert "Maribeth: Not again." in user
+    assert "DEAD, stays dead: The Guard" in user
 
 
 def test_canon_is_trimmed_before_the_recent_turns():
