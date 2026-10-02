@@ -520,6 +520,24 @@ def test_advantage_keeps_the_single_supplied_face_and_flags_it():
     assert (rec.natural, rec.total, rec.dice, rec.advantage) == (16, 21, [16], "advantage")
 
 
+def test_engine_advantage_keeps_the_higher_face_and_disadvantage_the_lower():
+    """C3: the engine's own advantage branch had no assertion anywhere.
+
+    `roll_mode: auto` and "Roll for me" roll two d20s in the engine and keep one,
+    but the only other advantage test passes `player=True`, which returns before
+    that branch is reached. Swap `max` and `min` in `roller.py` and the suite
+    stays green while every engine-rolled advantage inverts (prone targets, long
+    range, hidden attackers, Pack Tactics). Scripted dice pin which face is kept,
+    in both directions, so a swap fails here.
+    """
+    adv = roller(3, 18).roll("1d20+5", "Kairos", "Fire Bolt", advantage="advantage")
+    assert (adv.dice, adv.natural, adv.total, adv.advantage, adv.source) == \
+        ([3, 18], 18, 23, "advantage", "engine")
+    dis = roller(3, 18).roll("1d20+5", "Kairos", "Fire Bolt", advantage="disadvantage")
+    assert (dis.dice, dis.natural, dis.total, dis.advantage, dis.source) == \
+        ([3, 18], 3, 8, "disadvantage", "engine")
+
+
 def test_gm_typed_condition_add_respects_condition_immunities(camp, capsys):
     begin(capsys)
     path = _edit(camp)

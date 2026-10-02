@@ -464,7 +464,7 @@ def cmd_formation(args, camp_dir, enc=None) -> tuple:
     if action == "show":
         spec = formations.load(camp_dir, args.name)
         data = {"formation": spec}
-        rows = [f"{m.get('label') or m['name']} ({m['side']}) at +{m['dx']},{+m['dy']} from the anchor "
+        rows = [f"{m.get('label') or m['name']} ({m['side']}) at {m['dx']:+d},{m['dy']:+d} from the anchor "
                 f"— {m['nx']:.3f}, {m['ny']:.3f} of the map"
                 for m in spec["members"]]
         head = (f"Formation {spec['name']!r}"

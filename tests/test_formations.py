@@ -43,7 +43,7 @@ for _p in (ROOT / "scripts", ROOT / "tests"):
         sys.path.insert(0, str(_p))
 
 import tactics_fixtures as fx                                     # noqa: E402
-from tactics import formations, grid, maps, state                 # noqa: E402
+from tactics import cli, formations, grid, maps, state            # noqa: E402
 
 RULES_MODULE = sys.modules[type(fx.RULES).__module__]
 KAIROS_MD = (ROOT / "tests" / "fixtures" / "Kairos_Level1.md").read_text(encoding="utf-8")
@@ -671,3 +671,133 @@ def test_formation_does_not_touch_the_encounter_file(camp):
     before = path.read_text(encoding="utf-8")
     formations.save(camp, formations.capture(enc, "Frog Pool"))
     assert path.read_text(encoding="utf-8") == before
+
+
+# ─── the CLI: formation save|list|show|place, and start --formation ───────────
+#
+# `test_formations.py` covered the library (94%) and never touched
+# `tactics.cli`, so the layer that turns a saved spec into live tokens -- token-id
+# slugging and de-duplication, off-map/blocked clamping, per-monster
+# `token_from_monster` -- had no test at all. These drive `cli.main` in-process
+# the way `test_tactics_cli.py` does, so the dispatch branch and the CLI-only
+# formatting are both executed.
+
+def _cli(capsys, *argv):
+    code = cli.main(["-c", "demo", *argv])
+    return code, capsys.readouterr().out.strip()
+
+
+def _flank(name="Flank"):
+    """Two monsters whose cell offsets straddle the anchor on both axes, so
+    `formation show`'s sign rendering is actually exercised. Straight out of a
+    capture every offset is non-negative (the anchor is the top-left-most member),
+    which is why the `+-` bug survived: nothing in the library produces a
+    negative one, and no CLI test existed to build one by hand."""
+    return {
+        "schema": formations.FORMATION_SCHEMA,
+        "version": formations.SCHEMA_VERSION,
+        "name": name,
+        "captured": "2026-10-02",
+        "from_map": "arena",
+        "from_size": {"width": 12, "height": 6},
+        "anchor": [6, 3],
+        "members": [
+            {"name": "Giant Frog", "label": "Giant Frog", "side": "enemy",
+             "dx": -4, "dy": -2, "nx": round(2 / 12, 4), "ny": round(1 / 6, 4)},
+            {"name": "Goblin", "label": "Goblin", "side": "enemy",
+             "dx": 3, "dy": 1, "nx": round(9 / 12, 4), "ny": round(4 / 6, 4)},
+        ],
+        "info": None,
+    }
+
+
+def test_formation_list_says_there_are_none_before_the_first_save(camp, capsys):
+    code, out = _cli(capsys, "formation", "list")
+    assert code == 0 and "No formations saved yet" in out
+
+
+def test_formation_list_names_what_is_saved(camp, capsys):
+    formations.save(camp, _flank())
+    code, out = _cli(capsys, "formation", "list")
+    assert code == 0
+    assert "Formations in this campaign:" in out
+    assert "flank: 2 token(s), captured" in out
+    assert "arena" in out
+
+
+def test_formation_show_signs_each_offset_exactly_once(camp, capsys):
+    """C4: the `show` rows formatted the offsets as literal `+` plus the number,
+    so a negative axis read `+-4` and a positive one lost its sign entirely
+    (`at +3,1`). The fix renders both with `:+d`. This asserts the signed pair,
+    which is wrong on the pre-fix code in both directions."""
+    formations.save(camp, _flank())
+    code, out = _cli(capsys, "formation", "show", "flank")
+    assert code == 0
+    assert "Giant Frog (enemy) at -4,-2 from the anchor" in out
+    assert "Goblin (enemy) at +3,+1 from the anchor" in out
+    assert "+-" not in out
+
+
+def test_formation_place_previews_on_a_map_without_starting_a_fight(camp, capsys):
+    """`place` is the documented way to see where a formation lands on a map it
+    was not captured on, and it must not touch `combat/encounter.json`."""
+    formations.save(camp, _flank())
+    code, out = _cli(capsys, "formation", "place", "flank", "blank", "--at", "H7")
+    assert code == 0
+    assert "anchored at H7" in out
+    assert "  Giant Frog (enemy) at D5" in out          # H7 is (7,6); +(-4,-2) is (3,4)
+    assert "  Goblin (enemy) at K8" in out              # (7,6) + (3,1) is (10,7)
+    assert not (camp / "combat" / "encounter.json").exists()
+
+
+def test_formation_place_reports_a_member_on_terrain_it_cannot_stand_on(camp, capsys):
+    """A wall is reported, not nudged: nudging silently changes a distance the GM
+    chose, and dropping the monster loses it. Training Yard has a wall at G3."""
+    spec = _flank("Pinned")
+    spec["anchor"] = [0, 0]
+    spec["members"] = [{"name": "Goblin", "label": "Goblin", "side": "enemy",
+                        "dx": 0, "dy": 0, "nx": 0.5, "ny": 0.5}]
+    formations.save(camp, spec)
+    code, out = _cli(capsys, "formation", "place", "pinned", "training-yard", "--at", "G3")
+    assert code == 0
+    assert "Goblin is on G3" in out
+    assert "does not let a creature stand on" in out
+
+
+def test_formation_save_reads_the_running_board(camp, srd, capsys):
+    assert _cli(capsys, "start", "blank", "--pc", "Kairos@A1",
+                "--monster", "Giant Frog@H7", "--monster", "Goblin@K8",
+                "--seed", "3")[0] == 0
+    code, out = _cli(capsys, "formation", "save", "Bog Ambush", "--info", "for the reeds")
+    assert code == 0 and "Saved formation 'Bog Ambush'" in out
+    back = formations.load(camp, "bog-ambush")
+    assert {m["name"] for m in back["members"]} == {"Giant Frog", "Goblin"}
+    assert back["info"] == "for the reeds"
+    assert back["from_size"] == {"width": 24, "height": 16}
+
+
+def test_start_replays_a_saved_formation_onto_the_map(camp, srd, capsys):
+    """The whole point of the CLI: a saved spec becomes live tokens. The dispatch
+    branch and `_place_formations` both run here, and the squares are asserted,
+    not just the note."""
+    formations.save(camp, _flank())
+    code, out = _cli(capsys, "start", "blank", "--pc", "Kairos@A1",
+                     "--formation", "flank", "--at", "H7", "--seed", "3")
+    assert code == 0
+    assert "Formation 'Flank' at H7: 2 token(s)." in out
+    enc = state.load(state.encounter_path(camp))
+    foes = [t for t in enc.tokens.values() if t.side == "enemy"]
+    assert {t.name for t in foes} == {"Giant Frog", "Goblin"}
+    assert sorted((t.x, t.y) for t in foes) == [(3, 4), (10, 7)]
+
+
+def test_start_reports_a_formation_that_does_not_fit_its_anchor(camp, srd, capsys):
+    """An anchor near the edge is a choice the GM made; the replay clamps the
+    member back onto the map and says so, rather than quietly moving it."""
+    formations.save(camp, _flank())
+    code, out = _cli(capsys, "start", "blank", "--pc", "Kairos@A1",
+                     "--formation", "flank", "--at", "X1", "--seed", "3")
+    assert code == 0
+    assert "would have been at" in out
+    assert "off this 24x16 map; moved to" in out
+
