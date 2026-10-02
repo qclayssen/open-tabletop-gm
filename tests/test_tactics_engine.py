@@ -220,6 +220,114 @@ def test_attack_options_rank_targets_with_hit_chance():
     assert opts[0]["legal"] and opts[0]["attack"] == "Fire Bolt"     # 80% x 5.5 beats the dagger
 
 
+# ─── spotted: a hidden creature that walks into the open ─────────────────────
+
+# `engine.reveal_hidden` (engine.py:724-739) is the "a hostile spots you" rule:
+# a hidden creature that any hostile can see with no cover at all is found. It
+# is reached from `move` (engine.py:441), so the rule only fires when a hidden
+# creature moves, and the audit found it executed by nothing: 732-738 were never
+# in the covered set. These are the tests that put them there.
+
+def test_a_hidden_creature_in_the_open_is_spotted():
+    """before fix: 732-738 of engine.py are never executed by the suite, so the
+    whole spotting branch -- the `cover()` call, the `remove_condition`, the
+    report line -- is asserted here for the first time. Mutant: changing
+    `cov["cover"] == 0` to `!=` leaves Kairos hidden and this fails."""
+    k, f = kairos(pos=(0, 0)), frog("frog-1", (2, 0))
+    k.add_condition("hidden")
+    enc = encounter([k, f])
+    assert enc.board().cover((2, 0), (0, 0)) == {"los": True, "cover": 0}
+    assert engine.reveal_hidden(enc) == ["Frog 1 spots Kairos."]
+    assert not k.has("hidden")
+
+
+def test_half_cover_keeps_a_hidden_creature_hidden():
+    """Cover is the rule and not a proxy for it: the hostile has a line of sight
+    (the `o` feature does not block sight) and still cannot see the hider well
+    enough to spot them. Mutant: `cov["cover"] == 0` -> `!= 0` fails this,
+    because half cover would then count as spotted."""
+    k, f = kairos(pos=(0, 0)), frog("frog-1", (2, 0))
+    k.add_condition("hidden")
+    enc = encounter([k, f], rows=[".o...."])       # a feature between A1 and C1
+    assert enc.board().cover((2, 0), (0, 0))["cover"] == 2
+    assert engine.reveal_hidden(enc) == []
+    assert k.has("hidden")
+
+
+def test_no_line_of_sight_keeps_a_hidden_creature_hidden():
+    """A wall is total cover: no line of sight from any corner, so no spotting.
+    This is the same wall as `test_no_line_of_sight_through_a_wall`, used the
+    other way round."""
+    k, f = kairos(pos=(0, 1)), frog("frog-1", (4, 1))
+    k.add_condition("hidden")
+    rows = ["..#..",
+            "..#..",
+            "..#.."]
+    enc = encounter([k, f], rows=rows)
+    assert enc.board().cover((4, 1), (0, 1))["los"] is False
+    assert engine.reveal_hidden(enc) == []
+    assert k.has("hidden")
+
+
+def test_a_hostile_that_cannot_act_cannot_spot_anyone():
+    """A creature that is down does not look around. The watcher is in the open
+    with a clear line of sight, so only `R.can_act` can be what keeps the hider
+    hidden."""
+    k, f = kairos(pos=(0, 0)), frog("frog-1", (2, 0))
+    k.add_condition("hidden")
+    f.add_condition("unconscious")
+    enc = encounter([k, f])
+    assert not engine.rules_for(enc).can_act(f)
+    assert engine.reveal_hidden(enc) == []
+    assert k.has("hidden")
+
+
+def test_a_hidden_creature_is_not_its_own_spotter():
+    """`hostile(a, a)` is False, so a hidden creature with nobody else on the
+    board stays hidden. Without that, hiding would be impossible."""
+    k = kairos(pos=(0, 0))
+    k.add_condition("hidden")
+    assert engine.reveal_hidden(encounter([k])) == []
+    assert k.has("hidden")
+
+
+def test_an_ally_does_not_spot_a_hidden_creature():
+    """Only hostiles look for you. An ally standing in the open beside a hidden
+    party member sees them and says nothing."""
+    k = kairos(pos=(0, 0))
+    k.add_condition("hidden")
+    mira = kairos(pos=(2, 0))
+    mira.id, mira.name, mira.side = "mira", "Mira", "ally"
+    enc = encounter([k, mira])
+    assert not engine.hostile(k, mira)
+    assert engine.reveal_hidden(enc) == []
+    assert k.has("hidden")
+
+
+def test_only_the_first_hostile_that_sees_is_reported():
+    """Two hostiles both have line of sight and no cover. The rule fires once
+    and breaks: a second "spots" line would be noise, not information. Mutant:
+    removing the `break` reports Frog 2 as well and this fails."""
+    k = kairos(pos=(0, 0))
+    k.add_condition("hidden")
+    enc = encounter([k, frog("frog-1", (2, 0)), frog("frog-2", (0, 2))])
+    assert engine.reveal_hidden(enc) == ["Frog 1 spots Kairos."]
+    assert not k.has("hidden")
+
+
+def test_moving_into_the_open_gives_a_hidden_position_away():
+    """The end-to-end path: `move` calls `reveal_hidden` after the hazard and
+    after-move effects, so the "walks into an open square with a hostile looking
+    at it" case is a real command and not only a unit. Kairos moves from A1 to
+    B1, one square from Frog 1, and is spotted on arrival."""
+    k, f = kairos(pos=(0, 0)), frog("frog-1", (3, 0))
+    enc = start(encounter([k, f]), ["kairos", "frog-1"])
+    k.add_condition("hidden")
+    res = engine.move(enc, roller(), "kairos", "B1")
+    assert not k.has("hidden")
+    assert res["text"].endswith("Frog 1 spots Kairos.")
+
+
 # ─── dying ───────────────────────────────────────────────────────────────────
 
 def test_death_save_at_the_start_of_a_dying_pcs_turn():

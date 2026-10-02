@@ -635,3 +635,42 @@ def test_a_scene_refuses_what_it_cannot_place(camp):
     traversal["map"] = "../../etc/passwd"
     assert scenes().validate(traversal)
     assert "plain slug" in str(scenes().validate(traversal))
+
+
+def test_a_hand_edited_scene_is_refused_by_the_schema_gate(camp):
+    """before fix: `scenes.py:490-491` (the `SCENE_FIELDS.validate` call and the
+    ValueError it catches) and `scenes.py:498` (the non-positive extent) are
+    never executed by the suite. `test_a_scene_refuses_what_it_cannot_place`
+    pins the marker, pair, and slug guards; these are the two that were left.
+
+    A scene file is hand-editable and `load` reads whatever is in it, so a field
+    of the wrong type has to come back as a sentence for the GM rather than as a
+    traceback, and a scene with no size in it cannot be a fraction of anything.
+    """
+    spec = scenes().blank(camp, "strixhaven-campus")
+
+    # The schema gate: `marker.x` is a number in every scene `blank` writes, and
+    # a hand-edit can break exactly that. `validate` catches the SchemaField
+    # ValueError and returns it; mutate the `except ValueError` at 490-491 away
+    # and this raises instead of returning, so the test fails.
+    wrong_type = json.loads(json.dumps(spec))
+    wrong_type["marker"]["x"] = "halfway"
+    assert scenes().validate(wrong_type) == ["marker.x: expected a number, got 'halfway'"]
+    with pytest.raises(scenes().SceneError, match="refusing to save"):
+        scenes().save(camp, wrong_type)
+
+    # A non-positive extent is refused by 497-498, before the marker loop, since
+    # a fraction of a zero or negative extent is not a place. Mutant: `elif False`
+    # at 497 leaves these empty and this fails.
+    for bad in ([0.0, 1895.0], [-1400.0, 1895.0]):
+        no_size = json.loads(json.dumps(spec))
+        no_size["extent"] = bad
+        assert scenes().validate(no_size) == [f"extent {bad} has no positive size in it"]
+        with pytest.raises(scenes().SceneError, match="no positive size"):
+            scenes().save(camp, no_size)
+
+    # And the reader a hand-edited file actually reaches: `load` returns None for
+    # a scene that will not validate, so a bad edit is a no-op for the display
+    # rather than a marker in the wrong place.
+    (camp / "scene.json").write_text(json.dumps(wrong_type), encoding="utf-8")
+    assert scenes().load(camp) is None
