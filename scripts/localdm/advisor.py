@@ -22,7 +22,7 @@ KEYWORDS = {
     "historian": ("lore", "histor", "ancient", "legend", "cult", "god", "realm", "kingdom",
                   "myth", "origin"),
     "continuity": ("earlier", "before", "remember", "thread", "promise", "npc", "contradict",
-                   "consisten", "last session", "who is"),
+                   "consisten", "last session", "who is", "dead", "died", "deceased"),
     "director": ("scene", "reveal", "death", "dies", "dramatic", "pacing", "villain",
                  "opening", "ending", "moment"),
     "tactician": ("fight", "combat", "encounter", "enemy", "enemies", "boss", "tactic",
