@@ -48,6 +48,27 @@ def test_pick_routes_by_keyword_and_falls_back():
     assert len(advisor.pick("fight enemy lore legend rule balance scene reveal earlier")) == 3
 
 
+@pytest.mark.parametrize("question", [
+    "who killed X",
+    "is X dead",
+    "X died last session",
+    "the king died",
+])
+def test_pick_routes_dead_npc_questions_to_continuity(question):
+    picked = advisor.pick(question)
+    assert picked[0] == "continuity"
+    assert "director" not in picked
+
+
+@pytest.mark.parametrize("question", [
+    "Should I roll a d20?",
+    "advantage on the die",
+    "Should I roll a death save?",
+])
+def test_pick_keeps_dice_and_death_save_questions_with_arbiter(question):
+    assert advisor.pick(question)[0] == "arbiter"
+
+
 def test_parse_advise():
     assert advisor.parse_advise("historian who built the tower?") == (
         ["historian"], "who built the tower?", False)
