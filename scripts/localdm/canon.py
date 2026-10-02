@@ -26,7 +26,7 @@ import threading
 
 from .reply import strip_think
 
-KINDS = ("dialogue", "interaction", "reveal")
+KINDS = ("dialogue", "interaction", "reveal", "death")
 
 # A quotation mark pair the model may or may not have carried over from the
 # narration. Stripped at render time so canon is not double-quoted.
@@ -84,21 +84,21 @@ class Canon:
         return out
 
     def _seen(self) -> tuple:
-        """(reveal keys, exact (kind, speaker, text) tuples) already recorded."""
+        """(reveal/death keys, exact (kind, speaker, text) tuples) already recorded."""
         keys, exacts = set(), set()
         for r in self.records():
-            if r.get("kind") == "reveal" and r.get("key"):
-                keys.add(r["key"])
+            if r.get("kind") in ("reveal", "death") and r.get("key"):
+                keys.add((r["kind"], r["key"]))
             exacts.add((r.get("kind", ""), r.get("speaker", ""), r["text"]))
         return keys, exacts
 
     def add(self, records) -> list:
         """Append the records that are not already here. Returns what was kept.
 
-        A reveal is deduped on its key, so the same truth disclosed in two
-        sessions with different wording cannot be recorded twice — the failure
-        this file exists to prevent. Dialogue and interaction dedupe on exact
-        text, so a repeated line is kept out of the replay budget.
+        Reveals and deaths are deduped on their key, so the same truth or death
+        cannot be recorded twice with different wording. Dialogue and
+        interaction dedupe on exact text, so a repeated line is kept out of the
+        replay budget.
         """
         with self._lock:
             keys, exacts = self._seen()
@@ -111,16 +111,20 @@ class Canon:
                 if not text:
                     continue
                 speaker = _collapse(r.get("speaker", ""))
-                key = _slug(r.get("key") or text[:60])
-                if kind == "reveal" and key in keys:
+                if kind == "death" and not speaker:
+                    continue
+                key = _slug(speaker if kind == "death" else (r.get("key") or text[:60]))
+                if kind in ("reveal", "death") and (kind, key) in keys:
                     continue
                 if (kind, speaker, text) in exacts:
                     continue
-                keys.add(key)
+                if kind in ("reveal", "death"):
+                    keys.add((kind, key))
                 exacts.add((kind, speaker, text))
                 fresh.append({"kind": kind, "speaker": speaker, "text": text,
                               "turn": int(r.get("turn", 0) or 0),
-                              **({"key": key} if kind == "reveal" else {})})
+                              **({"key": key} if kind in ("reveal", "death") else {}),
+                              **({"dead": True} if kind == "death" else {})})
             if not fresh:
                 return []
             self.dir.mkdir(parents=True, exist_ok=True)
@@ -163,6 +167,8 @@ def render_one(record) -> str:
         return f"- {who}: {unquote(record['text'])}"
     if kind == "reveal":
         return f"- already revealed: {record['text']}"
+    if kind == "death":
+        return f"- DEAD, stays dead: {who}: {record['text']}"
     if kind == "interaction" and who:
         return f"- {who}, said or done: {record['text']}"
     return f"- {kind}: {record['text']}"
@@ -176,11 +182,12 @@ def render(records) -> str:
 
 PROMPT = """You keep the canon of a tabletop roleplaying session: the lines that must not be forgotten or reworded. Read the new turns and return a JSON array. Each element:
 
-{"kind": "dialogue"|"interaction"|"reveal", "speaker": "NPC name or empty", "key": "reveals only, short_snake_case", "text": "..."}
+{"kind": "dialogue"|"interaction"|"reveal"|"death", "speaker": "NPC name or empty; required for death", "key": "reveals/deaths only, short_snake_case", "text": "..."}
 
 - dialogue: something an NPC said, word for word.
 - interaction: what the player and an NPC actually did or agreed, in one plain sentence.
 - reveal: a fact about the world, a person or an item that the narration disclosed to the player.
+- death: a named character who died in the narration; speaker is the character's name. This is permanent canon.
 
 Rules:
 - Copy "text" character for character from the narration. Never paraphrase, summarize or rewrite it, even to shorten it. A line that is not a verbatim span will be discarded.
@@ -247,10 +254,15 @@ def verify(candidates: list, narration: str, turn: int = 0) -> list:
         span = _collapse(d.get("text", "")).strip('"“”«')
         if not span or span not in hay:
             continue                          # paraphrased or invented: dropped
-        record = {"kind": kind, "speaker": _text_field(d, "speaker"),
-                  "text": span, "turn": turn}
+        speaker = _text_field(d, "speaker")
+        if kind == "death" and not speaker:
+            continue
+        record = {"kind": kind, "speaker": speaker, "text": span, "turn": turn}
         if kind == "reveal":
             record["key"] = _slug(_text_field(d, "key") or span[:60])
+        elif kind == "death":
+            record["key"] = _slug(speaker)
+            record["dead"] = True
         out.append(record)
     return out
 
