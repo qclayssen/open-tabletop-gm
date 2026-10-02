@@ -570,6 +570,26 @@
   #sidebar-toggle:hover { color: rgba(180,140,60,0.8); }
   #sidebar-toggle.visible { display: block; }
 
+  /* ── Overview map link (BV4 S1) ── beside the corner logo, in the band
+     above the sidebar (which starts at top 60px), so it takes no height from
+     the settings column or the Party Input rail. */
+  #overview-link {
+    position: fixed;
+    left: 100px;
+    top: 24px;
+    z-index: 8;
+    font-family: 'Cinzel', serif;
+    font-size: 12px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    text-decoration: none;
+    color: rgba(200,165,80,0.82);
+    padding: 6px 8px;
+    transition: color 0.3s ease;
+  }
+  #overview-link:hover { color: rgba(220,185,100,1); }
+  #overview-link:focus-visible { outline: 2px solid rgba(210,170,80,0.85); outline-offset: 2px; }
+
   #sidebar {
     position: fixed;
     left: 0;
@@ -1954,6 +1974,7 @@
   body.input-only #text-scroll,
   body.input-only #sidebar,
   body.input-only #sidebar-toggle,
+  body.input-only #overview-link,
   body.input-only #world-clock,
   body.input-only #ruleset-badge,
   body.input-only #audio-controls,
@@ -3210,15 +3231,18 @@
        letting the sheet cover the character card. */
     body:has(#sidebar.has-data:not(.hidden)) #audio-controls { left: 232px; }
     #phone-mode-menu { top: 96px; right: 12px; }
+    /* The settings row takes the top band and the scene title its centre, so
+       the overview link drops under the row, inside the reserved inset. */
+    #overview-link { left: auto; right: 12px; top: 96px; }
   }
 
   /* Target floor: 32px everywhere, 44px on touch. */
-  #sidebar-toggle, #controls-toggle-row, #phone-mode-btn, #dm-help-btn, .ts-btn,
+  #sidebar-toggle, #overview-link, #controls-toggle-row, #phone-mode-btn, #dm-help-btn, .ts-btn,
   .tts-play-btn, .tts-voice-btn, #new-content-pill, .dp-tab, .sm-tab,
   #sheet-close, #srd-close { min-height: 32px; min-width: 32px; }
   #vb-slider { height: 32px; }
   @media (pointer: coarse) {
-    #sidebar-toggle, #controls-toggle-row, #phone-mode-btn, #dm-help-btn, .ts-btn,
+    #sidebar-toggle, #overview-link, #controls-toggle-row, #phone-mode-btn, #dm-help-btn, .ts-btn,
     .tts-play-btn, .tts-voice-btn, #new-content-pill, .dp-tab, .sm-tab,
     #sheet-close, #srd-close, #input-panel-header, #send-btn, #skip-turn-btn,
     .char-tab, #dp-toggle, .audio-row { min-height: 44px; min-width: 44px; }

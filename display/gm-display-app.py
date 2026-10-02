@@ -32,7 +32,7 @@ import threading
 from collections import deque
 from typing import Optional
 from flask import (Flask, Response, request, render_template, jsonify,
-                   send_from_directory)
+                   send_from_directory, redirect)
 
 _DISPLAY_DIR  = os.path.dirname(os.path.abspath(__file__))
 _SKILL_DIR    = os.path.dirname(_DISPLAY_DIR)
@@ -1531,6 +1531,81 @@ def serve_icon(filename):
 def favicon():
     return send_from_directory(_ICONS_DIR, "favicon.ico",
                                mimetype="image/vnd.microsoft.icon")
+
+
+# ─── Overview map ────────────────────────────────────────────────────────────
+#
+# The campaign's overview map (BV4 S1): `<campaign>/maps/overview/<slug>.json`,
+# a `kind: overview` spec whose pins are fractions of an image, read by
+# scripts/overview_map.py. Its own page and its own static files, so the battle
+# board (`renderBoard` in tactics.js) is not involved. GET only: authoring is a
+# file the GM edits, the same as the note pins below.
+
+
+def _atlas_spec(slug):
+    """`(spec, image)` for one overview map in the active campaign, or None."""
+    camp = _pin_campaign()
+    if camp is None:
+        return None
+    import overview_map as _overview_map
+    try:
+        return _overview_map.load(camp, slug)
+    except _overview_map.OverviewMapError:
+        return None
+
+
+@app.route("/atlas", methods=["GET"])
+def atlas_entry():
+    """The display's "Overview map" link: open the campaign's overview map.
+
+    The first loadable spec by slug. A campaign with none gets a plain 404
+    page that says so, not a broken map.
+    """
+    camp = _pin_campaign()
+    if camp is not None:
+        import overview_map as _overview_map
+        for slug in _overview_map.available(camp):
+            if _atlas_spec(slug) is not None:
+                return redirect("/atlas/" + slug)
+    return Response("No overview map in this campaign. Add one under "
+                    "maps/overview/ (see scripts/overview_map.py).",
+                    status=404, mimetype="text/plain; charset=utf-8")
+
+
+@app.route("/atlas/<slug>", methods=["GET"])
+def atlas_overview(slug):
+    """The overview page. Unrevealed pins are dropped here, before rendering,
+    so their labels and positions are never in the HTML."""
+    found = _atlas_spec(slug)
+    if found is None:
+        return Response("No such overview map.", status=404,
+                        mimetype="text/plain; charset=utf-8")
+    import overview_map as _overview_map
+    shown = _overview_map.revealed(found[0])
+    # "<" is escaped because this lands inside a <script> block (as map_edit).
+    return render_template(
+        "atlas.html", map_name=shown["name"],
+        image_url="/atlas/" + shown["slug"] + "/image",
+        map_json=json.dumps(shown, ensure_ascii=False).replace("<", "\\u003c"))
+
+
+@app.route("/atlas/<slug>/image", methods=["GET"])
+def atlas_overview_image(slug):
+    """The overview's image, only through a spec that names it.
+
+    An SVG opened directly is a document, so this response may not run script
+    whatever the file contains: a sandboxing CSP, enforced rather than
+    report-only.
+    """
+    found = _atlas_spec(slug)
+    if found is None:
+        return Response("No such overview map.", status=404,
+                        mimetype="text/plain; charset=utf-8")
+    image = found[1]
+    resp = send_from_directory(str(image.parent), image.name)
+    resp.headers["Content-Security-Policy"] = (
+        "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox")
+    return resp
 
 
 @app.route("/maps/<path:filename>")
