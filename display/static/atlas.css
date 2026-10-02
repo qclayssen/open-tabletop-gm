@@ -1,0 +1,47 @@
+/* atlas.css: the overview map page. Its own file so it cannot collide with the
+   battle board's tactics.css. Colours are the dark tokens from tactics.css
+   (--tx-paper, --tx-ink, --tx-brass, --tx-muted), restated here because that
+   stylesheet is not loaded on this page. */
+.atlas-page {
+  --atlas-paper: #140F09; --atlas-panel: #1D160E; --atlas-ink: #E6D8B8;
+  --atlas-brass: #D2A24A; --atlas-muted: #A8977A; --atlas-line: #3A2E1E;
+  margin: 0; min-height: 100vh; background: var(--atlas-paper); color: var(--atlas-ink);
+  font: 16px/1.4 system-ui, sans-serif;
+}
+.atlas-header { display: flex; align-items: baseline; gap: 1.25rem; padding: .75rem 1rem; }
+.atlas-header h1 { margin: 0; font-size: 1.25rem; font-weight: 600; }
+.atlas-back { color: var(--atlas-brass); }
+.atlas-back:focus-visible { outline: 2px solid var(--atlas-brass); outline-offset: 2px; }
+
+.atlas-main { display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-start; padding: 0 1rem 1rem; }
+
+/* The stage has the extent's aspect ratio, so a pin's fraction of the stage is
+   its fraction of the image. Sized to fit the viewport height on a TV and the
+   width on a phone. */
+.atlas-stage {
+  --atlas-w: 1; --atlas-h: 1;
+  position: relative; flex: 0 1 auto;
+  aspect-ratio: var(--atlas-w) / var(--atlas-h);
+  width: min(100%, calc((100vh - 5rem) * var(--atlas-w) / var(--atlas-h)));
+}
+.atlas-stage img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; }
+.atlas-pins { position: absolute; inset: 0; pointer-events: none; }
+
+/* A marker is a number in a ring, 24px across: the number is the signal and the
+   colour is not the only one, and the number matches the legend. */
+.atlas-pin {
+  position: absolute; width: 24px; height: 24px; margin: -12px 0 0 -12px;
+  display: flex; align-items: center; justify-content: center; box-sizing: border-box;
+  border-radius: 50%; border: 2px solid var(--atlas-paper);
+  background: var(--atlas-brass); color: var(--atlas-paper);
+  font: 700 12px/1 system-ui, sans-serif; box-shadow: 0 0 0 1px var(--atlas-brass);
+}
+
+.atlas-legend { flex: 1 1 14rem; min-width: 12rem; background: var(--atlas-panel);
+                border: 1px solid var(--atlas-line); border-radius: 6px; padding: .5rem .75rem; }
+.atlas-legend h2 { margin: .25rem 0 .5rem; font-size: 1rem; color: var(--atlas-muted); font-weight: 600; }
+.atlas-legend ol { list-style: none; margin: 0; padding: 0; }
+.atlas-place { display: flex; gap: .5rem; align-items: baseline; padding: .15rem 0; }
+.atlas-place-num { min-width: 1.75rem; text-align: right; color: var(--atlas-brass); font-weight: 700; }
+.atlas-place-label { color: var(--atlas-ink); }
+.atlas-empty { color: var(--atlas-muted); margin: .25rem 0; }
