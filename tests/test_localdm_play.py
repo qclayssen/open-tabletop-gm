@@ -1278,6 +1278,31 @@ def test_a_failed_guardrail_consult_is_not_cached_as_a_ruling(tmp_path):
     assert calls["n"] == 2                                 # retried, not remembered
 
 
+def test_a_guardrail_ruling_is_rebought_when_the_draft_changes(tmp_path):
+    """The consult sees the draft it judges (A1), so its ruling quotes that draft.
+    Reusing it for a different draft would hand the rewrite a correction aimed at
+    a line that is no longer there. The cache is keyed on the draft: a new draft
+    buys a new ruling, an identical one reuses the last (see
+    test_injection_guard.test_a_guardrail_ruling_is_bought_once_and_reused)."""
+    first = '"Fine," you say, and you hand the student the letter.'
+    second = '"Not today," you tell the porter, and you turn back toward the stair.'
+
+    def responder(model, messages, role):
+        if role.startswith("advisor"):
+            return "Offer the choice instead."
+        return (first if len(c.dm_calls()) <= 2 else second) + NULLS
+
+    c = FakeClient(responder)
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path), bridge=FakeBridge())
+    s._dm(player="I go up to the student.")
+    s._dm(player="I head for the stair.")
+    assert c.advisor_roles() == ["advisor:director", "advisor:director"], \
+        "the second, different draft reused a ruling written about the first"
+    later = "\n".join(m["content"] for m in
+                      [call for call in c.calls if call[1].startswith("advisor")][1][2])
+    assert second in later and first not in later
+
+
 # ── B3: a turn the engine answers is still a turn the player took ──────────────
 
 def test_a_refused_attack_is_still_remembered(tmp_path):
