@@ -5,6 +5,7 @@
  "diagonals": "5",
  "info": "Open water is swimming (half speed without a swim speed). Reeds are difficult terrain. Lanterns shed bright light 3 squares around them.",
  "base": "floor",
+ "grid": {"cell_px": 100, "offset_x": 0, "offset_y": 0},
  "features": [
   {
    "type": "water",
