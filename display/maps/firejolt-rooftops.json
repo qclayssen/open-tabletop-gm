@@ -5,6 +5,11 @@
  "diagonals": "5",
  "info": "Ground floor café (left) and the rooftops next door (right). Gaps between roofs are 2 to 3 squares: a jump or an Acrobatics check. Chimneys give half cover.",
  "base": "floor",
+ "grid": {
+  "cell_px": 100,
+  "offset_x": 0,
+  "offset_y": 0
+ },
  "features": [
   {
    "type": "wall",
