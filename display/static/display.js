@@ -1577,9 +1577,56 @@ function renderXpBlock(xpData) {
 }
 
 // ── Replay batch (reconnect / session resume) ─────────────────────────
+//
+// Replay is the one path the per-payload seq guard cannot see, because these
+// entries carry the identity they had when the server first broadcast them,
+// not one for this delivery. Without dropping the ones already drawn, every
+// reconnect re-appended the whole recent log on top of the story already on
+// screen: the same paragraphs twice, with a divider between.
+//
+// The key is (epoch, seq), not seq alone. The server's counter restarts at 1
+// on every run, so seq 3 of a restarted server is a different entry from seq 3
+// of the run before it, and a display that stayed up across the restart would
+// otherwise drop the new entry as already drawn. The epoch is the run id, so
+// the pair names one entry of one run.
+//
+// An entry with neither (a log written before this shipped, or a hand-edited
+// one) is rendered rather than skipped: guessing "probably already drawn"
+// would delete narration the reader has never seen.
+const _drawnSeqs = new Set();
+
+// The replay log holds 60 entries, so 400 keys is several times what any one
+// replay can bring. A set that grows for the life of a long session is a slow
+// leak, and this one only has to remember the recent past.
+const _DRAWN_MAX = 400;
+
+function _drawKey(epoch, seq) {
+  if (seq === undefined || seq === null) return null;
+  const k = (epoch || '?') + ':' + seq;
+  _drawnSeqs.add(k);
+  while (_drawnSeqs.size > _DRAWN_MAX) {
+    // Set iteration is insertion order, so the first key is the oldest.
+    _drawnSeqs.delete(_drawnSeqs.values().next().value);
+  }
+  return k;
+}
+
+function _replayKey(item) {
+  if (!item || item.seq === undefined || item.seq === null) return null;
+  return (item._epoch || '?') + ':' + item.seq;
+}
+
 function renderReplayBatch(items) {
   flushNewBlock();
+  const fresh = items.filter(item => {
+    const k = _replayKey(item);
+    return k === null ? !!item : !_drawnSeqs.has(k);
+  });
+  if (!fresh.length) return;                  // nothing new: do not add a divider
+  items = fresh;
   items.forEach(item => {
+    const k = _replayKey(item);
+    if (k !== null) _drawKey(item._epoch, item.seq);
     if (!item) return;
     if (item.inspiration_award) {
       renderInspirationBlock(item.inspiration_award, item.reason || '');
@@ -3833,14 +3880,67 @@ let reconnectDelay = 1000;
 let _lastSeq = 0;          // highest server seq rendered; sent as ?since= on reconnect
 let _sseEpoch = null;      // server run id; a change means the server restarted
 let _reconnectAttempts = 0;
+let _reconnectTimer = null;  // the pending retry, so it can be cancelled
 
-// Connection status pill (connected / reconnecting), announced politely.
+// ── connection state ──────────────────────────────────────────────────────
+// One object owns "can this page still be trusted", and everything else asks
+// it rather than keeping a private copy. Before this, the pill knew the state
+// and the map buttons did not, so a player could click Move during an outage,
+// get nothing back, and be looking at a button that looked live the whole time.
+//
+// The three states are three different sentences, not two words for one thing:
+//   connected     the stream is open and the display is receiving
+//   reconnecting  we lost the server and are retrying with a backoff
+//   offline       the browser says there is no network at all
+// `offline` earns its own state because the OS can tell us about it directly,
+// and the advice differs: on reconnecting the server may come back, on
+// offline nothing happens until the network does.
+const _conn = {
+  state: 'connecting',
+  attempt: 0,
+  listeners: [],
+  // Is the page allowed to act? Only `connected` counts. Every other state,
+  // including the very first connection, is not: acting on a snapshot that no
+  // live update has confirmed is exactly how a click lands on stale state.
+  live() { return this.state === 'connected'; },
+  on(fn) {
+    if (typeof fn !== 'function') return;
+    this.listeners.push(fn);
+    // Fire straight away. tactics.js is deferred and loads after this file, so
+    // a subscriber that only ever heard about *changes* would keep whatever
+    // state it was constructed with and never learn the truth.
+    try { fn(this.live()); } catch (e) { console.warn('connection listener failed', e); }
+  },
+  _publish() {
+    for (const fn of this.listeners) {
+      // A listener that throws must not stop the others, and must not stop the
+      // stream: this runs inside the EventSource callbacks.
+      try { fn(this.live()); } catch (e) { console.warn('connection listener failed', e); }
+    }
+  },
+};
+
+function _connText(state, attempt) {
+  if (state === 'connected') return 'Connected';
+  if (state === 'offline') {
+    return attempt > 1 ? 'Offline. Still trying (' + attempt + ' attempts)\u2026'
+                       : 'Offline. Waiting for the network\u2026';
+  }
+  return 'Reconnecting' + (attempt > 1 ? ' (attempt ' + attempt + ')' : '') + '\u2026';
+}
+
+// Connection status pill, announced politely via role="status".
 function _setConnStatus(state, attempt) {
+  _conn.state = state;
+  _conn.attempt = attempt || 0;
   const el = document.getElementById('conn-status');
-  if (!el) return;
-  el.dataset.state = state;
-  el.textContent = state === 'connected' ? 'Connected'
-    : 'Reconnecting' + (attempt > 1 ? ' (attempt ' + attempt + ')' : '') + '\u2026';
+  if (el) {
+    el.dataset.state = state;
+    // Never empty. An empty live region announces nothing, and this is the
+    // first state a reader can meet.
+    el.textContent = _connText(state, _conn.attempt);
+  }
+  _conn._publish();
 }
 
 function _sseHello(h) {
@@ -3870,7 +3970,15 @@ function connect() {
 
   evtSource.onmessage = (e) => {
     let payload;
-    try { payload = JSON.parse(e.data); } catch (err) { console.warn('SSE: bad JSON', err); return; }
+    try { payload = JSON.parse(e.data); }
+    catch (err) {
+      // A payload we cannot parse is a payload we cannot render, and saying so
+      // in the console only helps whoever has the devtools open. The reader is
+      // the one whose narration just did not arrive.
+      console.warn('SSE: bad JSON', err);
+      _streamError('A message from the server could not be read.');
+      return;
+    }
 
     // Sequencing: the server stamps every broadcast with a seq. Drop anything at
     // or below what we already rendered (a replay racing a live payload).
@@ -3881,11 +3989,22 @@ function connect() {
     if (payload.seq !== undefined) {
       if (payload.seq <= _lastSeq) return;
       _lastSeq = payload.seq;
+      // Record what has been drawn from the live stream too. A reconnect
+      // replays the recent log through renderReplayBatch, which dedupes on this
+      // same set: an entry the reader already read live must not be drawn a
+      // second time. The epoch comes from the hello for this connection.
+      if (payload.text || payload.clear) _drawKey(_sseEpoch, payload.seq);
     }
 
-    // One failing branch must not abort the rest of the payload.
+    // One failing branch must not abort the rest of the payload, and must not
+    // be invisible either: a branch that throws on every payload (a malformed
+    // token, a renderer that trips over one name) used to fail silently
+    // forever, and the player just saw the narration stop arriving.
     const _try = (name, fn) => {
-      try { fn(); } catch (err) { console.error('SSE handler failed:', name, err); }
+      try { fn(); } catch (err) {
+        console.error('SSE handler failed:', name, err);
+        _streamError('Part of an update could not be shown: ' + _friendlyBranch(name) + '.');
+      }
     };
     _try('payload.dice_request && typeof window._o', () => {
       if (payload.dice_request && typeof window._onDiceRequest === 'function') {
@@ -4062,14 +4181,98 @@ function connect() {
 
   evtSource.onerror = () => {
     evtSource.close();
+    evtSource = null;
     _reconnectAttempts += 1;
-    _setConnStatus('reconnecting', _reconnectAttempts);
-    setTimeout(() => {
+    // Distinguish "the server is gone" from "there is no network". navigator.onLine
+    // is the only signal that separates them, and it is the difference between
+    // "wait for the server" and "nothing is going to happen until the wifi comes
+    // back", which are different things to sit and look at.
+    _setConnStatus(_isOffline() ? 'offline' : 'reconnecting', _reconnectAttempts);
+    _reconnectTimer = setTimeout(() => {
+      _reconnectTimer = null;
       reconnectDelay = Math.min(reconnectDelay * 1.5, 3000);
       connect();
     }, reconnectDelay);
   };
 }
+
+function _isOffline() {
+  try { return navigator.onLine === false; } catch (e) { return false; }
+}
+
+// Drop the socket and any pending retry. One EventSource at a time is the rule:
+// a second live stream means every payload is handled twice, and a pending
+// timer that fires after we have already reconnected opens that second stream.
+function _dropStream() {
+  if (_reconnectTimer) { clearTimeout(_reconnectTimer); _reconnectTimer = null; }
+  if (evtSource) { evtSource.close(); evtSource = null; }
+}
+
+// The browser knows about the network before the socket does. Without this the
+// pill keeps saying "Reconnecting" while the OS already knows the wifi is
+// gone, and coming back online waits out whatever backoff we had reached.
+window.addEventListener('offline', () => {
+  _dropStream();
+  _setConnStatus('offline', _reconnectAttempts);
+});
+window.addEventListener('online', () => {
+  // Retry at once rather than waiting out a backoff that was built for a server
+  // that is simply not there yet.
+  if (_conn.state === 'offline') {
+    _dropStream();
+    reconnectDelay = 1000;
+    connect();
+  }
+});
+
+// ── stream errors, where the reader can see them ──────────────────────────
+//
+// The dispatcher's per-branch try/catch keeps one bad payload from killing the
+// stream handler, but it only ever wrote to the console. A branch that threw on
+// every payload therefore looked exactly like a display that had simply gone
+// quiet, and the only evidence was in devtools the reader does not have.
+//
+// This is the one surface in the display that reports its own breakage. It is
+// deliberately not the combat panel's toast: that one belongs to the map and
+// is positioned inside the map, so a stream error with no fight open had
+// nowhere to appear.
+const _streamErr = { last: '', lastAt: 0, timer: 0 };
+
+function _streamError(message) {
+  const el = document.getElementById('stream-toast');
+  if (!el) return;
+  // One bad payload can arrive many times a second, and a toast that re-arms
+  // on every one of them never goes away and cannot be read. Repeat the same
+  // message inside the window and it is already on screen.
+  const now = Date.now();
+  if (message === _streamErr.last && now - _streamErr.lastAt < 8000) return;
+  _streamErr.last = message;
+  _streamErr.lastAt = now;
+  el.textContent = message;
+  el.hidden = false;
+  clearTimeout(_streamErr.timer);
+  _streamErr.timer = setTimeout(() => { el.hidden = true; }, 8000);
+}
+
+// The branch names are written for the console (they quote the source
+// expression). A reader wants to know what broke, not how it is spelled.
+function _friendlyBranch(name) {
+  const m = /payload\.(\w+)/.exec(name || '');
+  const key = m ? m[1] : 'an update';
+  return ({
+    combat: 'the battle map', stats: 'the character sidebar', scene: 'the scene',
+    text: 'the narration', clocks: 'the faction clocks', replay_batch: 'the story so far',
+    sent_log: 'the sent log', dice_pending: 'the dice requests',
+    dice_request: 'a dice request', player_input: 'the party messages',
+  })[key] || 'an update';
+}
+
+// The map's own controls subscribe to this, so a click during an outage is
+// refused before it reaches the network even if it slips past the disabled
+// attribute. tactics.js is deferred and loads after this file, so it subscribes
+// for itself rather than being called from here; `on` fires immediately with
+// the current state, which is what a late subscriber needs.
+window.GMConn = _conn;
 
 connect();
 

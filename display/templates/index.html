@@ -277,6 +277,9 @@
 </main>
 <button id="new-content-pill" type="button" aria-label="Jump to newest narration">New ↓</button>
 <div id="conn-status" role="status" aria-live="polite" data-state="connected"></div>
+<!-- An update that could not be shown. role="alert" so it interrupts: this is
+     the display saying it broke, and the reader is the one who needs to know. -->
+<div id="stream-toast" role="alert" hidden></div>
 
 <script src="/static/display.js"></script>
 <script src="/static/tactics.js" defer></script>

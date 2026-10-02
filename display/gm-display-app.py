@@ -37,7 +37,11 @@ from flask import (Flask, Response, request, render_template, jsonify,
 _DISPLAY_DIR  = os.path.dirname(os.path.abspath(__file__))
 _SKILL_DIR    = os.path.dirname(_DISPLAY_DIR)
 SCRIPTS_DIR   = os.path.join(_SKILL_DIR, "scripts")
-LOG_FILE      = os.path.join(_DISPLAY_DIR, "text_log.json")
+# The narration replay log. GM_TEXT_LOG_FILE moves it, which is what lets a
+# test run its own display without writing to the repo: this file is
+# gitignored runtime state, and a leftover one is replayed into every
+# display that connects afterwards.
+LOG_FILE      = os.environ.get("GM_TEXT_LOG_FILE") or os.path.join(_DISPLAY_DIR, "text_log.json")
 _LOG_FALLBACK = LOG_FILE
 
 # SRD lookup module — degrades silently if dataset not built
@@ -110,7 +114,10 @@ def _apply_campaign_sfx_languages() -> None:
 
 HELP_LOCK     = os.path.join(_DISPLAY_DIR, ".help-lock")
 CAMP_FILE     = os.path.join(_DISPLAY_DIR, ".campaign")
-STATS_FILE    = os.path.join(_DISPLAY_DIR, "stats.json")
+# The roster the sidebar is built from. GM_STATS_FILE moves it, for the same
+# reason as GM_TEXT_LOG_FILE above: it is gitignored runtime state that every
+# display loads at startup and replays into its sidebar.
+STATS_FILE    = os.environ.get("GM_STATS_FILE") or os.path.join(_DISPLAY_DIR, "stats.json")
 TOKEN_FILE    = os.path.join(_DISPLAY_DIR, ".token")
 # Port override so a second display (tests, a demo) can run beside a live one.
 # The tactics engine honours the same variable when it pushes updates.
@@ -1342,10 +1349,39 @@ def _replayable(payload: dict) -> bool:
     return bool(payload.get("text") or payload.get("clear"))
 
 
-def _broadcast(payload: dict) -> None:
+def _stamp_log_entry(log_entry: dict, seq: int) -> dict:
+    """Mark a replay-log entry with the identity the client dedupes on.
+
+    Both halves are needed. `seq` alone is not an identity across a restart:
+    the counter starts at 1 again every run, so entry 3 of run 2 is not entry 3
+    of run 1, and a browser that has been up across both would drop the new one
+    as already drawn. `_EPOCH` is the run id, so (epoch, seq) names one entry
+    of one run and nothing else.
+
+    Entries with neither (a log written before this shipped, or a hand-edited
+    one) are rendered unconditionally by the client. Guessing "probably already
+    drawn" would delete narration the reader has never seen.
+    """
+    log_entry["seq"] = seq
+    log_entry["_epoch"] = _EPOCH
+    return log_entry
+
+
+def _broadcast(payload: dict) -> int:
+    """Fan a payload out to every SSE client. Returns the seq it was stamped with.
+
+    The return value exists for the replay log. `_text_log` entries are what a
+    reconnecting browser is replayed, and that replay carried no seq, so the
+    browser's per-payload dedupe could not see it and a reconnect rendered the
+    whole recent log a second time on top of what was already on screen. A
+    caller that appends to `_text_log` stamps the returned seq onto its entry
+    with `_stamp_log_entry`, which is what lets the client drop the part it has
+    already drawn.
+    """
     global _seq, _seq_evicted
     with _clients_lock:
         _seq += 1
+        _assigned = _seq
         payload = {**payload, "seq": _seq}
         if _replayable(payload):
             if len(_seq_buffer) == _SEQ_BUFFER_MAX:
@@ -1371,6 +1407,7 @@ def _broadcast(payload: dict) -> None:
             except queue.Empty:
                 pass
             q.put_nowait(_CLOSE)
+    return _assigned
 
 
 def _replay_since(since: int):
@@ -1996,9 +2033,14 @@ def chunk():
             _text_log.append(log_entry)
         with _tail_lock:
             _tail_buffer.append(log_entry)
+        # Broadcast, then stamp, then persist. The log entry goes in before the
+        # broadcast so a browser that reconnects the instant it receives the
+        # payload cannot ask for a replay that does not have this entry yet, and
+        # the persist comes after the stamp so the file on disk carries the
+        # identity the client dedupes on.
+        _stamp_log_entry(log_entry, _broadcast(payload))
         _persist_log()
         _persist_tail()
-        _broadcast(payload)
         return "", 204
 
     author = _clean_author(data.get("author"))
@@ -2094,9 +2136,12 @@ def chunk():
     with _tail_lock:
         _tail_buffer.append(log_entry)
 
+    # Broadcast, then stamp, then persist: see the note in chunk(). The log
+    # entry is in place before the broadcast so a reconnect cannot miss it, and
+    # the stamp lands before the write so the file carries the dedupe identity.
+    _stamp_log_entry(log_entry, _broadcast(payload))
     _persist_log()
     _persist_tail()
-    _broadcast(payload)
     return "", 204
 
 
@@ -2804,9 +2849,10 @@ def player_dice():
         _text_log.append(log_entry)
     with _tail_lock:
         _tail_buffer.append(log_entry)
+    # Broadcast, then stamp, then persist: see the note in chunk().
+    _stamp_log_entry(log_entry, _broadcast(payload))
     _persist_log()
     _persist_tail()
-    _broadcast(payload)
 
     # Correlate against any pending DM request. Case-insensitive match on the
     # character name — drop them from the request's expected-rollers set.
@@ -3676,7 +3722,21 @@ if __name__ == "__main__":
     if _audio:
         _audio.set_broadcast(_broadcast)
 
-    host = "0.0.0.0" if _LAN_MODE else "localhost"
+    # Numeric, never a name. Werkzeug builds an http.server.HTTPServer, and
+    # HTTPServer.server_bind() calls socket.getfqdn(host) BETWEEN bind() and
+    # listen(). While that lookup is outstanding the socket is bound and not
+    # listening, so nothing can connect: a connection times out rather than
+    # being refused. On GitHub's macos-26-arm64 image the lookup of "localhost"
+    # does not come back, and start-display.sh runs this under nohup with the
+    # output in a file, so a GM on a slow or hostile resolver gets the
+    # "Flask server starting" banner printed just above this line, a browser
+    # that never connects, and no error anywhere.
+    #
+    # "127.0.0.1" and "0.0.0.0" are already numeric, so they do not trigger
+    # the reverse lookup either. This is the one-line form of the fix; see
+    # tests/_display_child.py, which avoids the code path altogether for the
+    # tests that must be able to kill this process for real.
+    host = "0.0.0.0" if _LAN_MODE else "127.0.0.1"
     # TLS — only enabled when --tls is explicitly passed; HTTP is the default.
     _display_dir = os.path.dirname(os.path.abspath(__file__))
     _cert = os.path.join(_display_dir, "cert.pem")
