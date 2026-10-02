@@ -16,7 +16,7 @@ python3 /path/to/open-tabletop-gm/start.py
 
 (`start.py` checks Python and Flask, then runs `scripts/tactics/play.py tutorial`. For the full SRD monster list later, run `python3 start.py --srd`, which builds it once from the public 5e SRD and needs network. Other scenarios and options: `python3 scripts/tactics/play.py --help`.)
 
-Two kobolds are climbing into the Training Yard. Kairos spots them first, so they are surprised and lose their first turn (the 5e surprise rule): you get a full turn before anything can hurt you. The game draws the map, then walks you through ten short lessons, one command at a time. Each lesson ends when you have done what it asks, in any order. After the last one you are on your own: win the fight.
+Two kobolds are climbing into the Training Yard. Kairos spots them first, so they are surprised and lose their first turn (the 5e surprise rule): you get a full turn before anything can hurt you. The game draws the map, then walks you through eleven short lessons, one command at a time. Each lesson ends when you have done what it asks, in any order. After the last one you are on your own: win the fight.
 
 Nothing is saved to your campaigns. The fight runs in a throwaway folder that is deleted when you leave (`--keep` keeps it, if you want to look at the combat log or the updated character sheet).
 
@@ -57,9 +57,10 @@ On your turn you can **move** up to your speed (Kairos: 30 ft, six squares), tak
 | 5 | `targets` | Every attack you can make from here, with your chance to hit (cover already counted) |
 | 6 | `attack 1` | Your best attack at creature 1: Fire Bolt, 1d10 fire |
 | 7 | `end` | Ending your turn. The kobolds act next |
-| 8 | `spells` | What Kairos knows and what can be cast right now |
+| 8 | `spells` | What Kairos knows, what can be cast, and his remaining spell slots |
 | 9 | `cast magic missile 1 1 1` | Spells: three darts that never miss (one target per dart). `area mind sliver 1` shows a save spell's odds first |
-| 10 | `dodge`, `disengage`, `dash`, then `end` | Defending yourself, and reactions (below) |
+| 10 | `dodge`, `disengage`, or `dash` | Defending yourself with an action; pick one on your next turn after casting |
+| 11 | `end` | Ending your turn. The kobolds act next |
 
 The prompt always shows what you have left: `Kairos 8/8 HP | 20 ft | action ready >`.
 
@@ -84,7 +85,7 @@ Some things happen outside your turn, once per round. The game asks with a `[y/n
 - **Silvery Barbs** (a 1st-level slot): offered when an enemy hits or succeeds; it rerolls and keeps the lower roll.
 - **Opportunity attack**: when an enemy walks out of your reach.
 
-Kairos has two 1st-level slots, shared by Shield, Silvery Barbs and Magic Missile. Spend them wisely. `reactions auto` always casts when it would help; `reactions off` stops the questions.
+Kairos starts with two 1st-level slots, shared by Shield, Silvery Barbs and Magic Missile. The `spells` command shows the remaining budget before you choose. Cantrips use no slots; leveled spells and some reactions spend them. Spend slots wisely. `reactions auto` always casts when it would help; `reactions off` stops the questions.
 
 ### How the kobolds fight
 

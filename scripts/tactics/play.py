@@ -44,7 +44,7 @@ _HERE = pathlib.Path(__file__).resolve().parent
 sys.path[:] = [p for p in sys.path if pathlib.Path(p or ".").resolve() != _HERE]
 sys.path.insert(0, str(_HERE.parent))
 
-from tactics import cli, engine, fightq, state  # noqa: E402
+from tactics import cli, engine, fightq, slots, state  # noqa: E402
 from tactics.grid import col_label, label  # noqa: E402
 
 KAIROS = _HERE.parents[1] / "tests" / "fixtures" / "Kairos_Level1.md"
@@ -105,7 +105,9 @@ def tutorial_lessons() -> list:
                "You have used your action. Type `end`. The kobolds then take their turns;\n"
                "the game plays them the way a GM would.", ("end",)),
         Lesson("Your spells",
-               "Type `spells` to see what Kairos knows and what can be cast right now.", ("spells",)),
+               "Type `spells` to see what Kairos knows and what can be cast right now. Kairos\n"
+               "starts with two 1st-level spell slots. Cantrips use no slots; leveled spells\n"
+               "and some reactions spend them.", ("spells",)),
         Lesson("Cast a spell",
                "Try `cast magic missile {foe} {foe} {foe}`: three darts that never miss, one\n"
                "target per dart (it spends a 1st-level slot). Or `cast mind sliver {foe}`: the\n"
@@ -114,8 +116,11 @@ def tutorial_lessons() -> list:
         Lesson("Defend yourself",
                "When a kobold would hit you, the game can offer Shield (+5 AC until your next\n"
                "turn): answer y or n. On your turn, `dodge` makes attacks against you harder,\n"
-               "`disengage` lets you walk away without opportunity attacks, `dash` doubles\n"
-               "your movement. Type `end` when you are done.", ("end",)),
+               "`disengage` lets you walk away without opportunity attacks, and `dash` doubles\n"
+               "your movement. These each use your action. Type `end` to finish the turn.",
+               ("dodge", "disengage", "dash")),
+        Lesson("Finish the turn",
+               "Now type `end` to let the kobolds act.", ("end",)),
     ]
 
 
@@ -358,7 +363,7 @@ class Game:
 
     def end_turn(self):
         code, text = self.run_cmd("end-turn")
-        if code:
+        if code or "death save:" in text.lower():
             self.out(_clean(text))
 
     def enemy_turn(self, t):
@@ -470,6 +475,10 @@ class Game:
         code, text = self.run_cmd(*argv)
         if verb in ("targets", "spells") and code == 0:
             text = "  " + text.replace("; ", "\n  ")
+        if verb == "spells" and code == 0:
+            budget = slots.summary(self.enc().tokens[pid])
+            if budget:
+                text += f"\n{budget}"
         self.out(_clean(text))
         return code == 0, False
 
@@ -509,9 +518,12 @@ class Game:
         if result != "quit" and self.enc().status == "active":
             _, text = self.run_cmd("end")
             self.out(_clean(text.splitlines()[0]))
+        pc = next((t for t in self.enc().tokens.values() if t.side == "pc"), None)
+        defeat = (f"\nDefeat. {self.pc_name} is dead." if pc and pc.dead else
+                  f"\nDefeat. {self.pc_name} is stable but unconscious, and out of the fight.")
         self.out(self.paint({
             "victory": "\nVictory!",
-            "defeat": f"\nDefeat. {self.pc_name} falls." + (
+            "defeat": defeat + (
                 "\nTips: the kobolds step out, sling you and step back behind the wall. Stand where\n"
                 "the wall or the hay bales block their line of sight and make them come to you;\n"
                 "Magic Missile never misses, and Shield turns a hit into a miss." if self.sc.get("map") ==

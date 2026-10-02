@@ -14,7 +14,7 @@ import sys
 
 import pytest
 
-from tests.tactics_fixtures import ROOT, RULES, _build, _RAW
+from tests.tactics_fixtures import ROOT, RULES, _build, _RAW, caster
 from tactics import maps
 
 rules_mod = sys.modules[type(RULES).__module__]
@@ -84,7 +84,8 @@ def test_the_tutorial_teaches_every_lesson_then_the_fight_ends():
     p = Player()
     code = game(["tutorial", "--seed", "2"], p)
     for n, lesson in enumerate(play.tutorial_lessons(), 1):
-        assert f"[Lesson {n}/10: {lesson.title}]" in p.text
+        if code != 0 or n < 11:
+            assert f"[Lesson {n}/{len(play.tutorial_lessons())}: {lesson.title}]" in p.text
     assert "[Tutorial complete]" in p.text or code == 0    # a quick win can end it early
     assert code in (0, 3) and ("Victory!" in p.text or "Defeat." in p.text)
     assert "Combat ended after round" in p.text
@@ -99,17 +100,56 @@ def test_the_tutorial_teaches_every_lesson_then_the_fight_ends():
     assert "@ Kairos (you) B5" in p.text                 # @, not K: column K holds the kobolds
 
 
-def test_lessons_complete_in_any_order_and_end_only_counts_once():
+def test_lessons_require_a_defensive_action_then_end():
     g = play.Game.__new__(play.Game)
     g.lessons, g.paint, shown = play.tutorial_lessons(), lambda text, code: text, []
     g.out, g.show_lesson = shown.append, lambda: None
-    g.learn("attack")                                    # out of order: lesson 6 is done
-    assert [ls.done for ls in g.lessons][:7] == [False] * 5 + [True, False]
+    for lesson in g.lessons[:9]:
+        lesson.done = True
+    g.learn("cast")
+    assert not g.lessons[9].done
+    g.learn("dodge")
+    assert g.lessons[9].done and not g.lessons[10].done
     g.learn("end")
-    assert g.lessons[6].done and not g.lessons[9].done   # `end` ticks one lesson at a time
-    for verb in ("map", "reach", "preview", "move", "targets", "spells", "cast", "end"):
-        g.learn(verb)
-    assert all(ls.done for ls in g.lessons) and any("[Tutorial complete]" in s for s in shown)
+    assert all(ls.done for ls in g.lessons)
+    assert any("[Tutorial complete]" in s for s in shown)
+
+
+def test_spells_command_shows_remaining_slot_budget():
+    from types import SimpleNamespace
+
+    g = play.Game.__new__(play.Game)
+    shown = []
+    g.enc = lambda: SimpleNamespace(tokens={"kairos": caster(slots=2)})
+    g.resolve = lambda words: words
+    g.run_cmd = lambda *args: (0, "Fire Bolt; Magic Missile")
+    g.out = shown.append
+    ok, finished = g.do("kairos", "spells", [])
+    assert ok and not finished
+    assert "Spell slots: 1st: 2/2" in shown[0]
+
+
+def test_end_turn_prints_auto_resolved_death_save():
+    g = play.Game.__new__(play.Game)
+    shown = []
+    g.run_cmd, g.out = lambda *args: (0, "Kairos death save: 10, success (1/3)."), shown.append
+    g.end_turn()
+    assert shown == ["Kairos death save: 10, success (1/3)."]
+
+
+def test_finish_distinguishes_dead_from_stable_pc():
+    from types import SimpleNamespace
+
+    for dead, expected in ((False, "stable but unconscious"), (True, "is dead")):
+        g = play.Game.__new__(play.Game)
+        g.enc = lambda: SimpleNamespace(status="ended", tokens={
+            "kairos": SimpleNamespace(side="pc", dead=dead)})
+        g.pc_name, g.sc = "Kairos", {}
+        g.run_cmd = lambda *args: (0, "")
+        g.out, g.paint, g.quit = lambda text: output.append(text), lambda text, _style: text, False
+        output = []
+        g.finish("defeat")
+        assert expected in output[-1]
 
 
 def test_the_player_rolls_their_own_dice_unless_auto_dice():

@@ -36,7 +36,7 @@ def test_start_is_cwd_independent_and_offline(tmp_path):
                        cwd=tmp_path, input="quit\n", capture_output=True, text=True,
                        encoding="utf-8", timeout=120)
     assert "Traceback" not in r.stderr, r.stderr
-    assert "[Lesson 1/10: Read the map]" in r.stdout
+    assert "[Lesson 1/11: Read the map]" in r.stdout
 
 
 def test_start_help_lists_srd_flag():
