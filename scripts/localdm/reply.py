@@ -523,6 +523,108 @@ _SELF_STAT = re.compile(
     re.I)
 
 
+# Guardrail (RI6): a narrated mechanical number must be one the engine produced.
+#
+# The backstop behind the phrase-shaped guards above, and the comparison the
+# narrative review proposed (docs/design/NARRATIVE-expert-review-2026-09-30.md,
+# 4.2): rather than another list of phrasings, read the numbers the draft
+# asserts and check each against the numbers the engine actually has. The
+# caller supplies those (play.Session._backing: this turn's engine text, the
+# fight snapshot, the sheet), so this module still needs no engine to run.
+#
+# Only MECHANICAL claims are read, by shape: an amount of damage, a hit point
+# total, an AC or DC with its number, a die face, a combat round. A bare number
+# is never a claim. "Three guards", "ten feet of rope", "room 12" and "the year
+# 1492" are scenery, and a guard that read them would fire on every other turn.
+# The direction is deliberate: a miss ships a number the sheet does not have,
+# which is what the guard exists for, but a false positive on ordinary prose is
+# paid on every turn by everyone.
+#
+# Matching is set membership, not per stat: a claimed "15" passes if 15 appears
+# anywhere in the backing. That under-fires when a wrong number happens to
+# collide with a real one (a roll total of 15, an invented AC 15), and it is the
+# price of not coupling this regex to the engine's exact wording. Bias toward
+# under-firing, as the roadmap asks.
+_DAMAGE_TYPES = ("acid|bludgeoning|cold|fire|force|lightning|necrotic|piercing|poison|"
+                 "psychic|radiant|slashing|thunder")
+_HP_WORDS = r"(?:hp|hit\s+points?)"
+_STAT_WORDS = (r"(?:ac|armou?r\s+class|dc|difficulty\s+class|"
+               r"(?:temp(?:orary)?\s+)?" + _HP_WORDS + ")")
+_NUMBER_CLAIM = re.compile(
+    # "7 damage", "7 fire damage", "7 points of fire damage", "3 more damage"
+    r"\b\d+\s+(?:(?:more|extra|additional|points?\s+of|" + _DAMAGE_TYPES + r")\s+){0,3}"
+    r"damage\b"
+    # "7 hit points", "7 HP", "7/12 HP", "7 of 12 hit points", "5 temporary hit points"
+    r"|\b\d+(?:\s*/\s*\d+|\s+of\s+\d+)?\s+(?:temp(?:orary)?\s+)?" + _HP_WORDS + r"\b"
+    r"|\b\d+(?:\s*/\s*\d+)?" + r"hp\b"
+    # "AC 15", "your AC climbs from 12 to 15", "hit points drop to 3", "DC 15".
+    # The gap stops at a clause break so a stat cannot reach a number in the next
+    # clause, and the optional "to N" is what reads the second number of a change.
+    r"|\b" + _STAT_WORDS + r"\b[^.!?,;\n\d]{0,16}?\b\d+(?:\s*/\s*\d+)?"
+    r"(?:\s+(?:to|up\s+to|down\s+to)\s+\d+)?\b"
+    # a die face: "you roll a 17", "rolled a natural 20", "a nat 1". The article is
+    # required on the verb form, because "the barrel rolls 3 feet" is scenery.
+    r"|\b(?:roll|rolls|rolled|rolling)\s+(?:a|an)\s+(?:natural\s+|nat\s+)?\d+\b"
+    r"|\b(?:natural|nat)\s+(?:1\d|20|[1-9])\b(?![-/])"
+    # "round 3" of a fight
+    r"|\bround\s+\d+\b",
+    re.I)
+_TENS = "twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety"
+_UNITS = "one|two|three|four|five|six|seven|eight|nine"
+_COMPOUND = re.compile(rf"\b({_TENS})[-\s]({_UNITS})\b", re.I)
+_DIGITS = re.compile(r"\d+")
+
+
+def _fold_numbers(text: str) -> str:
+    """`_spell_digits`, with "twenty-three" read as 23 rather than "20-3"."""
+    text = _COMPOUND.sub(lambda m: str(_NUMBER_WORDS[m.group(1).lower()]
+                                       + _NUMBER_WORDS[m.group(2).lower()]), text or "")
+    return _spell_digits(text)
+
+
+def engine_numbers(*sources) -> set:
+    """Every integer in `sources`: digit runs in a string, an int as itself, and the
+    same again inside a list, tuple or set. None is skipped, so a caller can pass a
+    missing snapshot or sheet field without checking it first."""
+    out = set()
+    for s in sources:
+        if s is None or isinstance(s, bool):
+            continue
+        if isinstance(s, int):
+            out.add(s)
+        elif isinstance(s, str):
+            out.update(int(d) for d in _DIGITS.findall(s))
+        elif isinstance(s, (list, tuple, set, frozenset)):
+            out |= engine_numbers(*s)
+    return out
+
+
+def number_claims(narration: str) -> list:
+    """The mechanical claims in a narration, as (claim text, its numbers) pairs.
+
+    Number words are read as digits first, so "eight fire damage" is a claim the
+    same as "8 fire damage". The claim text is the folded form.
+    """
+    return [(m.group(0), tuple(int(d) for d in _DIGITS.findall(m.group(0))))
+            for m in _NUMBER_CLAIM.finditer(_fold_numbers(narration or ""))]
+
+
+def unbacked_numbers(narration: str, backed) -> list:
+    """The mechanical claims whose numbers are not all in `backed`, in order, each
+    once. Empty means the narration states no number the engine did not give it.
+
+    `backed` is the set of numbers the engine produced (see `engine_numbers`). A
+    heuristic, not a proof, and the caller treats a hit the way every guardrail
+    here is treated: worth one rewrite, adopted only if the rewrite is clean.
+    """
+    backed = set(backed or ())
+    out = []
+    for text, nums in number_claims(narration):
+        if any(n not in backed for n in nums) and text not in out:
+            out.append(text)
+    return out
+
+
 # Guardrail: a failed check must change the world. Applied Standard 16.
 #
 # The model narrates the failure, and its phrasing overlaps the defect:

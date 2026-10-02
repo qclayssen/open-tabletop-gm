@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import dataclasses
 import io
 import os
 import pathlib
@@ -464,6 +465,29 @@ class Session:
                 "you. Rewrite it so the prose contains no number and no stat change: "
                 "narrate the casting and its sensory detail only, and put the spell in the "
                 "JSON line's cast field so the engine resolves it for real.")
+    # RI6. The backstop behind CAST_FIX: any mechanical number, on any beat. The claims
+    # quoted back are shape-limited by reply._NUMBER_CLAIM (a number next to a stat
+    # word), so the task cannot carry more than a few words of the draft.
+    NUMBER_FIX = ("Your last draft stated numbers that nothing in this exchange produced: "
+                  "{claims}. Damage, hit points, AC, DC, die rolls and combat rounds come "
+                  "only from the Engine section or the character sheet, never from the "
+                  "story. Rewrite it without those numbers: say what happens in words, and "
+                  "state a number only if the Engine section or the sheet gives it. Keep "
+                  "the same JSON line.")
+
+    def _backing(self, engine: str) -> set:
+        """The numbers a draft may state: this call's engine text, the fight snapshot
+        (hp, max hp, round) and the sheet (hp, AC with any active Mage Armor, passives).
+
+        Engine-owned state only. The transcript, the memory and the summary are never
+        read here, because a number the DM invented last turn is in them, and backing a
+        draft with them would launder last turn's fabrication into this turn's fact."""
+        snap = self.bridge.snapshot() or {}
+        facts = context.sheet_facts(self.camp_dir) or {}
+        tokens = [(t.get("hp"), t.get("max_hp")) for t in snap.get("tokens") or []]
+        passive = list((facts.get("passive") or {}).values())
+        return reply.engine_numbers(engine, snap.get("round"), tokens,
+                                    facts.get("hp"), facts.get("ac"), passive)
 
     def _canon(self, player: str) -> list:
         """Canon worth replaying for this beat: the player's own line, falling
@@ -589,6 +613,27 @@ class Session:
             retry = call(_join(task, self.NAME_FIX.format(name=over)), strict=False)
             if retry is not None and not self.names.suspect(retry.narration):
                 r = retry
+        # RI6: a narrated number the engine did not produce. Last, so it reads the
+        # draft the other guards settled on. The backing is read only when the draft
+        # states a mechanical number at all, which keeps a snapshot and a sheet read
+        # off every turn that does not.
+        #
+        # Adopted PROSE ONLY, unlike the three above: the first draft's check, cast,
+        # command and escalate are kept. This guard is about what the player is told,
+        # and a rewrite asked to drop a number must not be able to drop, add or change
+        # a directive on the way, so the rewrite changes no mechanical state by
+        # construction (the roadmap's own condition for this guard).
+        if reply.number_claims(r.narration):
+            backed = self._backing(engine)
+            unbacked = reply.unbacked_numbers(r.narration, backed)
+            if unbacked:
+                claims = "; ".join(unbacked)
+                self._say_status(f"[dm] narration stated numbers the engine did not "
+                                 f"produce ({claims}), re-drafting")
+                retry = call(_join(task, self.NUMBER_FIX.format(claims=claims)),
+                             strict=False)
+                if retry is not None and not reply.unbacked_numbers(retry.narration, backed):
+                    r = dataclasses.replace(r, narration=retry.narration)
         # Only prose the player was actually shown is counted, so the ledger
         # never records a name the model was talked out of using.
         self.names.observe(r.narration)
