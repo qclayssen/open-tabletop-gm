@@ -1786,7 +1786,7 @@ function renderReplay(text) {
 // ═══════════════════════════════════════════════════════════════════
 
 // Keyed by player name so repeated calls merge cleanly.
-const _playerData = {};
+let _playerData = {};
 
 // ── CRIT / FUMBLE flash ─────────────────────────────────────────────
 const _flashOverlay = document.getElementById('flash-overlay');
@@ -2607,6 +2607,23 @@ setInterval(() => {
 function updateStats(stats) {
   if (!stats || !stats.players) return;
   const sidebar = document.getElementById('sidebar');
+  const rosterError = stats.roster_error;
+  let errorNotice = document.getElementById('sb-roster-error');
+  if (rosterError) {
+    if (!errorNotice) {
+      errorNotice = document.createElement('div');
+      errorNotice.id = 'sb-roster-error';
+      errorNotice.className = 'sb-roster-error';
+      errorNotice.setAttribute('role', 'alert');
+      sidebar.prepend(errorNotice);
+    }
+    errorNotice.textContent = rosterError;
+  } else if (errorNotice) {
+    errorNotice.remove();
+  }
+  if (stats.replace_players) {
+    _playerData = {};
+  }
   const turnSection = document.getElementById('sb-turn-section');
   const solo = stats.players.length === 1;
 

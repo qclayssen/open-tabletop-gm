@@ -1249,10 +1249,71 @@ _current_stats: dict = {}
 _stats_lock = threading.Lock()
 
 
+def _sheet_roster() -> tuple[list[dict], str | None]:
+    """Read the active campaign's character and NPC sheets for the sidebar."""
+    try:
+        campaign = open(CAMP_FILE, encoding="utf-8").read().strip()
+        if not campaign:
+            return [], "No active campaign roster."
+        camp_dir = _find_display_campaign(campaign)
+    except (OSError, ValueError) as exc:
+        return [], f"Cannot read campaign roster: {exc}"
+
+    folders = (camp_dir / "characters", camp_dir / "npc-files")
+    paths = sorted({path for folder in folders if folder.is_dir()
+                    for path in folder.glob("*.md")})
+    if not paths:
+        return [], "No character sheets found in this campaign."
+
+    from systems.dnd5e import tactics_sheet
+
+    players = []
+    errors = []
+    for path in paths:
+        try:
+            text = path.read_text(encoding="utf-8")
+            token = tactics_sheet.read_sheet(text, path.stem, (0, 0), path=str(path))
+            def field(label: str) -> str | None:
+                match = re.search(rf"\*\*{re.escape(label)}:\*\*\s*([^|\n]+)",
+                                  text, re.IGNORECASE)
+                return match.group(1).strip() if match else None
+
+            race = field("Race")
+            klass = field("Class")
+            level = field("Level")
+            hp = re.search(r"\*\*HP:\*\*\s*(\d+)\s*/\s*(\d+)", text)
+            ac = field("AC")
+            initiative = field("Initiative")
+            speed = field("Speed")
+            if not klass or not level or not level.isdigit() or not hp:
+                raise ValueError("sheet must state Class, numeric Level, and HP current / max")
+            entry = {"name": token.name, "class": klass, "level": int(level),
+                     "hp": {"current": token.hp, "max": token.max_hp}}
+            if race:
+                entry["race"] = race.split("|")[0].strip()
+            if ac and re.match(r"\d+", ac):
+                entry["ac"] = int(re.match(r"\d+", ac).group())
+            if initiative:
+                entry["initiative"] = initiative
+            if speed and re.match(r"\d+", speed):
+                entry["speed"] = int(re.match(r"\d+", speed).group())
+            if token.temp_hp:
+                entry["hp"]["temp"] = token.temp_hp
+            players.append(entry)
+        except (OSError, ValueError) as exc:
+            errors.append(f"{path.name}: {exc}")
+    error = "Roster sheets need attention: " + "; ".join(errors) if errors else None
+    if not players and not error:
+        error = "No readable character sheets found in this campaign."
+    return players, error
+
+
 def _persist_stats() -> None:
+    """Persist non-roster combat context while never saving the roster cache."""
     try:
         with _stats_lock:
-            data = dict(_current_stats)
+            data = {key: value for key, value in _current_stats.items()
+                    if key not in ("players", "roster_error")}
         with open(STATS_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f)
     except Exception:
@@ -1260,13 +1321,23 @@ def _persist_stats() -> None:
 
 
 def _load_stats() -> None:
+    """Restore non-roster context and rebuild every player from campaign sheets."""
+    restored = {}
     try:
         with open(STATS_FILE, encoding="utf-8") as f:
             data = json.load(f)
-        with _stats_lock:
-            _current_stats.update(data)
-    except Exception:
+        if isinstance(data, dict):
+            restored = {key: value for key, value in data.items() if key != "players"}
+    except (OSError, ValueError):
         pass
+    players, error = _sheet_roster()
+    with _stats_lock:
+        _current_stats.update(restored)
+        _current_stats["players"] = players
+        if error:
+            _current_stats["roster_error"] = error
+        else:
+            _current_stats.pop("roster_error", None)
     _drop_stale_turn_order()
 
 
@@ -2095,6 +2166,12 @@ def chunk():
                 _do_clear()
             with open(CAMP_FILE, "w", encoding="utf-8") as f:
                 f.write(new_camp)
+            if new_camp and new_camp != prev_camp:
+                _load_stats()
+                with _stats_lock:
+                    roster = dict(_current_stats)
+                roster["replace_players"] = True
+                _broadcast({"stats": roster})
             _load_log()
             _load_tail()
         except Exception:
