@@ -188,10 +188,13 @@ def test_render_labels_each_kind_so_the_dm_knows_what_it_is():
 
 def test_build_messages_carries_the_canon_between_summary_and_turns():
     msgs = build_messages("sys", "", "We met a tollkeeper.", [{"role": "dm", "text": "She nods."}],
-                          canon=[{"kind": "dialogue", "speaker": "Maribeth", "text": "Not again."}])
+                          canon=[{"kind": "dialogue", "speaker": "Maribeth", "text": "Not again."},
+                                 {"kind": "death", "speaker": "The Guard", "dead": True,
+                                  "text": "The Guard died at the gate."}])
     user = msgs[1]["content"]
     assert user.index("Story so far") < user.index("Canon") < user.index("Recent turns")
     assert "Maribeth: Not again." in user
+    assert "DEAD, stays dead: The Guard" in user
 
 
 def test_canon_is_trimmed_before_the_recent_turns():
