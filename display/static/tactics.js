@@ -31,6 +31,7 @@
 
   let snap = null, prev = null;
   const ui = { mode: null, kind: null, reach: null, targets: null, attack: null, preview: {},
+               pins: [], pinsSlug: null, pinsRequest: 0,
                hover: null, armed: null, busy: false, lastMove: null, toastTimer: 0, hoverTimer: 0,
                spells: null, spell: null, singles: null, darts: null, dartsText: '',
                helpTarget: null, readyWhat: null, readyStep: null,
@@ -84,6 +85,7 @@
   const hostile = (a, b) => (a.side === 'enemy') !== (b.side === 'enemy');
   const adjacent = (a, b) => Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y)) <= 1;
   const living = () => ((snap && snap.tokens) || []).filter(t => !t.dead);
+  const visiblePins = () => ui.pins || [];
   const sqOf = t => label(t.x, t.y);
 
   /* Pure helpers: the side table, the frame geometry, the cell rule, the roll
@@ -698,9 +700,13 @@
         setTimeout(() => { if (!snap || snap.status !== 'active') hide(); }, 3500);
       }
       prev = snap; snap = null;
+      ui.pinsRequest++;
+      ui.pinsSlug = null;
+      ui.pins = [];
       return;
     }
     prev = snap; snap = next;
+    loadPins(snap.meta && snap.meta.slug || '');
     el.panel.hidden = false;
     document.body.classList.add('tx-on');
     if (!prev || prev.current !== snap.current) {
@@ -1316,7 +1322,7 @@
   function drawPins() {
     const layer = ui.pinLayer; if (!layer) return;
     layer.innerHTML = '';
-    const pins = (snap && snap.pins) || [];
+    const pins = visiblePins();
     for (const p of pins) {
       if (!pinOnBoard(p, ui.W, ui.H)) continue;
       // data-kind is what the stylesheet keys on. The shape is already the
@@ -1577,7 +1583,7 @@
     // is aria-hidden: anything inside it is decorative to a screen reader, and
     // the square cursor reading through #tx-say is the board's only voice. A
     // pin with no line here is a pin a keyboard player cannot find at all.
-    const pin = ((snap && snap.pins) || []).find(x => x.x === p[0] && x.y === p[1]);
+    const pin = visiblePins().find(x => x.x === p[0] && x.y === p[1]);
     if (pin) bits.push(pin.kind === 'map'
       ? `map pin to ${pin.target}, ${pin.label}` : `note pin, ${pin.label}`);
     if (t) {
@@ -2283,7 +2289,7 @@
     if (!target || typeof target.getAttribute !== 'function') return null;
     const id = target.getAttribute('data-pin-id');
     if (!id) return null;
-    return ((snap && snap.pins) || []).find(p => p.id === id) || null;
+    return visiblePins().find(p => p.id === id) || null;
   }
 
   // Open a pin. A note pin fetches its text and shows it in the panel; a map pin
@@ -2308,6 +2314,31 @@
   function currentMapSlug() {
     const meta = (snap && snap.meta) || {};
     return meta.slug || '';
+  }
+
+  // Pins are campaign data served through the player's redacted route, not combat
+  // snapshot state. Load once per map and discard responses from maps the board
+  // has since left. A failed request leaves an empty layer and does not affect the
+  // combat snapshot or its controls.
+  function loadPins(slug) {
+    if (ui.pinsSlug === slug) return;
+    ui.pinsSlug = slug;
+    ui.pins = [];
+    const request = ++ui.pinsRequest;
+    if (!slug) { renderBoard(); return; }
+    fetch('/pins/' + encodeURIComponent(slug))
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (request !== ui.pinsRequest || !snap || currentMapSlug() !== slug) return;
+        ui.pins = data && Array.isArray(data.pins) ? data.pins : [];
+        renderBoard();
+      })
+      .catch(() => {
+        if (request === ui.pinsRequest && snap && currentMapSlug() === slug) {
+          ui.pins = [];
+          renderBoard();
+        }
+      });
   }
 
   // A map pin navigates to the target map's page. `/maps/<slug>` is the ARTWORK
