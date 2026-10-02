@@ -5,6 +5,11 @@
  "diagonals": "5",
  "info": "A walled practice yard behind the dormitories. Hay bales give half cover, the mud is difficult terrain, and the stone wall blocks sight. Two kobolds have slipped in over the back fence.",
  "base": "floor",
+ "grid": {
+  "cell_px": 100,
+  "offset_x": 0,
+  "offset_y": 0
+ },
  "features": [
   {"type": "wall", "x": 6, "y": 0, "w": 1, "h": 3, "label": "Stone wall"},
   {"type": "feature", "x": 7, "y": 4, "w": 1, "h": 2, "label": "Hay bales"},
