@@ -913,7 +913,7 @@
     const saved = fresh ? cameraLoad()[camName] : null;
     if (saved) { keepL = saved.scrollL; keepT = saved.scrollT; }
     ui.camMap = camName;
-    const s = reuse ? ui.svg : buildBoard(W, H, key);
+    const s = reuse ? ui.svg : buildBoard(W, H, key, cell);
     // The svg is sized to the box it is drawn into, not to the map, so a window
     // resize or a phone reflow reuses the terrain and still refits the board.
     s.setAttribute('width', W * cell);
@@ -963,7 +963,19 @@
   // The z-order of everything below is load-bearing and unchanged: the grid and
   // the labels sit over the fog, and the armed-mode overlay and the tokens sit
   // over the grid.
-  function buildBoard(W, H, key) {
+  function fitMapLabel(t, text, cell) {
+    const title = svg('title', {}, t);
+    title.textContent = text;
+    t.appendChild(document.createTextNode(text));
+    if (cell < 18) { t.remove(); return; }
+    let shown = text;
+    while (shown.length > 1 && t.getComputedTextLength() > C * 1.5) {
+      shown = shown.slice(0, -2).trimEnd() + '…';
+      t.lastChild.textContent = shown;
+    }
+  }
+
+  function buildBoard(W, H, key, cell) {
     const s = svg('svg', { viewBox: `0 0 ${W * C} ${H * C}`, width: W * C, height: H * C,
                            role: 'group', 'aria-label': `Battle map, ${W} by ${H} squares` });
     const hatch = svg('pattern', { id: 'tx-hatch', width: 6, height: 6, patternUnits: 'userSpaceOnUse',
@@ -1011,8 +1023,10 @@
     for (const z of (snap.meta && snap.meta.zones) || [])
       svg('line', { x1: z * C, y1: 0, x2: z * C, y2: H * C, style: 'stroke:var(--tx-brass);stroke-width:3;stroke-dasharray:8 6' }, s);
     for (const l of (snap.meta && snap.meta.labels) || []) {
-      const t = svg('text', { x: l.x * C + 5, y: l.y * C + 14, class: 'tx-cell-lbl', style: 'stroke:var(--tx-paper)' }, s);
-      t.textContent = l.text;
+      const t = svg('text', { x: l.x * C, y: l.y * C, class: 'tx-cell-lbl',
+                              'text-anchor': 'middle', 'dominant-baseline': 'middle',
+                              style: 'stroke:var(--tx-paper)' }, s);
+      fitMapLabel(t, l.text, cell);
     }
     ui.overlay = svg('g', {}, s);
     // Its own layer, above the overlay and below the tokens, and that is load

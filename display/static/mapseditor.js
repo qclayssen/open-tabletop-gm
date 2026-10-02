@@ -56,6 +56,20 @@
     return 'var(--tx-' + ((hit && hit.color) || 'floor') + ')';
   }
 
+  // One label's maximum stays tied to SVG cell units, while the rendered cell
+  // decides whether text is legible at all.
+  function fitMapLabel(t, text, cell) {
+    const title = svg('title', {}, t);
+    title.textContent = text;
+    t.appendChild(document.createTextNode(text));
+    if (cell < 18) { t.remove(); return; }
+    let shown = text;
+    while (shown.length > 1 && t.getComputedTextLength() > C * 1.5) {
+      shown = shown.slice(0, -2).trimEnd() + '…';
+      t.lastChild.textContent = shown;
+    }
+  }
+
   // ── the board ──
   function draw() {
     const W = state.width, H = state.height;
@@ -89,8 +103,9 @@
       svg('line', { x1: z * C, y1: 0, x2: z * C, y2: H * C, class: 'me-zone' }, s);
     }
     for (const l of state.labels || []) {
-      const t = svg('text', { x: l.x * C + 4, y: l.y * C + 13, class: 'me-lbl' }, s);
-      t.textContent = l.text;
+      const t = svg('text', { x: l.x * C, y: l.y * C, class: 'me-lbl',
+                              'text-anchor': 'middle', 'dominant-baseline': 'middle' }, s);
+      fitMapLabel(t, l.text, cell);
     }
     svg('g', { class: 'me-preview', id: 'me-preview' }, s);
 

@@ -167,6 +167,17 @@ def test_a_labelled_feature_keeps_exactly_one_label_after_a_merge():
         {"text": "Rubble", "x": 1, "y": 1}]
 
 
+def test_label_anchor_is_the_feature_region_centre():
+    """The label belongs over its whole rectangle, not its top-left cell.
+
+    Before fix: FAILS because compile_map only returns the rectangle origin.
+    """
+    spec = dict(BARE, features=[{"type": "feature", "x": 1, "y": 2, "w": 6, "h": 4,
+                                 "label": "Rubble"}])
+    label = maps.compile_map(spec)["meta"]["labels"][0]
+    assert (label["x"], label["y"]) == (4, 4)
+
+
 def test_two_features_sharing_label_text_stay_two_labels():
     """detention-bog labels three separate patches "Reeds". Merging on the text
     alone would collapse them into one, which is a visible loss on the map."""

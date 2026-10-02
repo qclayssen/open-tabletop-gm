@@ -111,7 +111,8 @@ def compile_map(spec: dict) -> dict:
                 cells[yy][xx] = t
                 owner[yy][xx] = i
         if f.get("label"):
-            labels.append({"text": f["label"], "x": x, "y": y})
+            labels.append({"text": f["label"], "x": x + fw / 2, "y": y + fh / 2,
+                           "w": fw, "h": fh})
     rows = ["".join(char_for[c] for c in row) for row in cells]
     grid = {"name": spec.get("name", ""), "rows": rows,
             "diagonals": str(spec.get("diagonals", "5"))}
