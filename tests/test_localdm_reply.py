@@ -369,3 +369,53 @@ def test_a_directive_named_but_not_parsable_falls_back_to_narration():
     r = reply.parse(text)
     assert r.check is None
     assert r.narration == text
+
+
+# ── RI6: a narrated number the engine did not produce ─────────────────────────
+
+# The 2026-09-30 sweep's real turn: "one slot left, AC 15" against an engine state of
+# ac=12, slots 2/2 (TEST-REPORT-strixhaven-sweep-llm-2026-09-30.md:547-560).
+SHEET = {8, 12}                 # Kairos: 8/8 HP, AC 12
+
+
+@pytest.mark.parametrize("draft, claim", [
+    ("You land hard and take 7 damage.", "7 damage"),
+    ("Nine fire damage sears the frog.", "9 fire damage"),
+    ("You regain twenty-three hit points.", "23 hit points"),
+    ("Your AC climbs from 12 to 15 instantly.", "AC climbs from 12 to 15"),
+    ("One slot left, AC 15.", "AC 15"),
+    ("You roll a natural 20!", "roll a natural 20"),
+    ("The lock is a DC 15 at least.", "DC 15"),
+    ("You are down to 3/8 HP.", "3/8 HP"),
+])
+def test_an_invented_mechanical_number_is_reported(draft, claim):
+    assert reply.unbacked_numbers(draft, SHEET) == [claim]
+
+
+@pytest.mark.parametrize("draft", [
+    "Three guards stand ten feet away in room 12.",
+    "The barrel rolls 3 feet down the slope.",
+    "The ledger is dated 1492 and lists two hundred names.",
+    "Your hit points, and the 3 guards, are the least of it.",
+    "Kairos rolls 1d20+5 for the bolt.",
+    "Two swords deal damage at once.",
+    "A natural 12-foot drop opens below.",
+])
+def test_a_number_that_is_scenery_is_never_a_claim(draft):
+    """The direction that costs everyone: a guard that read bare numbers would
+    rewrite every other turn. None of these state a mechanical result."""
+    assert reply.number_claims(draft) == []
+
+
+def test_a_number_the_engine_produced_is_backed():
+    engine = ("Kairos Fire Bolt -> Giant Frog 1: 17 vs AC 11, hit. "
+              "8 fire damage; Giant Frog 1 10/18 HP.")
+    backed = reply.engine_numbers(engine)
+    draft = "The bolt hits for 8 fire damage, and the frog is at 10/18 HP against AC 11."
+    assert reply.number_claims(draft)                    # it does state numbers
+    assert reply.unbacked_numbers(draft, backed) == []   # and every one is the engine's
+
+
+def test_engine_numbers_reads_text_ints_and_nested_fields_and_skips_none():
+    assert reply.engine_numbers("8 / 8 HP, AC 12", 3, None, [(5, 9), None],
+                                {"x": 1}, True) == {8, 12, 3, 5, 9}

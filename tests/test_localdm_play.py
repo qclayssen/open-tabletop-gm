@@ -1603,3 +1603,83 @@ def test_combat_consequences_come_from_the_engine_text():
     c = combat_consequences(t)
     assert "dropped to 0 HP" in c and "concentration broke" in c and "died" not in c
     assert combat_consequences("Kairos moves A1 to A2.") == ""
+
+
+# ── RI6: a narrated number the engine did not produce ──────────────────────────
+
+def test_an_invented_number_out_of_a_fight_is_rewritten_once(tmp_path):
+    """No engine ran on this turn, so "7 damage" came from the story: nothing applied
+    it, and once filed it is replayed to the DM as its own past turn forever. One
+    rewrite, adopted because it is clean, and the invented number is never filed."""
+    replies = iter(["You slip on the wet stairs and take 7 damage." + NULLS,
+                    "You slip on the wet stairs and crack your shin on the stone." + NULLS])
+    status = []
+    c = FakeClient(lambda m, msgs, role: next(replies))
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path), bridge=FakeBridge(),
+                on_status=status.append)
+    out = s.handle("I hurry down the stairs.")
+    assert out == ["You slip on the wet stairs and crack your shin on the stone."]
+    assert len(c.dm_calls()) == 2
+    assert "7 damage" in user_text(c.dm_calls()[1])       # the rewrite is told which number
+    assert not any("7 damage" in t["text"] for t in s.memory.turns())
+    assert any("did not produce (7 damage)" in line for line in status), status
+
+
+def test_a_number_the_engine_produced_costs_no_second_call(tmp_path):
+    """The over-firing direction. Every number in this narration is in the engine's
+    own result line, so it is the engine's number and the turn stays one draft."""
+    replies = iter(['Fire gathers in your palm.\n{"escalate": null, '
+                    '"command": "attack kairos frog-1 fire bolt"}',
+                    "The bolt bursts for 7 fire damage against AC 11, and the frog sags "
+                    "to 11/18 HP." + NULLS])
+    c = FakeClient(lambda m, msgs, role: next(replies))
+    b = FakeBridge([fight()], {
+        "status": lambda a: Result(0, "Round 1."),
+        "attack": lambda a: Result(0, "Kairos Fire Bolt -> Giant Frog 1: 15 vs AC 11, hit. "
+                                      "7 fire damage; Giant Frog 1 11/18 HP.")})
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path, "council: off"), bridge=b)
+    out = s.handle("I hurl a fire bolt at the frog.")
+    assert out[-1].startswith("The bolt bursts for 7 fire damage")
+    assert len(c.dm_calls()) == 2                          # the turn and its narration only
+
+
+def test_a_number_the_sheet_states_costs_no_second_call(tmp_path):
+    """Out of a fight the sheet is the record. A DM reminding the player of the HP
+    and AC the sheet actually holds is stating the engine's numbers, not inventing."""
+    camp = camp_dir(tmp_path)
+    (camp / "characters").mkdir()
+    (camp / "characters" / "Kairos.md").write_text(
+        "- **HP:** 6 / 8 | **Temp HP:** 0\n- **AC:** 12 | **Speed:** 30 ft\n",
+        encoding="utf-8")
+    c = FakeClient(lambda m, msgs, role:
+                   "Still at 6 of 8 hit points behind AC 12, you press on." + NULLS)
+    s = Session("demo", c, MODELS, camp_dir=camp, bridge=FakeBridge())
+    s.handle("I keep walking.")
+    assert len(c.dm_calls()) == 1
+
+
+def test_the_number_rewrite_changes_prose_only_and_keeps_the_directive(tmp_path):
+    """The roadmap's condition: change no mechanical state. The rewrite here drops the
+    check field, as a rewrite told to remove numbers plausibly does. Adopting it whole
+    would silently cancel the roll the first draft asked for; only its prose is taken."""
+    camp = camp_dir(tmp_path)
+    (camp / "characters").mkdir()
+    (camp / "characters" / "Kairos.md").write_text(
+        "## Skills\n| Skill | Ability | Bonus |\n|---|---|---|\n| Stealth | Dex | +4 |\n",
+        encoding="utf-8")
+
+    def fake(m, msgs, role):
+        n = len(c.dm_calls())
+        if n == 1:
+            return ("You flatten yourself against the wall; this is a DC 13 effort.\n"
+                    '{"escalate": null, "command": null, "check": "Stealth 13"}')
+        if n == 2:
+            return "You flatten yourself against the wall." + NULLS     # check dropped
+        return "The guard turns at the scrape of your boot, and now you must run." + NULLS
+
+    c = FakeClient(fake)
+    s = Session("demo", c, MODELS, camp_dir=camp, bridge=FakeBridge())
+    out = "\n".join(s.handle("I try to sneak past the guard."))
+    assert "DC 13 effort" not in out                       # the invented number is gone
+    assert "You flatten yourself against the wall." in out
+    assert "Stealth check" in out and "against DC 13" in out   # and the roll still happened
