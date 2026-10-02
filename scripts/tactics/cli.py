@@ -69,10 +69,10 @@ import io
 import json
 import os
 import pathlib
-import random
 import re
 import sys
 
+import dice                               # scripts/dice.py (on sys.path via tactics/__init__)
 from paths import find_campaign            # scripts/paths.py (on sys.path via tactics/__init__)
 
 from . import (actions, ai, effects, encounter, engine, formations, maps, policy, receipts,
@@ -155,9 +155,22 @@ def _difficulty(camp_dir) -> str:
 
 
 def _roller(args) -> Roller:
+    """The engine's dice for this command, from the canonical factory.
+
+    `dice.new_rng` is the one policy (docs/milestones/08-roll-integrity.md): a
+    seeded PRNG whose seed came from `secrets` and is kept on the object as
+    `.seed_value`, so anything that rolls can be quoted and re-run. Building a
+    bare `random.Random` here meant the CLI's stream was the one dice stream in
+    the tree with no seed to quote, and the two policies could drift apart.
+
+    Precedence is unchanged and is the GM's to set: an explicit `--seed N` is
+    the seed, otherwise the one resolved for this invocation (a paused command's
+    replayed seed, or a freshly resolved one). `new_rng(None)` draws the fresh
+    secrets-backed seed, which is what the old unseeded `random.Random()` did
+    too, from the OS pool.
+    """
     seed = args.seed if args.seed is not None else getattr(args, "_seed", None)
-    rng = random.Random(seed) if seed is not None else random.Random()
-    return Roller(rng=rng, supplied=list(args.roll or []),
+    return Roller(rng=dice.new_rng(seed), supplied=list(args.roll or []),
                   supplied_source="player" if args.player_roll else "verbal",
                   for_me=bool(args.for_me))
 
@@ -194,6 +207,41 @@ def _load_pending(camp_dir, canon: list) -> dict:
     except (OSError, ValueError):
         return {}
     return data if data.get("cmd") == canon else {}
+
+
+def _fresh_seed() -> int:
+    """One new seed, from the canonical policy. The only place this file asks
+    the OS for entropy, and named so a test can plan the next seed without
+    reaching into the `random` module (which is how the tests used to force a
+    face, and which put a second, unrecorded dice stream in the CLI)."""
+    return dice.new_rng().seed_value
+
+
+def _resolve_seed(pending: dict) -> int:
+    """The seed this invocation's dice run on, as one integer. Always.
+
+    A paused command exists so the re-run lands the same faces, which means the
+    seed in combat/pending.json is read and never redrawn. `dict.get(k, default)`
+    cannot do that: the default argument is evaluated before the lookup, so
+    `pending.get("seed", random.randrange(1 << 30))` drew a replacement seed off
+    the global `random` generator on every replay and then threw it away,
+    because the key was there. That was a second dice stream, unseeded by
+    policy and described by no file, advancing on every paused command.
+
+    A record with no usable seed is resolved rather than trusted: the key may be
+    absent, null (a hand-edited or foreign pending.json), or a non-integer, and
+    `random.Random(None)` on the other side of `_roller` would silently give up
+    replay and produce an unseeded roll that no later re-run could match --
+    including the next one, which would write the same null back out. So the
+    canonical policy supplies one secrets-backed seed, and the next
+    `_save_pending` writes that integer, making the replay reproducible from
+    there on. Precedence is untouched: an explicit `--seed` still wins over
+    both branches (see `_roller`).
+    """
+    seed = pending.get("seed")
+    if isinstance(seed, int) and not isinstance(seed, bool):
+        return seed
+    return _fresh_seed()
 
 
 def _save_pending(camp_dir, canon: list, seed, decisions: list) -> None:
@@ -1221,7 +1269,7 @@ def main(argv=None) -> int:
     try:
         camp_dir = _camp_dir(args)
         pending = {} if args.cmd in READ_ONLY else _load_pending(camp_dir, canon)
-        args._seed = pending.get("seed", random.randrange(1 << 30))
+        args._seed = _resolve_seed(pending)
         args._decisions = list(pending.get("decisions", []))
         code = run(args)
         if args.cmd not in READ_ONLY:
