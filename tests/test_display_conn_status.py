@@ -709,7 +709,8 @@ class StreamErrors(ConnectionTestCase):
                              "turn_order": {}}).encode("utf-8"),
             headers={"Content-Type": "application/json"}, method="POST")
         urllib.request.urlopen(req, timeout=10).read()
-        self.page.wait_for_timeout(1000)
+        # Wait for the condition rather than a fixed span: same reason as below.
+        self.page.wait_for_selector("#stream-toast", state="visible", timeout=15000)
 
         self.assertTrue(self.page.is_visible("#stream-toast"),
                         "a handler that throws must be reported to the reader")
@@ -720,10 +721,17 @@ class StreamErrors(ConnectionTestCase):
           window.updateStats = window.__realUpdateStats || window.updateStats;
         }""")
         self.server.push("The stream is still alive.")
-        self.page.wait_for_timeout(1200)
-        self.assertTrue(self.page.evaluate(
-            "document.getElementById('text-content').textContent.includes('still alive')"),
-            "one throwing branch must not take the rest of the stream with it")
+        # Waiting for the condition, not for a fixed span. A fixed
+        # wait_for_timeout races the SSE round trip and the typewriter, and on a
+        # loaded CI runner loses often enough to be a real flake. The assertion
+        # is unchanged; only how long we allow for it changed.
+        try:
+            self.page.wait_for_function(
+                "document.getElementById('text-content').textContent.includes('still alive')",
+                timeout=15000)
+        except Exception as exc:                    # Playwright's TimeoutError
+            self.fail("one throwing branch must not take the rest of the stream "
+                      f"with it: {exc}")
 
     def test_repeated_identical_errors_do_not_flood_the_screen(self):
         """A bad payload can arrive many times a second.

@@ -3722,7 +3722,21 @@ if __name__ == "__main__":
     if _audio:
         _audio.set_broadcast(_broadcast)
 
-    host = "0.0.0.0" if _LAN_MODE else "localhost"
+    # Numeric, never a name. Werkzeug builds an http.server.HTTPServer, and
+    # HTTPServer.server_bind() calls socket.getfqdn(host) BETWEEN bind() and
+    # listen(). While that lookup is outstanding the socket is bound and not
+    # listening, so nothing can connect: a connection times out rather than
+    # being refused. On GitHub's macos-26-arm64 image the lookup of "localhost"
+    # does not come back, and start-display.sh runs this under nohup with the
+    # output in a file, so a GM on a slow or hostile resolver gets the
+    # "Flask server starting" banner printed just above this line, a browser
+    # that never connects, and no error anywhere.
+    #
+    # "127.0.0.1" and "0.0.0.0" are already numeric, so they do not trigger
+    # the reverse lookup either. This is the one-line form of the fix; see
+    # tests/_display_child.py, which avoids the code path altogether for the
+    # tests that must be able to kill this process for real.
+    host = "0.0.0.0" if _LAN_MODE else "127.0.0.1"
     # TLS — only enabled when --tls is explicitly passed; HTTP is the default.
     _display_dir = os.path.dirname(os.path.abspath(__file__))
     _cert = os.path.join(_display_dir, "cert.pem")
