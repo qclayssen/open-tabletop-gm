@@ -157,7 +157,7 @@ class TailLogicTest(unittest.TestCase):
             "os": __import__("os"),
             "sys": __import__("sys"),
             "CAMP_FILE": str(self.camp_file),
-            "_campaign_dir": (lambda name: self.campaign_root / name),
+            "_campaign_dir_for_name": (lambda name: self.campaign_root / name),
         }
         exec(block, ns)
         return ns

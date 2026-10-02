@@ -55,11 +55,27 @@ except Exception:
     _SRD_AVAILABLE = False
 
 from paths import (
-    campaign_dir as _campaign_dir,
+    campaigns_dir as _campaigns_dir,
+    campaign_path as _campaign_path,
     find_campaign as _find_campaign,
     campaign_system as _campaign_system,
     characters_dir as _characters_dir,
 )
+
+
+def _campaign_dir_for_name(name: str):
+    """Resolve a display campaign name as one safe component under campaigns/."""
+    if not isinstance(name, str) or not name or "\x00" in name or name in (".", ".."):
+        raise ValueError("invalid campaign name")
+    if "/" in name or "\\" in name:
+        raise ValueError("invalid campaign name")
+    return _campaign_path(_campaigns_dir(), name)
+
+
+def _find_display_campaign(name: str):
+    """Resolve a validated campaign name using the shared campaign lookup."""
+    _campaign_dir_for_name(name)
+    return _find_campaign(name)
 
 # The map editor's terrain merge. The engine owns the rules; this only decides
 # what a map file looks like, and it lives in scripts/ so the CLI and the tests
@@ -97,7 +113,7 @@ def _apply_campaign_sfx_languages() -> None:
         camp = open(CAMP_FILE, encoding="utf-8").read().strip()
         if not camp:
             return
-        state_md = _find_campaign(camp) / "state.md"
+        state_md = _find_display_campaign(camp) / "state.md"
         if not state_md.exists():
             return
         text = state_md.read_text(errors="replace", encoding="utf-8")
@@ -1027,7 +1043,7 @@ def _get_log_file() -> str:
     try:
         camp = open(CAMP_FILE, encoding="utf-8").read().strip()
         if camp:
-            return str(_campaign_dir(camp) / "text_log.json")
+            return str(_campaign_dir_for_name(camp) / "text_log.json")
     except Exception:
         pass
     return _LOG_FALLBACK
@@ -1101,7 +1117,7 @@ def _get_tail_file() -> "str | None":
     try:
         camp = open(CAMP_FILE, encoding="utf-8").read().strip()
         if camp:
-            return str(_campaign_dir(camp) / "session_tail.json")
+            return str(_campaign_dir_for_name(camp) / "session_tail.json")
     except Exception:
         pass
     return None
@@ -1239,11 +1255,9 @@ def _encounter_active() -> "bool | None":
         camp = open(CAMP_FILE, encoding="utf-8").read().strip()
     except OSError:
         return None
-    camp = re.sub(r"[^A-Za-z0-9_-]", "", camp)[:50]
-    if not camp:
-        return None
     try:
-        path = _find_campaign(camp) / "combat" / "encounter.json"
+        _campaign_dir_for_name(camp)
+        path = _find_display_campaign(camp) / "combat" / "encounter.json"
     except Exception:
         return None
     try:
@@ -1467,6 +1481,7 @@ def _load_ui_manifest() -> str:
     if not name:
         return "null"
     try:
+        _campaign_dir_for_name(name)
         system = _campaign_system(name)
         path = _SYSTEMS_DIR / system / "ui.json"
         if not path.exists():
@@ -1756,15 +1771,11 @@ def _pin_campaign():
         camp = open(CAMP_FILE, encoding="utf-8").read().strip()
     except OSError:
         return None
-    if not camp:
+    try:
+        _campaign_dir_for_name(camp)
+    except (TypeError, ValueError, OSError):
         return None
-    # CAMP_FILE is writable from inside the LAN trust boundary, so the campaign
-    # name is reduced to a plain slug before it reaches a path. Same rule as
-    # get_character_sheet above.
-    camp = re.sub(r"[^A-Za-z0-9_-]", "", camp)[:50]
-    if not camp:
-        return None
-    found = _find_campaign(camp)
+    found = _find_display_campaign(camp)
     return found if found.is_dir() else None
 
 
@@ -1980,7 +1991,14 @@ def chunk():
     # per-campaign replay. Sent by send.py --set-campaign at /gm load. May arrive with
     # or without text.
     if "campaign" in data:
-        new_camp = str(data["campaign"]).strip()
+        raw_camp = data["campaign"]
+        if not isinstance(raw_camp, str):
+            return "Invalid campaign name", 400
+        new_camp = raw_camp.strip()
+        try:
+            _campaign_dir_for_name(new_camp)
+        except (TypeError, ValueError, OSError):
+            return "Invalid campaign name", 400
         try:
             prev_camp = open(CAMP_FILE, encoding="utf-8").read().strip()
         except Exception:
@@ -2537,7 +2555,7 @@ def _read_narrator_voice() -> str:
     if not name:
         return _tts.DEFAULT_VOICE
     try:
-        state = _find_campaign(name) / "state.md"
+        state = _find_display_campaign(name) / "state.md"
         if not state.exists():
             return _tts.DEFAULT_VOICE
         text = state.read_text(errors="replace", encoding="utf-8")
@@ -2558,7 +2576,7 @@ def _write_narrator_voice(voice: str) -> bool:
     if not name:
         return False
     try:
-        state = _find_campaign(name) / "state.md"
+        state = _find_display_campaign(name) / "state.md"
         text = state.read_text(errors="replace", encoding="utf-8") if state.exists() else ""
     except (OSError, ValueError):
         return False
@@ -3048,15 +3066,14 @@ def get_character_sheet(character):
         camp = open(CAMP_FILE, encoding="utf-8").read().strip()
     except Exception:
         camp = ""
-    # Sanitise the campaign name with the same allowlist + length cap as the
-    # character argument. CAMP_FILE is writable by anyone inside the LAN+token
-    # trust boundary (via push_stats.py --set-campaign), so a malicious value
-    # here could pivot to arbitrary `<name>.md` reads via os.path.join.
-    camp = re.sub(r"[^A-Za-z0-9_-]", "", camp)[:50]
+    try:
+        _campaign_dir_for_name(camp)
+    except (TypeError, ValueError, OSError):
+        camp = ""
 
     candidates = []
     if camp:
-        candidates.append(str(_find_campaign(camp) / "characters" / f"{safe}.md"))
+        candidates.append(str(_find_display_campaign(camp) / "characters" / f"{safe}.md"))
     candidates.append(str(_characters_dir() / f"{safe}.md"))
     # Legacy Claude-skill global roster — final fallback for older installs.
     candidates.append(os.path.expanduser(f"~/.claude/dnd/characters/{safe}.md"))
@@ -3067,7 +3084,7 @@ def get_character_sheet(character):
     if camp:
         slug = re.sub(r"[^a-z0-9]+", "-", safe.lower()).strip("-")
         if slug:
-            npc_dir = (_find_campaign(camp) / "npc-files").resolve()
+            npc_dir = (_find_display_campaign(camp) / "npc-files").resolve()
             npc_path = (npc_dir / f"{slug}.md").resolve()
             if npc_path.parent == npc_dir:
                 candidates.append(str(npc_path))
@@ -3166,7 +3183,7 @@ def _fight_answer(character: str, text: str) -> Optional[list]:
         q = fightq.classify(text, _FIGHT_VERBS, scope="fight")
         if q is None:
             return None
-        enc = _state.load(_state.encounter_path(_find_campaign(camp)))
+        enc = _state.load(_state.encounter_path(_find_display_campaign(camp)))
         if enc.status != "active":
             return None
         want = character.strip().lower()
@@ -3422,6 +3439,10 @@ def _run_tactics(args: list, extra: list = ()) -> tuple:
     camp = _active_campaign_name()
     if not camp:
         return 1, NO_CAMPAIGN
+    try:
+        _campaign_dir_for_name(camp)
+    except (TypeError, ValueError, OSError):
+        return 1, "Invalid campaign name."
     cmd = [sys.executable, TACTICS_CLI, "-c", camp, *args, *extra]
     with _combat_run_lock:
         try:
