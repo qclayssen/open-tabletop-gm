@@ -269,7 +269,7 @@ def test_a_reaction_ask_is_mirrored_to_the_display(camp, capsys, monkeypatch):
     begin(capsys)
     _edit(camp, actor="frog-1", pos={"frog-1": (2, 6)})
     hit = next(s for s in range(500) if 9 <= _random.Random(s).randint(1, 20) <= 16)
-    monkeypatch.setattr(cli.random, "randrange", lambda n: hit)
+    monkeypatch.setattr(cli, "_fresh_seed", lambda: hit)
     code, out = run(capsys, "attack", "frog-1", "kairos")
     assert code == 2 and "Silvery Barbs" in out
     assert any(p["turn"]["pending"] == "react:kairos:silvery barbs" for p in pushed)
@@ -419,9 +419,12 @@ def test_a_paused_reaction_replays_the_same_enemy_roll(camp, capsys, monkeypatch
     begin(capsys)
     _edit(camp, actor="frog-1", pos={"frog-1": (2, 6)})       # next to Kairos on B7
     hit = next(s for s in range(500) if 9 <= _random.Random(s).randint(1, 20) <= 16)
-    miss = next(s for s in range(500) if _random.Random(s).randint(1, 20) <= 3)
-    seeds = iter([hit, miss, miss, miss])
-    monkeypatch.setattr(cli.random, "randrange", lambda n: next(seeds))
+    # Counted, not just supplied: the paused re-runs below replay the saved seed,
+    # so they must draw nothing at all. Before #117 each of them drew a
+    # replacement seed off the global generator and discarded it, which is what
+    # the `miss` seeds this test used to hand it were for.
+    drawn = []
+    monkeypatch.setattr(cli, "_fresh_seed", lambda: drawn.append(hit) or hit)
     code, out = run(capsys, "attack", "frog-1", "kairos")
     assert code == 2 and "Silvery Barbs" in out and "Nothing has happened yet" in out
     assert (camp / "combat" / "pending.json").exists()
@@ -435,6 +438,7 @@ def test_a_paused_reaction_replays_the_same_enemy_roll(camp, capsys, monkeypatch
         answers += ["--react", "no"]
     assert code == 0 and f"Kairos: {total} vs AC 12, hit" in out   # the same roll, not a reroll
     assert not (camp / "combat" / "pending.json").exists()
+    assert len(drawn) == 1, drawn            # one seed for the whole sequence
 
 
 def test_reactions_setting_and_status_reminders(camp, capsys):
@@ -466,7 +470,7 @@ def test_an_up_front_react_does_not_shift_onto_the_next_question(camp, capsys, m
     begin(capsys)
     _edit(camp, actor="frog-1", pos={"frog-1": (2, 6)})
     hit = next(s for s in range(500) if 9 <= _random.Random(s).randint(1, 20) <= 16)
-    monkeypatch.setattr(cli.random, "randrange", lambda n: hit)
+    monkeypatch.setattr(cli, "_fresh_seed", lambda: hit)
     code, out = run(capsys, "attack", "frog-1", "kairos", "--react", "yes")
     assert code == 2 and "Silvery Barbs" in out
     code, out = run(capsys, "attack", "frog-1", "kairos", "--react", "yes", "--react", "no",
@@ -484,7 +488,7 @@ def test_multiattack_takes_the_players_reaction_answers(camp, capsys, monkeypatc
          "multiattack": [[{"action": "Bite", "count": 1}]]})
     path.write_text(json.dumps(enc), encoding="utf-8")
     hit = next(s for s in range(500) if 9 <= _random.Random(s).randint(1, 20) <= 16)
-    monkeypatch.setattr(cli.random, "randrange", lambda n: hit)
+    monkeypatch.setattr(cli, "_fresh_seed", lambda: hit)
     code, out = run(capsys, "multiattack", "frog-1", "kairos")
     assert code == 2 and "Silvery Barbs" in out
     answers = ["--react", "no"]
