@@ -311,8 +311,27 @@ def find_token_art(spec: dict, spawn: dict, art_dir: Path | None,
     return None
 
 
+def cell_centre(grid: dict, col, row) -> tuple[float, float]:
+    """`(x, y)` in world pixels for the CENTRE of cell `(col, row)`.
+
+    One function with two callers, on purpose. Tokens were the first caller and
+    pins are the second, and the way to guarantee the two cannot drift is to have
+    exactly one expression rather than two copies of it that a later edit keeps in
+    step by luck. `apply_formations` states the same principle for placements, and
+    this is the second caller that makes it worth having.
+
+    `GridSystem.snapToCellCenter` does this on the far side:
+    `col * size + offsetX + size / 2`, which is what the offset and the `0.5` are.
+    Rounded to two decimals for the same reason the token coordinates are: the
+    value goes into the scene document, and a float that renders differently on
+    two machines is a token that is a pixel off on one of them.
+    """
+    return (round(grid["offsetX"] + (float(col) + 0.5) * grid["size"], 2),
+            round(grid["offsetY"] + (float(row) + 0.5) * grid["size"], 2))
+
+
 def build_scene(spec: dict, map_id: str, background: str | None,
-                tokens: dict[str, dict]) -> dict:
+                tokens: dict[str, dict], pins: dict[str, dict] | None = None) -> dict:
     """The `MapFile` Atlas persists, ready to be wrapped in its envelope.
 
     Every field here is Atlas's own, read off `MapPersistence.ts` (`MapFile`,
@@ -392,10 +411,11 @@ def build_scene(spec: dict, map_id: str, background: str | None,
             # because HP belongs to the engine's encounter, not to a map.
             "kind": "character",
             "name": str(spawn.get("name") or tid),
-            # Token x/y is the CENTRE of the token in world pixels, snapped by
-            # `GridSystem.snapToCellCenter`: col * size + offsetX + size / 2.
-            "x": round(grid["offsetX"] + (col + 0.5) * grid["size"], 2),
-            "y": round(grid["offsetY"] + (row + 0.5) * grid["size"], 2),
+            # The CENTRE of the token in world pixels, snapped by
+            # `GridSystem.snapToCellCenter`. `cell_centre` is the one copy of that
+            # expression; pins go through it too.
+            "x": cell_centre(grid, col, row)[0],
+            "y": cell_centre(grid, col, row)[1],
             "imagePath": image,
             "size": 1,
             "showRing": True,
@@ -433,7 +453,10 @@ def build_scene(spec: dict, map_id: str, background: str | None,
         "objects": {
             "tokens": placed,
             "fog": {},
-            "pins": {},
+            # `{}` unless the caller built pins (`--pins`). Off by default, because
+            # every failure mode on this leg is silent: a wrong `notePath` writes a
+            # link that resolves to nothing, and a flag nobody sets cannot do that.
+            "pins": dict(pins or {}),
             "texts": {},
             "drawings": {},
             # Arrays, not dicts. `MapPersistence.ts:472` reads these straight into
@@ -551,10 +574,250 @@ def scene_file_name(spec: dict, map_id: str) -> str:
     return f"{cleaned or map_id}.atlasmap"
 
 
+# ─── pins ────────────────────────────────────────────────────────────────────
+
+# One-way, like everything else here. A pin placed in Atlas is deleted by the next
+# run, because `export` writes the scene with `write_text` unconditionally.
+# `chartdown_to_atlas.mjs:carryForward` (`:253`) solves this for its own leg by
+# preserving every `objects` key it does not own, and it does so by READING the
+# existing scene. That is exactly what refusal 6 forbids here: the shared document
+# `OBSIDIAN-INTEGRATION-DECISION.md` rejects, and the testable form of it is that
+# this exporter never opens an `.atlasmap` for reading. The two options are
+# mutually exclusive, and the overwrite is the one taken. See
+# `tests/test_map_to_atlas_pins.py::test_a_pin_placed_in_atlas_is_not_carried_forward`.
+
+
+def build_pins(camp_dir: Path, map_slug: str, grid: dict, *,
+               vault: Path, collection: str, maps_root: Path,
+               pending: set | None = None) -> tuple[dict, dict]:
+    """`(objects.pins, report)` for one map's pin store.
+
+    Four fields cross and nothing else does (SPEC-grid-and-map.md §4.5):
+
+    ========= ============================== =========================================
+    ours      Atlas                         written as
+    ========= ============================== =========================================
+    `id`      the `Record`'s key            verbatim
+    `kind`    `kind: 'pin'`                 a literal; our "note"/"map" is not Atlas's
+    `x`,`y`   world pixels                  `cell_centre`, the token-centre expression
+    `revealed` `gmOnly`                     renamed; Atlas 0.4.2 reads it nowhere
+    `target`  `notePath`                    **only after the guards below**
+    `label`   --                            dropped: Atlas reassigns it on import
+    ========= ============================== =========================================
+
+    Every refusal here is a refusal rather than a warning, because every failure
+    mode on this leg is silent. A `notePath` naming a file that is not there
+    produces a scene that looks complete and a pin that does nothing when clicked,
+    which is worse than the pin not being there at all.
+
+    `report["pins"]` is the number **written**, never the number read. The two
+    differ whenever anything is refused, and a count of what was read is the one
+    implementation that would report a clean export having dropped pins.
+    """
+    import pins as _pins
+
+    # Read the store **raw**, not through `pins.load`, and this is the reason.
+    # `pins.load` validates every record and `continue`s past the ones that fail
+    # (`pins.py:282-285`), so a pin whose target `validate` refuses never reaches
+    # this function: it is dropped on the way in and arrives here as an empty
+    # list. That is refusal 2's failure mode reproduced exactly -- the export
+    # would write zero pins and report "0", indistinguishable from a GM who has
+    # placed none, and every refusal test in `tests/test_map_to_atlas_pins.py`
+    # would go green having read nothing.
+    #
+    # So the records are read here and each one is refused **by name** below. The
+    # gates themselves are still reuse, not a second implementation:
+    # `campaign_path` and `check_note_target` are the same two functions
+    # `pins.note_body` calls. Reading the store is not writing it, so the
+    # one-way property is unaffected.
+    path = _pins.pins_path(camp_dir, map_slug)
+    try:
+        records = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        records = []                       # no store, or one that will not parse
+    if not isinstance(records, list):
+        records = []
+
+    placed: dict[str, dict] = {}
+    refused: list[str] = []
+    # This loop and the store read above it are the only places a pin is touched on
+    # the way out. Nothing here writes to the campaign, which is what
+    # `test_the_pin_file_is_unchanged_by_the_run` pins.
+    # A duplicate id would silently replace the first pin in a keyed `Record`, and
+    # which one survived would depend on the store's order rather than on anything
+    # the GM chose. First wins, and the loser is named.
+    for index, raw in enumerate(records):
+        if not isinstance(raw, dict):
+            refused.append(f"pin {index}: not an object")
+            continue
+        try:
+            # `validate` rather than hand-rolled field reads, so the shape rules
+            # (id charset, finite x/y, kind vocabulary) have one implementation.
+            # `known_maps=None` because the map's existence is decided by
+            # `_map_pin_target` against this collection, not by a slug list.
+            record = _pins.validate(raw)
+        except _pins.PinError as exc:
+            # Both the label and the target, because a refusal a GM cannot match
+            # back to a pin on their map is not a refusal they can act on. The
+            # target is the one that names the problem: `validate`'s messages are
+            # about paths, not about labels.
+            refused.append(
+                f"pin {index} {str(raw.get('label') or '')!r} "
+                f"(target {str(raw.get('target') or '')!r}): {exc}")
+            continue
+
+        pid = str(record.get("id") or "")
+        label = str(record.get("label") or record.get("target") or pid)
+        if pid in placed:
+            refused.append(
+                f"pin {index} {label!r}: id {pid!r} is already used by an earlier pin, "
+                "and Atlas keys pins by id, so one of them would vanish silently")
+            continue
+
+        kind = str(record.get("kind") or "")
+        target = str(record.get("target") or "")
+        try:
+            if kind == "map":
+                note_path = _map_pin_target(
+                    target, vault=vault, collection=collection, maps_root=maps_root,
+                    pending=pending)
+            elif kind == "note":
+                note_path = _note_pin_target(target, camp_dir, vault)
+            else:
+                raise ValueError(f"kind {kind!r} is not a pin kind this export knows")
+        except (ValueError, FileNotFoundError) as exc:
+            refused.append(f"pin {index} {label!r}: {exc}")
+            continue
+
+        x, y = cell_centre(grid, record.get("x", 0), record.get("y", 0))
+        placed[pid] = {
+            "id": pid,
+            # A literal. Atlas's `kind: 'pin'` (types.ts:9) is not our "note"/"map"
+            # vocabulary, and writing ours would produce a pin Atlas does not draw.
+            "kind": "pin",
+            "x": x,
+            "y": y,
+            # The rename only. `gmOnly` is declared at types.ts:15 and read nowhere
+            # in 0.4.2, and every pin is hidden from every player view anyway
+            # (`PinRenderer.arePinsHidden`), so this is inert in both directions.
+            # Carrying it keeps the export re-checkable when Atlas changes.
+            "gmOnly": record.get("revealed") is True,
+            "notePath": note_path,
+        }
+
+    return placed, {
+        "pins": len(placed),
+        "pin_refused": refused,
+        "pin_source": str(camp_dir),
+    }
+
+
+def _note_pin_target(target: str, camp_dir: Path, vault: Path) -> str:
+    """The `notePath` for a note pin, or raise.
+
+    **This is the security property of the whole leg.** `notePath` goes through
+    `app.vault`, and `mayLinkFromScene` (sceneLinks.ts:19-22) constrains
+    *scenes* only -- its own comment says notes may lie anywhere. So a path the
+    display refuses would, without these gates, become one Obsidian opens in a
+    single click. Two gates, and both of them are reuse rather than a second
+    implementation:
+
+    1. `campaign_path` -- containment, including a symlink pointing out. It reads
+       nothing and requires nothing to exist.
+    2. `check_note_target` -- the allow-list of folders and `.md` suffix, which is
+       what refuses `answer-key.md`, `state.md` and `DM_SEALED/*`.
+
+    Applied to the path the filesystem **resolved**, not the one that was asked
+    for, which is the whole of the guard: `notes/harbour.md -> answer-key.md`
+    passes both gates as spelled, because `is_relative_to` answers "is this inside
+    the campaign?" and not "is this allowed?". Same shape as `pins.note_body`.
+
+    The vault-relative form is what Atlas wants and it is also the third gate,
+    arrived at honestly rather than assumed: `--vault` defaults to
+    `$ATLAS_VAULT`/`~/atlas-vault` and need not be the pin root, so a note outside
+    the vault is a path `app.vault` cannot reach and the link is dead on arrival.
+
+    Existence is a fourth gate and it is ours, because neither reused function
+    requires the file to be there. A note pin whose target has been deleted would
+    otherwise export a path naming nothing -- the same silent dead link the map
+    side refuses, on the note side.
+    """
+    import pins as _pins
+    from paths import campaign_path
+
+    resolved = campaign_path(camp_dir, target)          # ValueError: escapes / traversal
+    try:
+        inside = resolved.relative_to(pathlib.Path(camp_dir).expanduser().resolve())
+    except ValueError as exc:
+        raise ValueError(f"target {target!r} resolves outside the campaign") from exc
+
+    # The allow-list, re-applied to the RESOLVED path. This is the gate that
+    # catches the symlink, and it is the reason the guard is not one line.
+    try:
+        _pins.check_note_target(str(inside).replace("\\", "/"))
+    except _pins.PinError as exc:
+        raise ValueError(f"target {target!r} is not a folder a pin may read "
+                         f"({exc})") from exc
+
+    if not resolved.is_file():
+        raise ValueError(f"target {target!r} is not a file in the campaign")
+
+    try:
+        return resolved.relative_to(vault.resolve()).as_posix()
+    except ValueError:
+        raise ValueError(
+            f"target {target!r} resolves to {resolved}, which is outside the vault "
+            f"({vault}). Atlas resolves notePath through its own vault, so a note "
+            f"outside it cannot be opened. Put the campaign inside --vault, or point "
+            f"--vault at it") from None
+
+
+def _map_pin_target(target: str, *, vault: Path, collection: str,
+                    maps_root: Path, pending: set | None = None) -> str:
+    """The `notePath` for a map pin, or raise.
+
+    A scene link whose filename is wrong **fails silently**:
+    `sceneLinkTarget` (sceneLinks.ts:30-36) rewrites a foreign-collection link to
+    the same filename inside the linking collection, and if it is not there
+    `linkedSceneFile` returns null and the click falls through to `openLinkText` on
+    an `.atlasmap` path, which Obsidian opens as plain text.
+
+    And the filename is **not the slug**. `scene_file_name` builds it from the
+    map's display `name`, so `biblioplex-stacks` is
+    `Biblioplex Stacks, Restricted Wing.atlasmap`. Measured over
+    `display/maps/`, all 25 shipped maps differ from their slug, so interpolating
+    the slug writes a dead link for every one of them. Resolved here through the
+    target's **own** spec, via `load_map`, which reads the engine's map file and
+    not Atlas's asset index -- the testable form of the P11 kill criterion, and
+    the reason the map pin is not dropped.
+    """
+    spec = load_map(target, maps_root)                  # FileNotFoundError: no such map
+    name = scene_file_name(spec, target)
+    coll_dir = vault / COLLECTIONS_DIR / collection
+    # `pending` is the scene names this run is itself about to write. A map pin
+    # naming one of those resolves even though the file is not on disk yet: the
+    # alternative is refusing a pin that will be true within the same second, and
+    # `map_to_atlas.py a b --pins` is the ordinary way to push two linked maps.
+    if not (coll_dir / name).is_file() and name not in (pending or ()):
+        raise ValueError(
+            f"map {target!r} would be {name}, which is not in this collection "
+            f"({coll_dir}). Export that map first, or drop the pin: a scene link to "
+            "a file that is not there opens as plain text in Obsidian")
+    return f"{COLLECTIONS_DIR}/{collection}/{name}"
+
+
 def export(spec: dict, map_id: str, vault: Path, collection: str,
            maps_root: Path, link_statblocks: bool = True,
-           allow_no_image: bool = False, art_dir: Path | None = None) -> dict:
-    """Write the scene, its sidecar, the artwork and the discs. Returns a report."""
+           allow_no_image: bool = False, art_dir: Path | None = None,
+           camp_dir: Path | None = None, with_pins: bool = False,
+           pending: set | None = None) -> dict:
+    """Write the scene, its sidecar, the artwork and the discs. Returns a report.
+
+    `camp_dir` + `with_pins` are the `--pins` leg and are off together. Pins need
+    a campaign to read the store from, and `--campaign` is optional, so a caller
+    that asks for pins without one gets **no pins and a report saying so** rather
+    than zero pins that read exactly like a GM who has placed none.
+    """
     image = spec.get("image")
     source: Path | None = None
     if image:
@@ -660,6 +923,27 @@ def export(spec: dict, map_id: str, vault: Path, collection: str,
         background = f"{COLLECTIONS_DIR}/{collection}/maps/{art.name}"
 
     scene = build_scene(spec, map_id, background, tokens)
+
+    # Pins after the scene, because a pin's pixel position is derived from the grid
+    # `build_scene` just computed -- so there is one grid and no chance of the two
+    # disagreeing about where a cell's centre is. `scene_file_name` is also already
+    # called below, and a map pin that names the scene being written right now
+    # resolves even though the file is not on disk yet, so
+    # `map_to_atlas.py a b --pins` keeps a pin on `a` naming `b` rather than
+    # refusing it for being a moment early.
+    pin_report: dict = {"pins": 0, "pin_refused": []}
+    if with_pins and camp_dir is not None:
+        pins, pin_report = build_pins(
+            camp_dir, map_id, scene["grid"],
+            vault=vault, collection=collection, maps_root=maps_root,
+            pending=pending)
+        scene["objects"]["pins"] = pins
+    elif with_pins:
+        # Refusal 5, and the reason this is a flag and not a default: a run with
+        # no campaign would otherwise write zero pins, which reads exactly like a
+        # GM who has placed none. Said rather than assumed.
+        pin_report["pin_missing_campaign"] = True
+
     scene_name = scene_file_name(spec, map_id)
     scene_path = coll_dir / scene_name
     scene_path.write_text(json.dumps(envelope(scene), indent=1) + "\n", encoding="utf-8")
@@ -679,6 +963,14 @@ def export(spec: dict, map_id: str, vault: Path, collection: str,
     linked = sum(1 for t in scene["objects"]["tokens"].values() if "statblockPath" in t)
     return {
         "map": map_id,
+        # `pins` is the number **written**, read back off the scene above rather
+        # than off the dict `build_pins` returned, so it cannot disagree with what
+        # Atlas will load. It is also the number an implementation must not get
+        # from its own read of the store: the two differ whenever anything was
+        # refused, and a count of what was read reports a clean export having
+        # quietly dropped pins, which is the whole failure mode of this leg.
+        # `pin_missing_campaign` is refusal 5 and says "0" is not "none placed".
+        **pin_report,
         "scene": f"{COLLECTIONS_DIR}/{collection}/{scene_name}",
         "sidecar": f"{COLLECTIONS_DIR}/{collection}/scenes/{map_id}.json",
         "artwork": background,
@@ -729,6 +1021,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--allow-no-image", action="store_true",
                         help="write the layout even without artwork (Atlas shows a "
                              "placeholder background, so this is for tokens only)")
+    parser.add_argument("--pins", action="store_true",
+                        help="also push the campaign's note pins for each map into "
+                             "its Atlas scene (off by default; needs --campaign)")
     parser.add_argument("--dry-run", action="store_true",
                         help="print what would be written, write nothing")
     args = parser.parse_args(argv)
@@ -736,21 +1031,41 @@ def main(argv: list[str] | None = None) -> int:
     vault: Path = args.vault
     reports, failed = [], 0
 
-    # Formations live in a campaign, not in the map file, so they need a campaign
-    # to look in. Resolved once, and only when one was actually asked for --
-    # `--formation` on a machine with no campaign is a clear error, and a
+    # Formations and pins live in a campaign, not in the map file, so they need a
+    # campaign to look in. Resolved once, and only when one was actually asked for
+    # -- `--formation` on a machine with no campaign is a clear error, and a
     # `--campaign` nobody used is not.
     camp_dir: Path | None = None
-    if args.formation:
+    if args.formation or args.pins:
+        # Spelled out rather than built from the flags, because the message is read
+        # by a GM mid-session and a wrong flag name costs them the run.
+        wanted = ("--formation and --pins" if args.formation and args.pins
+                  else "--pins" if args.pins else "--formation")
+        finds = ("the formations and pins" if args.formation and args.pins
+                 else "the pins" if args.pins else "the formations")
         if not args.campaign:
-            print("map_to_atlas: --formation needs --campaign (or $GM_CAMPAIGN) to "
-                  "find the formations in", file=sys.stderr)
+            print(f"map_to_atlas: {wanted} needs --campaign (or $GM_CAMPAIGN) to "
+                  f"find {finds} in", file=sys.stderr)
             return 1
         from paths import find_campaign
         camp_dir = find_campaign(args.campaign, migrate=False)
         if not camp_dir.is_dir():
             print(f"map_to_atlas: campaign folder {camp_dir} not found", file=sys.stderr)
             return 1
+    # The scene filenames this run is itself about to write, so a map pin naming a map
+    # further along the command line resolves rather than being refused for being a
+    # moment early. Names, not paths: `_map_pin_target` compares against the name
+    # `scene_file_name` builds, and every map in `display/maps/` has a display name
+    # that differs from its slug.
+    pending_scenes = set()
+    if args.pins:
+        for map_id in args.maps:
+            try:
+                pending_scenes.add(
+                    scene_file_name(load_map(map_id, args.maps_dir), map_id))
+            except (FileNotFoundError, OSError):
+                continue                     # reported per-map below, not here
+
     at = None
     if args.at:
         from tactics.grid import parse_square
@@ -801,7 +1116,9 @@ def main(argv: list[str] | None = None) -> int:
             reports.append(export(spec, map_id, vault, args.collection, args.maps_dir,
                                   link_statblocks=not args.no_statblocks,
                                   allow_no_image=args.allow_no_image,
-                                  art_dir=args.token_art))
+                                  art_dir=args.token_art,
+                                  camp_dir=camp_dir, with_pins=args.pins,
+                                  pending=pending_scenes))
             if formations_report:
                 reports[-1]["formations"] = formations_report
         except (ValueError, FileNotFoundError, KeyError) as exc:
@@ -821,6 +1138,21 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  art     {r['artwork']}")
             for d in r["discs"]:
                 print(f"  disc    {d}")
+            # Refusal 5. "0 pins" has to say WHICH zero it is, or a GM who forgot
+            # --campaign cannot tell a run that found nothing from a run that
+            # looked in the wrong place. Three cases, three sentences.
+            if r.get("pin_missing_campaign"):
+                print("  pins    0, and none were read: --pins needs --campaign to "
+                      "find the pin store in", file=sys.stderr)
+            elif args.pins and not r.get("pins") and not r.get("pin_refused"):
+                print(f"  pins    0: campaign {r.get('pin_source')} has no pins for "
+                      f"this map")
+            elif args.pins:
+                print(f"  pins    {r['pins']} pushed from {r.get('pin_source')}")
+                for reason in r.get("pin_refused", []):
+                    # A refusal, not a warning: a pin the GM believes exists and
+                    # that does nothing in Atlas is worse than no pin.
+                    print(f"          refused {reason}", file=sys.stderr)
             for c in r["unknown_colours"]:
                 print(f"  warning no colour is defined for {c!r}; drew a neutral disc",
                       file=sys.stderr)
