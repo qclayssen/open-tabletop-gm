@@ -371,6 +371,29 @@ def preview_move(enc: Encounter, token_ref, square) -> dict:
             "opportunity_attacks": warnings, "hazards": hazards, "text": text}
 
 
+def place_token(enc: Encounter, token_ref, square) -> dict:
+    """GM reposition an existing creature without movement or opportunity attacks."""
+    t = _resolve(enc, token_ref)
+    grid = enc.board()
+    try:
+        dest = parse_square(square) if isinstance(square, str) else tuple(square)
+    except (TypeError, ValueError):
+        raise CombatError(f"{square!r} is not a square (like D5).") from None
+    if not grid.in_bounds(dest):
+        raise CombatError(f"{label(dest)} is off the map.")
+    if not grid.passable(dest):
+        raise CombatError(f"{label(dest)} is a {grid.terrain_name(dest)}.")
+    if dest != t.pos and any(other.active and other.pos == dest
+                              for other in enc.tokens.values()):
+        raise CombatError(f"{label(dest)} is occupied.")
+    start = t.pos
+    t.x, t.y = dest
+    text = (f"GM repositions {t.name} from {label(start)} to {label(dest)}; "
+            "this is not movement and spends no movement or provokes no opportunity attacks.")
+    _log(enc, "place", t.id, text)
+    return {"from": label(start), "to": label(dest), "text": text}
+
+
 def move(enc: Encounter, roller: Roller, token_ref, square, reactions: dict = None,
          as_reaction: bool = False) -> dict:
     """Move along the cheapest path. Opportunity attacks resolve just before the

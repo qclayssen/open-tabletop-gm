@@ -53,6 +53,31 @@ def test_all_enemies_down_is_announced():
 
 # ─── movement ─────────────────────────────────────────────────────────────────
 
+
+def test_gm_placement_repositions_without_spending_movement_and_persists(tmp_path):
+    enc = start(encounter([kairos(), frog("frog-1", (7, 7))]), ["kairos", "frog-1"])
+    before = engine.remaining_movement(enc)
+    result = engine.place_token(enc, "kairos", "C3")
+    assert enc.tokens["kairos"].square == "C3"
+    assert engine.remaining_movement(enc) == before
+    assert "not movement" in result["text"] and "no opportunity attacks" in result["text"]
+    assert enc.log[-1]["kind"] == "place" and "not movement" in enc.log[-1]["text"]
+    path = tmp_path / "encounter.json"
+    state.save(enc, path)
+    assert state.load(path).tokens["kairos"].square == "C3"
+
+
+@pytest.mark.parametrize(("square", "rows", "token_ref", "message"), [
+    ("B1", None, "kairos", "occupied"),
+    ("C1", ["..#....."] + ["........"] * 7, "kairos", "wall"),
+    ("Z99", None, "kairos", "off the map"),
+    ("C3", None, "not-a-token", "no token"),
+])
+def test_gm_placement_refuses_invalid_destination(square, rows, token_ref, message):
+    enc = start(encounter([kairos(), frog("frog-1", (1, 0))], rows=rows), ["kairos", "frog-1"])
+    with pytest.raises(CombatError, match=message):
+        engine.place_token(enc, token_ref, square)
+
 def test_move_spends_feet_and_reports_what_is_left():
     enc = start(encounter([kairos(), frog("frog-1", (7, 7))]), ["kairos", "frog-1"])
     res = engine.move(enc, roller(), "kairos", "D4")         # 3 diagonals = 15 ft

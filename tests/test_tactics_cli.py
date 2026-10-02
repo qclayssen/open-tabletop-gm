@@ -175,6 +175,15 @@ def test_start_status_and_state_md(camp, capsys):
     assert code == 1 and "already running" in out
 
 
+def test_place_repositions_an_existing_token_without_moving(camp, capsys):
+    assert begin(capsys)[0] == 0
+    code, out = run(capsys, "place", "kairos", "C3")
+    assert code == 0
+    assert "not movement" in out and "no opportunity attacks" in out
+    saved = state.load(camp / "combat" / "encounter.json")
+    assert saved.tokens["kairos"].square == "C3"
+
+
 def test_start_writes_a_current_schema_with_derived_stats_and_no_cached_derived_block(camp, capsys):
     """A4: cmd_start derives before validate() and initiative; the file gets the
     filled-in base field, and no cached derived block to go stale."""

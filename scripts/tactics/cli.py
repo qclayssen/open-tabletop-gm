@@ -21,6 +21,7 @@ Encounter design (no combat running — these are for before the fight)
 
 Actions (the current creature)
     move <token> <square>          e.g. move kairos D5   (preview <token> <square> checks first)
+    place <token> <square>         GM reposition; not movement, spends no movement and provokes no opportunity attacks
     attack <token> <target> [attack name]      no name: the best legal attack
     multiattack <token> <target> [--option N]  every attack of a Multiattack, as one action
     dash | disengage | dodge | stand <token>
@@ -867,6 +868,9 @@ def run(args) -> int:
         elif cmd == "move":
             data = engine.move(enc, roller, args.token, args.square, _reactions(enc, args))
             text = data["text"]
+        elif cmd == "place":
+            data = engine.place_token(enc, args.token, args.square)
+            text = data["text"]
         elif cmd == "attack":
             data = engine.attack(enc, roller, args.token, args.target, args.attack,
                                  _reactions(enc, args), _advantage(args))
@@ -1022,6 +1026,10 @@ def parser() -> argparse.ArgumentParser:
         s = sub.add_parser(name, parents=c)
         s.add_argument("token")
         s.add_argument("square", help="a square like D5, or a creature to walk toward")
+    s = sub.add_parser("place", parents=c,
+                       help="GM reposition; not movement, spends no movement and provokes no opportunity attacks")
+    s.add_argument("token")
+    s.add_argument("square", help="destination square, such as D5")
     s = sub.add_parser("approach", parents=c, help="where a move toward a creature would end")
     s.add_argument("token")
     s.add_argument("target")
