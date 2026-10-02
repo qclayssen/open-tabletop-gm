@@ -164,6 +164,58 @@ def begin(capsys, *extra):
                "--monster", "giant frog@M11", "--seed", "3", *extra)
 
 
+def test_invocation_journal_records_only_success_and_reconstructs_seeded_command(camp, capsys):
+    import shutil
+
+    replay_root = camp.parent / "replay-root"
+    replay = replay_root / "campaigns" / "demo"
+    replay.parent.mkdir(parents=True)
+    shutil.copytree(camp, replay)
+    assert begin(capsys)[0] == 0
+    journal = camp / "combat" / "commands.jsonl"
+    records = [json.loads(line) for line in journal.read_text(encoding="utf-8").splitlines()]
+    assert len(records) == 1
+    assert records[0]["cmd"] == cli._canonical([
+        "-c", "demo", "start", "frog-pond", "--pc", "Kairos@B7",
+        "--monster", "giant frog@J5", "--monster", "giant frog@M11", "--seed", "3"])
+    assert records[0]["seed"] == 3
+    assert cli.main(["-c", "demo", "status"]) == 0
+    assert cli.main(["-c", "demo", "start", "frog-pond", "--pc", "Kairos@B7",
+                     "--monster", "giant frog@J5", "--seed", "4"]) == 1
+    records = [json.loads(line) for line in journal.read_text(encoding="utf-8").splitlines()]
+    assert len(records) == 2 and records[1]["argv"] == ["-c", "demo", "status"]
+    assert all(isinstance(record["seed"], int) for record in records)
+
+    assert cli.main(["-c", "demo", "commands", "1"]) == 0
+    command = capsys.readouterr().out.strip()
+    assert command.endswith("--seed 3")
+    assert "--pc Kairos@B7" in command
+    assert cli.main(["-c", "demo", "commands", "2"]) == 0
+    assert capsys.readouterr().out.strip().endswith("status --seed " + str(records[1]["seed"]))
+
+    (replay / "combat").mkdir(exist_ok=True)
+    # Re-run the exact recorded argv with its seed against an untouched copy.
+    from unittest.mock import patch
+    with patch.dict("os.environ", {"GM_CAMPAIGN_ROOT": str(replay_root),
+                                   "TACTICS_NO_DISPLAY": "1"}):
+        assert cli.main(records[0]["argv"] + ["--seed", str(records[0]["seed"])]) == 0
+    original = json.loads((camp / "combat" / "encounter.json").read_text(encoding="utf-8"))
+    reproduced = json.loads((replay / "combat" / "encounter.json").read_text(encoding="utf-8"))
+    assert original["order"] == reproduced["order"]
+    assert original["tokens"] == reproduced["tokens"]
+
+
+def test_invocation_journal_skips_torn_lines_and_prints_later_records(camp, capsys):
+    assert begin(capsys)[0] == 0
+    path = camp / "combat" / "commands.jsonl"
+    with open(path, "a", encoding="utf-8") as stream:
+        stream.write('{"argv":')
+    assert cli.main(["-c", "demo", "commands"]) == 0
+    output = capsys.readouterr().out
+    assert "1: seed 3" in output
+    assert output.count("python3 scripts/tactics/combat.py") == 1
+
+
 def test_start_status_and_state_md(camp, capsys):
     code, out = begin(capsys)
     assert code == 0 and out.startswith("Grid combat on Frog Pond. Initiative:")

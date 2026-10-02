@@ -71,7 +71,9 @@ import os
 import pathlib
 import random
 import re
+import shlex
 import sys
+import threading
 
 from paths import find_campaign            # scripts/paths.py (on sys.path via tactics/__init__)
 
@@ -93,7 +95,8 @@ _DISPLAY_CAMPAIGN = _SCRIPTS.parent / "display" / ".campaign"
 # encounter loaded is exactly how it was found broken.
 READ_ONLY = ("status", "options", "preview", "reachable", "approach", "targets", "log", "spells",
              "preview-area", "sight", "card", "budget", "day", "rate", "receipts", "formation",
-             "scene", "here")
+             "scene", "here", "commands")
+_COMMAND_LOCK = threading.RLock()
 # `formation` is here even though `formation save` writes a file: pending.json
 # exists to replay the *same* engine dice after a decision, and nothing under
 # `formation` rolls. Saving a formation is a deliberate act, and making it
@@ -209,6 +212,64 @@ def _clear_pending(camp_dir) -> None:
         _pending_path(camp_dir).unlink()
     except OSError:
         pass
+
+
+def _commands_path(camp_dir) -> pathlib.Path:
+    return pathlib.Path(camp_dir) / "combat" / "commands.jsonl"
+
+
+def _read_commands(camp_dir) -> list:
+    try:
+        lines = _commands_path(camp_dir).read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError):
+        return []
+    records = []
+    for line in lines:
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(record, dict) and isinstance(record.get("argv"), list):
+            records.append(record)
+    return records
+
+
+def _append_command(camp_dir, argv: list, canon: list, seed: int) -> None:
+    """Append one accepted invocation atomically; tolerate a torn prior tail."""
+    path = _commands_path(camp_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    record = {"argv": argv, "cmd": canon, "seed": seed}
+    payload = json.dumps(record, ensure_ascii=False) + "\\n"
+    with receipts._locked(camp_dir):
+        try:
+            with open(path, "rb") as f:
+                f.seek(0, os.SEEK_END)
+                if f.tell():
+                    f.seek(-1, os.SEEK_END)
+                    if f.read(1) != b"\\n":
+                        payload = "\\n" + payload
+        except OSError:
+            pass
+        with open(path, "a", encoding="utf-8", newline="\\n") as f:
+            f.write(payload)
+            f.flush()
+            os.fsync(f.fileno())
+
+
+def cmd_commands(args, camp_dir) -> int:
+    records = _read_commands(camp_dir)
+    if args.index is None:
+        for i, record in enumerate(records, 1):
+            print(f"{i}: seed {record['seed']}  " + shlex.join(
+                ["python3", "scripts/tactics/combat.py"] + record["argv"] +
+                ["--seed", str(record["seed"])]))
+        return 0
+    if args.index < 1 or args.index > len(records):
+        raise Stop(f"No invocation {args.index}; journal has {len(records)} accepted command(s).")
+    record = records[args.index - 1]
+    print(shlex.join(["python3", "scripts/tactics/combat.py"] + record["argv"] +
+                     ["--seed", str(record["seed"])]))
+    return 0
 
 
 def _load(camp_dir) -> Encounter:
@@ -741,6 +802,8 @@ def _end(camp_dir, enc, campaign: str = "", award: bool = True) -> str:
 
 def run(args) -> int:
     camp_dir = _camp_dir(args)
+    if args.cmd == "commands":
+        return cmd_commands(args, camp_dir)
     roller = _roller(args)
     data = {}
     enc = None
@@ -1183,6 +1246,10 @@ def parser() -> argparse.ArgumentParser:
                        help="check every roll receipt against its hash chain")
     s.add_argument("--rolls", type=int, default=0, metavar="N",
                    help="also print the last N receipts")
+    s = sub.add_parser("commands", parents=c,
+                       help="print accepted invocations and their resolved seeds")
+    s.add_argument("index", nargs="?", type=int,
+                   help="print one numbered invocation as a reproducible command")
     return top
 
 
@@ -1224,6 +1291,8 @@ def main(argv=None) -> int:
         args._seed = pending.get("seed", random.randrange(1 << 30))
         args._decisions = list(pending.get("decisions", []))
         code = run(args)
+        if code == 0 and args.cmd != "commands":
+            _append_command(camp_dir, argv, canon, args._seed)
         if args.cmd not in READ_ONLY:
             _clear_pending(camp_dir)
         return code
