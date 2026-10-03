@@ -99,14 +99,19 @@ class OfferDoor(unittest.TestCase):
         r = self.ask(["Recall:advantage,disadvantage"])
         self.assertEqual(r.status_code, 400)
 
-    def test_a_bonus_die_is_refused_rather_than_shown_as_a_dead_button(self):
-        """Until the bonus-die slice, `NdM` must not become a button that does
-        nothing. Refused with a message that says which slice."""
-        r = self.ask(["Bardic Inspiration:1d4"])
-        self.assertEqual(r.status_code, 400)
-        self.assertIn("bonus", r.get_json()["error"].lower())
-        with self.mod._dice_pending_lock:
-            self.assertEqual(self.mod._dice_pending, {})
+    def test_a_bonus_die_is_accepted_now_that_the_slice_has_landed(self):
+        """The inverse of the refusal this file asserted before RS1.2: an `NdM`
+        offer is now the real thing rather than a button that does nothing.
+        What must still hold is the door's other refusals, asserted below —
+        an accepted effect did not make the door permissive."""
+        r = self.ask(["Bardic Inspiration:1d6"])
+        self.assertEqual(r.status_code, 200)
+        entry = self.entry(r.get_json()["request_id"])
+        self.assertEqual(entry["meta"]["offers"][0]["effect"], {"bonus": "1d6"})
+        # A die that is not a die is still refused.
+        self.assertEqual(self.ask(["X:1d"]).status_code, 400)
+        self.assertEqual(self.ask(["X:99d6"]).status_code, 400)
+        self.assertEqual(self.ask(["X:0d6"]).status_code, 400)
 
     def test_every_refusal_carries_a_message(self):
         """A silent 400 at the door is indistinguishable from a network blip."""
