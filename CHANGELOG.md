@@ -37,6 +37,13 @@ The dice window reads the three dice payloads as data and reassembles them clien
 ### Fixed: the overview-map script crashed on any variant of its own page
 `atlas.js` ended with `if (spec) render(spec)`, and `render()`'s first statement dereferenced `document.getElementById('atlas-stage')`. `/?view=map` renders `atlas.html` with a sentence in place of the map when a campaign has no overview spec — so the stage, pins layer and legend are not in the document — and the script threw `Cannot read properties of null (reading 'style')` on every load. The page still *looked* right, because the throwing line is first in `render()` and everything it draws was absent anyway. Now guarded on the element existing.
 
+### Fixed: the dice window showed a finished request under the wrong heading
+`dice_results` carried the rolls and a request id but not the spec, modifier, DC or label. A window opened *after* the roll — a second screen, or a reload — drew the correct answers under the heading `1d20 +0`, over what was a 2d6+3 Strength check. `_dice_done` now keeps the request's meta beside the rolls, in a **separate** dict: `_dice_done[req_id]` is read as a list of roll strings by three call sites and a test, and reshaping it into a dict would turn `list()` from the rolls into the dict's keys, so `--wait` would print nothing while reporting success.
+
+The addressee names went the same way. A request's `chars` set is drained as people roll and reaches empty — which is exactly what marks the request finished — so the full addressee list is copied out before that (`asked`). Without it a late window had no name for the card and fell back to "The table" for a check addressed to two named players.
+
+And the ordering: the server sends `text` then `dice_pending`, and the card marked itself finished on an empty pending set, claiming *Everyone has rolled* for the one frame before the result that proves it. A card is finished only when nobody holds a die **and** there is a result to show. The three payloads now feed one `absorb()` helper, because each carries a subset of the request's description and none carries all of it.
+
 ### Fixed: "Phone Mode" floated over all four new windows
 `display.js`'s `_initModeSwitcher()` appends `#phone-mode-btn` to `document.body` at load. The view stylesheets in `displays.css` hid the sidebar, settings column, world clock, party-input panel and combat panel — and this one button, injected by script rather than present in `index.html`, survived on every view, sitting over the combat window's empty state and the dice window's header. Now hidden on the views that are for the table.
 
