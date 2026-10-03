@@ -1119,7 +1119,20 @@ def token_from_monster(record: dict, token_id: str, name: str, pos: tuple,
         for k in ("reach", "range"):
             if k in a["attack"]:
                 spec[k] = a["attack"][k]
-        for k in ("rider", "rider_effects", "rider_rest"):
+        # `rider_damage` and `damage_choice` are structured in the SRD record and
+        # used to stop here: the record held them, the token did not, and the
+        # token is what the engine reads. So the numbers survived the build and
+        # died on the way to the fight -- an Aboleth's 1d12 acid and a Djinni's
+        # lightning-or-thunder were in dnd5e_srd.json and on no attack spec.
+        #
+        # Carried, not applied. A rider's periodic damage and a creature's choice
+        # between damage options are both the GM's to run, so nothing here reads
+        # these keys; see PRESERVED_NOT_APPLIED in build_srd.py, which is where
+        # the reason is recorded. What this fixes is that the data is now
+        # reachable from the token at all, so a consumer can be written without
+        # re-parsing prose, and so the coverage report can count them.
+        for k in ("rider", "rider_effects", "rider_rest",
+                  "rider_damage", "damage_choice"):
             if a.get(k):
                 spec[k] = a[k]
         attacks.append(spec)

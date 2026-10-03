@@ -226,12 +226,71 @@ def _norm_spell(r: dict) -> dict:
 #
 #   {"casting": action|bonus|reaction|other, "range": feet, "origin": self|touch|point,
 #    "attack": melee|ranged, "save": {"ability", "on_success": half|none|other},
-#    "damage": {"type", "slot": {level: dice}} | {"type", "character": {level: dice}},
+#    "damage": {"type", "slot": {level: dice}} | {"type", "character": {level: dice}}
+#              | {"components": [{"type", "slot"}, ...], "combine": all|choose},
 #    "heal": {"slot": {level: dice}}, "area": {"shape", "size", "width"},
 #    "concentration": bool, "flags": [...]}
 
 _CASTING = {"1 action": "action", "1 bonus action": "bonus", "1 reaction": "reaction"}
 _LINE_WIDTH = re.compile(r"(?:(\d+) feet wide|(\d+)-foot-wide)")
+
+#: A dice expression the engine can roll: `4d6`, `2d8+3`, or a flat number.
+_ROLLABLE = re.compile(r"\d+d\d+([+-]\d+)?|\d+")
+#: Upstream writes an either-or upcast value as one string: "4d6 OR 5d6". Flame
+#: Strike carries one at every slot from 6th up. The "OR" is the caster's choice,
+#: so it is KEPT VERBATIM rather than resolved -- see `PRESERVED_NOT_APPLIED`.
+#: Note this is also why the normal whitespace strip below is not applied to a
+#: value containing one: "4d6OR5d6" is neither rollable nor readable, and
+#: "4d6 OR 5d6" is both a sentence and an honest record of a choice.
+_ALTERNATIVE = re.compile(r"\s+OR\s+", re.IGNORECASE)
+
+
+def _dice(value) -> str:
+    """One damage value, whitespace normalised but never silently mangled."""
+    text = str(value)
+    if _ALTERNATIVE.search(text):
+        return _ALTERNATIVE.sub(" OR ", text).strip()
+    return text.replace(" ", "")
+
+
+def _damage_component(part) -> dict | None:
+    """One `{type, slot}` / `{type, character}` component, or None if unusable.
+
+    Returns None rather than a partial dict so the caller can tell "upstream gave
+    us nothing for this component" from "upstream gave us a component with no
+    numbers in it" -- the first is a data problem, the second is a shape the
+    parser does not know, and the two want different flags.
+    """
+    if not isinstance(part, dict):
+        return None
+    dtype = (part.get("damage_type") or {}).get("index", "")
+    if part.get("damage_at_slot_level"):
+        return {"type": dtype,
+                "slot": {str(k): _dice(v)
+                         for k, v in part["damage_at_slot_level"].items()}}
+    if part.get("damage_at_character_level"):
+        return {"type": dtype,
+                "character": {str(k): _dice(v)
+                              for k, v in part["damage_at_character_level"].items()}}
+    return {"type": dtype}
+
+
+def _damage_table(component: dict) -> dict:
+    """The dice table of a component, slot or character keyed. Empty if neither."""
+    return component.get("slot") or component.get("character") or {}
+
+
+def _unrollable(table: dict) -> list:
+    """Values in a dice table the engine cannot roll as written.
+
+    An either-or value like "4d6 OR 5d6" is deliberately NOT counted here. It is
+    unrollable, but it is unrollable for a reason that already has a flag and an
+    explanation (`damage_choice_upcast`), and counting it again as
+    `damage_unparsed` would say "this parser did not understand the shape" about a
+    shape the parser understood perfectly and declined to resolve.
+    """
+    return [v for v in table.values()
+            if not _ROLLABLE.fullmatch(str(v)) and not _ALTERNATIVE.search(str(v))]
 
 
 def _spell_mechanics(r: dict) -> dict:
@@ -258,23 +317,45 @@ def _spell_mechanics(r: dict) -> dict:
         if success not in ("half", "none"):
             flags.append("save_effect")
     damage = r.get("damage")
-    if isinstance(damage, list):                     # a few records carry a list
-        damage = damage[0] if len(damage) == 1 else None
-        if damage is None:
+    if isinstance(damage, list):
+        # Three SRD 5.1 spells carry a LIST of damage components: Flame Strike
+        # (fire + radiant), Ice Storm (bludgeoning + cold) and Meteor Swarm
+        # (fire + bludgeoning). All three say "and" in the printed text, so every
+        # component applies.
+        #
+        # This used to read `damage[0] if len(damage) == 1 else None`, which threw
+        # the WHOLE table away for those three and wrote `damage_unparsed`. The
+        # numbers were not gone from upstream; they were deleted here, and the
+        # description still said "4d6 fire damage and 4d6 radiant damage". A record
+        # whose prose and whose mechanics disagree is the defect: whoever reads the
+        # mechanics gets a spell that does no damage.
+        #
+        # Every component is now kept, as `components`, with `combine` naming how
+        # they join. A bare list carries no `choose` marker -- upstream spells that
+        # are either-or use `choose` + `from.options`, the same shape monster
+        # damage_choice uses -- so "all" is what the schema itself says, and the
+        # printed "and" agrees. An `OR` inside a single component's value is a
+        # different thing: that is the caster choosing between two numbers at
+        # upcast, and it is left exactly as written.
+        parts = [c for c in (_damage_component(p) for p in damage) if c is not None]
+        if not parts:
             flags.append("damage_unparsed")
-    if isinstance(damage, dict):
-        dtype = (damage.get("damage_type") or {}).get("index", "")
-        if damage.get("damage_at_slot_level"):
-            out["damage"] = {"type": dtype, "slot": {str(k): str(v).replace(" ", "")
-                             for k, v in damage["damage_at_slot_level"].items()}}
-        elif damage.get("damage_at_character_level"):
-            out["damage"] = {"type": dtype, "character": {str(k): str(v).replace(" ", "")
-                             for k, v in damage["damage_at_character_level"].items()}}
+        elif len(parts) == 1:
+            out["damage"] = parts[0]
         else:
-            flags.append("damage_unparsed")
-        if "damage" in out and any(not re.fullmatch(r"\d+d\d+([+-]\d+)?|\d+", v)
-                                   for v in (out["damage"].get("slot")
-                                             or out["damage"].get("character")).values()):
+            out["damage"] = {"components": parts, "combine": "all"}
+            flags.append("damage_multi")
+        if any(_ALTERNATIVE.search(str(v)) for c in parts for v in _damage_table(c).values()):
+            flags.append("damage_choice_upcast")
+    elif isinstance(damage, dict):
+        component = _damage_component(damage)
+        if component is None or not _damage_table(component):
+            flags.append("damage_unparsed")          # a shape with no numbers in it
+        else:
+            out["damage"] = component
+    if "damage" in out:
+        tables = [_damage_table(c) for c in out["damage"].get("components", [out["damage"]])]
+        if any(_unrollable(t) for t in tables):
             flags.append("damage_unparsed")          # "1d6 + MOD" and the like
     heal = r.get("heal_at_slot_level")
     if isinstance(heal, dict):
@@ -293,6 +374,200 @@ def _spell_mechanics(r: dict) -> dict:
         flags.append("effect")                       # nothing the engine can resolve by itself
     out["flags"] = sorted(set(flags))
     return out
+
+
+# ─── Preserved, not applied ──────────────────────────────────────────────────
+#
+# Every flag the builders write says something is not mechanical. A flag on its
+# own is a shrug: "damage_unparsed" tells a reader the parser gave up but not
+# whether the numbers are gone, sitting in the record for a GM to discover, or
+# simply not carried to the token at all. Those are very different situations and
+# conflating them is how data loss survives a review.
+#
+# So each flag is registered here with WHERE the data is and WHY the engine does
+# not apply it. Three states, deliberately:
+#
+#   preserved   the numbers are in the record AND on the token, structured, and
+#               the engine reads them.
+#   recorded    the numbers are in the record, structured. The engine does not
+#               apply them; the GM resolves the choice or the extra target.
+#   dropped     upstream carries something this parser cannot represent, and it
+#               is not in the record. Only the printed `raw` text survives.
+#
+# `dropped` is a defect to be fixed and a count to watch. `recorded` is a design
+# decision with a name. Nothing belongs in this table without one of the three,
+# because "we parse it and hope" is not a state.
+#
+# 2014 rules only. Each line cites what the engine does, not what the 2024 books
+# say, because the engine adjudicates 2014 (see the module docstring).
+
+PRESERVED_NOT_APPLIED: dict[str, dict] = {
+    # --- spell flags -------------------------------------------------------
+    "damage_multi": {
+        "state": "recorded",
+        "reason": "two damage types, both apply; area effect the grid does not split",
+        "where": "spell `mechanics.damage.components`, one entry per damage type",
+        "why": "Flame Strike, Ice Storm and Meteor Swarm apply EVERY component "
+               "(the SRD prints \"4d6 fire damage and 4d6 radiant damage\"), so "
+               "combine is `all` and no choice is needed. The engine still "
+               "narrates them: all three are area effects the tactical grid does "
+               "not resolve to more than one target, and Meteor Swarm names four "
+               "separate points. Making them mechanical is a rules decision with "
+               "its own validation, not a parsing one.",
+    },
+    "damage_choice_upcast": {
+        "state": "recorded",
+        "reason": "the caster chooses at upcast; both numbers kept verbatim",
+        "where": "the dice value itself, verbatim, e.g. \"4d6 OR 5d6\"",
+        "why": "Flame Strike from 6th up increases the fire OR the radiant damage "
+               "(your choice). Choosing is the caster's, so both numbers are kept "
+               "as written and neither is picked here.",
+    },
+    "damage_unparsed": {
+        "state": "recorded",
+        "reason": "a dice value only resolvable at cast time (e.g. 1d6 + MOD)",
+        "where": "spell `mechanics.damage` when it parsed, else the printed text",
+        "why": "A dice value the engine cannot roll as written, e.g. "
+               "\"1d6 + MOD\" (Spiritual Weapon), where the modifier is the "
+               "caster's and only known at cast time.",
+    },
+    "width_assumed": {
+        "state": "recorded",
+        "reason": "width defaulted to 5 ft; this parser's assumption, the SRD "
+                  "prints none for five line spells",
+        "where": "`mechanics.area.width`, defaulted to 5",
+        "why": "Five line spells (Blade Barrier, Prismatic Wall, Wall of Fire, "
+               "Wall of Thorns, Wind Wall) print no width, so the width is this "
+               "parser's assumption, not the SRD's. Each is already flagged "
+               "`area_placement` because a wall is shaped by the caster rather "
+               "than centred, which is why the engine never uses the width.",
+    },
+    "area_placement": {
+        "state": "recorded",
+        "reason": "a wall or line the caster arranges, not a blast",
+        "where": "`mechanics.area`",
+        "why": "A wall or a line the caster arranges, not a blast centred on a "
+               "point. Resolving it needs a placement step the grid has no rule "
+               "for; it is always the GM's.",
+    },
+    "range_unparsed": {
+        "state": "recorded",
+        "reason": "range printed in a form that is not a number of feet",
+        "where": "printed `range` text",
+        "why": "Seven spells print a range the parser cannot reduce to feet, "
+               "e.g. Meteor Swarm's \"1 mile\" or \"Self (60-foot-radius "
+               "diameter)\".",
+    },
+    "save_effect": {
+        "state": "recorded",
+        "reason": "the save resolves but its success outcome is not half or nothing",
+        "where": "`mechanics.save.on_success`",
+        "why": "The save resolves, but what happens on a SUCCESS is not half "
+               "damage or nothing (10 of 319 spells). The engine narrates these "
+               "rather than guess an outcome.",
+    },
+    "effect": {
+        "state": "recorded",
+        "reason": "no attack, save, damage or heal: the effect is not a number",
+        "where": "printed description",
+        "why": "No attack, no save, no damage, no heal: a spell whose effect is "
+               "something other than a number (a wall, a summon, a new sense). "
+               "194 of 319 spells. This is the biggest coverage gap in the "
+               "engine and it is not a data-loss defect.",
+    },
+    # --- monster action flags ---------------------------------------------
+    # NOTE: `rider` is the FLAG for three different keys on the same action --
+    # `rider` (the sentence), `rider_effects` (what parsed) and `rider_damage`
+    # (damage only the rider deals). They are one row because they are one flag,
+    # and `diagnostics()` is keyed by flag.
+    "rider": {
+        "state": "recorded",
+        "reason": "damage a rider deals; periodic ones stay the GM's, saved ones "
+                  "the engine's",
+        "where": "action `rider` / `rider_effects` / `rider_damage`, and "
+                 "`rider_damage` on the token's attack spec",
+        "why": "152 actions carry text after the damage, and it splits three "
+               "ways. What parsed into a saving throw lives in `rider_effects` "
+               "and the engine DOES apply it -- a Giant Spider's 2d8 poison "
+               "lands on a failed CON 11 save. What did not parse stays in "
+               "`rider_rest` as prose for the GM. And damage the rider alone "
+               "deals lives in `rider_damage`: an Aboleth's Tentacle acid "
+               "(1d12 every 10 minutes while diseased), an Assassin's Shortsword "
+               "poison (7d6 on a failed DC 15 save). Those six are `rider_damage` "
+               "rather than `rider_effects` because their rider is periodic or "
+               "conditional rather than a save resolved on the hit, so the GM "
+               "runs the clock. It is NOT hit damage, and putting it in `damage` "
+               "would apply it on every hit.",
+    },
+    "damage_choice": {
+        "state": "recorded",
+        "reason": "one of several damage options; a creature's choice, not the parser's",
+        "where": "action `damage_choice` ({choose, options}), and on the token's "
+                 "attack spec",
+        "why": "\"Melee Weapon Attack: ... one of the following options\" -- 16 "
+               "SRD actions. Which option is a creature's choice (a Druid's "
+               "Quarterstaff is also shillelagh; a Djinni's Scimitar adds "
+               "lightning OR thunder). The engine keeps every option and picks "
+               "none; an attack whose only damage is a choice resolves to no "
+               "damage rather than to the first option, which is why those "
+               "actions carry `damage_unparsed` too.",
+    },
+    "targeting": {
+        "state": "dropped",
+        "reason": "area not in a shape the parser knows; only the printed text survives",
+        "where": "printed `raw`",
+        "why": "A save action whose area the parser could not find (49 actions, "
+               "almost all legendary actions and breath weapons that are not "
+               "written as \"N-foot-radius cone\"). The SRD's shape does not "
+               "cover them and guessing an area would move damage the printed "
+               "text does not put there.",
+    },
+    "conditional_bonus": {
+        "state": "recorded",
+        "reason": "attack bonus depends on the wielder (shillelagh, a magic "
+                  "weapon); the printed number is the bare-hand one",
+        "where": "attack `attack.bonus`, plus the printed `raw`",
+        "why": "Two SRD actions. The Druid's Quarterstaff reads \"+2 to hit\" and "
+               "then offers +4 with shillelagh and +3 with a magic weapon; the "
+               "engine cannot know which is in hand at build time, so the base "
+               "number is kept and the GM adjusts. Emitting the best case would "
+               "make every staff hit stronger than the rules allow.",
+    },
+    "success_conflict": {
+        "state": "recorded",
+        "reason": "upstream's field contradicts its own text; neither side picked",
+        "where": "action `dc.on_success` set to None, with `raw`",
+        "why": "Five records where upstream's `success_type` field contradicts "
+               "its own printed text (an Adult Red Dragon's Fire Breath says "
+               "\"none\" where the text says half). Refusing to pick a side is "
+               "the only honest option; `None` means unresolved.",
+    },
+    "unparsed": {
+        "state": "dropped",
+        "reason": "no known shape; the printed sentence is kept verbatim in raw",
+        "where": "printed `raw`",
+        "why": "An action in no known shape (82 actions: prose-only abilities, "
+               "multiattack variants, non-attack entries). Kept as the printed "
+               "sentence and named in `raw`, because the alternative is inventing "
+               "a structure.",
+    },
+}
+
+
+def diagnostics(record: dict) -> list:
+    """What this one record preserves but does not apply, one line per flag.
+
+    Read off `flags`, which is where the builders already write the fact. The
+    point is that "the parser gave up" and "the numbers were thrown away" are
+    distinguishable without reading three files: a flag whose registry row says
+    `dropped` has lost its numbers, and one that says `recorded` has not.
+
+    Returns [] for a record with no flags, which is the normal case and means the
+    engine can run this record's numbers without GM judgment.
+    """
+    return [f"{flag}: {PRESERVED_NOT_APPLIED[flag]['state']} -- "
+            f"{PRESERVED_NOT_APPLIED[flag]['reason']}"
+            for flag in record.get("flags", []) if flag in PRESERVED_NOT_APPLIED]
 
 
 def _norm_equipment(r: dict) -> dict:
