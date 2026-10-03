@@ -53,6 +53,33 @@ guardrail report learns to write to the detector.
 The shapes these guards cannot see are a separate question, measured
 with denominators in `docs/DM-BOUNDARY-BASELINE.md`. This ledger is
 not evidence about those.
+### Fixed: a spell slot could be spent and the receipt thrown away, and a question could spend one
+
+Two findings from `docs/test-reports/TEST-REPORT-pt2-spells-advisors-2026-09-30.md`,
+re-pinned against the current build in `tests/test_spell_command_boundaries.py`.
+
+**A committed cast survives a narration failure.** `Session._cast_spell` mutates
+persistent state *before* it narrates: the slot is incremented, the sheet is written
+and `tracker.cmd_effect` starts the 8-hour effect. The narration call had no handler,
+so the REPL's `except llm.LLMError` replaced the whole turn with one error line and the
+player never learned a slot was spent. `_narrate` already handled exactly this case
+("report the engine's own words and let the error stand"); `_cast_spell` now does the
+same, and says on stderr that the narration was lost.
+
+**A question no longer spends a slot.** `cast` is a field the *model* sets, and nothing
+checked that the player's line was a cast, so a DM that answered a status question with
+a cast spent a level on it. The report's own input no longer reproduces --
+`fightq.classify(scope="explore")` claims an AC question and answers it from the sheet
+with no model call at all -- but the router has no topic for spell slots, so
+"how many first-level slots do I have left" and "can I cast magic missile" still reach
+the model. A `cast` on a question-shaped line is now refused in one visible engine
+line. The direction is deliberately conservative: a cast phrased as a question loses
+the cast, and the player can always ask again in the imperative.
+
+Still true from the same report, and pinned rather than fixed:
+`spells._effect`'s "already covered" branch is unreachable out of combat (every cast
+re-reads the sheet, and `write_back` never persists the AC field), and `state.md` is
+never refreshed after a cast, so a GM reading it sees the pre-Mage-Armor AC.
 
 ### Fixed: the static system prompt was charged against the dynamic budget, evicting every recent turn
 
