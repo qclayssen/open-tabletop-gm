@@ -229,6 +229,23 @@ def build() -> int:
     stderr is the CI log and its non-zero status is a provisioning failure, which
     is the distinction the two exit codes below exist to keep.
     """
+    # PyYAML first, and said plainly. `build_srd.py` without it skips the whole
+    # FoundryVTT half *by design* and exits 0 -- 5e-bits spells and monsters, no
+    # class or racial features -- so the missing dependency would be discovered
+    # downstream as a mysterious dataset, or as this script's own gate refusing it
+    # with a message about `features` that names the wrong cause. The
+    # `floor-310` job is the case that matters: it installs pytest and nothing
+    # else, deliberately, so provisioning there has to say what it needs rather
+    # than quietly produce half a dataset.
+    try:
+        import yaml  # noqa: F401
+    except ImportError:
+        print("provision-srd: PyYAML is not installed, and the FoundryVTT half of "
+              "the dataset cannot be built without it.\n"
+              "  Install it with:  python3 -m pip install pyyaml\n"
+              "  (build_srd.py --no-fvtt would build a dataset this gate refuses: "
+              "it has no 'features' category.)")
+        return 2
     print(f"provision-srd: building {DATASET.relative_to(ROOT)} "
           f"(network: 5e-bits/5e-srd-api, foundryvtt/dnd5e)")
     return subprocess.call([sys.executable, str(BUILD)])
@@ -460,8 +477,9 @@ def main() -> int:
     else:
         rc = build()
         if rc != 0:
-            print(f"provision-srd: build_srd.py exited {rc}. Nothing is provisioned; "
-                  f"the tests that read the dataset will fail rather than skip.")
+            print(f"provision-srd: could not build the dataset (build step returned "
+                  f"{rc}). Nothing is provisioned; the tests that read it will fail "
+                  f"rather than skip, which is the intended signal.")
             return 2
 
     problems = verify(DATASET)
