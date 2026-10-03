@@ -155,6 +155,13 @@ CAST_UNRESOLVED = ("(engine) {spell} was not applied: out of a fight the engine 
 CAST_MID_FIGHT = ("(engine) {spell} was not cast: a fight is running and the engine owns "
                   "every spell in it. Say what your character casts and the engine will "
                   "resolve it.")
+# B2 (the 2026-09-30 test report): a `cast` the model put on a line the player phrased as
+# a question. Spoken rather than dropped, for the same reason as CAST_MID_FIGHT: a
+# silently dropped slot request is its own bug, and a dropped request the player cannot
+# see is worse.
+CAST_ON_A_QUESTION = ("(engine) {spell} was not cast: that was a question, and the engine "
+                      "does not spend a slot on one. Say what your character casts and the "
+                      "engine will resolve it.")
 CAST_TASK = ("Narrate the casting in 1 to 3 sentences, using only the numbers the Engine "
              "section gives (never a different AC, duration or slot count). Then the JSON "
              "line with null for every field.")
@@ -1191,7 +1198,18 @@ class Session:
             if self.display is not None and self.display.registered:
                 self.display.push_party(context.party_stats(self.camp_dir))
         self.memory.add("engine", result)
-        r = self._dm(engine=result, task=CAST_TASK)
+        try:
+            r = self._dm(engine=result, task=CAST_TASK)
+        except llm.LLMError as e:
+            # The cast is already committed by the time this line runs: the slot is
+            # spent, the sheet is written and the tracker has the effect. A narration
+            # failure cannot un-commit any of it, and the REPL handler would replace
+            # the whole turn with a one-line error, so the player would never learn a
+            # slot was spent. Same bargain as `_narrate`: report the engine's own
+            # words and let the error stand, because a resolved AC is worth more than
+            # the prose that failed to describe it.
+            self._say_status(f"[dm] no narration for the cast: {e}")
+            return [f"({result})"]
         if r.narration:
             self._say(r.narration)
             return [f"({result})", r.narration]
@@ -1507,6 +1525,17 @@ class Session:
             out += self._ability_check(r.check, line, r.check_meta)
         if cast_named and self.bridge.is_combat_active():
             out.append(CAST_MID_FIGHT.format(spell=cast_named))   # dm.md: out of a fight only
+        elif cast_named and fightq.is_questionish(line):
+            # A question is not a cast. `cast` is a field the MODEL sets, and nothing
+            # about the player's line says they cast anything, so a DM that answers
+            # "how many first-level slots do I have left" with a cast spends a slot on
+            # a question. Reported on 2026-09-30 and reproduced: the explore router
+            # claims an AC question, so the reported line is now answered by the sheet
+            # and never reaches the model -- but the two forms it does NOT claim still
+            # do. The conservative direction is deliberate: a cast phrased as a
+            # question ("I cast mage armor, right?") loses the cast, and the player can
+            # always ask again in the imperative.
+            out.append(CAST_ON_A_QUESTION.format(spell=cast_named))
         elif cast_named:
             out += self._cast_spell(cast_named)
 
