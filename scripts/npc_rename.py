@@ -42,7 +42,7 @@ import shutil
 import subprocess
 import sys
 
-from paths import find_campaign, characters_dir, _root
+from paths import find_campaign, characters_dir, _is_campaign, _root
 from name_registry import slug, all_taken_slugs, add as registry_add, retire as registry_retire
 
 
@@ -334,7 +334,10 @@ def main() -> int:
     args = p.parse_args()
 
     camp_dir = find_campaign(args.campaign)
-    if not camp_dir.exists():
+    # _is_campaign, not exists(): the not-found sentinel is campaign_dir(name),
+    # which exists whenever a stale shell sits there, and a rename must not write
+    # into a shell.
+    if not _is_campaign(camp_dir):
         print(f"npc_rename: campaign '{args.campaign}' not found at {camp_dir}",
               file=sys.stderr)
         return 1

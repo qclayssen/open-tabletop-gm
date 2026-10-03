@@ -73,7 +73,7 @@ import random
 import re
 import sys
 
-from paths import find_campaign            # scripts/paths.py (on sys.path via tactics/__init__)
+from paths import find_campaign, _is_campaign  # scripts/paths.py (on sys.path via tactics/__init__)
 
 from . import (actions, ai, effects, encounter, engine, formations, maps, policy, receipts,
                  rest, roller, scenes, sight, slots, spells, state, statecard, sync)
@@ -130,7 +130,10 @@ def _campaign(args) -> str:
 
 def _camp_dir(args) -> pathlib.Path:
     d = find_campaign(_campaign(args))
-    if not d.exists():
+    # _is_campaign, not exists(). find_campaign's not-found sentinel is
+    # campaign_dir(name), which does exist whenever a stale shell sits there --
+    # so exists() passes on exactly the empty folder this has to reject.
+    if not _is_campaign(d):
         raise Stop(f"Campaign folder not found: {d}")
     return d
 

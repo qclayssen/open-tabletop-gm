@@ -148,8 +148,12 @@ bash defers trap execution until the foreground child returns. `kill` on the wat
 ### B12 — runtime artefacts not gitignored — **FIXED**
 `.gm-watch.log`, `.gm-watch.pid`, `app-5001.pid` are unignored. A `git add -A` would commit a ~91KB log **containing the full player session** — narration, HP, spell slots, the player's own dialogue. Only `.input_queue` is currently covered.
 
-### B13 — both repos on detached HEAD, behind origin — **OPEN**
-`open-tabletop-gm` is 17 behind `origin/main`; `dnd-gm` is 4 behind. The new scripts and the `index.html` change sit on a detached commit. Reconcile before committing — PR #55 rewrote both files a rebase would touch.
+### B13 — both repos on detached HEAD, behind origin — **FIXED** (2026-10-02)
+`open-tabletop-gm` was on `feat/statblock-export-and-portrait-matching`, 39 commits behind `origin/main`, and the outer repo's gitlink pointed at that branch tip rather than main. The checkout therefore read as missing `start.py`, `scripts/pin*.py`, `.github/workflows/tests.yml` and 22 test files — **all of which exist on `origin/main`**. Three advisor passes have now read that tree and reported it as absent; `docs/guides/handoff-map-pins.md` §8 warns about exactly this.
+
+The five uncommitted entries on the feature branch were committed to it first (`9f2dc8b`), then the checkout moved to `main` and fast-forwarded to `be991cb`, 0 behind. The feature work is preserved and unreviewed on its own branch.
+
+**Recurrence, not a bug:** the outer repo has two gitlinks and no `.gitmodules` (`docs/CODE-MAP.md:41-46`), so `git submodule` commands do nothing and nothing checks a gitlink against `origin/main`. Any advice read from a stale checkout is unverified by construction. Cite `git show origin/main:<path>`, or check out `main` first.
 
 ### B14 — the GM subagent writes into the git working tree — **OPEN (containment)**
 The live GM runs with `--auto` and full tool access, and has been observed editing `display/gm-watch.sh` and `display/drain_queue.py` in place — changing "staged" to "sent" wording in both, consistently. It also created and removed a `campaigns/` directory inside the repo mid-session.

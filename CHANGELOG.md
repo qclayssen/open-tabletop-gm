@@ -12,6 +12,24 @@ This project is the LLM-agnostic, system-flexible fork of [claude-dnd-skill](htt
 
 ## [Unreleased]
 
+### Fixed: four entry points asked whether a campaign *exists* instead of whether it *is* one
+`paths.find_campaign` documents its own contract at `scripts/paths.py:121-124`: on a miss it returns `campaign_dir(name)`, "a path that does not exist unless a shell is sitting there, so callers must not read its existence as a hit. Ask `_is_campaign`." Four callers did not ask.
+
+- `scripts/tactics/cli.py:136` (`_camp_dir`) — `d.exists()`
+- `scripts/localdm/play.py:1408` (`main`) — `camp_dir.exists()`
+- `scripts/npc_rename.py:340` (`main`) — `camp_dir.exists()`
+- `scripts/map_to_atlas.py:753` (`main`) — `camp_dir.is_dir()`
+
+A campaign that has moved leaves an empty shell at the old path, and because every entry point resolves a *name*, the shell wins over the real campaign: it sits at the configured root, so nothing reaches the legacy fallback. The guard passed and each entry point read an empty campaign — or, for `npc_rename`, **renamed into one**. Reproduced on the fixed code by reverting one guard: `npc_rename` reported `no occurrences of 'Ash' found in strixhaven-kairos` from inside the shell, where it should have reported a miss.
+
+This is bug B1 (`docs/guides/seat-harness-known-bugs.md`) returning through a different door. `_is_campaign` shipped in open-tabletop-gm#99 and `display/preflight.py` adopted it there and then; the four CLIs were missed, because nothing asserted the call sites — `tests/test_paths_campaign_resolution.py` pins the resolver, not the callers.
+
+- `tests/test_campaign_resolution_callers.py` (new, 11 tests): pins all four guards, so the name-only check cannot come back in a place the existing file does not cover. The write case is behavioural — `npc_rename` against a shell, asserting it refuses *and* that the shell is left with exactly the two entries it started with.
+- `tests/test_map_to_atlas_formations.py`: the `camp` fixture created `campaigns/demo` with no `state.md` — a two-entry shell, so it only passed *because* of this bug. Now writes a `state.md`, per the convention already documented at `test_campaign_lint.py:414` and `test_display_preflight.py:89`.
+
+### Fixed: the checkout was 39 commits behind `origin/main` (B13)
+`open-tabletop-gm` sat on `feat/statblock-export-and-portrait-matching` while the outer repo's gitlink pointed at that branch tip rather than main, so the working tree read as missing `start.py`, `scripts/pin*.py`, `.github/workflows/tests.yml` and 22 test files. All exist on main. See `BUGS.md` B13 — the recurrence note matters more than the fix, because two gitlinks and no `.gitmodules` means nothing prevents it again.
+
 ### Added: named landmarks and the state card (A)
 > (kept below, above the `day` entry, in the order it landed on main)
 

@@ -1047,9 +1047,11 @@ def main(argv: list[str] | None = None) -> int:
             print(f"map_to_atlas: {wanted} needs --campaign (or $GM_CAMPAIGN) to "
                   f"find {finds} in", file=sys.stderr)
             return 1
-        from paths import find_campaign
+        from paths import find_campaign, _is_campaign
         camp_dir = find_campaign(args.campaign, migrate=False)
-        if not camp_dir.is_dir():
+        # _is_campaign, not is_dir(): the not-found sentinel is campaign_dir(name),
+        # which a stale shell satisfies, and formations are read out of this path.
+        if not _is_campaign(camp_dir):
             print(f"map_to_atlas: campaign folder {camp_dir} not found", file=sys.stderr)
             return 1
     # The scene filenames this run is itself about to write, so a map pin naming a map
