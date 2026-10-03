@@ -54,6 +54,81 @@ jobs:
         run: |
           python -m pip install --upgrade pip pytest flask pyyaml playwright pytest-xdist
           python -m playwright install chromium
+      - name: Restore the SRD dataset from cache
+        # Pinned the same way the two actions above are: full commit SHA, tag in
+        # a trailing comment. Dependabot (.github/dependabot.yml) owns the bump,
+        # so nothing here re-resolves a tag that could move under a green check.
+        #
+        # WHY THIS STEP EXISTS: systems/dnd5e/data/dnd5e_srd.json is GENERATED
+        # and gitignored (.gitignore:49-51), and nothing in this workflow built
+        # it. So on a fresh checkout the dataset was simply absent and ten tests
+        # were red for reasons that had nothing to do with the PR. Measured on a
+        # clean origin/main worktree with an empty data dir: 8 failed + 2 errors,
+        # every one of them environmental. Dropping a locally-built dataset into
+        # that same worktree takes it to 4. Those 4 are real and are being fixed
+        # on their own account; this step is what stops the other 10 from being
+        # noise that buries them.
+        #
+        # WHY A CACHE AND NOT JUST A BUILD: build_srd.py pulls a couple of
+        # hundred files from raw.githubusercontent.com and api.github.com with no
+        # token, so it can be refused mid-build on rate limit. Locally that is
+        # ~4 minutes for 1527 records / 1652 KB, on every run, on every ref, for
+        # a file that is a pure function of the builder. Keying on
+        # hashFiles(build_srd.py) means runs 2..N restore rather than refetch,
+        # and the dataset under test is the one THIS builder produces instead of
+        # whatever upstream served that morning.
+        #
+        # No restore-keys, deliberately: a prefix fallback would hand back a
+        # dataset built by a different builder while reporting the same key,
+        # which is precisely the flake this cache exists to remove. Missing
+        # cache is handled by the step below, not by a looser key.
+        #
+        # The cost of a miss is worth stating: the trigger block above has no
+        # push-to-main run on purpose, so nothing ever seeds a default-branch
+        # copy of this cache, and the FIRST run on any given ref still pays the
+        # whole build.
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: systems/dnd5e/data/dnd5e_srd.json
+          key: srd-dataset-${{ runner.os }}-${{ hashFiles('systems/dnd5e/build_srd.py') }}
+      - name: Build the SRD dataset if the cache missed
+        # pyyaml is NOT a new dependency here — the install step above already
+        # has it — but it is load-bearing FOR THIS STEP in a way worth naming:
+        # without it build_srd._build_fvtt() returns early, the build exits 0
+        # having written a dataset with zero class features, and the check below
+        # is what turns that into a red step rather than a green one.
+        #
+        # The check runs before the build (so a cache hit costs one JSON parse of
+        # a 1.6 MB file) and again after it — so an entry saved by a build that
+        # was killed part-way through the write heals on the next run instead of
+        # poisoning the key forever. That is not hypothetical: build_srd.py
+        # opens the output with "w" and then dumps, so a truncated file is a
+        # thing that can actually happen, and a restored cache is trusted
+        # blindly by definition.
+        #
+        # "no empty category" rather than "total_records > 0" is the gate on
+        # purpose. build_srd.py only WARNS about a partly-empty dataset: its
+        # refusal to write covers the case where EVERY category came back empty,
+        # which leaves the likelier case open — one rate-limited repo-tree fetch
+        # and the dataset silently loses every class feature while the run stays
+        # green. Same rule, applied to the gap the builder left.
+        #
+        # Nothing in this step reads the dataset for the tests, and no test is
+        # skipped, deselected, xfailed or filtered by any of it. pytest below
+        # runs exactly as before; it just arrives to find the file its tests
+        # were always written to load.
+        run: |
+          usable() {
+            [ -s systems/dnd5e/data/dnd5e_srd.json ] || return 1
+            python3 -c "import json,sys; c=json.load(open('systems/dnd5e/data/dnd5e_srd.json'))['_meta']['record_counts']; print('  categories:', ', '.join(f'{k}={v}' for k,v in c.items()) or 'none'); sys.exit(1 if not c or any(not v for v in c.values()) else 0)"
+          }
+          if usable; then
+            echo "  dataset present and complete — no build needed"
+          else
+            echo "  no complete dataset on disk — building (about 4 minutes)"
+            python3 systems/dnd5e/build_srd.py
+            usable || { echo "✗ build finished but the dataset is still incomplete" >&2; exit 1; }
+          fi
       - name: pytest
         # -n 4 measured, not guessed. Serial is 603s on this tree; -n 4 is 227s.
         # Two runs of each, and the spread across -n 4 runs was 6s, so the 2.7x
