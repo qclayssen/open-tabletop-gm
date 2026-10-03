@@ -21,15 +21,21 @@ Example:
 """
 
 import json
-import random
 import shlex
 import sys
 import re
 
-# One module-level stream, seeded-able for a replay. See scripts/dice.py for why
-# the free-standing CLI needs this even though the tactical engine has receipts:
-# these two are the GM's hand-typed tools, and the engine cannot cover them.
-_RNG = random.Random()
+# Aliased because `def dice` below takes the name: an unaliased `import dice`
+# would leave `dice` bound to that function by the time __main__ asks it for a
+# generator. Same shape, and the same reason, as scripts/tactics/roller.py.
+import dice as _dice  # scripts/dice.py (on sys.path as this script's own directory)
+
+# One module-level stream, seeded-able for a replay, built by the canonical
+# factory so it carries `.seed_value` like every other generator in the tree.
+# See scripts/dice.py for why the free-standing CLI needs this even though the
+# tactical engine has receipts: these two are the GM's hand-typed tools, and the
+# engine cannot cover them.
+_RNG = _dice.new_rng()
 
 
 def roll(n, sides, rng=None):
@@ -147,7 +153,7 @@ if __name__ == "__main__":
             print(f"--seed needs an integer, got '{argv[i + 1]}'")
             sys.exit(1)
         del argv[i:i + 2]
-    rng = random.Random(seed) if seed is not None else _RNG
+    rng = _dice.new_rng(seed) if seed is not None else _RNG
 
     cmd = argv[0]
     rest = argv[1:]
