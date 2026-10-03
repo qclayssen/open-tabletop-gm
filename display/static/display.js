@@ -1122,9 +1122,28 @@ if (document.readyState === 'loading') {
 }
 
 function flushNewBlock() {
-  // Finalise the current block and start a fresh one next time
-  if (currentCursor && currentCursor.parentNode) {
-    currentCursor.parentNode.removeChild(currentCursor);
+  // Finalise the current block and start a fresh one next time.
+  //
+  // `currentCursor` is the block's last paragraph/heading/list-item, NOT a caret
+  // node. The cursor is the `.typing-cursor` CLASS on that element, drawn as a
+  // bar by `::after` in display.css, so there is no node to take away and the
+  // element holds the sentence that was just typed. This used to
+  // `removeChild(currentCursor)`, which deleted the last paragraph of every
+  // narration block the moment the block closed -- most visibly from the
+  // IDLE_GAP*2 idle timer, seconds after the DM stopped typing. Undecorate and
+  // release it instead, which is what `_flushForBlock()` has always done for
+  // this same field on the other code path.
+  //
+  // The one node that IS removed is an empty trailing placeholder:
+  // `getOrCreateBlock()` creates a <p> eagerly, and a block whose markdown ends
+  // on a block break leaves that <p> empty. That is a layout artefact, not
+  // narration, and leaving it behind puts a blank line above the divider.
+  if (currentCursor) {
+    if (currentCursor.textContent) {
+      currentCursor.classList.remove('typing-cursor');
+    } else if (currentCursor.parentNode) {
+      currentCursor.parentNode.removeChild(currentCursor);
+    }
     currentCursor = null;
   }
   // Add a soft divider if there was content
@@ -1678,9 +1697,11 @@ function clearDisplay(then) {
   charQueue        = [];
   isTyping         = false;
   _currentInlineEl = null;
-  if (currentCursor && currentCursor.parentNode) {
-    currentCursor.parentNode.removeChild(currentCursor);
-  }
+  // Release the cursor the same way `flushNewBlock()` does. The whole feed is
+  // wiped on the next line, so this changes nothing a reader can see -- it is
+  // here so the two call sites cannot drift apart again into a removeChild()
+  // against a content element.
+  if (currentCursor) currentCursor.classList.remove('typing-cursor');
   currentCursor = null;
   currentEl     = null;
   clearTimeout(idleTimer);
