@@ -235,7 +235,29 @@ body.tx-min #tx-panel { max-height: none; }
 .tx-log .tx-odds { display: block; font-size: 12px; color: var(--tx-muted); }
 
 /* ── board ── */
-.tx-cell-lbl { font: 600 11px Figtree, system-ui, sans-serif; fill: var(--tx-ink); paint-order: stroke; stroke-width: 3; }
+/* Map labels. Anchored centrally, because the anchor is the centre of the
+   feature region the label names (maps.py), and a left-anchored label in the
+   middle of a 6x5 region reads as though it belongs to whatever is under its
+   left end. `dominant-baseline: central` puts the cap height in the middle of
+   the region rather than the baseline, which at a 1x1 region would drop the
+   text over the row below.
+
+   The halo is load-bearing twice: `paint-order: stroke` paints the 3-unit stroke
+   UNDER the fill, so the label keeps its contrast where it crosses terrain or
+   map artwork, and the stroke colour comes from the inline style (paper), which
+   is why the ink fill alone would be unreadable over a bright wash.
+
+   Width is NOT bounded here. An SVG <text> has no box to put a max-width on:
+   `text-overflow: ellipsis` applies to a block container, and there is no block
+   container here. The clamp is fitLabelText in tactics.js, which measures the
+   rendered string against the region's own width, and this rule owns only the
+   type. A label inside an SVG is sized in user units, so 11px here is 11 user
+   units and shrinks with the cell -- at the phone minimum of 10px a square that
+   is 3.4px of type. Fixing that needs non-scaling type or an HTML overlay
+   (#300 item 0.2, which owns the choice); it is not decided here. */
+.tx-cell-lbl { font: 600 11px Figtree, system-ui, sans-serif; fill: var(--tx-ink);
+               paint-order: stroke; stroke-width: 3;
+               text-anchor: middle; dominant-baseline: central; }
 
 /* Note pins. A pin marks a place, so it is scenery rather than a thing that
    moves: brass, not a faction colour, so it never reads as an ally or an enemy.

@@ -26,6 +26,11 @@ REPO = pathlib.Path(__file__).resolve().parent.parent
 
 VIEWPORTS = {"table": (1440, 900), "phone": (390, 844)}
 
+#: The extra widths MapLabels runs at: the panel's own two-column breakpoint, and
+#: 480px, which is the narrowest width test_display_typeset_a11y.py parametrizes
+#: over and therefore the one the display is known to claim to support.
+LABEL_VIEWPORTS = dict(VIEWPORTS, breakpoint=(1024, 768), narrow=(480, 800))
+
 
 # The numbers the panel has to hit, as a browser must report them.
 PROBE = """() => {
@@ -341,6 +346,207 @@ class MeasuredLayout(BrowserTestCase):
         self.assertEqual(out["text"], "40% to fail the save")
         self.assertGreaterEqual(out["l"], out["bl"], "the chance ran off the left edge")
         self.assertLessEqual(out["r"], out["br"], "the chance ran off the right edge")
+
+
+class MapLabels(BrowserTestCase):
+    """Map labels, measured by a browser at four viewports (#144).
+
+    The unit tests in test_display_tactics_ui.py pin the arithmetic of the clamp
+    with an injected measure function. This pins the thing they cannot: that the
+    clamp holds when the type is really rendered, at every viewport the display
+    supports. The four are a table display, the layout breakpoint, the 480px
+    width test_display_typeset_a11y.py parametrizes over, and a phone.
+
+    An SVG <text> has no box, so "fits" is measured with getComputedTextLength in
+    user units and compared against the same budget the script used. The snapshot
+    fed in carries the real geometry maps.py publishes for real features,
+    including the 79-character great-hearth label from bows-end-tavern.
+    """
+
+    server_kind = "static"
+    ready_js = "window.__ready === true"
+
+    #: Real label shapes from display/maps/, positioned on the harness map
+    #: (20x14). The last one is a 1x1 feature in the second-to-last column,
+    #: which is the case the board's right edge decides.
+    LABELS = [
+        ("The great hearth - lit. The chequered floor and produce racks sit all round it.",
+         4.0, 4.0, 6),
+        ("Round table", 4.5, 4.5, 1),
+        ("Reeds", 9.5, 2.5, 7),
+        ("Lantern", 18.5, 4.5, 1),
+    ]
+
+    FEED = """(labels) => {
+      const s = JSON.parse(JSON.stringify(window.__SNAP));
+      s.meta.labels = labels.map(([text, x, y, w]) =>
+        ({text, x, y, w, h: 4}));
+      Tactics.update(s);
+    }"""
+
+    PROBE = """() => {
+      const bd = document.getElementById('tx-board'), svg = bd.querySelector('svg'),
+            W = window.__SNAP.grid.rows[0].length;
+      const out = [];
+      for (const t of svg.querySelectorAll('.tx-cell-lbl')) {
+        const cs = getComputedStyle(t);
+        const r = t.getBoundingClientRect();
+        out.push({
+          full: t.querySelector('title').textContent,
+          // The text NODE, not textContent: on an element with a <title>
+          // child, textContent is the concatenation of both, so reading it here
+          // returns the label twice and every length assertion is wrong.
+          shown: t.lastChild.textContent,
+          width: Math.round(t.getComputedTextLength() * 10) / 10,
+          cx: parseFloat(t.getAttribute('x')),
+          w: Number(t.getAttribute('data-w')),
+          anchor: cs.textAnchor, baseline: cs.dominantBaseline,
+          // The region this label names, in the same user units the width above
+          // is measured in, so the two are directly comparable.
+          regionW: Number(t.getAttribute('data-w')) * 32,
+          boardW: W * 32,
+          left: r.left, right: r.right, svgLeft: svg.getBoundingClientRect().left,
+          svgRight: svg.getBoundingClientRect().right,
+        });
+      }
+      return {cell: Math.round(svg.getBoundingClientRect().width / W * 10) / 10,
+              labels: out};
+    }"""
+
+    def labels_at(self, viewport):
+        w, h = LABEL_VIEWPORTS[viewport]
+        page = self.open_page(size=(w, h), wait=200)
+        page.evaluate(self.FEED, self.LABELS)
+        present(page, "() => document.querySelectorAll('.tx-cell-lbl').length > 0",
+                "the map labels to render")
+        return page.evaluate(self.PROBE)
+
+    # ── the clamp holds at every viewport ──────────────────────────────────
+    def test_a_label_never_renders_wider_than_its_region_at_any_viewport(self):
+        """The property the issue names. Before the fix the label was drawn at a
+        fixed 11px with the whole string and no width bound, so it ran as far
+        past its feature as the text was long -- the great hearth's 79
+        characters covered about fifteen squares of a one- or two-square
+        region.
+
+        Two independent bounds, both derived here from the geometry rather than
+        read back out of the script, so this cannot pass by agreeing with
+        whatever the script decided:
+
+          - the region, or the 4-square floor. The floor is deliberate: "Round
+            table" in a 1x1 region must not be clamped into "Roun".
+          - twice the distance to the nearer board edge, because the text is
+            centred and a centred box past the viewBox is not drawn at all.
+        """
+        for viewport in ("table", "breakpoint", "narrow", "phone"):
+            got = self.labels_at(viewport)
+            self.assertTrue(got["labels"], f"{viewport}: no labels were drawn at all")
+            for l in got["labels"]:
+                self.assertLessEqual(
+                    l["width"], max(l["regionW"] - 8, 4 * 32 - 8),
+                    f"{viewport} (cell {got['cell']}): {l['full'][:28]!r} rendered "
+                    f"{l['width']} units, wider than its {l['w']}-square region")
+                room = max(4, min(l["cx"], l["boardW"] - l["cx"]) - 4)
+                self.assertLessEqual(
+                    l["width"], room * 2,
+                    f"{viewport}: {l['full'][:28]!r} rendered {l['width']} units "
+                    f"with only {room} units to either board edge")
+
+    def test_no_label_runs_past_the_board_at_any_viewport(self):
+        """A centred box past the viewBox is not drawn at all: SVG silently drops
+        content beyond the last column, so an over-long label at the map's edge
+        would vanish rather than overflow."""
+        for viewport in ("table", "breakpoint", "narrow", "phone"):
+            for l in self.labels_at(viewport)["labels"]:
+                self.assertGreaterEqual(l["left"], l["svgLeft"] - 1,
+                                        f"{viewport}: {l['full'][:28]!r} off the left")
+                self.assertLessEqual(l["right"], l["svgRight"] + 1,
+                                     f"{viewport}: {l['full'][:28]!r} off the right")
+
+    def test_the_long_label_is_actually_shortened_somewhere(self):
+        """A guard on the test above. If the clamp silently became a no-op that
+        returned the whole string, the first two tests would still pass on any
+        map whose labels happen to fit. One of the four must be shortened, and
+        the one that has to be is the 79-character label."""
+        got = self.labels_at("table")
+        long = [l for l in got["labels"] if l["full"].startswith("The great hearth")]
+        self.assertEqual(len(long), 1)
+        self.assertTrue(long[0]["shown"].endswith("…"),
+                        f"the long label was not clamped: {long[0]['shown']!r}")
+        self.assertLess(len(long[0]["shown"]), len(long[0]["full"]))
+
+    def test_the_shortened_label_keeps_the_head_and_loses_the_tail(self):
+        got = self.labels_at("table")
+        long = [l for l in got["labels"] if l["full"].startswith("The great hearth")][0]
+        self.assertTrue(long["full"].startswith(long["shown"][:-1]), long)
+
+    # ── the two properties only the stylesheet can supply ──────────────────
+    def test_the_stylesheet_centres_every_label_on_its_region(self):
+        for viewport in ("table", "phone"):
+            for l in self.labels_at(viewport)["labels"]:
+                self.assertEqual(l["anchor"], "middle",
+                                 f"{viewport}: {l['full'][:28]!r} is not centred")
+                self.assertEqual(l["baseline"], "central")
+
+    def test_the_full_text_survives_for_a_reader_who_cannot_read_the_clamp(self):
+        """The <title>. The board svg is aria-hidden, so this is the tooltip and
+        not the screen-reader route; describeSquare() is that, tested below."""
+        for l in self.labels_at("table")["labels"]:
+            self.assertTrue(l["full"], "a label lost its full text")
+            self.assertTrue(l["full"].startswith(l["shown"][:-1].rstrip("…")))
+
+    def test_the_board_cursor_reads_the_full_label_out_loud(self):
+        """describeSquare() is the only voice the board has (the board svg is
+        aria-hidden), so a keyboard player must hear a region's whole name, not
+        the clamped prefix. Before the fix it heard nothing: map labels were not
+        in describeSquare at all, so a labelled feature was a silent rectangle.
+
+        Driven through the keyboard, because that is the route a keyboard player
+        has. The label is placed over the cursor's home square (B1 in the
+        harness snapshot, the current token's square) so no navigation is
+        needed and the test cannot drift if homeSquare changes.
+        """
+        page = self.open_page(size=(1440, 900), wait=200)
+        # A region covering the home square: kairos is at (1, 6), and a 6x2
+        # region centred at (1.5, 6.5) covers x 0..3 and y 6..7.
+        page.evaluate(self.FEED, [("The great hearth - lit. The chequered floor "
+                                   "and produce racks sit all round it.",
+                                   1.5, 6.5, 6)])
+        present(page, "() => document.querySelectorAll('.tx-cell-lbl').length > 0",
+                "the map labels to render")
+        # #tx-say is written when the cursor moves, so the test moves it. One
+        # step right from the home square stays inside the region, which is the
+        # point: the label must be read from any square it covers, not only from
+        # the one it is anchored on.
+        page.focus("#tx-board")
+        page.keyboard.press("ArrowRight")
+        present(page, "() => (document.getElementById('tx-say').textContent || '').length > 0",
+                "the board cursor to say the square")
+        said = page.evaluate("() => document.getElementById('tx-say').textContent || ''")
+        self.assertIn("great hearth", said.lower(),
+                      f"the cursor never read the region name: {said!r}")
+        # The WHOLE name, not the clamped prefix. The drawn label is
+        # "The great hearth - lit. The chq…" at this width; the cursor says all
+        # 79 characters, which is the difference between a name and a fragment.
+        self.assertIn("sit all round it.", said,
+                      f"the cursor read a fragment rather than the label: {said!r}")
+
+    def test_the_cursor_reads_the_smallest_region_covering_a_square(self):
+        """A table inside a named hall: the table is what the cursor is standing
+        on, so the table is what it should read."""
+        page = self.open_page(size=(1440, 900), wait=200)
+        page.evaluate(self.FEED, [("The great hall", 1.5, 6.5, 6),
+                                  # The 1x1 table sits on C7, the square the
+                                  # cursor steps onto, so both regions cover it.
+                                  ("Round table", 2.0, 6.0, 1)])
+        present(page, "() => document.querySelectorAll('.tx-cell-lbl').length > 0",
+                "the map labels to render")
+        page.focus("#tx-board")
+        page.keyboard.press("ArrowRight")
+        present(page, "() => (document.getElementById('tx-say').textContent || '').length > 0",
+                "the board cursor to say the square")
+        said = page.evaluate("() => document.getElementById('tx-say').textContent || ''")
+        self.assertIn("round table", said.lower(), said)
 
 
 if __name__ == "__main__":

@@ -253,7 +253,19 @@ def compile_map(spec: dict) -> dict:
                 cells[yy][xx] = t
                 owner[yy][xx] = i
         if f.get("label"):
-            labels.append({"text": f["label"], "x": x, "y": y})
+            # The label's anchor is the CENTRE of the rectangle it names, and it
+            # carries the rectangle's size. It used to be the top-left square,
+            # with no size at all, which is what put a fixed-size label over the
+            # wrong square and gave the display no budget to clamp it to: the
+            # display cannot tell how wide a region is from an anchor alone.
+            #
+            # Display-only, and nothing reads these as a top-left origin:
+            # mapeditor.py re-derives a saved map's labels from its `features`
+            # rectangles (`cover`), never from this list, so a map file cannot be
+            # written back with a centre where it meant a corner. `x`/`y` are
+            # floats because an odd-width rectangle has a half-square centre.
+            labels.append({"text": f["label"], "x": x + fw / 2, "y": y + fh / 2,
+                           "w": fw, "h": fh})
     rows = ["".join(char_for[c] for c in row) for row in cells]
     grid = {"name": spec.get("name", ""), "rows": rows,
             "diagonals": str(spec.get("diagonals", "5"))}
