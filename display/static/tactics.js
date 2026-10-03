@@ -498,6 +498,54 @@
      `cell` is a parameter rather than the module-level C for the reason
      `pinCentre` takes one: this block is extracted and run under node by
      tests/test_display_tactics_ui.py, where there is no C. */
+  /* Which terrain cells have a differently-terrained neighbour, and on which
+     sides. An edge, not a stroke-per-rect: outlining every cell draws a box
+     grid over uniform ground, which is worse over artwork than no outline at
+     all, and a stylesheet cannot ask a cell what its neighbours are.
+
+     Out of bounds counts as different, so a region's outer boundary is drawn
+     against the artwork beyond the board as well as against its interior
+     divisions. The comparison is by terrain NAME and not by fill: two map-
+     specific terrain types can share a colour and are still two terrains, and
+     `legend` (terrainOf's lookup) is what decides which a cell is.
+
+     Pure, and in this block, so the geometry is pinned under node like the rest
+     of the board's arithmetic. `rows` is the row-string grid and `names` the
+     per-cell terrain name grid of the same shape. */
+  const terrainEdges = (rows, names) => {
+    const H = rows.length, W = H ? rows[0].length : 0;
+    const out = [];
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const me = names[y][x];
+      const l = (x === 0 || names[y][x - 1] !== me) ? 1 : 0;
+      const r = (x === W - 1 || names[y][x + 1] !== me) ? 1 : 0;
+      const t = (y === 0 || names[y - 1][x] !== me) ? 1 : 0;
+      const b = (y === H - 1 || names[y + 1][x] !== me) ? 1 : 0;
+      if (l || r || t || b) out.push({ x, y, l, r, t, b });
+    }
+    return out;
+  };
+
+  /* A difficult-terrain marker sized in FRACTIONS of a cell, so it stays the
+     same share of a square at every cell size. The old chevron was fixed at 12
+     user units in a 32-unit cell: at the phone minimum of 10px a square that is
+     3.75px of marker, indistinguishable from the grid line beside it, and its
+     stroke-opacity was .3.
+
+     `unit` is the module's C, passed in for the reason artAttrs takes its
+     `cell`: this block is run under node with no C in scope. */
+  const difficultMark = (x, y, unit) => {
+    const s = unit * 0.5, cx = x * unit + unit / 2, cy = y * unit + unit / 2;
+    // An up-chevron about (cx, cy), with the two vertical extremes the same
+    // distance either side of cy so the box is centred on the square rather
+    // than merely inside it. The old path was a fixed offset inside the cell
+    // (`M x*32+9, y*32+23 l6,-10 l6,10`), whose box centred on (15, 18) in a
+    // cell whose centre is (16, 16): a marker hanging low and left.
+    return `M${(cx - s / 2).toFixed(2)},${(cy + s * 0.45).toFixed(2)} ` +
+           `l${(s * 0.5).toFixed(2)},${(-s * 0.9).toFixed(2)} ` +
+           `l${(s * 0.5).toFixed(2)},${(s * 0.9).toFixed(2)}`;
+  };
+
   const artAttrs = (art, imagePx, align, W, H, cell) => {
     const legacy = () => ({ x: 0, y: 0, width: W * cell, height: H * cell,
                             preserveAspectRatio: 'none' });
@@ -1133,13 +1181,42 @@
     // with no image is unchanged, which is what every existing map expects.
     const terrain = svg('g', { class: 'tx-terrain' + (art ? ' tx-terrain-over-art' : '') }, s);
     const rows = (snap.grid && snap.grid.rows) || [];
+    // The per-cell terrain names, built once: the edge pass compares neighbours
+    // by name and terrainOf is a two-step lookup, and this is W*H of them.
+    const names = [];
+    for (let y = 0; y < H; y++) {
+      const line = [];
+      for (let x = 0; x < W; x++) line.push(terrainOf(rows[y][x]));
+      names.push(line);
+    }
+    // Where two DIFFERENT terrains meet. Over artwork this is what has to read,
+    // and it is drawn only there: a stroke per cell would outline uniform ground
+    // as a box grid. The fill alone cannot do it at any opacity (see
+    // .tx-terrain-over-art in tactics.css for the measurement), so the boundary
+    // is a separate channel from the colour.
+    const edges = new Map();
+    if (art) for (const e of terrainEdges(rows, names)) edges.set(e.y * W + e.x, e);
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-      const name = terrainOf(rows[y][x]);
+      const name = names[y][x];
       // data-t is what the stylesheet keys on to keep walls and voids solid over
       // artwork; a selector on the inline style string would be brittle.
-      const cell = svg('rect', { x: x * C, y: y * C, width: C, height: C,
-                                 style: 'fill:' + fillFor(name), 'data-t': name }, terrain);
-      if (name === 'difficult') svg('path', { d: `M${x * C + 9},${y * C + 23} l6,-10 l6,10`, style: 'stroke:var(--tx-ink);stroke-opacity:.3;fill:none' }, cell.parentNode);
+      const attrs = { x: x * C, y: y * C, width: C, height: C,
+                      style: 'fill:' + fillFor(name), 'data-t': name };
+      const e = edges.get(y * W + x);
+      if (e) {
+        // The sides that face a different terrain or the board edge, so a
+        // region's outline follows its actual shape rather than every cell in
+        // it. `all` when that is all four.
+        const sides = (e.l ? 'l' : '') + (e.r ? 'r' : '') +
+                      (e.t ? 't' : '') + (e.b ? 'b' : '');
+        attrs['data-edge'] = sides.length === 4 ? 'all' : sides;
+      }
+      svg('rect', attrs, terrain);
+      // The difficult-terrain marker, drawn whether or not there is artwork: it
+      // was before this change and the artless case reads on its own opaque
+      // fill. Only its weight differs between the two, and that is CSS.
+      if (name === 'difficult')
+        svg('path', { d: difficultMark(x, y, C), class: 'tx-difficult-mark' }, terrain);
     }
     drawFog(svg('g', { 'aria-hidden': 'true' }, s), W, H);
     ui.sightLayer = svg('g', { 'aria-hidden': 'true' }, s);
