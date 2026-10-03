@@ -20,8 +20,16 @@ The spec::
     {"kind": "overview", "slug": "campus", "name": "Strixhaven Campus",
      "image": "maps/chartdown/strixhaven-campus.player.svg",
      "extent": [1400, 1895],
+     "ft_per_px": 0.25,
      "pins": [{"id": "biblioplex", "label": "Biblioplex",
                "x": 0.5, "y": 0.4934, "revealed": true}]}
+
+``ft_per_px`` is optional and almost always absent: an overview map is a picture
+with no grid, so nothing in the file says how many feet a pixel is. The GM
+supplies one by naming two places whose real distance they know, and
+``scripts/overview.py calibrate --save`` records the result. Without it a
+bearing is still answerable and a distance is not, and the CLI refuses the
+distance rather than assuming a pitch.
 
 What a browser may see
 ----------------------
@@ -119,6 +127,17 @@ def validate(spec) -> dict:
     extent = [_number(v, "extent") for v in extent]
     if min(extent) <= 0:
         raise OverviewMapError("extent has no positive size in it")
+    # An optional scale: feet per pixel, which is what turns a pixel distance
+    # into a feet distance. Absent on almost every map and legal to be absent --
+    # `bearing` needs no scale, and `fraction_to_feet` takes one as an argument.
+    # Validated when present for the reason every other number here is: a
+    # negative or zero scale is not a small error, it turns every range at the
+    # table inside out. Written by `scripts/overview.py calibrate --save`.
+    out_scale = spec.get("ft_per_px")
+    if out_scale is not None:
+        out_scale = _number(out_scale, "ft_per_px")
+        if out_scale <= 0:
+            raise OverviewMapError("ft_per_px must be positive")
     pins = spec.get("pins", [])
     if not isinstance(pins, list):
         raise OverviewMapError("pins is a list")
@@ -147,9 +166,16 @@ def validate(spec) -> dict:
         clean.append({"id": pin_id, "label": " ".join(label.split())[:MAX_LABEL],
                       **point, "revealed": pin.get("revealed") is True})
     name = spec.get("name")
-    return {"kind": KIND, "slug": slug,
-            "name": " ".join(name.split())[:MAX_LABEL] if isinstance(name, str) and name.strip() else slug,
-            "image": image, "extent": extent, "pins": clean}
+    clean_spec = {"kind": KIND, "slug": slug,
+                  "name": " ".join(name.split())[:MAX_LABEL] if isinstance(name, str) and name.strip() else slug,
+                  "image": image, "extent": extent, "pins": clean}
+    # Carried only when recorded, so a spec without a scale validates to exactly
+    # the keys it had before this key existed -- `revealed` is a `{**spec}` pass
+    # and the routes serialise this dict straight into the page, so an always-
+    # present null would be a new thing in every player's payload.
+    if out_scale is not None:
+        clean_spec["ft_per_px"] = out_scale
+    return clean_spec
 
 
 def _fraction(point, what: str) -> tuple:
