@@ -6,13 +6,25 @@
 <title>{{ map_name }}</title>
 <link rel="icon" type="image/x-icon" href="/favicon.ico">
 <link rel="stylesheet" href="/static/atlas.css">
+{% if display_mode %}<link rel="stylesheet" href="/static/displays.css">{% endif %}
 </head>
-<body class="atlas-page">
+<body class="atlas-page{% if display_mode %} atlas-display{% endif %}">
 <header class="atlas-header">
+  {% if display_mode %}
+  <!-- One of the four windows: it links to the launcher, not back to the story,
+       because this window is not a page somebody navigated away from. -->
+  <a class="atlas-back" href="/displays">Displays</a>
+  {% else %}
   <a class="atlas-back" href="/">Back to the story</a>
+  {% endif %}
   <h1 id="atlas-title">{{ map_name }}</h1>
 </header>
 <main class="atlas-main">
+  {% if note %}
+  <!-- No map behind this window. Said on the page, not as a status code: the
+       launcher opens this onto a second screen where nobody is reading logs. -->
+  <p class="atlas-note" role="status">{{ note }}</p>
+  {% else %}
   <!-- The image and its numbered markers. The markers are aria-hidden: the
        legend beside them is the same information as text, and it is what a
        screen reader or a keyboard reaches. -->
@@ -25,8 +37,10 @@
     <ol id="atlas-list"></ol>
     <p id="atlas-empty" class="atlas-empty" hidden>No places are marked on this map yet.</p>
   </nav>
+  {% endif %}
 </main>
 <script id="atlas-data" type="application/json">{{ map_json|safe }}</script>
 <script src="/static/atlas.js" defer></script>
+{% if display_mode %}<script src="/static/displays.js" defer></script>{% endif %}
 </body>
 </html>

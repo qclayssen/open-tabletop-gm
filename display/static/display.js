@@ -4021,6 +4021,17 @@ function connect() {
         _updateDicePendingBadge(payload.dice_pending);
       }
     });
+    // Every payload goes to the view module too, raw. `/?view=dice` reads the
+    // three dice events as data and reassembles them into one card; the phone
+    // pad above reads them as commands and locks its buttons. Two readers of one
+    // event, so the payload is handed over rather than re-derived — and rather
+    // than chained onto `_onDiceRequest`, which is the pad's, and which the dice
+    // window does not have.
+    _try('payload.view', () => {
+      if (window.GMViews && typeof window.GMViews.onPayload === 'function') {
+        window.GMViews.onPayload(payload);
+      }
+    });
     _try('payload.stats', () => {
   
       if (payload.stats) {
@@ -4264,6 +4275,7 @@ function _friendlyBranch(name) {
     text: 'the narration', clocks: 'the faction clocks', replay_batch: 'the story so far',
     sent_log: 'the sent log', dice_pending: 'the dice requests',
     dice_request: 'a dice request', player_input: 'the party messages',
+    view: 'the extra display',
   })[key] || 'an update';
 }
 

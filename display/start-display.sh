@@ -6,11 +6,18 @@
 #   bash start-display.sh --lan        # LAN mode, HTTP  ← use this for home/trusted networks
 #   bash start-display.sh --lan --tls  # LAN mode, HTTPS ← use this on public/untrusted networks
 #   bash start-display.sh --campaign NAME   # also point the display at a campaign
+#   bash start-display.sh --displays       # open the launcher: the four windows
 #   bash start-display.sh --stop       # stop the GM watcher, then this port's server
 #
 # --campaign shows that campaign's last exchanges on reconnect, checks the SRD
 # data, and says when a grid fight is waiting to resume. Without it, the display
 # keeps the campaign it had last time (display/.campaign).
+#
+# --displays opens /displays instead of the main window: one button per display
+# (the story, the map, the combat board, the DM's dice requests) and one that
+# opens all four tiled across the screen. Same server either way -- the four
+# windows are the same page at ?view=dm|map|combat|dice, so they share one SSE
+# connection and cannot drift out of step with each other.
 #
 # HTTP is the default. Guests and new devices connect instantly with no setup.
 # TLS adds encryption but requires a one-time certificate install on each device.
@@ -23,6 +30,7 @@ CERT_SERVER_PID="$DISPLAY_DIR/.cert-server.pid"
 LAN_FLAG=""
 TLS_MODE=false
 CAMPAIGN=""
+LAUNCHER=false
 PORT="${GM_DISPLAY_PORT:-5001}"
 export GM_DISPLAY_PORT="$PORT"
 # Per port: a second display (tests, demos) must never kill or shadow the
@@ -44,6 +52,7 @@ while [[ $# -gt 0 ]]; do
     --tls) TLS_MODE=true ;;
     --campaign) CAMPAIGN="${2:-}"; shift ;;
     --campaign=*) CAMPAIGN="${1#--campaign=}" ;;
+    --displays) LAUNCHER=true ;;
     --stop) exec bash "$DISPLAY_DIR/gm-watch.sh" stop --port "$PORT" ;;
   esac
   shift
@@ -182,6 +191,13 @@ for i in $(seq 1 10); do
     fi
 
     open "$LOCAL_URL" 2>/dev/null || true
+    if $LAUNCHER; then
+      # Second window, not a replacement: the main display is where the GM
+      # reads the session, and the launcher is the door out to the other three.
+      # Opened after it so the display is the focused window on launch.
+      sleep 0.4
+      open "$LOCAL_URL/displays" 2>/dev/null || true
+    fi
     exit 0
   fi
 done
