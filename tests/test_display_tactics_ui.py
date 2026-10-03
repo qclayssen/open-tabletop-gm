@@ -17,12 +17,20 @@ import pathlib
 import re
 import shutil
 import subprocess
+import sys
 import unittest
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 JS = REPO / "display" / "static" / "tactics.js"
 CSS = REPO / "display" / "static" / "tactics.css"
+
+sys.path.insert(0, str(REPO / "scripts"))
 NODE = shutil.which("node")
+
+#: Skip decorator, named because the module already uses it spelled out. Every
+#: class below that runs JavaScript needs it, and a class that forgets is a
+#: silently-skipped test, which is the state this repo has been bitten by.
+skip_unless_node = unittest.skipUnless(NODE, "node is not installed")
 
 # The block tactics.js marks as free of the DOM (see "pure helpers" there).
 PURE = re.compile(r"/\* Pure helpers:.*?\*/(.*?)/\* end pure helpers \*/", re.S)
@@ -509,6 +517,298 @@ class Accessibility(unittest.TestCase):
         base = re.search(r"\.tx-float \{([^}]*)\}", css)
         self.assertIn("paint-order: stroke", base.group(1))
         self.assertIn("stroke: var(--tx-panel)", base.group(1))
+
+
+# ── map labels (#144) ────────────────────────────────────────────────────────
+
+@skip_unless_node
+class LabelBudget(unittest.TestCase):
+    """labelBudget: the width one map label may occupy, in SVG user units.
+
+    An SVG <text> has no box, so nothing in CSS can bound it; the clamp is this
+    function plus fitLabelText. Both are pure and both are in tactics.js's marked
+    DOM-free block, which is run under node here.
+
+    Every case below is a number taken from a real map in display/maps/, and
+    each names the label it came from. That matters: a budget test with invented
+    numbers proves the arithmetic and not whether the rule fits the maps it has
+    to serve.
+    """
+
+    def budget(self, w, cx, W, unit=32):
+        return _run(f"return {{v: labelBudget({w}, {cx}, {W}, {unit})}};")["v"]
+
+    def test_a_short_name_keeps_all_of_itself_in_a_one_square_feature(self):
+        """bows-end-tavern has eleven 1x1 features named "Round table" (11 chars).
+
+        A strict region budget would be 32 - 8 = 24 units, about four characters,
+        so the label would read "Roun…" and the feature would lose its name to
+        being narrow. The floor is what stops that: the label is short and the
+        map has room, so it is not clamped at all.
+        """
+        # A 1x1 region at the centre of a 32-wide map: cx = 16 * 32 = 512.
+        self.assertGreaterEqual(self.budget(1, 512, 32), 11 * 6)
+
+    def test_a_long_name_is_clamped_to_the_region_and_no_wider(self):
+        """The great hearth: a 1x1 feature whose label is 79 characters.
+
+        Unclamped at ~6.2 units a character that is ~490 units, about fifteen
+        squares, drawn from a one-square hearth across the whole floor.
+        """
+        budget = self.budget(1, 512, 32)
+        self.assertLess(budget, 79 * 6.2)
+        self.assertGreater(budget, 0)
+
+    def test_a_wide_region_gets_a_wider_budget_than_a_narrow_one(self):
+        """The Cut (the canal) is 18 squares wide; a named table is 2."""
+        self.assertGreater(self.budget(18, 16 * 32, 32), self.budget(2, 16 * 32, 32))
+
+    def test_a_label_near_the_right_edge_is_clamped_by_the_room_left(self):
+        """A centred box that overruns the viewBox is not drawn at all: SVG
+        silently drops content past the last column, so an over-long label at
+        the map's edge would vanish rather than overflow. The budget cannot
+        exceed twice the distance to the nearer edge."""
+        # The last column of a 32-wide map, centre at 31.5 * 32 = 1008.
+        cx, W = 31.5 * 32, 32
+        self.assertLessEqual(self.budget(18, cx, W), 2 * (W * 32 - cx))
+
+    def test_the_budget_is_positive_at_every_edge_of_the_map(self):
+        """A zero or negative budget would blank the label. Both edges, and the
+        first and last square of every shipped map width."""
+        for W in (9, 12, 20, 24, 30):
+            for cx in (0.5, 1, W - 1, W - 0.5):
+                self.assertGreater(self.budget(1, cx * 32, W), 0,
+                                   f"no room for a label at {cx} of {W}")
+
+
+@skip_unless_node
+class FitLabelText(unittest.TestCase):
+    """fitLabelText: the longest prefix of a label that fits a budget.
+
+    `measure` is injected, so these tests pin the SEARCH (prefix, ellipsis,
+    no off-by-one) independently of how a browser measures type. The browser
+    case is tests/test_display_tactics_layout.py, which uses a real one.
+    """
+
+    #: ~6.2 units a character, the same estimate fitLabels falls back to.
+    def fit(self, text, budget):
+        prog = ("const measure = s => s.length * 6.2;"
+                f"return {{v: fitLabelText({json.dumps(text)}, {budget}, measure)}};")
+        return _run(prog)["v"]
+
+    #: The longest label on any shipped map, from bows-end-tavern's great hearth.
+    HEARTH = ("The great hearth - lit. The chequered floor and produce racks "
+              "sit all round it.")
+
+    def test_a_label_that_fits_is_returned_whole(self):
+        self.assertEqual(self.fit("Round table", 400), "Round table")
+
+    def test_a_label_that_does_not_fit_gains_an_ellipsis_and_loses_its_tail(self):
+        out = self.fit(self.HEARTH, 120)
+        self.assertTrue(out.endswith("…"), out)
+        self.assertTrue(self.HEARTH.startswith(out[:-1]), out)
+
+    def test_the_result_never_exceeds_the_budget(self):
+        """The property the whole change exists for, checked at several budgets
+        rather than one: the measured prefix plus its ellipsis must fit."""
+        for budget in (24, 40, 60, 80, 120, 200, 400):
+            out = self.fit(self.HEARTH, budget)
+            self.assertLessEqual(len(out) * 6.2, budget + 6.2,
+                                 f"budget {budget} produced {out!r}")
+
+    def test_a_prefix_keeps_the_head_and_a_suffix_would_not(self):
+        """These names lead with the identity ("Duel Square (West) - chequered
+        floor inside low timber rails"), so keeping the head is what makes a
+        clamped label still recognisable."""
+        text = "Duel Square (West) - chequered floor inside low timber rails"
+        out = self.fit(text, 150)
+        self.assertTrue(out.startswith("Duel Square (West)"), out)
+
+    def test_a_budget_too_small_for_any_character_yields_nothing_rather_than_overflow(self):
+        """Below one character the honest answer is no label. The full text is
+        still in the <title>, so this loses a name rather than a fact."""
+        self.assertEqual(self.fit("Round table", 1), "")
+
+    def test_empty_and_missing_labels_are_empty(self):
+        self.assertEqual(self.fit("", 400), "")
+        self.assertEqual(_run("return {v: fitLabelText(null, 400, s => s.length * 6)};")["v"], "")
+
+
+@skip_unless_node
+class LabelRegion(unittest.TestCase):
+    """labelCovers: which squares a map label's region actually covers.
+
+    describeSquare() reads the FULL label text out through the board cursor,
+    because the board svg is aria-hidden and a shortened label is not a name. It
+    finds the label by region, so this is the test that the region test reaches
+    the squares a GM would aim at.
+    """
+
+    def covers(self, l, x, y):
+        return _run(f"return {{v: !!labelCovers({json.dumps(l)}, {x}, {y})}};")["v"]
+
+    def test_every_square_of_a_multi_square_region_is_covered(self):
+        """detention-bog's "Reeds" is 7x5. Testing only the anchor square would
+        miss 34 of its 35."""
+        l = {"text": "Reeds", "x": 3.5, "y": 2.5, "w": 7, "h": 5}
+        for y in range(5):
+            for x in range(7):
+                self.assertTrue(self.covers(l, x, y), f"({x},{y}) of the Reeds region")
+
+    def test_a_square_outside_the_region_is_not_covered(self):
+        l = {"text": "Reeds", "x": 3.5, "y": 2.5, "w": 7, "h": 5}
+        self.assertFalse(self.covers(l, 7, 0))
+        self.assertFalse(self.covers(l, 0, 5))
+
+    def test_a_label_without_a_size_covers_exactly_its_anchor_square(self):
+        """A snapshot written before maps.py published w: a top-left corner, not
+        a centre, and one square wide."""
+        l = {"text": "Lantern", "x": 2, "y": 3}
+        self.assertTrue(self.covers(l, 2, 3))
+        self.assertFalse(self.covers(l, 3, 3))
+
+
+class MapLabelGeometry(unittest.TestCase):
+    """maps.py: a label's anchor is its region's centre, and it carries the size.
+
+    Display-only, and the round trip is the reason this is asserted on the
+    compiler: mapeditor.py re-derives a saved map's labels from its `features`
+    rectangles, so a centre written where a corner was meant cannot corrupt a
+    map file. That is a claim about two files agreeing, so it is tested on both.
+    """
+
+    def labels(self, spec):
+        from scripts.tactics import maps as _maps
+        return _maps.compile_map(spec)["meta"]["labels"]
+
+    def test_the_anchor_is_the_centre_of_the_region_it_names(self):
+        """Before the fix: x, y were the region's top-left corner, so a label on
+        a 6x4 feature sat over its first square and its text ran right across
+        five squares of something else."""
+        got = self.labels({"width": 8, "height": 6, "base": "floor", "features": [
+            {"type": "feature", "x": 1, "y": 2, "w": 6, "h": 4, "label": "Rubble"}]})
+        self.assertEqual(got, [{"text": "Rubble", "x": 4.0, "y": 4.0, "w": 6, "h": 4}])
+
+    def test_an_odd_sized_region_gets_a_half_square_centre(self):
+        """3 wide puts the middle at x + 1.5. Rounding it to 2 would put the
+        label over the second square of three, which is not the middle of
+        anything a reader would call the middle."""
+        got = self.labels({"width": 8, "height": 6, "base": "floor", "features": [
+            {"type": "feature", "x": 0, "y": 0, "w": 3, "h": 1, "label": "Bench"}]})
+        self.assertEqual((got[0]["x"], got[0]["y"]), (1.5, 0.5))
+
+    def test_a_squarer_feature_still_gets_w_and_h(self):
+        got = self.labels({"width": 8, "height": 6, "base": "floor", "features": [
+            {"type": "feature", "x": 2, "y": 2, "label": "Lantern"}]})
+        self.assertEqual((got[0]["w"], got[0]["h"]), (1, 1))
+
+    def test_the_grid_rows_are_untouched_by_the_label_geometry(self):
+        """The acceptance criterion "grid rows unchanged", on the real thing: a
+        labelled map's rows must be identical to the same map with no labels.
+        Labels are display metadata; the engine reads rows."""
+        feats = [{"type": "feature", "x": 1, "y": 2, "w": 6, "h": 4, "label": "Rubble"},
+                 {"type": "wall", "x": 0, "y": 0, "w": 2, "h": 8}]
+        with_lbl = {"width": 8, "height": 8, "base": "floor", "features": feats}
+        without = json.loads(json.dumps(with_lbl))
+        without["features"][0].pop("label")
+        self.assertEqual(self.labels(with_lbl)[0]["text"], "Rubble")
+        from scripts.tactics import maps as _maps
+        self.assertEqual(_maps.compile_map(with_lbl)["grid"]["rows"],
+                         _maps.compile_map(without)["grid"]["rows"])
+
+    def test_every_shipped_map_still_compiles_and_keeps_its_label_count(self):
+        """The whole shipped set, not a fixture. A label key that a real map
+        needs and this test does not have is a map that stops loading."""
+        from scripts.tactics import maps as _maps
+        root = REPO / "display" / "maps"
+        total = 0
+        for p in sorted(root.glob("*.json")):
+            spec = json.loads(p.read_text(encoding="utf-8"))
+            got = _maps.compile_map(spec)["meta"]["labels"]
+            wanted = sum(1 for f in spec.get("features") or [] if f.get("label"))
+            self.assertEqual(len(got), wanted, f"{p.name}: label count changed")
+            for l in got:
+                self.assertTrue(1 <= l["x"] <= spec["width"], f"{p.name}: {l} off the map")
+                self.assertTrue(1 <= l["y"] <= spec["height"], f"{p.name}: {l} off the map")
+                self.assertGreaterEqual(l["w"], 1)
+                self.assertGreaterEqual(l["h"], 1)
+            total += len(got)
+        self.assertGreater(total, 100, "the shipped maps carry far fewer labels than that")
+
+
+class MapLabelRoundTrip(unittest.TestCase):
+    """The editor's save path must not read a centre back as a corner.
+
+    `cover()` in mapeditor.py re-derives features[] from the cell matrix, and the
+    cell matrix carries a label per FEATURE INDEX (mapeditor.py:96), not a
+    coordinate. So a label whose anchor is now a centre still round trips. This
+    is the test that says so, because the alternative is a map file silently
+    rewritten with every label shifted.
+    """
+
+    def test_a_save_after_a_load_puts_the_label_back_on_its_own_region(self):
+        from scripts.tactics import mapeditor as _me
+        spec = {"name": "t", "width": 10, "height": 8, "base": "floor", "features": [
+            {"type": "feature", "x": 1, "y": 2, "w": 6, "h": 4, "label": "Rubble"}]}
+        cells = _me.cells_of(spec)
+        back = _me.cover(cells, spec["base"])
+        self.assertEqual(len(back), 1)
+        self.assertEqual(back[0]["label"], "Rubble")
+        self.assertEqual((back[0]["x"], back[0]["y"], back[0]["w"], back[0]["h"]),
+                         (1, 2, 6, 4))
+
+    def test_editor_state_publishes_the_centre_and_the_size(self):
+        """The editor draws from editor_state()["labels"], so if that list still
+        carried top-left corners the editor would render the old way whatever
+        maps.py now says."""
+        from scripts.tactics import mapeditor as _me
+        state = _me.editor_state(
+            {"name": "t", "width": 10, "height": 8, "base": "floor", "features": [
+                {"type": "feature", "x": 1, "y": 2, "w": 6, "h": 4, "label": "Rubble"}]},
+            "t")
+        self.assertEqual(state["labels"],
+                         [{"text": "Rubble", "x": 4.0, "y": 4.0, "w": 6, "h": 4}])
+
+
+class MapLabelStylesheet(unittest.TestCase):
+    """The type the clamp assumes, and the two properties only CSS can set.
+
+    Not a restatement of the stylesheet: the two assertions that matter are the
+    ones a JS clamp cannot supply. `text-anchor: middle` and
+    `dominant-baseline: central` are what centre the label on the region, and
+    tactics.js sets NEITHER as an attribute (it sets x and y only), so removing
+    either line here un-centres every label on the map.
+    """
+
+    def rule(self):
+        css = CSS.read_text(encoding="utf-8")
+        m = re.search(r"\.tx-cell-lbl \{([^}]*)\}", css)
+        self.assertIsNotNone(m, ".tx-cell-lbl has no rule")
+        return m.group(1)
+
+    def test_the_label_is_centred_on_its_region_by_the_stylesheet_alone(self):
+        self.assertIn("text-anchor: middle", self.rule())
+        self.assertIn("dominant-baseline: central", self.rule())
+
+    def test_tactics_js_does_not_set_the_anchor_itself(self):
+        """The reason the previous two are load-bearing. If the script set
+        text-anchor as an attribute it would win over the stylesheet and the
+        stylesheet rule would be dead."""
+        js = JS.read_text(encoding="utf-8")
+        for lbl in js.splitlines():
+            if "tx-cell-lbl" in lbl:
+                self.assertNotIn("text-anchor", lbl)
+                self.assertNotIn("dominant-baseline", lbl)
+
+    def test_the_halo_that_keeps_a_label_readable_over_artwork_is_kept(self):
+        self.assertIn("paint-order: stroke", self.rule())
+
+    def test_the_editor_label_is_centred_by_its_stylesheet_too(self):
+        css = (REPO / "display" / "static" / "mapseditor.css").read_text(encoding="utf-8")
+        m = re.search(r"\.me-lbl \{([^}]*)\}", css)
+        self.assertIsNotNone(m, ".me-lbl has no rule")
+        self.assertIn("text-anchor: middle", m.group(1))
+        self.assertIn("dominant-baseline: central", m.group(1))
 
 
 if __name__ == "__main__":

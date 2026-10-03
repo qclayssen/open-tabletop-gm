@@ -517,6 +517,81 @@
     const k = cell / cellPx;
     return { x: -ox * k, y: -oy * k, width: w * k, height: h * k, cropped: true };
   };
+
+  /* Map label fitting. A map label is drawn at a fixed type size with no width
+     bound, so the name of a one-square feature runs however many squares it
+     happens to need across whatever features lie between it and the board's
+     edge. On the shipped maps the longest is a 79-character description of the
+     great hearth in bows-end-tavern, which is a 1x1 region: unclamped it
+     covered fourteen squares.
+
+     Two numbers bound it. The region it names (maps.py now publishes the
+     feature rectangle's w alongside the label's centre anchor) and the room
+     left to the board's edges, because the text is centred and a centred box
+     that overruns the viewBox is not drawn at all -- the text simply vanishes
+     past the last column, which is worse than a long label.
+
+     A floor as well as a ceiling, and it is the floor that decides the common
+     case: 105 of the 115 labels on the shipped maps name a region two squares
+     wide or less, and a strict region budget would cut "Round table" in a
+     one-square region to "Roun". The floor lets a short name keep all of
+     itself and only clamps the ones that genuinely overrun.
+
+     Everything is in SVG user units (C per square), not pixels, so the same
+     number holds at every cell size the board is drawn at and the clamp does
+     not have to be redone when the window changes. That is why this block is
+     DOM-free and why these two functions take no `cell`. */
+  const LBL_PAD = 4;         // user units of clearance inside the region
+  const LBL_MIN_CELLS = 4;   // floor for a short name, in squares
+
+  // Is (x, y) inside the region a map label names? True when the square is one
+  // the label's rectangle covers, in squares. The label's anchor is the region
+  // centre and its size is the region's, both published by maps.py.
+  const labelCovers = (l, x, y) => {
+    const w = Number(l && l.w) || 1, h = Number(l && l.h) || 1;
+    if (!(w > 0) || !(h > 0)) return false;
+    return Math.abs(x + 0.5 - Number(l.x)) <= w / 2 &&
+           Math.abs(y + 0.5 - Number(l.y)) <= h / 2;
+  };
+
+  // The width budget for one label, in user units. `w` is the region's width in
+  // squares (1 for a square feature), `cx` its centre in user units, `W` the
+  // board width in squares and `unit` the module's C, passed in for the reason
+  // artAttrs takes its `cell`: this block is run under node with no C in scope.
+  const labelBudget = (w, cx, W, unit) => {
+    const cells = Math.max(1, Number(w) || 1);
+    const room = Math.max(LBL_PAD, Math.min(cx, W * unit - cx) - LBL_PAD);
+    const region = cells * unit - 2 * LBL_PAD;
+    const floor = LBL_MIN_CELLS * unit - 2 * LBL_PAD;
+    return Math.min(Math.max(region, floor), room * 2);
+  };
+
+  // The longest prefix of `text` that renders within `budget`, with an ellipsis
+  // when the whole thing does not fit. `measure` is given a candidate string and
+  // returns its rendered width; the caller supplies the DOM's
+  // getComputedTextLength, and this stays pure so the rule can be pinned under
+  // node.
+  //
+  // A prefix, not a suffix: these names put the identity first ("Duel Square
+  // (West) - chequered floor inside low timber rails"), so the head is the part
+  // a GM needs to recognise the feature and the tail is prose for the map file.
+  //
+  // Binary search rather than shaving a character at a time: the old
+  // unclamped text needed no measurement, and a per-character loop would ask
+  // the browser for a layout this many times for one label. log2 of the longest
+  // label on any shipped map is 7.
+  const fitLabelText = (text, budget, measure) => {
+    const full = String(text == null ? '' : text);
+    if (!full || !(budget > 0)) return '';
+    if (measure(full) <= budget) return full;
+    const ELL = '…';
+    let lo = 0, hi = full.length;                 // lo fits, hi does not
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (measure(full.slice(0, mid) + ELL) <= budget) lo = mid; else hi = mid - 1;
+    }
+    return lo > 0 ? full.slice(0, lo) + ELL : '';
+  };
   /* end pure helpers */
 
   // Nudge a text element back inside the board, horizontally and vertically.
@@ -964,6 +1039,9 @@
     // resize or a phone reflow reuses the terrain and still refits the board.
     s.setAttribute('width', W * cell);
     s.setAttribute('height', H * cell);
+    // Only for a board that was just built: fitLabels measures the DOM, and a
+    // cached board already holds the right answer (see the function).
+    if (!reuse) fitLabels();
     s.classList.toggle('tx-aiming', ui.mode === 'aim');
     clearLayers();
     drawSight();
@@ -1070,9 +1148,20 @@
     for (let j = 0; j <= H; j++) svg('line', { x1: 0, y1: j * C, x2: W * C, y2: j * C }, grid);
     for (const z of (snap.meta && snap.meta.zones) || [])
       svg('line', { x1: z * C, y1: 0, x2: z * C, y2: H * C, style: 'stroke:var(--tx-brass);stroke-width:3;stroke-dasharray:8 6' }, s);
+    // Map labels: one per labelled feature region, anchored at its centre and
+    // bounded to its own width (see fitLabels). The <title> is the full text for
+    // a reader who cannot read the clamped label, and the region size rides along
+    // in data-w so fitLabels does not need the map file back.
     for (const l of (snap.meta && snap.meta.labels) || []) {
-      const t = svg('text', { x: l.x * C + 5, y: l.y * C + 14, class: 'tx-cell-lbl', style: 'stroke:var(--tx-paper)' }, s);
-      t.textContent = l.text;
+      const t = svg('text', { x: l.x * C, y: l.y * C, class: 'tx-cell-lbl',
+                              style: 'stroke:var(--tx-paper)' }, s);
+      svg('title', {}, t).textContent = l.text;
+      t.appendChild(document.createTextNode(l.text));
+      if (l.w) t.setAttribute('data-w', l.w);
+      // A label arriving from a snapshot written before maps.py published the
+      // region size has no w: anchor it at the square it names rather than at a
+      // half-square past it, which is what a default of 1 would do.
+      if (!l.w) t.setAttribute('x', (l.x + 0.5) * C);
     }
     ui.overlay = svg('g', {}, s);
     // Its own layer, above the overlay and below the tokens, and that is load
@@ -1118,6 +1207,43 @@
     });
     el.board.innerHTML = ''; el.board.appendChild(s);
     return s;
+  }
+
+  // User units per character, for the case where the DOM cannot measure a label
+  // at all. 0.56 of an 11px semibold sans is the average advance for the mixed
+  // case this panel's labels are: a rough answer is better here than the
+  // unclamped label this function exists to remove, and it is only reached when
+  // there is no measurement to be had.
+  const LBL_EST_ADVANCE = 6.2;
+
+  // Shorten every map label to the width of the region it names.
+  //
+  // Runs once per BUILT board rather than per redraw. The budget is in user
+  // units, which do not change with the cell size, so a board kept by the cache
+  // keeps a prefix that is still correct after a resize; re-fitting per frame
+  // would measure every label sixty times a second for no change in the answer.
+  //
+  // After the append, never inside buildBoard: getComputedTextLength throws in
+  // Chromium for an element that is not in the render tree, so measuring during
+  // the build would take the fallback for every label on every map.
+  function fitLabels() {
+    const s = ui.svg;
+    if (!s) return;
+    const W = ui.W || 0;
+    for (const t of s.querySelectorAll('.tx-cell-lbl')) {
+      const full = (t.querySelector('title') || {}).textContent || '';
+      const node = t.lastChild;                    // the text node after <title>
+      if (!node) continue;
+      const budget = labelBudget(t.getAttribute('data-w'),
+                                 parseFloat(t.getAttribute('x')) || 0, W, C);
+      node.textContent = full;
+      let live = true;
+      try { t.getComputedTextLength(); } catch (e) { live = false; }
+      const measure = live
+        ? str => { node.textContent = str; return t.getComputedTextLength(); }
+        : str => str.length * LBL_EST_ADVANCE;
+      node.textContent = fitLabelText(full, budget, measure);
+    }
   }
 
   const isPhone = () => !!(window.matchMedia && matchMedia(`(max-width: ${PHONE_MAX_W}px)`).matches);
@@ -1627,10 +1753,27 @@
   }
 
   // Words for one square: where it is, what is there, and what the current mode says about it.
+  // The first map label whose region covers (x, y), or null. The smallest such
+  // region wins, so a label naming a table inside a named hall is the one read
+  // out rather than the hall.
+  function mapLabelAt(x, y) {
+    const ls = ((snap && snap.meta && snap.meta.labels) || [])
+      .filter(l => labelCovers(l, x, y));
+    if (!ls.length) return null;
+    return ls.reduce((a, b) =>
+      (Number(a.w) * Number(a.h)) <= (Number(b.w) * Number(b.h)) ? a : b);
+  }
+
   function describeSquare(p) {
     const sq = label(p[0], p[1]);
     const rows = (snap && snap.grid && snap.grid.rows) || [];
     const bits = [sq, terrainOf((rows[p[1]] || '')[p[0]] || '.')];
+    // The full text of the map label whose region covers this square, and the
+    // board svg is aria-hidden, so this is the only route by which a keyboard
+    // player learns what a region is called. The drawn label is shortened to the
+    // region's width (fitLabels) and a shortened name is not a name.
+    const lbl = mapLabelAt(p[0], p[1]);
+    if (lbl) bits.push(lbl.text);
     const t = (snap.tokens || []).find(x => x.x === p[0] && x.y === p[1] && !x.dead) ||
               (snap.tokens || []).find(x => x.x === p[0] && x.y === p[1]);
     // A pin is named here rather than given an aria-label, because the board svg

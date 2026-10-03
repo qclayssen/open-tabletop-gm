@@ -16,6 +16,8 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -163,8 +165,15 @@ def test_a_labelled_feature_keeps_exactly_one_label_after_a_merge():
     out = mapeditor.apply_strokes(spec, [stroke("water", 3, 2, 1, 2)])
     labels = [f["label"] for f in out["features"] if f.get("label")]
     assert labels == ["Rubble"]
+    # The coordinates here moved in #144: the anchor is now the CENTRE of the
+    # surviving region and the region carries its size, because the display
+    # needs a width to clamp the label to and cannot get one from a corner.
+    # That is the only thing this assertion changed; the subject of the test,
+    # one label rather than two, is still the line above and is untouched. The
+    # new geometry is pinned independently in test_display_tactics_ui.py
+    # (MapLabelGeometry), so nothing rests on this line alone.
     assert maps.compile_map(out)["meta"]["labels"] == [
-        {"text": "Rubble", "x": 1, "y": 1}]
+        {"text": "Rubble", "x": 2.0, "y": 3.0, "w": 2, "h": 4}]
 
 
 def test_two_features_sharing_label_text_stay_two_labels():
@@ -582,3 +591,108 @@ def test_the_write_route_cannot_be_used_to_reach_outside_the_maps_folder(client,
 
 def test_a_shipped_map_has_no_bak_left_behind_by_the_suite():
     assert list(maps.MAPS_DIR.glob("*.bak")) == []
+
+
+# ── editor map labels (#144) ─────────────────────────────────────────────────
+#
+# The editor draws the same labels the display does, from editor_state()["labels"],
+# and mapeditor.js carries its own copy of the clamp (there is no module system
+# and no build step here, so the two files cannot share one). These hold the copy
+# to the original: the constants below are the ones that must agree, and
+# tests/test_display_tactics_ui.py pins the tactics.js originals.
+
+MAPEDITOR_JS = ROOT / "display" / "static" / "mapseditor.js"
+MAPEDITOR_CSS = ROOT / "display" / "static" / "mapseditor.css"
+_NODE = shutil.which("node")
+
+
+def _run_editor_js(js: str):
+    """Run a snippet with mapeditor.js's fitPrefix and LBL_EST_ADVANCE in scope.
+
+    Both are module-private inside the IIFE, so they are lifted out of the file
+    by name rather than the file being loaded (which would want the DOM and the
+    /maps/<slug>/features route). The pure-lift is the honest version of what
+    the browser does with these two functions, and it is what makes a mutation
+    visible: change the constant in the file and this sees it.
+    """
+    if not _NODE:
+        pytest.skip("node is not installed")
+    src = MAPEDITOR_JS.read_text(encoding="utf-8")
+    out = []
+    for name, marker in (("LBL_EST_ADVANCE", "const LBL_EST_ADVANCE"),
+                         ("fitPrefix", "function fitPrefix")):
+        start = src.index(marker)
+        depth, i, seen = 0, src.index("{", start), False
+        while i < len(src):
+            if src[i] == "{":
+                depth += 1
+                seen = True
+            elif src[i] == "}":
+                depth -= 1
+                if seen and depth == 0:
+                    i += 1
+                    break
+            i += 1
+        out.append(src[start:i])
+    prog = ("const out = (() => {" + "\n".join(out) + "\n" + js +
+            "})();process.stdout.write(JSON.stringify(out));")
+    r = subprocess.run([_NODE, "-"], input=prog.encode("utf-8"),
+                       capture_output=True, timeout=30)
+    assert r.returncode == 0, r.stderr.decode("utf-8", "replace")
+    return json.loads(r.stdout.decode("utf-8"))
+
+
+def _editor_fit(text: str, budget: int) -> str:
+    return _run_editor_js(
+        "const measure = s => s.length * LBL_EST_ADVANCE;"
+        f"return {{v: fitPrefix({json.dumps(text)}, {budget}, measure)}};")["v"]
+
+
+def test_the_editor_clamps_a_label_that_would_overrun_its_region():
+    """Before the fix the editor drew `x*C+4, y*C+13` and the whole string, so a
+    79-character label left a one-square feature and crossed the board."""
+    hearth = ("The great hearth - lit. The chequered floor and produce racks "
+              "sit all round it.")
+    out = _editor_fit(hearth, 120)
+    assert out.endswith("…")
+    assert hearth.startswith(out[:-1])
+
+
+def test_the_editor_keeps_a_short_label_whole():
+    assert _editor_fit("Round table", 400) == "Round table"
+
+
+def test_the_editor_never_exceeds_its_budget():
+    hearth = ("The great hearth - lit. The chequered floor and produce racks "
+              "sit all round it.")
+    for budget in (24, 40, 80, 120, 400):
+        out = _editor_fit(hearth, budget)
+        assert len(out) * 6.2 <= budget + 6.2, f"budget {budget} produced {out!r}"
+
+
+def test_the_editor_falls_back_to_the_same_estimate_as_the_display():
+    """The number that must agree between the two copies. The display's is in
+    tactics.js's pure block; this reads the editor's. If they drift, a label is
+    clamped differently depending on which page a GM is looking at."""
+    got = _run_editor_js("return {v: LBL_EST_ADVANCE};")["v"]
+    assert got == 6.2
+
+
+def test_the_editor_clamps_before_it_is_measured():
+    """fitLabels() measures getComputedTextLength, which throws in Chromium for a
+    detached element, so the call has to come after the svg is appended to the
+    board. Order in the file is the whole assertion: this asserts the append is
+    the line before fitLabels is called, so moving the call up breaks it."""
+    src = MAPEDITOR_JS.read_text(encoding="utf-8")
+    body = src[src.index("function draw()"):src.index("function cellAt(")]
+    assert body.index("el.board.appendChild(s)") < body.index("fitLabels(s, W)"), (
+        "fitLabels() is called before the svg is in the document")
+
+
+def test_the_editor_label_is_centred_by_its_stylesheet():
+    """mapeditor.js sets x and y and neither of these, so they have to be in CSS."""
+    import re
+    m = re.search(r"\.me-lbl \{([^}]*)\}", MAPEDITOR_CSS.read_text(encoding="utf-8"))
+    assert m is not None, ".me-lbl has no rule"
+    assert "text-anchor: middle" in m.group(1)
+    assert "dominant-baseline: central" in m.group(1)

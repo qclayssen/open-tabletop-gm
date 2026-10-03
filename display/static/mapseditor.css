@@ -87,8 +87,14 @@ button.me-primary:not(:disabled) { background: var(--tx-accent); border-color: v
 .me-terrain rect[data-t="wall"], .me-terrain rect[data-t="void"] { fill-opacity: 1; }
 .me-grid { stroke: var(--tx-grid); pointer-events: none; }
 .me-zone { stroke: var(--tx-brass); stroke-width: 2; stroke-dasharray: 6 4; }
+/* Centred on the feature region the label names, for the same reason and with
+   the same constants as .tx-cell-lbl: the anchor is the region's centre and the
+   width is the region's, so a label left-anchored there reads as belonging to
+   whatever is under its left end. mapeditor.js sets x and y and neither of
+   these two, so they have to be here. */
 .me-lbl { fill: var(--tx-ink); stroke: var(--tx-paper); stroke-width: 3; paint-order: stroke;
-          font: 11px Figtree, system-ui, sans-serif; pointer-events: none; }
+          font: 11px Figtree, system-ui, sans-serif; pointer-events: none;
+          text-anchor: middle; dominant-baseline: central; }
 .me-preview rect { fill: var(--tx-accent); fill-opacity: .35; stroke: var(--tx-accent);
                    stroke-width: 2; pointer-events: none; }
 
