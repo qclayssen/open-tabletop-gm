@@ -1,0 +1,844 @@
+{
+ "_comment": "A deliberately tiny dataset for tests/test_rules_coverage.py. Every record is a real 5e-bits SRD 5.1 record taken from dnd5e_srd.json, so the instrument is exercised against the same shapes it meets in the full dataset. Chosen so that every state and every documented reason is reachable offline, and so a fresh clone -- which has NO dnd5e_srd.json at all -- can still measure something rather than only ever reporting 'unmeasured'.",
+ "_covers": {
+  "mechanical spell": "fire-bolt: an attack cantrip the engine casts itself",
+  "reference spell": "flame-strike: two damage types plus area_placement, so it narrates",
+  "condition mechanical": "blinded: every SRD clause the engine enforces",
+  "condition reference": "petrified: applied, but 'resistance to all damage' is not",
+  "condition with no table entry": "frozen: named in the dataset, absent from CONDITION_EFFECTS",
+  "feature mechanical": "arcane-recovery: the one feature slots._default_feature acts on",
+  "feature unlisted": "danger-sense: neither applied nor in UNSUPPORTED_FEATURES, so the player is not told",
+  "feature listed": "second-wind: in UNSUPPORTED_FEATURES, so the player IS told",
+  "monster with a choice action": "salamander: its Spear's damage is a choice, so no option is picked",
+  "monster fully mechanical": "giant-spider: the bite parses and its poison is a rider effect, but its Web is prose the parser could not read, so the monster as a whole is reference. Included because a partially-covered monster is the case a whole-record state has to get right.",
+  "item": "longsword: lookup prints it, no engine rule applies it",
+  "spell no_anchor": "alarm: no attack, save, damage or heal at all",
+  "spell builtin_forced_narrate": "false life: BUILTIN says narrate, because temporary hit points are not healing",
+  "spell builtin_level_narrate": "eldritch blast: one SRD number, but the spell deals more beams above 4th",
+  "spell save_nothing_to_apply": "dominate person: the save resolves and the engine can apply neither outcome",
+  "monster action_area_unknown": "adult red dragon: Frightful Presence is a save with no parseable area",
+  "monster action_unparsed": "giant frog: Swallow is prose the parser could not decompose",
+  "monster no_structured_action": "sea horse: nothing on it is a shape the engine can run",
+  "condition documented deviation": "charmed: the engine makes the attack at disadvantage instead of refusing it, which the SRD does not do. The code says so above CONDITION_EFFECTS, so this is a deliberate house ruling and the report calls it a deviation rather than a bug.",
+  "condition clause not enforced": "unconscious: applied, but 'is unaware of its surroundings' is not. Its consequence in play is that a charm or frighten lands on an unaware target without a save."
+ },
+ "spells": [
+  {
+   "name": "Fire Bolt",
+   "index": "fire-bolt",
+   "description": "You hurl a mote of fire at a creature or object within range. Make a ranged spell attack against the target. On a hit, the target takes 1d10 fire damage. A flammable object hit by this spell ignites if it isn't being worn or carried.\n\nThis spell's damage increases by 1d10 when you reach 5th level (2d10), 11th level (3d10), and 17th level (4d10).",
+   "higher_level": "",
+   "level": 0,
+   "school": "Evocation",
+   "casting_time": "1 action",
+   "range": "120 feet",
+   "components": [
+    "V",
+    "S"
+   ],
+   "material": "",
+   "duration": "Instantaneous",
+   "concentration": false,
+   "ritual": false,
+   "classes": [
+    "Sorcerer",
+    "Wizard"
+   ],
+   "mechanics": {
+    "casting": "action",
+    "concentration": false,
+    "range": 120,
+    "origin": "point",
+    "attack": "ranged",
+    "damage": {
+     "type": "fire",
+     "character": {
+      "1": "1d10",
+      "5": "2d10",
+      "11": "3d10",
+      "17": "4d10"
+     }
+    },
+    "flags": []
+   }
+  },
+  {
+   "name": "Flame Strike",
+   "index": "flame-strike",
+   "description": "A vertical column of divine fire roars down from the heavens in a location you specify. Each creature in a 10-foot-radius, 40-foot-high cylinder centered on a point within range must make a dexterity saving throw. A creature takes 4d6 fire damage and 4d6 radiant damage on a failed save, or half as much damage on a successful one.",
+   "higher_level": "When you cast this spell using a spell slot of 6th level or higher, the fire damage or the radiant damage (your choice) increases by 1d6 for each slot level above 5th.",
+   "level": 5,
+   "school": "Evocation",
+   "casting_time": "1 action",
+   "range": "60 feet",
+   "components": [
+    "V",
+    "S",
+    "M"
+   ],
+   "material": "Pinch of sulfur.",
+   "duration": "Instantaneous",
+   "concentration": false,
+   "ritual": false,
+   "classes": [
+    "Cleric"
+   ],
+   "mechanics": {
+    "casting": "action",
+    "concentration": false,
+    "range": 60,
+    "origin": "point",
+    "save": {
+     "ability": "dex",
+     "on_success": "half"
+    },
+    "area": {
+     "shape": "cylinder",
+     "size": 40
+    },
+    "flags": [
+     "damage_unparsed"
+    ]
+   }
+  },
+  {
+   "name": "Alarm",
+   "index": "alarm",
+   "description": "You set an alarm against unwanted intrusion. Choose a door, a window, or an area within range that is no larger than a 20-foot cube. Until the spell ends, an alarm alerts you whenever a Tiny or larger creature touches or enters the warded area. When you cast the spell, you can designate creatures that won't set off the alarm. You also choose whether the alarm is mental or audible.\n\nA mental alarm alerts you with a ping in your mind if you are within 1 mile of the warded area. This ping awakens you if you are sleeping.\n\nAn audible alarm produces the sound of a hand bell for 10 seconds within 60 feet.",
+   "higher_level": "",
+   "level": 1,
+   "school": "Abjuration",
+   "casting_time": "1 minute",
+   "range": "30 feet",
+   "components": [
+    "V",
+    "S",
+    "M"
+   ],
+   "material": "A tiny bell and a piece of fine silver wire.",
+   "duration": "8 hours",
+   "concentration": false,
+   "ritual": true,
+   "classes": [
+    "Ranger",
+    "Wizard"
+   ],
+   "mechanics": {
+    "casting": "other",
+    "concentration": false,
+    "range": 30,
+    "origin": "point",
+    "area": {
+     "shape": "cube",
+     "size": 20
+    },
+    "flags": [
+     "effect"
+    ]
+   }
+  },
+  {
+   "name": "False Life",
+   "index": "false-life",
+   "description": "Bolstering yourself with a necromantic facsimile of life, you gain 1d4 + 4 temporary hit points for the duration.",
+   "higher_level": "When you cast this spell using a spell slot of 2nd level or higher, you gain 5 additional temporary hit points for each slot level above 1st.",
+   "level": 1,
+   "school": "Necromancy",
+   "casting_time": "1 action",
+   "range": "Self",
+   "components": [
+    "V",
+    "S",
+    "M"
+   ],
+   "material": "A small amount of alcohol or distilled spirits.",
+   "duration": "1 hour",
+   "concentration": false,
+   "ritual": false,
+   "classes": [
+    "Sorcerer",
+    "Wizard"
+   ],
+   "mechanics": {
+    "casting": "action",
+    "concentration": false,
+    "range": 0,
+    "origin": "self",
+    "heal": {
+     "slot": {
+      "1": "1d4+4",
+      "2": "1d4+9",
+      "3": "1d4+14",
+      "4": "1d4+19",
+      "5": "1d4+24",
+      "6": "1d4+29",
+      "7": "1d4+34",
+      "8": "1d4+39",
+      "9": "1d4+44"
+     }
+    },
+    "flags": []
+   }
+  },
+  {
+   "name": "Eldritch Blast",
+   "index": "eldritch-blast",
+   "description": "A beam of crackling energy streaks toward a creature within range. Make a ranged spell attack against the target. On a hit, the target takes 1d10 force damage. The spell creates more than one beam when you reach higher levels: two beams at 5th level, three beams at 11th level, and four beams at 17th level. You can direct the beams at the same target or at different ones. Make a separate attack roll for each beam.",
+   "higher_level": "",
+   "level": 0,
+   "school": "Evocation",
+   "casting_time": "1 action",
+   "range": "120 feet",
+   "components": [
+    "V",
+    "S"
+   ],
+   "material": "",
+   "duration": "Instantaneous",
+   "concentration": false,
+   "ritual": false,
+   "classes": [
+    "Warlock"
+   ],
+   "mechanics": {
+    "casting": "action",
+    "concentration": false,
+    "range": 120,
+    "origin": "point",
+    "attack": "ranged",
+    "damage": {
+     "type": "force",
+     "character": {
+      "1": "1d10",
+      "5": "1d10",
+      "11": "1d10",
+      "17": "1d10"
+     }
+    },
+    "flags": []
+   }
+  },
+  {
+   "name": "Dominate Person",
+   "index": "dominate-person",
+   "description": "You attempt to beguile a humanoid that you can see within range. It must succeed on a wisdom saving throw or be charmed by you for the duration. If you or creatures that are friendly to you are fighting it, it has advantage on the saving throw.\n\nWhile the target is charmed, you have a telepathic link with it as long as the two of you are on the same plane of existence. You can use this telepathic link to issue commands to the creature while you are conscious (no action required), which it does its best to obey. You can specify a simple and general course of action, such as \"Attack that creature,\" \"Run over there,\" or \"Fetch that object.\" If the creature completes the order and doesn't receive further direction from you, it defends and preserves itself to the best of its ability.\n\nYou can use your action to take total and precise control of the target. Until the end of your next turn, the creature takes only the actions you choose, and doesn't do anything that you don't allow it to do. During this time you can also cause the creature to use a reaction, but this requires you to use your own reaction as well.\n\nEach time the target takes damage, it makes a new wisdom saving throw against the spell. If the saving throw succeeds, the spell ends.",
+   "higher_level": "When you cast this spell using a 6th-level spell slot, the duration is concentration, up to 10 minutes. When you use a 7th-level spell slot, the duration is concentration, up to 1 hour. When you use a spell slot of 8th level or higher, the duration is concentration, up to 8 hours.",
+   "level": 5,
+   "school": "Enchantment",
+   "casting_time": "1 action",
+   "range": "60 feet",
+   "components": [
+    "V",
+    "S"
+   ],
+   "material": "",
+   "duration": "Up to 1 minute",
+   "concentration": true,
+   "ritual": false,
+   "classes": [
+    "Bard",
+    "Sorcerer",
+    "Wizard"
+   ],
+   "mechanics": {
+    "casting": "action",
+    "concentration": true,
+    "range": 60,
+    "origin": "point",
+    "save": {
+     "ability": "wis",
+     "on_success": "other"
+    },
+    "flags": [
+     "save_effect"
+    ]
+   }
+  }
+ ],
+ "conditions": [
+  {
+   "name": "Blinded",
+   "index": "blinded",
+   "description": "- A blinded creature can't see and automatically fails any ability check that requires sight.\n\n- Attack rolls against the creature have advantage, and the creature's attack rolls have disadvantage."
+  },
+  {
+   "name": "Petrified",
+   "index": "petrified",
+   "description": "- A petrified creature is transformed, along with any nonmagical object it is wearing or carrying, into a solid inanimate substance (usually stone). Its weight increases by a factor of ten, and it ceases aging.\n\n- The creature is incapacitated (see the condition), can't move or speak, and is unaware of its surroundings.\n\n- Attack rolls against the creature have advantage.\n\n- The creature automatically fails Strength and Dexterity saving throws.\n\n- The creature has resistance to all damage.\n\n- The creature is immune to poison and disease, although a poison or disease already in its system is suspended, not neutralized."
+  },
+  {
+   "name": "Charmed",
+   "index": "charmed",
+   "description": "- A charmed creature can't attack the charmer or target the charmer with harmful abilities or magical effects.\n\n- The charmer has advantage on any ability check to interact socially with the creature."
+  },
+  {
+   "index": "frozen",
+   "name": "Frozen",
+   "description": "A frozen creature is incapacitated (see the condition)."
+  },
+  {
+   "name": "Unconscious",
+   "index": "unconscious",
+   "description": "- An unconscious creature is incapacitated (see the condition), can't move or speak, and is unaware of its surroundings.\n\n- The creature drops whatever it's holding and falls prone.\n\n- The creature automatically fails Strength and Dexterity saving throws.\n\n- Attack rolls against the creature have advantage.\n\n- Any attack that hits the creature is a critical hit if the attacker is within 5 feet of the creature."
+  }
+ ],
+ "features": [
+  {
+   "name": "Arcane Recovery",
+   "index": "arcane-recovery",
+   "description": "You have learned to regain some of your magical energy by studying your spellbook. Once per day when you finish a short rest, you can choose expended spell slots to recover. The spell slots can have a combined level that is equal to or less than half your wizard level (rounded up), and none of the slots can be 6th level or higher.\nFor example, if you're a 4th-level wizard, you can recover up to two levels worth of spell slots. You can recover either a 2nd-level spell slot or two 1st-level spell slots.",
+   "class": "wizard",
+   "level_req": null,
+   "type": "class"
+  },
+  {
+   "name": "Danger Sense",
+   "index": "danger-sense",
+   "description": "At 2nd level, you gain an uncanny sense of when things nearby aren't as they should be, giving you an edge when you dodge away from danger.\nYou have advantage on Dexterity saving throws against effects that you can see, such as traps and spells. To gain this benefit, you can't be blinded, deafened, or incapacitated.",
+   "class": "barbarian",
+   "level_req": null,
+   "type": "class"
+  },
+  {
+   "name": "Second Wind",
+   "index": "second-wind",
+   "description": "You have a limited well of stamina that you can draw on to protect yourself from harm. On your turn, you can use a bonus action to regain hit points equal to 1d10 + your fighter level.\nOnce you use this feature, you must finish a short or long rest before you can use it again.",
+   "class": "fighter",
+   "level_req": null,
+   "type": "class"
+  }
+ ],
+ "monsters": [
+  {
+   "name": "Salamander",
+   "index": "salamander",
+   "description": "Heated Body: A creature that touches the salamander or hits it with a melee attack while within 5 ft. of it takes 7 (2d6) fire damage.\n\nHeated Weapons: Any metal melee weapon the salamander wields deals an extra 3 (1d6) fire damage on a hit (included in the attack).\n\nAction — Multiattack: The salamander makes two attacks: one with its spear and one with its tail.\n\nAction — Spear: Melee or Ranged Weapon Attack: +7 to hit, reach 5 ft. or range 20/60 ft., one target. Hit: 11 (2d6 + 4) piercing damage, or 13 (2d8 + 4) piercing damage if used with two hands to make a melee attack, plus 3 (1d6) fire damage.\n\nAction — Tail: Melee Weapon Attack: +7 to hit, reach 10 ft., one target. Hit: 11 (2d6 + 4) bludgeoning damage plus 7 (2d6) fire damage, and the target is grappled (escape DC 14). Until this grapple ends, the target is restrained, the salamander can automatically hit the target with its tail, and the salamander can't make tail attacks against other targets.",
+   "cr": 5,
+   "xp": 1800,
+   "size": "Large",
+   "type": "elemental",
+   "hp": 90,
+   "hp_dice": "12d10",
+   "ac": 15,
+   "speed": "walk 30 ft.",
+   "str": 18,
+   "dex": 14,
+   "con": 15,
+   "int": 11,
+   "wis": 10,
+   "cha": 12,
+   "alignment": "neutral evil",
+   "languages": "Ignan",
+   "resistances": "bludgeoning, piercing, and slashing from nonmagical weapons",
+   "immunities": "fire",
+   "vulnerabilities": "cold",
+   "condition_immunities": "",
+   "actions": [
+    {
+     "name": "Multiattack",
+     "kind": "multiattack",
+     "multiattack": [
+      [
+       {
+        "action": "Spear",
+        "count": 1,
+        "type": "melee"
+       },
+       {
+        "action": "Tail",
+        "count": 1,
+        "type": "melee"
+       }
+      ]
+     ],
+     "flags": []
+    },
+    {
+     "name": "Spear",
+     "kind": "attack",
+     "damage_choice": {
+      "choose": 1,
+      "options": [
+       {
+        "dice": "2d6+4",
+        "type": "piercing"
+       },
+       {
+        "dice": "2d8+4",
+        "type": "piercing"
+       }
+      ]
+     },
+     "attack": {
+      "type": "melee_or_ranged",
+      "source": "weapon",
+      "bonus": 7,
+      "reach": 5,
+      "range": [
+       20,
+       60
+      ]
+     },
+     "rider_damage": [
+      {
+       "dice": "1d6",
+       "type": "fire"
+      }
+     ],
+     "rider": "or 13 (2d8 + 4) piercing damage if used with two hands to make a melee attack, plus 3 (1d6) fire damage",
+     "flags": [
+      "damage_choice",
+      "damage_unparsed",
+      "rider"
+     ],
+     "raw": "Melee or Ranged Weapon Attack: +7 to hit, reach 5 ft. or range 20/60 ft., one target. Hit: 11 (2d6 + 4) piercing damage, or 13 (2d8 + 4) piercing damage if used with two hands to make a melee attack, plus 3 (1d6) fire damage."
+    },
+    {
+     "name": "Tail",
+     "kind": "attack",
+     "damage": [
+      {
+       "dice": "2d6+4",
+       "type": "bludgeoning"
+      },
+      {
+       "dice": "2d6",
+       "type": "fire"
+      }
+     ],
+     "attack": {
+      "type": "melee",
+      "source": "weapon",
+      "bonus": 7,
+      "reach": 10
+     },
+     "rider": "and the target is grappled (escape DC 14). Until this grapple ends, the target is restrained, the salamander can automatically hit the target with its tail, and the salamander can't make tail attacks against other targets",
+     "rider_effects": [
+      {
+       "kind": "grapple",
+       "escape_dc": 14,
+       "restrained": true
+      }
+     ],
+     "rider_rest": "The salamander can automatically hit the target with its tail, and the salamander can't make tail attacks against other targets.",
+     "flags": [
+      "rider"
+     ],
+     "raw": "Melee Weapon Attack: +7 to hit, reach 10 ft., one target. Hit: 11 (2d6 + 4) bludgeoning damage plus 7 (2d6) fire damage, and the target is grappled (escape DC 14). Until this grapple ends, the target is restrained, the salamander can automatically hit the target with its tail, and the salamander can't make tail attacks against other targets."
+    }
+   ],
+   "saves": {},
+   "skills": {},
+   "passive_perception": 10
+  },
+  {
+   "name": "Giant Spider",
+   "index": "giant-spider",
+   "description": "Spider Climb: The spider can climb difficult surfaces, including upside down on ceilings, without needing to make an ability check.\n\nWeb Sense: While in contact with a web, the spider knows the exact location of any other creature in contact with the same web.\n\nWeb Walker: The spider ignores movement restrictions caused by webbing.\n\nAction — Bite: Melee Weapon Attack: +5 to hit, reach 5 ft., one creature. Hit: 7 (1d8 + 3) piercing damage, and the target must make a DC 11 Constitution saving throw, taking 9 (2d8) poison damage on a failed save, or half as much damage on a successful one. If the poison damage reduces the target to 0 hit points, the target is stable but poisoned for 1 hour, even after regaining hit points, and is paralyzed while poisoned in this way.\n\nAction — Web: Ranged Weapon Attack: +5 to hit, range 30/60 ft., one creature. Hit: The target is restrained by webbing. As an action, the restrained target can make a DC 12 Strength check, bursting the webbing on a success. The webbing can also be attacked and destroyed (AC 10; hp 5; vulnerability to fire damage; immunity to bludgeoning, poison, and psychic damage).",
+   "cr": 1,
+   "xp": 200,
+   "size": "Large",
+   "type": "beast",
+   "hp": 26,
+   "hp_dice": "4d10",
+   "ac": 14,
+   "speed": "walk 30 ft., climb 30 ft.",
+   "str": 14,
+   "dex": 16,
+   "con": 12,
+   "int": 2,
+   "wis": 11,
+   "cha": 4,
+   "alignment": "unaligned",
+   "languages": "",
+   "resistances": "",
+   "immunities": "",
+   "vulnerabilities": "",
+   "condition_immunities": "",
+   "actions": [
+    {
+     "name": "Bite",
+     "kind": "attack",
+     "damage": [
+      {
+       "dice": "1d8+3",
+       "type": "piercing"
+      }
+     ],
+     "attack": {
+      "type": "melee",
+      "source": "weapon",
+      "bonus": 5,
+      "reach": 5
+     },
+     "rider": "and the target must make a DC 11 Constitution saving throw, taking 9 (2d8) poison damage on a failed save, or half as much damage on a successful one. If the poison damage reduces the target to 0 hit points, the target is stable but poisoned for 1 hour, even after regaining hit points, and is paralyzed while poisoned in this way",
+     "rider_effects": [
+      {
+       "kind": "save",
+       "ability": "con",
+       "dc": 11,
+       "damage": [
+        {
+         "dice": "2d8",
+         "type": "poison"
+        }
+       ],
+       "on_success": "half"
+      }
+     ],
+     "rider_rest": "If the poison damage reduces the target to 0 hit points, the target is stable but poisoned for 1 hour, even after regaining hit points, and is paralyzed while poisoned in this way",
+     "flags": [
+      "rider"
+     ],
+     "raw": "Melee Weapon Attack: +5 to hit, reach 5 ft., one creature. Hit: 7 (1d8 + 3) piercing damage, and the target must make a DC 11 Constitution saving throw, taking 9 (2d8) poison damage on a failed save, or half as much damage on a successful one. If the poison damage reduces the target to 0 hit points, the target is stable but poisoned for 1 hour, even after regaining hit points, and is paralyzed while poisoned in this way."
+    },
+    {
+     "name": "Web",
+     "kind": "attack",
+     "usage": {
+      "type": "recharge on roll",
+      "dice": "1d6",
+      "min_value": 5
+     },
+     "attack": {
+      "type": "ranged",
+      "source": "weapon",
+      "bonus": 5,
+      "range": [
+       30,
+       60
+      ]
+     },
+     "rider": "The target is restrained by webbing. As an action, the restrained target can make a DC 12 Strength check, bursting the webbing on a success. The webbing can also be attacked and destroyed (AC 10; hp 5; vulnerability to fire damage; immunity to bludgeoning, poison, and psychic damage)",
+     "flags": [
+      "damage_unparsed",
+      "rider"
+     ],
+     "raw": "Ranged Weapon Attack: +5 to hit, range 30/60 ft., one creature. Hit: The target is restrained by webbing. As an action, the restrained target can make a DC 12 Strength check, bursting the webbing on a success. The webbing can also be attacked and destroyed (AC 10; hp 5; vulnerability to fire damage; immunity to bludgeoning, poison, and psychic damage)."
+    }
+   ],
+   "saves": {},
+   "skills": {
+    "stealth": 7
+   },
+   "passive_perception": 10
+  },
+  {
+   "name": "Adult Red Dragon",
+   "index": "adult-red-dragon",
+   "description": "Legendary Resistance: If the dragon fails a saving throw, it can choose to succeed instead.\n\nAction — Multiattack: The dragon can use its Frightful Presence. It then makes three attacks: one with its bite and two with its claws.\n\nAction — Bite: Melee Weapon Attack: +14 to hit, reach 10 ft., one target. Hit: 19 (2d10 + 8) piercing damage plus 7 (2d6) fire damage.\n\nAction — Claw: Melee Weapon Attack: +14 to hit, reach 5 ft., one target. Hit: 15 (2d6 + 8) slashing damage.\n\nAction — Tail: Melee Weapon Attack: +14 to hit, reach 15 ft., one target. Hit: 17 (2d8 + 8) bludgeoning damage.\n\nAction — Frightful Presence: Each creature of the dragon's choice that is within 120 ft. of the dragon and aware of it must succeed on a DC 19 Wisdom saving throw or become frightened for 1 minute. A creature can repeat the saving throw at the end of each of its turns, ending the effect on itself on a success. If a creature's saving throw is successful or the effect ends for it, the creature is immune to the dragon's Frightful Presence for the next 24 hours.\n\nAction — Fire Breath: The dragon exhales fire in a 60-foot cone. Each creature in that area must make a DC 21 Dexterity saving throw, taking 63 (18d6) fire damage on a failed save, or half as much damage on a successful one.\n\nLegendary — Detect: The dragon makes a Wisdom (Perception) check.\n\nLegendary — Tail Attack: The dragon makes a tail attack.\n\nLegendary — Wing Attack (Costs 2 Actions): The dragon beats its wings. Each creature within 10 ft. of the dragon must succeed on a DC 22 Dexterity saving throw or take 15 (2d6 + 8) bludgeoning damage and be knocked prone. The dragon can then fly up to half its flying speed.",
+   "cr": 17,
+   "xp": 18000,
+   "size": "Huge",
+   "type": "dragon",
+   "hp": 256,
+   "hp_dice": "19d12",
+   "ac": 19,
+   "speed": "walk 40 ft., climb 40 ft., fly 80 ft.",
+   "str": 27,
+   "dex": 10,
+   "con": 25,
+   "int": 16,
+   "wis": 13,
+   "cha": 21,
+   "alignment": "chaotic evil",
+   "languages": "Common, Draconic",
+   "resistances": "",
+   "immunities": "fire",
+   "vulnerabilities": "",
+   "condition_immunities": "",
+   "actions": [
+    {
+     "name": "Multiattack",
+     "kind": "multiattack",
+     "multiattack": [
+      [
+       {
+        "action": "Frightful Presence",
+        "count": 1,
+        "type": "ability"
+       },
+       {
+        "action": "Bite",
+        "count": 1,
+        "type": "melee"
+       },
+       {
+        "action": "Claw",
+        "count": 2,
+        "type": "melee"
+       }
+      ]
+     ],
+     "flags": []
+    },
+    {
+     "name": "Bite",
+     "kind": "attack",
+     "damage": [
+      {
+       "dice": "2d10+8",
+       "type": "piercing"
+      },
+      {
+       "dice": "2d6",
+       "type": "fire"
+      }
+     ],
+     "attack": {
+      "type": "melee",
+      "source": "weapon",
+      "bonus": 14,
+      "reach": 10
+     },
+     "flags": []
+    },
+    {
+     "name": "Claw",
+     "kind": "attack",
+     "damage": [
+      {
+       "dice": "2d6+8",
+       "type": "slashing"
+      }
+     ],
+     "attack": {
+      "type": "melee",
+      "source": "weapon",
+      "bonus": 14,
+      "reach": 5
+     },
+     "flags": []
+    },
+    {
+     "name": "Tail",
+     "kind": "attack",
+     "damage": [
+      {
+       "dice": "2d8+8",
+       "type": "bludgeoning"
+      }
+     ],
+     "attack": {
+      "type": "melee",
+      "source": "weapon",
+      "bonus": 14,
+      "reach": 15
+     },
+     "flags": []
+    },
+    {
+     "name": "Frightful Presence",
+     "kind": "save",
+     "dc": {
+      "ability": "wis",
+      "value": 19,
+      "on_success": "none"
+     },
+     "rider_effects": [
+      {
+       "kind": "save",
+       "ability": "wis",
+       "dc": 19,
+       "condition": "frightened",
+       "duration": "1 minute",
+       "repeat": "end"
+      }
+     ],
+     "flags": [
+      "targeting"
+     ],
+     "raw": "Each creature of the dragon's choice that is within 120 ft. of the dragon and aware of it must succeed on a DC 19 Wisdom saving throw or become frightened for 1 minute. A creature can repeat the saving throw at the end of each of its turns, ending the effect on itself on a success. If a creature's saving throw is successful or the effect ends for it, the creature is immune to the dragon's Frightful Presence for the next 24 hours."
+    },
+    {
+     "name": "Fire Breath",
+     "kind": "save",
+     "usage": {
+      "type": "recharge on roll",
+      "dice": "1d6",
+      "min_value": 5
+     },
+     "damage": [
+      {
+       "dice": "18d6",
+       "type": "fire"
+      }
+     ],
+     "dc": {
+      "ability": "dex",
+      "value": 21,
+      "on_success": null
+     },
+     "area": {
+      "shape": "cone",
+      "size": 60
+     },
+     "flags": [
+      "success_conflict"
+     ],
+     "raw": "The dragon exhales fire in a 60-foot cone. Each creature in that area must make a DC 21 Dexterity saving throw, taking 63 (18d6) fire damage on a failed save, or half as much damage on a successful one."
+    }
+   ],
+   "saves": {
+    "dex": 6,
+    "con": 13,
+    "wis": 7,
+    "cha": 11
+   },
+   "skills": {
+    "perception": 13,
+    "stealth": 6
+   },
+   "passive_perception": 23
+  },
+  {
+   "name": "Giant Frog",
+   "index": "giant-frog",
+   "description": "Amphibious: The frog can breathe air and water\n\nStanding Leap: The frog's long jump is up to 20 ft. and its high jump is up to 10 ft., with or without a running start.\n\nAction — Bite: Melee Weapon Attack: +3 to hit, reach 5 ft., one target. Hit: 4 (1d6 + 1) piercing damage, and the target is grappled (escape DC 11). Until this grapple ends, the target is restrained, and the frog can't bite another target.\n\nAction — Swallow: The frog makes one bite attack against a Small or smaller target it is grappling. If the attack hits, the target is swallowed, and the grapple ends. The swallowed target is blinded and restrained, it has total cover against attacks and other effects outside the frog, and it takes 5 (2d4) acid damage at the start of each of the frog's turns. The frog can have only one target swallowed at a time. If the frog dies, a swallowed creature is no longer restrained by it and can escape from the corpse using 5 ft. of movement, exiting prone.",
+   "cr": 0.25,
+   "xp": 50,
+   "size": "Medium",
+   "type": "beast",
+   "hp": 18,
+   "hp_dice": "4d8",
+   "ac": 11,
+   "speed": "walk 30 ft., swim 30 ft.",
+   "str": 12,
+   "dex": 13,
+   "con": 11,
+   "int": 2,
+   "wis": 10,
+   "cha": 3,
+   "alignment": "unaligned",
+   "languages": "",
+   "resistances": "",
+   "immunities": "",
+   "vulnerabilities": "",
+   "condition_immunities": "",
+   "actions": [
+    {
+     "name": "Bite",
+     "kind": "attack",
+     "damage": [
+      {
+       "dice": "1d6+1",
+       "type": "piercing"
+      }
+     ],
+     "attack": {
+      "type": "melee",
+      "source": "weapon",
+      "bonus": 3,
+      "reach": 5
+     },
+     "rider": "and the target is grappled (escape DC 11). Until this grapple ends, the target is restrained, and the frog can't bite another target",
+     "rider_effects": [
+      {
+       "kind": "grapple",
+       "escape_dc": 11,
+       "restrained": true
+      }
+     ],
+     "rider_rest": "The frog can't bite another target.",
+     "flags": [
+      "rider"
+     ],
+     "raw": "Melee Weapon Attack: +3 to hit, reach 5 ft., one target. Hit: 4 (1d6 + 1) piercing damage, and the target is grappled (escape DC 11). Until this grapple ends, the target is restrained, and the frog can't bite another target."
+    },
+    {
+     "name": "Swallow",
+     "kind": "other",
+     "flags": [
+      "unparsed"
+     ],
+     "raw": "The frog makes one bite attack against a Small or smaller target it is grappling. If the attack hits, the target is swallowed, and the grapple ends. The swallowed target is blinded and restrained, it has total cover against attacks and other effects outside the frog, and it takes 5 (2d4) acid damage at the start of each of the frog's turns. The frog can have only one target swallowed at a time. If the frog dies, a swallowed creature is no longer restrained by it and can escape from the corpse using 5 ft. of movement, exiting prone."
+    }
+   ],
+   "saves": {},
+   "skills": {
+    "perception": 2,
+    "stealth": 3
+   },
+   "passive_perception": 12
+  },
+  {
+   "name": "Sea Horse",
+   "index": "sea-horse",
+   "description": "Water Breathing: The sea horse can breathe only underwater.",
+   "cr": 0,
+   "xp": 0,
+   "size": "Tiny",
+   "type": "beast",
+   "hp": 1,
+   "hp_dice": "1d4",
+   "ac": 11,
+   "speed": "swim 20 ft.",
+   "str": 1,
+   "dex": 12,
+   "con": 8,
+   "int": 1,
+   "wis": 10,
+   "cha": 2,
+   "alignment": "unaligned",
+   "languages": "",
+   "resistances": "",
+   "immunities": "",
+   "vulnerabilities": "",
+   "condition_immunities": "",
+   "actions": [],
+   "saves": {},
+   "skills": {},
+   "passive_perception": 10
+  }
+ ],
+ "equipment": [
+  {
+   "name": "Longsword",
+   "index": "longsword",
+   "description": "",
+   "category": "Weapon",
+   "cost": "15 gp",
+   "weight": 3,
+   "damage": "1d8 Slashing",
+   "damage_2h": "1d10 Slashing",
+   "ac": "",
+   "properties": [
+    "Versatile"
+   ],
+   "range": "5/? ft",
+   "throw_range": "",
+   "stealth_disadv": false,
+   "str_minimum": null
+  }
+ ],
+ "magic_items": [
+  {
+   "name": "Bag of Holding",
+   "index": "bag-of-holding",
+   "description": "Wondrous item, uncommon\n\nThis bag has an interior space considerably larger than its outside dimensions, roughly 2 feet in diameter at the mouth and 4 feet deep. The bag can hold up to 500 pounds, not exceeding a volume of 64 cubic feet. The bag weighs 15 pounds, regardless of its contents. Retrieving an item from the bag requires an action.\n\nIf the bag is overloaded, pierced, or torn, it ruptures and is destroyed, and its contents are scattered in the Astral Plane. If the bag is turned inside out, its contents spill forth, unharmed, but the bag must be put right before it can be used again. Breathing creatures inside the bag can survive up to a number of minutes equal to 10 divided by the number of creatures (minimum 1 minute), after which time they begin to suffocate.\n\nPlacing a bag of holding inside an extradimensional space created by a Handy Haversack, Portable Hole, or similar item instantly destroys both items and opens a gate to the Astral Plane. The gate originates where the one item was placed inside the other. Any creature within 10 feet of the gate is sucked through it to a random location on the Astral Plane. The gate then closes. The gate is one-way only and can't be reopened.",
+   "rarity": "Uncommon",
+   "category": "Wondrous Items",
+   "attunement": false
+  }
+ ],
+ "_meta": {
+  "built_at": "fixture",
+  "total_records": 21,
+  "edition": "2014",
+  "record_counts": {
+   "spells": 6,
+   "conditions": 5,
+   "features": 3,
+   "monsters": 5,
+   "equipment": 1,
+   "magic_items": 1
+  },
+  "sources": {
+   "5e-bits": {
+    "repo": "5e-bits/5e-srd-api",
+    "sha": "fixture",
+    "fetched_at": "fixture"
+   }
+  }
+ }
+}
