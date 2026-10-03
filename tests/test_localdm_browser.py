@@ -75,8 +75,13 @@ def test_a_blank_notes_template_costs_nothing(tmp_path):
 def test_filled_notes_reach_the_dm_and_the_advisors(tmp_path):
     c, s = session(tmp_path, **{"npcs.md": "| Name | Role |\n|---|---|\n| Bress | Innkeeper |\n"})
     s.handle("I look around.")
-    assert "Bress" in c.calls[0][2][0]["content"]
-    assert "Player character: Known Spells / Cantrips" in c.calls[0][2][0]["content"]
+    # Both facts used to be asserted against the system message specifically.
+    # They are campaign-derived, so they now travel in the user message, which
+    # is what keeps the system message a static cache prefix. What this test is
+    # for is that the notes REACH the DM at all, so it reads the whole payload.
+    sent = "\n".join(m["content"] for m in c.calls[0][2])
+    assert "Bress" in sent
+    assert "Player character: Known Spells / Cantrips" in sent
     assert "Bress" in context.notes_digest(s.camp_dir)
 
 

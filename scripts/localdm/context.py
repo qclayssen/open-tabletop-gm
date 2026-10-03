@@ -377,8 +377,31 @@ def council_setting(state_md: str) -> str:
 def build_messages(system: str, digest: str, summary: str, recent: list, *, engine: str = "",
                    notes: str = "", player: str = "", task: str = "",
                    canon: list = (), budget: int = 12000) -> list:
-    sys_msg = system + (f"\n\n## Campaign\n{digest}" if digest else "")
-    head = [f"## Story so far\n{summary.strip()}"] if summary else []
+    """Two messages: a static system head, and one ordered user message.
+
+    WHY THE DIGEST IS NOT IN THE SYSTEM MESSAGE
+    ============================================
+    The system message used to carry `## Campaign` appended to the prompt. That
+    made it the cache head's tail, and the digest changes every turn, so every
+    turn invalidated the whole prefix: with a paid endpoint paying full input
+    price on ~2.3k static tokens that never change. The system message is now
+    static only, and the digest moved to the head of the user message, which is
+    the smallest change that makes the `llm.CACHE_ENV` opt-in worth turning on.
+
+    The heading is still literally `## Campaign`, and it is still the first thing
+    read, because `prompts/dm.md` refers to it by name in at least six places
+    ("Use the sheet in the Campaign section", "An NPC's wants come from their
+    entry in the Campaign section", ...). Renaming the block, or burying it under
+    a generic heading, would leave every one of those instructions pointing at
+    nothing. A cache optimisation that breaks six prompt contracts is not one.
+
+    It is in `head`, not in `lines`, so the budget loop below trims conversation
+    and never trims the campaign facts.
+    """
+    sys_msg = system
+    head = ([f"## Campaign\n{digest.strip()}"] if digest and digest.strip() else [])
+    if summary:
+        head.append(f"## Story so far\n{summary.strip()}")
     # Canon outranks old turns when the budget bites: a verbatim line the player
     # already heard is worth more than a stale turn that is about to be
     # summarized away. Trimmed from the least relevant end, then the turns go.

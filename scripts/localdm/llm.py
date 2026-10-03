@@ -20,6 +20,13 @@ Environment:
                       looked up from the DM model name (REASONING_BY_MODEL),
                       falling back to none. Qwen3.5 ignores /no_think and
                       spends its whole budget reasoning unless this is "none".
+    GM_CACHE_CONTROL  1/on/true/yes marks the system message as an Anthropic
+                      prompt-cache breakpoint. Off by default, and the local
+                      path should stay off: a local model server neither uses
+                      nor needs it. Only turn it on when the endpoint forwards
+                      cache_control to a provider that bills cached prefixes
+                      (Anthropic via a proxy that passes the field through),
+                      and read /usage to confirm cache_read is actually moving.
 """
 from __future__ import annotations
 
@@ -55,6 +62,12 @@ class Reply:
     # need a whole turn decide for themselves; a truncated advisor note is still
     # worth reading, so this reports rather than raises.
     finish_reason: str = "stop"
+    # Prompt-cache accounting, when the endpoint reports it. Per turn, the input
+    # actually billed is prompt + cache_read, because Anthropic excludes cached
+    # tokens from input_tokens/prompt_tokens. `cache_totals` is the lifetime
+    # aggregate and additionally counts `cache_created`, which is a one-off.
+    cache_read: int = 0
+    cache_created: int = 0
 
 
 @dataclass
@@ -88,6 +101,49 @@ def _http(url: str, body: dict, headers: dict, timeout: float) -> dict:
         raise LLMError(f"cannot reach {url}: {e}") from e
 
 
+# Prompt caching, OFF by default. GM_CACHE_CONTROL=1 turns it on.
+#
+# It is opt-in rather than auto-detected because the endpoint this project
+# actually uses cannot be sniffed: GM_LLM_URL points at OmniRoute
+# (http://localhost:20128), which proxies upstream to whatever the combo name
+# resolves to -- including Anthropic. Matching on "api.anthropic.com" in the URL
+# would therefore never fire here, and the honest question is not "which host is
+# this" but "does this operator's proxy forward cache_control". A wrong guess
+# either silently strips the markers (caching never happens and nobody knows why)
+# or trips the proxy's schema validation on every single turn. So the operator
+# answers it once, in the environment, and local Ollama keeps working untouched
+# because it never turns this on.
+CACHE_ENV = "GM_CACHE_CONTROL"
+
+
+def caching_enabled() -> bool:
+    return os.environ.get(CACHE_ENV, "").strip().lower() in ("1", "on", "true", "yes")
+
+
+def apply_cache_control(messages: list) -> list:
+    """Mark the system message as an ephemeral cache breakpoint.
+
+    Returns a new list; the input is not mutated. A system message whose content
+    is already a block array (the marker applied on a retry, say) is passed
+    through untouched rather than double-wrapped, so calling this twice on the
+    same messages cannot nest arrays inside each other.
+
+    Only the system message is marked. The user message holds the campaign
+    digest, the story summary and the recent turns, all of which change every
+    turn, so a breakpoint there would be invalidated on the very next request and
+    would report a 0% hit rate while looking correctly configured.
+    """
+    out = []
+    for msg in messages:
+        if msg.get("role") == "system" and isinstance(msg.get("content"), str):
+            out.append({**msg, "content": [
+                {"type": "text", "text": msg["content"],
+                 "cache_control": {"type": "ephemeral"}}]})
+        else:
+            out.append(dict(msg))
+    return out
+
+
 class Client:
     def __init__(self, base_url=None, api_key=None, transport=None, usage_log=None,
                  timeout: float = 180):
@@ -105,7 +161,8 @@ class Client:
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
-        body = {"model": model, "messages": messages, "max_tokens": max_tokens,
+        body = {"model": model, "messages": apply_cache_control(messages) if caching_enabled()
+                else messages, "max_tokens": max_tokens,
                 "temperature": temperature, "stream": False}
         if reasoning:
             body["reasoning_effort"] = reasoning
@@ -135,7 +192,14 @@ class Client:
             finish = "stop"
         reply = Reply(text, data.get("model") or model, int(usage.get("prompt_tokens") or 0),
                       int(usage.get("completion_tokens") or 0), round(time.monotonic() - start, 2),
-                      str(finish))
+                      str(finish),
+                      # Anthropic's native key is `input_tokens`; the OpenAI-compatible
+                      # shim reports `prompt_tokens` and excludes cached tokens from
+                      # both. Reading both is what makes the log honest about a
+                      # provider that reports either, instead of reading zero on a
+                      # cache that is in fact hitting.
+                      int(usage.get("cache_read_input_tokens") or 0),
+                      int(usage.get("cache_creation_input_tokens") or 0))
         self._log(role, model, reply)
         return reply
 
@@ -145,7 +209,8 @@ class Client:
             return
         row = {"t": time.strftime("%Y-%m-%dT%H:%M:%S"), "role": role, "model": model,
                "prompt_tokens": reply.prompt_tokens,
-               "completion_tokens": reply.completion_tokens, "seconds": reply.seconds}
+               "completion_tokens": reply.completion_tokens, "seconds": reply.seconds,
+               "cache_read": reply.cache_read, "cache_created": reply.cache_created}
         with self._lock:
             self.usage_log.parent.mkdir(parents=True, exist_ok=True)
             with open(self.usage_log, "a", encoding="utf-8") as f:
@@ -196,3 +261,30 @@ def totals(path) -> list:
         calls, p, c = sums.get(k, (0, 0, 0))
         sums[k] = (calls + 1, p + r["prompt_tokens"], c + r["completion_tokens"])
     return [(role, model, *v) for (role, model), v in sums.items()]
+
+
+def cache_totals(path) -> tuple:
+    """(cache_read, cache_created, uncached_prompt), summed over every logged call.
+
+    Separate from `totals()` rather than folded into it: `totals()` returns
+    5-tuples that `play.py:_usage` and `tests/test_localdm_llm.py` both unpack
+    positionally, so widening its rows would break both for a number that is
+    zero on every local Ollama call anyway.
+
+    `uncached_prompt` is the number that says whether caching is doing anything.
+    A cache that reports a large `cache_read` while `prompt_tokens` stays high
+    means the prefix is still being re-sent uncached, which is the
+    `build_messages` bug this whole change exists to fix.
+    """
+    path = pathlib.Path(path)
+    if not path.exists():
+        return (0, 0, 0)
+    read = created = prompt = 0
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        r = json.loads(line)
+        read += int(r.get("cache_read") or 0)
+        created += int(r.get("cache_created") or 0)
+        prompt += int(r.get("prompt_tokens") or 0)
+    return (read, created, prompt)
