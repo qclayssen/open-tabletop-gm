@@ -195,6 +195,10 @@ def build_spec(slug: str, meta: dict, image_rel: str, credit: str) -> dict:
                  f"Terrain is unpainted: open /maps/{slug}/edit and paint walls, "
                 f"water and cover before running a fight here.",
         "image": image_rel,
+        # The picture's own size, from the header read in main(). Together with
+        # cell_px below it is what lets the display draw the art at the recorded
+        # pitch instead of stretching it to the board (SPEC-grid-and-map 4.1).
+        "image_px": [meta["px"][0], meta["px"][1]],
         "grid": {"cell_px": meta["cell_px"], "offset_x": 0, "offset_y": 0},
         "credit": credit,
         "source": meta["source"],

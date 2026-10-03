@@ -6,11 +6,34 @@ draws its maps and is easy to write by hand. See display/maps/README.md.
 
 load() compiles the rectangles into the row-string grid the engine uses and
 keeps the rest (labels, spawn points, zone lines, info) for the display.
+
+Artwork alignment
+-----------------
+A map may carry a JPEG under the terrain (`image`) plus the grid's alignment
+in that picture's own pixels:
+
+    "image": "images/detention-bog.jpg",
+    "image_px": [3200, 4500],
+    "grid": {"cell_px": 100, "offset_x": 0, "offset_y": 0}
+
+`cell_px` is how many image pixels one 5 ft square spans and the offsets are
+where the first square's corner sits in the picture. Together with `image_px`
+they are the whole of the alignment, and `display/static/tactics.js` draws the
+art at `C / cell_px` so the grid it draws on top is the grid the GM lined up
+against the file. Nothing here is the engine's business: `rows` is byte-for-byte
+what it was with or without any of these keys, and a map that has none of them
+still renders, on the legacy stretch.
+
+Both are validated on the way in and refused rather than passed through, because
+the failure they prevent is invisible: an unvalidated `cell_px` used to reach
+the display and was never read there, so a map with a typo in it looked correct
+and measured wrong at the table.
 """
 
 from __future__ import annotations
 
 import json
+import math
 import pathlib
 import re
 
@@ -78,6 +101,68 @@ def _landmarks(features: list, owner: list) -> list:
     return out
 
 
+def _number(value, what: str) -> float:
+    """A finite number, or ValueError. `True` is refused: it is an int here."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{what} must be a number")
+    number = float(value)
+    if not math.isfinite(number):
+        raise ValueError(f"{what} must be a finite number")
+    return number
+
+
+def _grid_align(spec: dict) -> dict:
+    """The map's recorded artwork alignment, validated. See module docstring.
+
+    `grid` is also where a hex map's shape vocabulary will live (SPEC-grid-and-map
+    4.2), so an unrecognised key here is carried past rather than refused: this
+    function owns the three alignment numbers and nothing else. What it does
+    refuse is a *number that is not one*, because that is the case that used to
+    pass silently: an unvalidated `cell_px` reached the display as
+    `meta.grid_align` and nothing read it, so a typo there was a map that looked
+    fine and sat on a grid nobody could line up with.
+    """
+    align = spec.get("grid", {})
+    if align is None:
+        return {}
+    if not isinstance(align, dict):
+        raise ValueError("grid must be an object with cell_px, offset_x and offset_y")
+    known = [k for k in ("cell_px", "offset_x", "offset_y") if k in align]
+    if not known:
+        return {}
+    if "cell_px" in align:
+        cell = _number(align["cell_px"], "grid.cell_px")
+        if cell <= 0:
+            raise ValueError(f"grid.cell_px must be greater than 0, not {cell}")
+    else:
+        cell = None
+    out = {}
+    if cell is not None:
+        out["cell_px"] = cell
+    # The offsets default to 0 rather than being required, so a map that is
+    # aligned at the top-left of its art does not have to say so twice, and so
+    # the renderer never has to ask whether the key is there.
+    out["offset_x"] = _number(align.get("offset_x", 0), "grid.offset_x")
+    out["offset_y"] = _number(align.get("offset_y", 0), "grid.offset_y")
+    return out
+
+
+def _image_px(spec: dict) -> list:
+    """The artwork's own pixel size, validated. See module docstring."""
+    size = spec.get("image_px")
+    if size is None:
+        return []
+    if not isinstance(size, (list, tuple)) or len(size) != 2:
+        raise ValueError("image_px is a [width, height] pair")
+    out = []
+    for value, axis in zip(size, ("width", "height")):
+        number = _number(value, f"image_px {axis}")
+        if number <= 0:
+            raise ValueError(f"image_px {axis} must be greater than 0, not {number}")
+        out.append(number)
+    return out
+
+
 def compile_map(spec: dict) -> dict:
     """Map file dict -> {"grid": <Grid dict>, "meta": {...}}. Validates as it goes."""
     w, h = int(spec["width"]), int(spec["height"])
@@ -133,10 +218,27 @@ def compile_map(spec: dict) -> dict:
     # A map may carry artwork under the terrain, with the grid aligned to it in the
     # image's own pixels. Both are display-only: the engine reads `rows` and never
     # looks at them, so a map without an image behaves exactly as before.
+    #
+    # `image_px` is what makes the alignment usable. `cell_px` alone is a scale with
+    # nothing to scale: the display has to know how big the picture is to draw it at
+    # the recorded pitch, and until now it only knew how big the *board* was, so it
+    # stretched the art to the board and the grid lines fell wherever the stretch
+    # put them. Recorded and validated here, refused when nonsense, and honoured by
+    # `tactics.js`'s artAttrs.
     image = spec.get("image")
     if image:
         meta["image"] = image
-        meta["grid_align"] = spec.get("grid", {})
+        align = _grid_align(spec)
+        if align:
+            meta["grid_align"] = align
+        size = _image_px(spec)
+        if size:
+            meta["image_px"] = size
+    elif "image_px" in spec and spec.get("image_px") is not None:
+        # A size with no picture is a typo, not a placeholder: there is nothing for
+        # it to describe, and silently dropping it would let the same map file be
+        # "fixed" twice in two different directions.
+        raise ValueError("image_px describes an image, but this map has no image")
     return {"grid": grid, "meta": meta}
 
 

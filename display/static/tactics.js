@@ -389,6 +389,9 @@
   //   place keeps its name and its W and H
   // - image, zones, labels and colors: the rest of what the map contributes to
   //   the static drawing, all from the same map file as the rows
+  // - image_px and grid_align with it, because those decide *where* the artwork
+  //   is drawn (artAttrs), so an alignment the GM has just saved must rebuild
+  //   this layer rather than leave the old picture under the new grid
   // - the fog, above
   //
   // Deliberately not hashed to a short digest. A hash is a fixed length whatever
@@ -399,6 +402,7 @@
   function boardKey(sp, W, H) {
     const meta = (sp && sp.meta) || {}, g = (sp && sp.grid) || {};
     return JSON.stringify([meta.name || '', W, H, g.rows || null, meta.image || '',
+                           meta.image_px || null, meta.grid_align || null,
                            meta.zones || null, meta.labels || null, meta.colors || null,
                            fogKey(sp)]);
   }
@@ -471,6 +475,53 @@
   const pinOnBoard = (p, W, H) =>
     Number.isFinite(p.x) && Number.isFinite(p.y) &&
     p.x >= 0 && p.y >= 0 && p.x < W && p.y < H;
+
+  /* Where the map's artwork goes, as the attributes of the <image>.
+
+     The map file records two facts about its picture: how big the picture is
+     (`image_px`) and how many of its pixels one 5 ft square spans, plus where
+     the first square starts (`grid_align`, from scripts/tactics/maps.py). With
+     both, the art scales by `k = cell / cell_px` -- the same `cell` the grid
+     lines are drawn at -- and is positioned at `-offset * k`, so the board's
+     grid IS the grid the GM aligned against the file. Uniform on both axes: a
+     picture that is stretched to fill the board instead has its 100 px squares
+     land at a different width than their height, and every distance read off it
+     is subtly wrong.
+
+     With neither, this returns null and the caller falls back to the legacy
+     stretch. That branch is not a fallback in the sense of "wrong": a map with
+     no recorded size draws exactly as it always has, which is what every map
+     written before the size was recorded depends on.
+
+     Deliberately returns the whole attribute set, including
+     `preserveAspectRatio`, so the two branches cannot be mixed: the aligned one
+     must not stretch, and the legacy one must. `cell` is a parameter rather
+     than the module-level C for the reason `pinCentre` takes one. */
+  const artAttrs = (art, imagePx, align, W, H, cell) => {
+    const legacy = () => ({ href: '/maps/' + art, class: 'tx-art', x: 0, y: 0,
+                            width: W * cell, height: H * cell,
+                            preserveAspectRatio: 'none' });
+    if (!art || !imagePx || !align) return legacy();
+    const cellPx = Number(align.cell_px);
+    const w = Number(imagePx[0]), h = Number(imagePx[1]);
+    const ox = align.offset_x == null ? 0 : Number(align.offset_x);
+    const oy = align.offset_y == null ? 0 : Number(align.offset_y);
+    // One bad number anywhere takes the whole map back to the legacy draw rather
+    // than to a NaN attribute: a picture stretched like every other picture is a
+    // lesser wrong than a picture at width="NaN".
+    if (!(cellPx > 0) || !(w > 0) || !(h > 0) || !Number.isFinite(ox) || !Number.isFinite(oy)) {
+      return legacy();
+    }
+    const k = cell / cellPx;
+    return { href: '/maps/' + art, class: 'tx-art', x: -ox * k, y: -oy * k,
+             width: w * k, height: h * k };
+  };
+
+  // The clip rectangle for aligned art, in the same attribute vocabulary. The
+  // leftovers a picture has beyond the last square (SPEC-grid-and-map 4.1) are
+  // cropped here rather than stretched over the board, which is the whole point
+  // of recording the pitch: with it the art and the grid share one scale.
+  const artClip = (W, H, cell) => ({ x: 0, y: 0, width: W * cell, height: H * cell });
   /* end pure helpers */
 
   // Nudge a text element back inside the board, horizontally and vertically.
@@ -976,15 +1027,30 @@
     const threatHatch = svg('pattern', { id: 'tx-threat-hatch', width: 7, height: 7, patternUnits: 'userSpaceOnUse',
                                          patternTransform: 'rotate(-45)' }, s.querySelector('defs'));
     svg('line', { x1: 0, y1: 0, x2: 0, y2: 7, class: 'tx-threat-line' }, threatHatch);
-    // Map artwork, when the map has it (scripts/atlas_to_map.py writes one). The
-    // map's width/height were derived from the image by dividing its pixels by the
-    // grid cell size, so the grid here already lines up with the art and the image
-    // is stretched to fill the board exactly. preserveAspectRatio=none is what
-    // makes that true for a non-square image.
+    // Map artwork, when the map has it (scripts/atlas_to_map.py writes one).
+    //
+    // Two ways to draw it, and which one is in force is the map's decision, not
+    // the browser's. With `image_px` and a recorded `cell_px` (both put in meta
+    // by scripts/tactics/maps.py), artAttrs scales the picture by C / cell_px and
+    // offsets it by the recorded origin, so the grid lines drawn below sit on the
+    // squares the GM lined up against the file. Without them the picture is
+    // stretched to the board, which is what every map written before the
+    // dimensions were recorded has always done.
     const art = (snap.meta && snap.meta.image) || '';
     if (art) {
-      svg('image', { x: 0, y: 0, width: W * C, height: H * C, preserveAspectRatio: 'none',
-                     href: '/maps/' + art, class: 'tx-art' }, s);
+      const attrs = artAttrs(art, snap.meta.image_px, snap.meta.grid_align, W, H, C);
+      let img = svg('image', attrs, s);
+      if (!attrs.preserveAspectRatio) {
+        // Aligned art is cropped to the board, not fitted to it: a picture whose
+        // pixels do not divide by its own cell size has leftovers, and stretching
+        // them into the last square is how the grid ends up drifting at the far
+        // edge of a long map.
+        const clipId = 'tx-art-clip';
+        const box = artClip(W, H, C);
+        const clip = svg('clipPath', { id: clipId }, s.querySelector('defs'));
+        svg('rect', box, clip);
+        img.setAttribute('clip-path', `url(#${clipId})`);
+      }
     }
     // tx-terrain names the group in its own right, not just as the stylesheet's
     // hook for the over-art case: it is the layer the board cache keeps, so a
