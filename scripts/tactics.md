@@ -221,6 +221,20 @@ $T here detentionbog --hide        # keep the marker off every browser
 - `$T fog hide|dim|off`: fog of war on the display. `hide` (default) dims squares no PC sees and leaves out the creatures there; `dim` only dims; `off` shows everything. It never changes a rule or what you read here.
 - Rolls follow `roll_mode` in state.md: `players` (default) asks the player for their dice; `auto` rolls everything. Enemy dice are always rolled by the engine.
 
+## What ran: the invocation journal
+
+Every command the engine accepts appends one line to `<campaign>/combat/invocations.jsonl`: the canonical command, the argv as you gave it, the seed the dice were built from, whether that seed came from `--seed`, from the paused command being answered, or fresh, and what came of it. Nothing you do is needed to make this happen, and it changes nothing about a roll.
+
+```bash
+$T invocations            # the whole log, one line per command
+$T invocations 7          # one in full, plus the command line that re-runs it
+```
+
+- An outcome is `committed` (it ran and was saved), `read` (a read-only command, nothing could change), `paused` (it stopped for a roll or a decision; nothing ran) or `refused` (rejected; nothing ran). **Only `committed` executed anything**, so "did that run twice" is a matter of counting them, not of reading the story.
+- A pause and the re-run that answers it carry the same canonical command and are linked by `#N <- #M`. A pause with no answer yet is called out at the end as *paused and never resumed*, with the command to finish it.
+- `combat/encounter.json` is overwritten on every save, so it cannot answer "what was I doing round 3". This can, and `invocations N` also prints the encounter fingerprint the command ran against, which is the same hash `rolls.jsonl` receipts carry: line the two files up and you have the roll and the command that made it.
+- A torn line costs one record, not the file, and the reader says how many it skipped. This log is not hash-chained the way `rolls.jsonl` is; for "was this line edited after the fact", that is the receipts chain's job, and `$T receipts` is the command for it.
+
 ## Mage Tower (`mage-tower`)
 
 A match, not a fight to the death. Read the map's own rules before the first roll. They are in the map file, not here:

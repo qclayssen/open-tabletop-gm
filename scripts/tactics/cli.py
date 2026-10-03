@@ -47,6 +47,11 @@ Actions (the current creature)
     reachable <token>              squares reachable walking and with Dash (for the display)
     targets <token>                every attack and target with hit chance (for the display)
     spells <token>                 known spells, how they target, and whether they can be cast
+    receipts [--rolls N]           check every roll receipt against its hash chain
+    invocations [N]                every command this campaign accepted, with the seed it
+                                   rolled on and whether it committed, paused or was refused
+                                   (combat/invocations.jsonl; N prints one in full plus the
+                                   command line that re-runs it)
     preview-area <token> "<spell>" <square|target> [--level N]
                                    who a spell would catch, chance to fail, expected damage
 
@@ -57,6 +62,8 @@ dice total, without modifiers); repeat --roll for several rolls. --for-me lets
 the engine roll this time. --react yes|no answers a reaction prompt (an
 opportunity attack, Shield, Silvery Barbs); repeat it when several are asked.
 A paused command replays the same engine dice when re-run (combat/pending.json).
+Every accepted invocation is appended to combat/invocations.jsonl with the seed it
+rolled on and what came of it, so `invocations` can say afterwards what ran.
 
 Output is 1 to 4 plain lines for the GM; --json prints the full result.
 """
@@ -75,8 +82,8 @@ import sys
 import dice                               # scripts/dice.py (on sys.path via tactics/__init__)
 from paths import find_campaign, _is_campaign  # scripts/paths.py (on sys.path via tactics/__init__)
 
-from . import (actions, ai, effects, encounter, engine, formations, maps, policy, receipts,
-                 rest, roller, scenes, sight, slots, spells, state, statecard, sync)
+from . import (actions, ai, effects, encounter, engine, formations, journal, maps, policy,
+                 receipts, rest, roller, scenes, sight, slots, spells, state, statecard, sync)
 from .core import rules_for
 from .grid import label, parse_square
 from .roller import PendingRoll, Roller
@@ -93,7 +100,11 @@ _DISPLAY_CAMPAIGN = _SCRIPTS.parent / "display" / ".campaign"
 # encounter loaded is exactly how it was found broken.
 READ_ONLY = ("status", "options", "preview", "reachable", "approach", "targets", "log", "spells",
              "preview-area", "sight", "card", "budget", "day", "rate", "receipts", "formation",
-             "scene", "here")
+             "scene", "here", "invocations")
+# `invocations` is here for the same reason `receipts` is: it reads the journal
+# this very section writes, so it must not write anything, must not roll, and
+# must not consume a pending command. A diagnosis tool that mutated the campaign
+# it is diagnosing would be a second bug.
 # `formation` is here even though `formation save` writes a file: pending.json
 # exists to replay the *same* engine dice after a decision, and nothing under
 # `formation` rolls. Saving a formation is a deliberate act, and making it
@@ -260,6 +271,100 @@ def _clear_pending(camp_dir) -> None:
         _pending_path(camp_dir).unlink()
     except OSError:
         pass
+
+
+# ─── the invocation journal ───────────────────────────────────────────────────
+#
+# One line per accepted invocation, appended (journal.py). The three things the
+# engine already knows and nothing wrote down: the canonical argv it keys a
+# paused command on, the seed it resolved, and what came of the run. See
+# journal.py for the record shape and for why a pause is a record rather than a
+# missing one.
+
+def _encounter_fingerprint(camp_dir, args):
+    """The fight as it stands on disk, for a journal record.
+
+    Read from the file rather than carried out of `run()` on purpose: what a
+    diagnosis needs is what the campaign actually held, and reading it here
+    keeps `run()` -- the file three other backlog lanes also edit -- untouched.
+
+    Called once before the command and once after it, so for anything that did
+    not execute the two hashes are equal by measurement rather than by
+    assertion: that equality is the evidence a refusal or a pause changed
+    nothing.
+
+    Both are null for a read-only command. It cannot have changed the encounter,
+    so fingerprinting it would put the same hash in `before` and `after` of every
+    `status` and imply a transition that did not happen.
+    """
+    if args.cmd in READ_ONLY:
+        return {"before": None, "after": None, "map": None}
+    try:
+        enc = state.load(state.encounter_path(camp_dir))
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        # No fight running, or one this engine cannot read. A refusal before the
+        # encounter was touched lands here, and "no state" is the truth.
+        return {"before": None, "after": None, "map": None}
+    return {"hash": receipts.state_hash(enc),
+            "map": ((enc.meta or {}).get("name") or None)}
+
+
+def _journal(camp_dir, args, argv, canon, outcome, code, reason="", pending=None,
+             before=None):
+    """Journal one invocation and return the record it wrote, or None.
+
+    Everything the record needs that `main()` has to work out, worked out once
+    here: where the seed came from, which paused invocation this one continues,
+    and what the encounter looked like before and after. The five exit paths in
+    `main()` therefore cannot disagree about the shape.
+
+    `pending` is the record `_load_pending` matched, or {} for none. It is what
+    decides resume-ness, not a later scan for a matching command line: pending
+    is written by a pause and deleted only by a commit, so at most one pause is
+    open per canonical command and it is the newest one. Anything else makes
+    `attack kairos frog-1` ambiguous after the first repeat.
+
+    Matching pending is necessary but not sufficient to carry the link:
+    journal.RESUMES is the real condition, because only `committed` and `paused`
+    consume that pending record. A refusal leaves it on disk, so the pause it was
+    aimed at is still open and still answerable, and linking them would report an
+    attempt as finished that never ran.
+
+    Ordering: called after the state it describes is already durable, in every
+    path. A journal that claimed a command ran before it had would be worse than
+    one that missed it.
+    """
+    was_paused = bool(pending)
+    if args.cmd in READ_ONLY:
+        # A read rolled nothing, so there is no seed to quote. `args._seed` was
+        # resolved for it (the pending path runs before the READ_ONLY check, for
+        # every command) but no dice were ever built from it, and a number here
+        # would point at a roll that did not happen.
+        seed, seed_from = None, "none"
+    else:
+        seed_from = "flag" if args.seed is not None else ("pending" if was_paused
+                                                          else "fresh")
+        # The seed that went on the dice, not the one merely resolved. `_roller`
+        # builds from `--seed` when there is one, so `args._seed` on such a run is
+        # a fresh integer that was never used for anything, and recording it
+        # would put a number in the journal that reproduces nothing.
+        seed = args.seed if args.seed is not None else args._seed
+    resumes = None
+    if was_paused and outcome in journal.RESUMES:
+        # journal.chains, the reader's own grouping, decides what is open, so the
+        # writer and the reader cannot disagree about what a resume means.
+        still_open = journal.open_pauses(journal.read(camp_dir)[0])
+        target = next((r for r in reversed(still_open) if r.get("cmd") == canon), None)
+        resumes = target.get("seq") if isinstance(target, dict) else None
+    # Re-read the file, whatever the outcome: for a pause or a refusal the two
+    # hashes come back equal, which is how a reader sees at a glance that
+    # nothing moved rather than being told so.
+    after = _encounter_fingerprint(camp_dir, args) if outcome != "read" else None
+    encounter = {"before": (before or {}).get("hash"),
+                 "after": (after or {}).get("hash"),
+                 "map": (after or before or {}).get("map")}
+    return journal.record(camp_dir, argv, canon, seed, seed_from, outcome,
+                          code, reason, encounter, resumes)
 
 
 def _load(camp_dir) -> Encounter:
@@ -792,6 +897,27 @@ def _end(camp_dir, enc, campaign: str = "", award: bool = True) -> str:
 
 def run(args) -> int:
     camp_dir = _camp_dir(args)
+    if args.cmd == "invocations":
+        # Reads the journal and writes nothing else (see READ_ONLY). Before the
+        # branch below deliberately: `invocations` needs no encounter, and asking
+        # "what did I run" has to work with no fight running, which is exactly
+        # when it is asked.
+        #
+        # The reader hands back lines rather than printing them, so `--json` can
+        # carry the text as `text` and the records as `result` without the text
+        # being printed twice -- the shape every other `--json` command here uses,
+        # and the one the display and the localdm bridge parse.
+        code, lines = journal.render(camp_dir, getattr(args, "index", None))
+        if args.json:
+            found, unreadable = journal.read(camp_dir)
+            print(json.dumps({"text": "\n".join(lines), "result": {
+                "invocations": found,
+                "open_pauses": [r["seq"] for r in journal.open_pauses(found)],
+                "unreadable": unreadable}}, default=str, indent=1))
+        else:
+            for line in lines:
+                print(line)
+        return code
     roller = _roller(args)
     data = {}
     enc = None
@@ -1234,6 +1360,11 @@ def parser() -> argparse.ArgumentParser:
                        help="check every roll receipt against its hash chain")
     s.add_argument("--rolls", type=int, default=0, metavar="N",
                    help="also print the last N receipts")
+    s = sub.add_parser("invocations", parents=c,
+                       help="every command this campaign accepted, with its seed "
+                            "and outcome (combat/invocations.jsonl)")
+    s.add_argument("index", nargs="?", type=int, metavar="N",
+                   help="print one invocation in full, and the command that re-runs it")
     return top
 
 
@@ -1269,19 +1400,30 @@ def main(argv=None) -> int:
         args.target, args.what = args.what[0], []
     canon = _canonical(argv)
     camp_dir = None
+    pending = {}
+    before = None
     try:
         camp_dir = _camp_dir(args)
         pending = {} if args.cmd in READ_ONLY else _load_pending(camp_dir, canon)
         args._seed = _resolve_seed(pending)
         args._decisions = list(pending.get("decisions", []))
+        before = _encounter_fingerprint(camp_dir, args)
         code = run(args)
+        _journal(camp_dir, args, argv, canon,
+                 "read" if args.cmd in READ_ONLY else "committed", code,
+                 pending=pending, before=before)
         if args.cmd not in READ_ONLY:
             _clear_pending(camp_dir)
         return code
     except Stop as e:
+        if camp_dir is not None:
+            _journal(camp_dir, args, argv, canon, "refused", e.code, e.text,
+                     pending, before)
         print(e.text)
         return e.code
     except engine.CombatError as e:
+        if camp_dir is not None:
+            _journal(camp_dir, args, argv, canon, "refused", 1, str(e), pending, before)
         print(str(e))
         return 1
     except roller.BadFace as e:
@@ -1291,6 +1433,11 @@ def main(argv=None) -> int:
         # killed play.py's REPL, losing the session mid-fight.
         if camp_dir is not None:
             _save_pending(camp_dir, canon, args._seed, args._decisions)
+            # A pause, not a refusal: the pending record is open and waiting for
+            # the same command with a legal face, so the journal links this
+            # invocation to whatever resumes it. Nothing executed either way.
+            _journal(camp_dir, args, argv, canon, "paused", 1, "bad-face",
+                     pending, before)
         print(f"{e}. Nothing has happened yet.\n"
               f"Re-run the same command with {_prior(args, drop_last_roll=True)}"
               f"--roll <{e.legal}, no modifier>.")
@@ -1306,6 +1453,8 @@ def main(argv=None) -> int:
             # separates it from the notation, which never contains one.
             adv = f"|{e.advantage}" if e.advantage and e.advantage != "normal" else ""
             _push_pending(camp_dir, f"roll:{e.notation}{adv}")
+            _journal(camp_dir, args, argv, canon, "paused", 2, "roll",
+                     pending, before)
         what = "the d20 face" if e.notation.startswith("1d20") else "the dice total"
         adv = f" with {e.advantage}" if e.advantage != "normal" else ""
         prior = _prior(args)
@@ -1328,12 +1477,16 @@ def main(argv=None) -> int:
             keys += [e.key] if e.key not in keys else []
             _save_pending(camp_dir, canon, args._seed, keys)
             _push_pending(camp_dir, f"react:{e.key}")
+            _journal(camp_dir, args, argv, canon, "paused", 2, "reaction",
+                     pending, before)
         print(f"{e.prompt} Nothing has happened yet.\n"
               f"Re-run the same command with {_prior(args)}--react yes or --react no.")
         return 2
     except ValueError as e:
         # A bad square or number typed by a player (move kairos frog-1) is a refusal,
         # not a crash: uncaught, it killed the REPL mid-fight (test report pt3, B1).
+        if camp_dir is not None:
+            _journal(camp_dir, args, argv, canon, "refused", 1, str(e), pending, before)
         print(f"{e}.".replace("..", "."))
         return 1
 
