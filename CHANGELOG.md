@@ -12,6 +12,26 @@ This project is the LLM-agnostic, system-flexible fork of [claude-dnd-skill](htt
 
 ## [Unreleased]
 
+### Fixed: the SRD build emitted a deprecation warning once per monster action
+
+`build_srd._norm_monster_action` ended its save-action branch with
+
+    re.split(pattern, desc, 1)
+
+Passing `maxsplit` positionally is deprecated from Python 3.13, so on 3.13 and
+later every call warns. That call runs once per monster action in the dataset,
+which makes it one warning per record for the whole build. It was invisible while
+the dataset was never built; now that CI builds it (#289), the warnings land in
+the build log, where they are indistinguishable from a real deprecation.
+
+`maxsplit=1` is the same call. An AST sweep of the repository for the deprecated
+positional slots -- `maxsplit` on `re.split`, `count` on `re.sub` and `re.subn` --
+finds this line and no other, so the class has exactly one member.
+`tests/test_srd_contracts.py` pins it, and it is live on the workflow's main
+pytest job, which runs 3.13. The separate 3.10 floor job globs and compiles rather
+than running the suite, so the test skips there with a stated reason: a 3.10
+interpreter cannot observe a deprecation that does not exist on it.
+
 ### Fixed: main was red, and three of the reasons were the tests being wrong
 
 `main` failed 10 tests. Four distinct causes, and only one of them was an
