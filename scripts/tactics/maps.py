@@ -54,10 +54,42 @@ def available() -> list:
     return sorted(p.stem for p in MAPS_DIR.glob("*.json"))
 
 
+#: `MAPS_DIR` resolved once. `_find` compares against this rather than the
+#: unresolved path so a symlinked checkout cannot make the containment answer
+#: depend on where the GM happens to be standing.
+_MAPS_ROOT = MAPS_DIR.resolve()
+
+
+def _owned_by_maps_dir(path: pathlib.Path) -> bool:
+    """Is this file one of ours, once symlinks and `..` are followed?
+
+    `resolve()` first, containment second. The order is the whole point: a
+    `..` segment, an absolute path and a symlink pointing out of the tree are
+    three spellings of the same question, and all three are invisible to a
+    string comparison against `MAPS_DIR`.
+    """
+    try:
+        return path.resolve().is_relative_to(_MAPS_ROOT)
+    except OSError:                        # a broken symlink, a denied parent
+        return False
+
+
 def _find(name: str) -> pathlib.Path:
     p = pathlib.Path(name)
     if p.suffix == ".json" and p.exists():
-        return p
+        # The convenience branch, and the only one that can leave MAPS_DIR. It
+        # takes a path rather than a slug on purpose -- `tactics show
+        # display/maps/frog-pond.json` works from a repo-root shell -- so the
+        # containment it never had is written here rather than the convenience
+        # dropped. Narrower than `mapeditor.find` for the same reason that one is
+        # narrow, and deliberately so: this is every map load in the tree, so it
+        # is the last place before `json.loads` sees a caller-chosen path.
+        if _owned_by_maps_dir(p):
+            return p.resolve()
+        raise FileNotFoundError(
+            f"map {name!r} is not inside {MAPS_DIR}, so it is not a map this "
+            f"module loads. Pass a slug, a display name, or a path under "
+            f"{MAPS_DIR}. Maps: {', '.join(available())}")
     slug = name.strip().lower().replace(" ", "-")
     if (MAPS_DIR / f"{slug}.json").exists():
         return MAPS_DIR / f"{slug}.json"
