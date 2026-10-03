@@ -80,6 +80,46 @@ Still true from the same report, and pinned rather than fixed:
 `spells._effect`'s "already covered" branch is unreachable out of combat (every cast
 re-reads the sheet, and `write_back` never persists the AC field), and `state.md` is
 never refreshed after a cast, so a GM reading it sees the pre-Mage-Armor AC.
+### Fixed: a consequential default on a character sheet is now labelled, and a malformed one is refused
+
+`systems/dnd5e/tactics_sheet.py` gained a `DEFAULTS` table naming every numeric
+fallback, whether it **changes an outcome**, and what it is used for; `read_sheet`
+records where each number came from on `extra["derived"]`; and `explain(token)`
+renders the consequential ones as lines a GM can act on.
+
+| Field | Fallback | Consequential | Refused elsewhere |
+|---|---|---|---|
+| `ac` | 10 | yes: every attack roll against the creature | |
+| `speed` | 30 ft | yes: the whole movement budget | |
+| `level` | 1 | yes: proficiency, slots, hit dice | |
+| `dex_mod` | +0 | yes: Dex saves and Mage Armor | |
+| `saves` | `{}` | yes: every save at +0 | |
+| `attack_bonus` | 0 | yes: a real attack roll | |
+| `spell_dc` / `spell_attack` | `None` | no | `tactics_spells.resolve` already raises with the caster's name |
+| `passive_perception` | `None` | no | `checks` only reads a stated one |
+| `temp_hp`, `hit_dice` | 0 / `None` | no | a long rest asks |
+
+**A present-but-unreadable field is now refused.** `_int("TBD", 10)` produced an
+authoritative-looking AC 10 on a half-filled sheet, indistinguishable from a finished
+one. `_required_int` raises with the sheet name, the field, the text that could not be
+read, and what the number would have decided. An *absent* field is not malformed and
+still falls back, which is why this is a change to the unreadable case only.
+
+**`_field` no longer reads past the end of a line.** Its `\s*` ate a newline, so a
+`**Speed:**` at the end of a line with nothing after it read the *next* line and
+returned `1d6 (remaining: 1)`, which `_int` turned into a speed of 1. The same failure
+the table above is about, reached from the other direction.
+
+**RI10, as labels.** `tactics_sheet.ac_parts(text)` returns `ac_base`, `ac_dex_bonus`
+and `ac_max_bonus` beside the integer `Token.ac`, each with provenance, and the result
+travels on the token. `Token.ac` is unchanged and no attack roll is computed
+differently: the external runtime RI10 was written against is **not** adopted here. On
+the repository's own fixture sheet it reports what is worth reporting - the sheet says
+`12 (13 with Mage Armor)` where PHB p.144 gives 13 + DEX = 15, so the parenthetical
+contributes `-2` over the rule. The sheet is campaign data and is not corrected.
+
+`roller.average` is untouched and pinned, since it is the other number a default
+reaches: the expected damage `spells.preview` prints for every target in an area.
 
 ### Fixed: the static system prompt was charged against the dynamic budget, evicting every recent turn
 
