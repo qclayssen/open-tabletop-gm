@@ -53,6 +53,17 @@
     empty.hidden = pins.length > 0;
   }
 
+  /* No stage to draw on means there is no map behind the page.
+   *
+   * `/?view=map` is one of the four launcher windows and renders this same page
+   * with a sentence in place of the map when the campaign has no overview spec
+   * yet — the stage, the pins layer and the legend are simply not in the
+   * document. The script is still loaded, and it read the empty spec the server
+   * sent alongside the note and went straight on to dereference a null stage.
+   *
+   * So the guard is here rather than in the template's own conditional: this
+   * file is asked to render a spec, and a spec with nothing to render is a
+   * thing that is now true of it. */
   const spec = readSpec();
-  if (spec) render(spec);
+  if (spec && document.getElementById('atlas-stage')) render(spec);
 })();

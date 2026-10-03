@@ -57,8 +57,9 @@
 <link rel="icon" type="image/png" sizes="192x192" href="/icons/app_icon_192.png">
 <link rel="stylesheet" href="/static/display.css">
 <link rel="stylesheet" href="/static/tactics.css">
+<link rel="stylesheet" href="/static/displays.css">
 </head>
-<body>
+<body class="view-{{ view }}">
 
 <a href="#player-input-text" class="skip-link" id="skip-link">Skip to party input</a>
 <a href="#text-scroll" class="skip-link" id="skip-story">Skip to story</a>
@@ -90,6 +91,24 @@
 
 <!-- Sidebar toggle button -->
 <button id="sidebar-toggle" title="Toggle character sidebar">◀ Hide</button>
+
+<!-- The other three displays. On the full display and on ?view=dm this is the
+     GM's door out to them; the combat and dice windows hide it, because those
+     two promise to be nothing but their one thing. /displays is the same set as
+     a page of its own, for when this rail is hidden or out of reach. -->
+<div id="displays-rail">
+  <button id="displays-btn" type="button" aria-haspopup="true" aria-expanded="false"
+          title="Open the other displays">🖥 Displays</button>
+  <div id="displays-menu" role="menu" hidden>
+    {% for key, label, blurb in views %}
+    <a class="dm-opt" role="menuitem" href="/?view={{ key }}" data-view="{{ key }}">
+      <span class="dm-opt-label">{{ label }}</span>
+      <span class="dm-opt-blurb">{{ blurb }}</span>
+    </a>
+    {% endfor %}
+    <a class="dm-opt dm-opt-all" role="menuitem" href="/displays">All four, in one launcher →</a>
+  </div>
+</div>
 
 <!-- CRIT / FUMBLE full-screen flash -->
 <div id="flash-overlay"></div>
@@ -298,7 +317,33 @@
      the display saying it broke, and the reader is the one who needs to know. -->
 <div id="stream-toast" role="alert" hidden></div>
 
+<!-- ── The combat display's empty state ───────────────────────────────────────
+     tactics.js keeps #tx-panel hidden until a combat snapshot arrives, which is
+     right on the full display (there is simply no map) and wrong on the combat
+     window, where a blank screen and a server that died look identical. -->
+<div id="combat-idle" role="status">
+  <div class="cidle-glyph" aria-hidden="true">⚔</div>
+  <p class="cidle-title">No fight is running</p>
+  <p class="cidle-body">This window shows the battle map as soon as the DM rolls
+    initiative. It stays open and waiting.</p>
+</div>
+
+<!-- ── The dice display ───────────────────────────────────────────────────────
+     Everything the DM has asked for at the table, on its own screen: what the
+     roll is, who it is for, who is still holding a die, and what came back. -->
+<section id="dice-display" aria-label="Dice requests">
+  <header id="dice-display-head">
+    <span id="dice-display-title">Dice</span>
+    <span id="dice-display-campaign"></span>
+  </header>
+  <div id="dice-display-body">
+    <p id="dice-idle">The DM has not asked for a roll.</p>
+    <ol id="dice-requests"></ol>
+  </div>
+</section>
+
 <script src="/static/display.js"></script>
 <script src="/static/tactics.js" defer></script>
+<script src="/static/displays.js" defer></script>
 </body>
 </html>

@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Displays — Dungeon Master</title>
+<link rel="icon" type="image/x-icon" href="/favicon.ico">
+<link rel="stylesheet" href="/static/displays.css">
+</head>
+<body class="launcher-page">
+
+<main class="launcher">
+  <header class="launcher-head">
+    <img class="launcher-logo" src="/icons/logo_primary_fullcolor.png" alt="">
+    <div>
+      <h1>Displays</h1>
+      <p class="launcher-sub">
+        Four windows, one server, one session.
+        {% if campaign %}Showing <strong>{{ campaign }}</strong>.{% else %}No campaign loaded yet.{% endif %}
+      </p>
+    </div>
+    <button id="open-all" class="launcher-all" type="button">
+      Open all four
+      <small>tiles them across the screen</small>
+    </button>
+  </header>
+
+  <!-- Each tile is a plain link. The "Open all four" button needs script; a
+       tile that is only a <button> would be dead without it, and this page is
+       the way back to a display when something else has gone wrong. -->
+  <ul class="launcher-tiles">
+    {% for key, label, blurb in views %}
+    <li class="launcher-tile" data-view="{{ key }}">
+      <a href="/?view={{ key }}">
+        <span class="launcher-glyph" aria-hidden="true">
+          {%- if key == 'dm' %}❧{% elif key == 'map' %}🗺{% elif key == 'combat' %}⚔{% else %}🎲{% endif -%}
+        </span>
+        <span class="launcher-label">{{ label }}</span>
+        <span class="launcher-blurb">{{ blurb }}</span>
+        <code class="launcher-url">/?view={{ key }}</code>
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+
+  <p id="launcher-note" class="launcher-note" role="status" aria-live="polite"></p>
+
+  <footer class="launcher-foot">
+    <a href="/">The full display — story, party and map on one screen</a>
+    <a href="/atlas">Overview map</a>
+  </footer>
+</main>
+
+<script src="/static/displays.js" defer></script>
+</body>
+</html>
