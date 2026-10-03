@@ -60,6 +60,85 @@ def test_totals_group_by_role_and_model(tmp_path):
     assert llm.totals(tmp_path / "missing.jsonl") == []
 
 
+# ── prompt caching ────────────────────────────────────────────────────────────
+# Every test below is off-by-default: the local Ollama path must be untouched.
+
+MSGS = [{"role": "system", "content": "SYS"}, {"role": "user", "content": "U"}]
+
+
+def test_cache_control_is_off_unless_the_operator_opts_in(monkeypatch):
+    """Local Ollama must never see `cache_control`; it cannot use it."""
+    monkeypatch.delenv(llm.CACHE_ENV, raising=False)
+    seen = []
+    llm.Client(base_url="http://x", api_key="", transport=fake(seen=seen)).chat("m", MSGS)
+    assert seen[0][1]["messages"] == MSGS
+
+
+def test_opt_in_marks_the_system_message_and_not_the_user_one(monkeypatch):
+    """Only the system message is a breakpoint.
+
+    The user message carries the campaign digest and the recent turns, both of
+    which change every turn, so a breakpoint there would invalidate on the next
+    request and report a 0% hit rate while looking correctly configured.
+    """
+    monkeypatch.setenv(llm.CACHE_ENV, "1")
+    seen = []
+    llm.Client(base_url="http://x", api_key="", transport=fake(seen=seen)).chat("m", MSGS)
+    sent = seen[0][1]["messages"]
+    assert sent[0]["content"] == [{"type": "text", "text": "SYS",
+                                   "cache_control": {"type": "ephemeral"}}]
+    assert sent[1] == {"role": "user", "content": "U"}
+
+
+def test_apply_cache_control_does_not_mutate_its_input_and_is_idempotent():
+    """Twice-applied markers must not nest arrays inside each other.
+
+    A retry path that re-wraps an already-wrapped system message would send a
+    content array containing a content array, which the endpoint rejects.
+    """
+    once = llm.apply_cache_control(MSGS)
+    assert MSGS[0]["content"] == "SYS", "input was mutated"
+    twice = llm.apply_cache_control(once)
+    assert twice == once
+
+
+def test_cache_tokens_are_read_off_the_reply_and_logged(tmp_path):
+    """A cache that hits but is never logged is indistinguishable from one that
+    does not exist, which is how this stays broken for months."""
+    monkey = pytest.MonkeyPatch()
+    monkey.setenv(llm.CACHE_ENV, "1")
+    log = tmp_path / "usage.jsonl"
+
+    def cached(url, body, headers, timeout):
+        return {"model": body["model"], "choices": [{"message": {"content": "Hi."}}],
+                "usage": {"prompt_tokens": 40, "completion_tokens": 5,
+                          "cache_read_input_tokens": 2200,
+                          "cache_creation_input_tokens": 2300}}
+
+    try:
+        r = llm.Client(base_url="http://x", api_key="", transport=cached,
+                       usage_log=log).chat("m", MSGS, role="dm")
+    finally:
+        monkey.undo()
+    assert (r.cache_read, r.cache_created) == (2200, 2300)
+    assert llm.cache_totals(log) == (2200, 2300, 40)
+
+
+def test_cache_totals_tolerates_rows_logged_before_this_change(tmp_path):
+    """usage.jsonl files already on disk carry no cache keys at all.
+
+    `totals()` reads `r["prompt_tokens"]` by key, so a naive `r["cache_read"]`
+    in `cache_totals` raises KeyError on the first pre-existing row and takes
+    /usage down for every session that started before this landed.
+    """
+    log = tmp_path / "usage.jsonl"
+    log.write_text(json.dumps({"t": "old", "role": "dm", "model": "dm-local",
+                               "prompt_tokens": 10, "completion_tokens": 3,
+                               "seconds": 1.0}) + "\n", encoding="utf-8")
+    assert llm.cache_totals(log) == (0, 0, 10)
+    assert llm.cache_totals(tmp_path / "missing.jsonl") == (0, 0, 0)
+
+
 def test_a_reply_without_choices_raises():
     c = llm.Client(base_url="http://x", api_key="", transport=lambda *a: {"error": "nope"})
     with pytest.raises(llm.LLMError):

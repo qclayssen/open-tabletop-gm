@@ -1241,9 +1241,22 @@ class Session:
                 f"{recent}"]
 
     def _usage(self) -> list:
-        rows = llm.totals(self.memory.dir / "usage.jsonl")
-        return [f"{role}  {model}  {calls} calls  {p} in  {c} out"
-                for role, model, calls, p, c in rows] or ["(no calls yet)"]
+        path = self.memory.dir / "usage.jsonl"
+        rows = llm.totals(path)
+        out = [f"{role}  {model}  {calls} calls  {p} in  {c} out"
+               for role, model, calls, p, c in rows] or ["(no calls yet)"]
+        # Cache accounting, shown when caching is on OR when the endpoint
+        # reported cache tokens. A local Ollama session that never opted in gets
+        # exactly the lines it got before this existed; a paid session that
+        # opted in and is still reporting zeros sees the zeros, which is the
+        # number that says the breakpoint is not being hit.
+        read, created, prompt = llm.cache_totals(path)
+        if read or created or llm.caching_enabled():
+            total = read + created + prompt
+            share = (read / total * 100) if total else 0
+            out.append(f"prompt cache: {read} read  {created} created  "
+                       f"{prompt} uncached  ({share:.0f}% of input served from cache)")
+        return out
 
     def _autopilot(self, line: str):
         """Output for a combat action parsed without a model, or None."""

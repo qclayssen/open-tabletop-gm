@@ -131,13 +131,45 @@ def test_messages_are_a_stable_system_and_one_ordered_user_message():
     msgs = context.build_messages("SYS", "DIGEST", "Story.", recent, engine="Kairos B7 8/8",
                                   notes="Director: slow down.", player="I cast fire bolt.",
                                   task="Narrate.")
-    assert msgs[0] == {"role": "system", "content": "SYS\n\n## Campaign\nDIGEST"}
+    assert msgs[0] == {"role": "system", "content": "SYS"}
     user = msgs[1]["content"]
-    order = ["## Story so far", "## Recent turns", "Player: I look around.", "GM: Reeds.",
-             "Engine: Round 1.", "## Engine (facts", "## Advisor notes", "## Player now",
-             "## Your task"]
+    order = ["## Campaign", "## Story so far", "## Recent turns", "Player: I look around.",
+             "GM: Reeds.", "Engine: Round 1.", "## Engine (facts", "## Advisor notes",
+             "## Player now", "## Your task"]
     positions = [user.index(s) for s in order]
     assert positions == sorted(positions)
+
+
+def test_system_message_carries_no_campaign_text():
+    """The cache head must be static, or the cache is invalidated every turn.
+
+    `build_messages` used to append the digest to the system message. That put
+    text which changes every turn inside the prefix that `llm.apply_cache_control`
+    marks as a cache breakpoint, so the breakpoint never survived to the next
+    request and the endpoint billed the full static prompt on every call.
+
+    The security half of the same property: nothing a campaign file or a
+    transcript can influence may sit inside the cached prefix, or a stale cached
+    block outlives the session that wrote it.
+    """
+    msgs = context.build_messages("SYS", "SECRET CAMPAIGN LORE", "Story.", [])
+    assert "SECRET CAMPAIGN LORE" not in msgs[0]["content"]
+    assert "SECRET CAMPAIGN LORE" in msgs[1]["content"]
+
+
+def test_campaign_head_survives_trimming():
+    """The digest is in `head`, not `lines`, so the budget loop cannot evict it.
+
+    A budget small enough to force heavy trimming still has to deliver the
+    campaign facts; losing them would silently strip the sheet the prompt tells
+    the DM to read from "the Campaign section".
+    """
+    recent = [{"role": "player", "text": f"turn {i} " + "x" * 80} for i in range(20)]
+    msgs = context.build_messages("SYS", "PINNED FACT: the moonstone is a fake",
+                                  "Story.", recent, budget=500)
+    user = msgs[1]["content"]
+    assert "## Campaign\nPINNED FACT: the moonstone is a fake" in user
+    assert "turn 0 " not in user
 
 
 def test_trimming_drops_the_oldest_turns_first():
