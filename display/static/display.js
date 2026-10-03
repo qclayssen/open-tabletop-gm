@@ -4710,7 +4710,49 @@ function _initDicePad() {
   // server can match the response to the pending request and release any
   // blocking --wait call on the DM side.
   let _activeRequestId = '';
+  // Offers the GM named for the active request, and which one the player has
+  // marked. Marking is not spending: the spend commits on the Roll press, so
+  // there is exactly one commit point and it is the same one the roll has.
+  let _offers = [];
+  let _pendingSpend = '';
   reel.textContent = 'd20';
+
+  const _offerRow = document.getElementById('dp-offer-row');
+
+  function _syncRollLabel() {
+    const o = _offers.find(x => x.key === _pendingSpend);
+    rollBtn.textContent = o ? `Roll (${o.label})` : 'Roll';
+  }
+
+  // Render the offers the server sent, one button each. Anything already marked
+  // that is no longer on the table is dropped, so a stale key can never ride a
+  // new request — the server would refuse it anyway, but a greyed-out button
+  // that used to work reads as a bug on the player's phone.
+  function _renderOffers(offers) {
+    _offers = Array.isArray(offers) ? offers.filter(o => o && o.key) : [];
+    if (!_offers.some(o => o.key === _pendingSpend)) _pendingSpend = '';
+    if (!_offerRow) return;
+    _offerRow.innerHTML = '';
+    _offerRow.hidden = _offers.length === 0;
+    _offers.forEach(o => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'dp-offer';
+      btn.dataset.offer = o.key;
+      // textContent, not innerHTML: the label is whatever the GM typed.
+      btn.textContent = o.label;
+      btn.addEventListener('click', () => {
+        _pendingSpend = (_pendingSpend === o.key) ? '' : o.key;
+        document.querySelectorAll('.dp-offer').forEach(b => {
+          b.classList.toggle('active', b.dataset.offer === _pendingSpend);
+        });
+        _syncRollLabel();
+      });
+      if (o.key === _pendingSpend) btn.classList.add('active');
+      _offerRow.appendChild(btn);
+    });
+    _syncRollLabel();
+  }
 
   function _syncAdvAvailability() {
     const isD20 = (spec === '1d20');
@@ -4793,6 +4835,7 @@ function _initDicePad() {
     // then await the authoritative server roll.
     const spinPromise = spin(faces);
     let result = null;
+    let refusal = '';
     try {
       const res = await fetch('/player-input/dice', {
         method: 'POST',
@@ -4800,20 +4843,39 @@ function _initDicePad() {
         body: JSON.stringify({
           character, spec, modifier: mod, advantage: adv, label,
           request_id: _activeRequestId || undefined,
+          spend: _pendingSpend || undefined,
         }),
       });
-      if (res.ok) result = await res.json();
+      if (res.ok) {
+        result = await res.json();
+      } else {
+        // A refusal (an unknown offer key, a spent counter, a double-count) is
+        // the server declining to spend anything. Its message says why, and a
+        // generic "roll failed" would be indistinguishable from a network blip
+        // on a phone that just cost the player a use.
+        try { refusal = (await res.json()).error || ''; } catch (_) { refusal = ''; }
+        if (!refusal) refusal = `the display refused this roll (HTTP ${res.status})`;
+      }
     } catch (_) { /* network error — fall through */ }
 
     await spinPromise;
     if (!result) {
       reel.classList.remove('spinning');
       reel.textContent = '!';
-      document.getElementById('dp-result-line').textContent = 'roll failed';
+      document.getElementById('dp-result-line').textContent = refusal || 'roll failed';
       rollBtn.disabled = false;
       rollBtn.classList.remove('pulse');
-      if (_locked) _setLocked(false);
+      // A refused roll spent nothing, so the mark stays: the player can drop it
+      // and roll straight rather than re-picking the feature that was refused.
+      if (_locked && _activeRequestId) _setLocked(true, spec, adv, _offers.length ? _OFFER_LOCK : null);
       return;
+    }
+    // The roll committed, so the marked spend is spent. Clear it here rather
+    // than on the next request, or a second roll would carry it again.
+    _pendingSpend = '';
+    if (_offerRow) {
+      document.querySelectorAll('.dp-offer').forEach(b => b.classList.remove('active'));
+      _syncRollLabel();
     }
 
     // Lock to the kept die value (single die) or the subtotal (multi-die).
@@ -4849,31 +4911,48 @@ function _initDicePad() {
       }
       _activeRequestId = '';
     } else {
-      // Free-roll path: unlock so the player can roll again freely.
+      // Free-roll path: unlock so the player can roll again freely. A free roll
+      // has no frame for an offer — there is no prescribed check for one to
+      // apply to — so the offer row is emptied here rather than left offering
+      // a button whose effect nothing would check.
       rollBtn.disabled = false;
+      _renderOffers([]);
       if (_locked) _setLocked(false);
     }
   });
 
-  // Lock the pad to a single prescribed roll. Only the matching die / adv
-  // button and the Roll button remain interactive. Cleared after the roll
-  // resolves (success or failure) so the player can free-roll again.
+  // Lock the pad to a single prescribed roll. `mask` says which of the three
+  // claims the lock still makes; null is all three, which is what a request
+  // with no offers gets and is byte-identical to the behaviour before offers
+  // existed. They are three different claims, not one:
+  //
+  //   die (spec)  — a Stealth check is 1d20. Letting the player pick 1d8 is not
+  //                 a choice, it is a different check. Locked either way.
+  //   adv / dis   — the player may only move this WITHIN what the GM offered,
+  //                 so it unlocks only when offers exist.
+  //   modifier ±  — same: it is the thing an offer may change.
+  //
+  // Locking is not the bug and is not undone: the server rolls authoritatively
+  // (player_dice → secrets.randbelow) so a phone cannot spoof a result.
   let _locked = false;
-  function _setLocked(active, keepSpec, keepAdv) {
+  const _FULL_LOCK = { die: true, adv: true, mod: true };
+  const _OFFER_LOCK = { die: true, adv: false, mod: false };
+  function _setLocked(active, keepSpec, keepAdv, mask) {
     _locked = !!active;
+    const m = active ? (mask || _FULL_LOCK) : _FULL_LOCK;
     document.querySelectorAll('.dp-die').forEach(b => {
-      if (active && b.dataset.spec !== keepSpec) b.setAttribute('disabled', '');
+      if (m.die && b.dataset.spec !== keepSpec) b.setAttribute('disabled', '');
       else                                       b.removeAttribute('disabled');
     });
     document.querySelectorAll('.dp-adv').forEach(b => {
       // Adv buttons are also gated by _syncAdvAvailability for non-d20 specs;
       // re-syncing afterwards restores that behaviour.
-      if (active && b.dataset.adv !== keepAdv) b.setAttribute('disabled', '');
-      else                                     b.removeAttribute('disabled');
+      if (m.adv && b.dataset.adv !== keepAdv) b.setAttribute('disabled', '');
+      else                                    b.removeAttribute('disabled');
     });
     document.querySelectorAll('.dp-mod').forEach(b => {
-      if (active) b.setAttribute('disabled', '');
-      else        b.removeAttribute('disabled');
+      if (m.mod) b.setAttribute('disabled', '');
+      else       b.removeAttribute('disabled');
     });
     if (active) labelEl.setAttribute('readonly', '');
     else        labelEl.removeAttribute('readonly');
@@ -4891,6 +4970,10 @@ function _initDicePad() {
     if (!isAny && !targets.includes(me)) return;                  // not for this phone
 
     _activeRequestId = String(req.request_id || '');
+
+    // Offers before the die click, because the adv button's enabled state is
+    // read below and the offer mask depends on whether any exist.
+    _renderOffers(req.offers);
 
     // Spec → click the matching die button. If unknown, fall back to d20.
     const reqSpec = (req.spec || '1d20').toLowerCase();
@@ -4925,8 +5008,11 @@ function _initDicePad() {
     rollBtn.classList.add('pulse');
     if (navigator.vibrate) navigator.vibrate([20, 60, 20]);
 
-    // Lock everything except the prescribed die + adv button + Roll.
-    _setLocked(true, reqSpec, (req.advantage || 'normal'));
+    // Lock the die + label always; lock adv and the modifier only when the GM
+    // offered nothing, in which case the player has no sanctioned way to change
+    // either and letting them would be a claim the display cannot honour.
+    _setLocked(true, reqSpec, (req.advantage || 'normal'),
+               _offers.length ? _OFFER_LOCK : null);
 
     // Pull the player to the Roll tab so they don't miss the request. If they
     // were already on Roll, this is a no-op; if they were on Move, the tab
@@ -4950,6 +5036,10 @@ function _initDicePad() {
     if (!rid || rid !== _activeRequestId) return;
     _activeRequestId = '';
     if (_locked) _setLocked(false);
+    // A cancelled request spent nothing, so drop the offer row and the mark: a
+    // button for a roll that will never happen is a trap, and the mark would
+    // otherwise ride onto the next request.
+    _renderOffers([]);
     rollBtn.disabled = false;
     rollBtn.classList.remove('pulse', 'rolled');
     if (boundEl) {

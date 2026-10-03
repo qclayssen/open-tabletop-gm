@@ -195,6 +195,10 @@
                autocomplete="off" autocorrect="off" autocapitalize="words" spellcheck="false">
       </div>
       <div id="dp-reel-wrap"><div id="dp-reel">d20</div></div>
+      <!-- Offers (spendable features the GM named for this roll). Empty and
+           hidden unless the prescribed request carried some; a free roll never
+           has a frame for one, so it never renders one. -->
+      <div class="dp-row" id="dp-offer-row" hidden></div>
       <div class="dp-row" id="dp-die-row">
         <button class="dp-die active" data-spec="1d20">d20</button>
         <button class="dp-die" data-spec="1d4">d4</button>

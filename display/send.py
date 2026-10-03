@@ -486,6 +486,15 @@ def main() -> None:
         help='Human label for the roll (e.g. "Stealth check", "Concentration save").')
     parser.add_argument("--dc", type=int, metavar="N",
         help='Optional DC; displayed informationally on the phone.')
+    parser.add_argument("--offer", action="append", metavar="LABEL:EFFECT",
+        help='Name a feature the player may spend on this roll, e.g. '
+             '"Kenku Recall:advantage", "Bless:+2". Repeatable. The phone shows '
+             'one button per offer and the player picks one or none; the effect '
+             'is applied server-side and named in the roll line. Use for a '
+             'racial feature or class resource that changes THIS check. '
+             'advantage | disadvantage | a flat +/-N. A bonus die (NdM) is '
+             'refused by the display until the bonus-die slice ships, so a '
+             'malformed offer cannot become a button that does nothing.')
     parser.add_argument("--wait", action="store_true",
         help='With --dice-request: block until every prescribed character has rolled, then print each roll on stdout '
              '(polls /dice-request/<id>). Exits 2 on timeout or when the request is cancelled.')
@@ -590,6 +599,10 @@ def main() -> None:
         }
         if args.label: body["label"] = args.label
         if args.dc is not None: body["dc"] = args.dc
+        # Sent as raw "Label:effect" strings: the display parses and validates
+        # them at the door, so there is exactly one parser and a client cannot
+        # hand the server an offer shape it did not check.
+        if args.offer: body["offers"] = list(args.offer)
         _token = _read_token()
 
         # Direct urllib call (rather than _post) because we need the JSON response body.
@@ -602,6 +615,19 @@ def main() -> None:
             )
             resp = urllib.request.urlopen(req, timeout=TIMEOUT, context=_SSL_CTX)
             resp_body = json.loads(resp.read().decode("utf-8") or "{}")
+        except urllib.error.HTTPError as e:
+            # The display refuses a malformed offer with a sentence meant for the
+            # GM. Print that, not urllib's "HTTP Error 400", so the offer can be
+            # fixed without guessing which one was wrong.
+            detail = ""
+            try:
+                detail = (json.loads(e.read().decode("utf-8") or "{}").get("error")
+                          or "").strip()
+            except Exception:
+                pass
+            print(f"send.py: dice-request refused (HTTP {e.code})"
+                  + (f": {detail}" if detail else ""), file=sys.stderr)
+            sys.exit(1)
         except Exception as e:
             print(f"send.py: dice-request failed: {e}", file=sys.stderr)
             sys.exit(1)
