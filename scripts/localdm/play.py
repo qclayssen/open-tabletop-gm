@@ -1245,6 +1245,14 @@ class Session:
         rows = llm.totals(path)
         out = [f"{role}  {model}  {calls} calls  {p} in  {c} out"
                for role, model, calls, p, c in rows] or ["(no calls yet)"]
+        # A row that says "4 calls, 0 in, 0 out" with no further explanation is the same
+        # shape of lie the harness just fixed in #236: a number that reads as a result and
+        # is really an absence. The failed calls are in the log; say so here.
+        bad = llm.failures(path)
+        if bad:
+            out.append("failed calls (tokens unknown; the endpoint reported none):")
+            out.extend(f"  {role}  {model}  {n} x {err}"
+                       for role, model, err, n in bad)
         # Cache accounting, shown when caching is on OR when the endpoint
         # reported cache tokens. A local Ollama session that never opted in gets
         # exactly the lines it got before this existed; a paid session that
