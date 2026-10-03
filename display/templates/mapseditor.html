@@ -33,6 +33,34 @@
       file's rectangles, not stacked on them.</p>
     <div class="me-palette" id="me-palette" role="radiogroup" aria-label="Terrain type"></div>
     <p class="me-hint">Esc cancels the stroke in progress.</p>
+
+    <!-- Grid alignment. Three numbers, because a map's artwork and its 5 ft
+         squares have to agree and nothing else in this page can work that out:
+         the picture is a JPEG, and the browser is not going to find its pitch.
+         Saved by a route that rewrites only the `grid` key, so this box cannot
+         touch the terrain painted above it. -->
+    <h2 class="me-h2">Grid alignment</h2>
+    <p class="me-hint" id="me-align-hint">How many picture pixels one 5 ft
+      square spans, and where the first square starts. Arrow keys nudge by one
+      pixel; shift and arrow nudges by ten.</p>
+    <div class="me-align">
+      <label class="me-field">
+        <span>Pixels per square</span>
+        <input type="number" id="me-cell-px" min="1" step="1" inputmode="numeric">
+      </label>
+      <label class="me-field">
+        <span>Offset across</span>
+        <input type="number" id="me-offset-x" step="1" inputmode="numeric">
+      </label>
+      <label class="me-field">
+        <span>Offset down</span>
+        <input type="number" id="me-offset-y" step="1" inputmode="numeric">
+      </label>
+    </div>
+    <p class="me-align-read" id="me-align-read" role="status" aria-live="polite"></p>
+    <div class="me-actions">
+      <button type="button" id="me-align-save" class="me-primary">Save alignment</button>
+    </div>
   </aside>
 </main>
 
