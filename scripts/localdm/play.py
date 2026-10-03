@@ -11,7 +11,8 @@ die (no modifier), or yes / no for a reaction. Other commands:
                               designer, arbiter, interface, or council
     /notes [n]                advisor notes already given, from
                               <campaign>/localdm/notes.md (for the GM)
-    /usage                    tokens used, by role and model
+    /usage                    tokens used, by role and model, plus the prompt
+                              budget split (static vs dynamic chars)
     /quit                     stop
 
 The DM asks the advisor council for itself: whenever its reply names a question
@@ -396,6 +397,10 @@ class Session:
         self.queue = []                # engine commands left in the player's plan
         self.fight_log = []            # engine text of the running fight, summarized at its end
         self.last_target = ""
+        # The last DM prompt's budget split, for /usage. None until a DM turn has
+        # been built, so a session that has not called the model reports no split
+        # rather than a fabricated zero. See context.build_messages.
+        self.last_prompt = None
         # Shadow advisor: after each player turn, one advisor reviews it in the
         # background; its notes guide the next turn. Local DMs almost never
         # escalate on their own (milestone 6 benchmark).
@@ -547,13 +552,18 @@ class Session:
             a rewrite that cannot be drafted is not a reason to throw the usable first
             draft away. None keeps the caller on its existing keep-the-first-draft path.
             """
+            report = {}                    # what this turn's prompt cost, for /usage
             while True:
                 if self.directives:
                     extra_task = _join(extra_task, "Table settings: " + " ".join(self.directives))
                 msgs = context.build_messages(context.dm_prompt(), digest,
                                               self.memory.summary(), self.memory.unsummarized(),
                                               engine=engine, notes=notes, player=player,
-                                              task=extra_task, canon=block, budget=self.budget)
+                                              task=extra_task, canon=block, budget=self.budget,
+                                              report=report)
+                # A copy, so a retry below cannot rewrite what /usage already read,
+                # and so the session holds the figures of the prompt actually sent.
+                self.last_prompt = dict(report)
                 got = self.local.chat(self.models.dm, msgs, max_tokens=DM_MAX_TOKENS, role="dm",
                                       reasoning=self.reasoning)
                 if got.finish_reason != "length":
@@ -1256,6 +1266,19 @@ class Session:
             share = (read / total * 100) if total else 0
             out.append(f"prompt cache: {read} read  {created} created  "
                        f"{prompt} uncached  ({share:.0f}% of input served from cache)")
+        # The character budget's split. It used to be invisible: the static system
+        # prompt was charged against the same allowance as the conversation, and
+        # the symptom was the `## Recent turns` section silently vanishing from
+        # the prompt of any campaign with a filled-in state.md (issue #264). The
+        # two numbers are now separate resources, so both are reported: the
+        # static prompt that competes for cache, and the dynamic allowance the
+        # turns are trimmed against.
+        if self.last_prompt:
+            split = self.last_prompt
+            out.append(f"prompt budget: {split['system']} static chars, cacheable and "
+                       f"not charged  |  {split['dynamic']} dynamic chars of "
+                       f"{split['budget']}  |  recent turns "
+                       f"{split['turns']}/{split['offered']} kept")
         return out
 
     def _autopilot(self, line: str):

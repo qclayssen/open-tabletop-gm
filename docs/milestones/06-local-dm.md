@@ -25,7 +25,7 @@ engine (`scripts/tactics/`) still owns every rule.
 | `llm.py` | One chat call to an OpenAI-compatible endpoint (OmniRoute by default). Model names come from the environment. Appends token usage to `<campaign>/localdm/usage.jsonl`. |
 | `reply.py` | Splits a DM reply into narration and a trailing JSON block `{"escalate": str or null, "command": str or null}`. Strips `<think>` blocks. A reply with no JSON is all narration. |
 | `memory.py` | The session transcript (`<campaign>/localdm/transcript.jsonl`), the rolling summary (`summary.md`) and small persistent flags (`meta.json`). Thread safe. |
-| `context.py` | Builds the messages for one call: a fixed system message (DM prompt plus a digest of `state.md`), then one user message with the summary, recent turns, engine output, advisor notes and the player's line. Trims the oldest recent turns to stay under a character budget. |
+| `context.py` | Builds the messages for one call: a static system message (the DM prompt alone), then one user message with the digest, summary, recent turns, engine output, advisor notes and the player's line. Trims the oldest recent turns to stay under a character budget that covers the dynamic message only; the static prompt is not charged against it. `/usage` reports the split. |
 | `bridge.py` | Runs tactics commands in-process (`tactics.cli.main`, stdout captured) and reads a small snapshot of `combat/encounter.json`. |
 | `triggers.py` | Deterministic escalation triggers read from the snapshot: a fight starts, a boss-sized enemy appears, a PC drops to 0 HP, a PC dies. Each fires once. |
 | `advisor.py` | Loads the advisor briefs, picks 2 or 3 for a question by keyword, and asks them in parallel (threads). Each answer is at most about 150 words. |
@@ -225,6 +225,15 @@ Four decisions worth recording:
   stale turn about to be summarized away. `Canon.relevant` ranks by term overlap
   with the player's own line, then recency, so a long campaign keeps its prompt
   small without losing the live thread.
+- **The budget covers the dynamic message, not the whole prompt.** It used to
+  charge `len(sys_msg)` too, which meant the 9030-char DM prompt came out of the
+  same 12000-char allowance as the conversation. That left roughly 2070 chars for
+  the digest *and* the recent turns together, against a digest whose own per-file
+  caps allow 8500, so past ~4800 chars of digest the `## Recent turns` section
+  was evicted entirely and the DM narrated with no conversation history at all
+  (`dnd-gm` #264). The static prompt competes for cache rather than for context,
+  so it is no longer charged. The unit is still characters: converting it to
+  tokens moves every existing session's effective context and is its own change.
 
 Reveals dedupe on `key`, so the same truth disclosed in two sessions with
 different wording cannot be recorded twice — the failure this file exists to
