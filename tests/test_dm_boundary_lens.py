@@ -448,8 +448,8 @@ def m3_summary() -> str:
 def m4_summary() -> str:
     """The routing rate: of the lines a sheet could answer, how many the engine claims.
 
-    Denominator: ROUTABLE, six player lines. Two fall through to the model, and for
-    those the `cast` field is honoured with no check that the line was a cast at all,
+    Denominator: ROUTABLE, six player lines. Two fall through to the model, and on
+    those the `cast` field the model sets is refused in the open rather than resolved,
     which is #251's B2 in its surviving form.
     """
     claimed = sum(1 for _line, want in ROUTABLE if want)
@@ -460,8 +460,10 @@ def m4_summary() -> str:
 #: Player lines a character sheet could answer, and whether the explore classifier
 #: (`fightq.classify`, scope="explore") claims them. The router is the whole defence
 #: between a status question and a model that may answer it by casting a spell, so the
-#: two rows marked `claimed=False` are the live form of the #251 B2 finding: nothing
-#: stops a `cast` field being set on a line that fell through.
+#: two rows marked `claimed=False` are #251's B2 in its surviving form: the model does
+#: put a `cast` on a line that fell through. What the router does NOT do is spend a
+#: slot on it, which is what #251's guard in `_player_turn` closed. See
+#: `test_an_unclaimed_status_question_reaches_the_model_and_spends_no_slot`.
 #:
 #: The claimed half is already pinned by tests/test_localdm_fightq.py, whose responder
 #: raises if the model is called. This table exists to measure the UNCLAIMED half, which
@@ -534,6 +536,7 @@ def test_an_unclaimed_status_question_never_spends_a_slot(tmp_path, monkeypatch)
 
     s, c = session(root, fake)
     out = s.handle("how many first-level slots do I have left")
+    assert c.dm_calls(), "the router claimed the line; M4 is no longer 4/6"
     said = " ".join(out)
     sheet = (s.camp_dir / "characters" / SHEET.name).read_text(encoding="utf-8")
 
