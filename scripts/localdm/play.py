@@ -11,6 +11,8 @@ die (no modifier), or yes / no for a reaction. Other commands:
                               designer, arbiter, interface, or council
     /notes [n]                advisor notes already given, from
                               <campaign>/localdm/notes.md (for the GM)
+    /agency [n]               guardrail trips and how they were corrected, from
+                              <campaign>/localdm/agency.jsonl (for the GM)
     /usage                    tokens used, by role and model, plus the prompt
                               budget split (static vs dynamic chars)
     /quit                     stop
@@ -63,6 +65,7 @@ from localdm import notes as notes_mod                          # noqa: E402
 from localdm.summarizer import Summarizer                       # noqa: E402
 from localdm import canon as canon_mod                         # noqa: E402
 from localdm import recap as recap_mod                         # noqa: E402
+from localdm import agency as agency_mod                       # noqa: E402
 
 # The narration cap, in sentences. dm.md carries the same number: the prompt and the
 # length retry below have to agree, or the retry is asking the model to break a rule
@@ -388,6 +391,13 @@ class Session:
         # time the digest changes, and read on every reply (see Session._dm).
         self.names = reply.NameLedger()
         self._names_digest = None
+        # The GM-only agency ledger: which guardrails tripped, and whether the
+        # correction worked or the player saw the violation anyway. Read back by
+        # /agency, never fed to the DM. turn/scene are read from the session at
+        # trip time, so a record names the turn it was on.
+        self.agency = agency_mod.Ledger(self.memory.dir,
+                                        turn=lambda: self.turn, scene=lambda: self.scene)
+        self.scene = 0
         self.directives = []           # table settings from the display, for the next DM call
         self._narrated = []            # this turn's narration, for the display
         # combat "engine": the player's line is parsed, enemies pick by the
@@ -598,11 +608,13 @@ class Session:
         # the same question, which is why the agency retry historically had nothing
         # new to work with.
         if reply.speaks_for_player(r.narration):          # guardrail: one corrective retry
+            self.agency.trip("agency", r.narration, detector=reply.speaks_for_player)
             note = self._guardrail("agency", r.narration)
             retry = call(f"{task}\n{self.AGENCY_FIX}\n{note}".strip(), strict=False)
             if retry is not None and not reply.speaks_for_player(retry.narration):
                 r = retry
         if reply.grants_injection(r.narration):           # D1: one corrective retry
+            self.agency.trip("injection", r.narration, detector=reply.grants_injection)
             note = self._guardrail("injection", r.narration)
             retry = call(f"{task}\n{self.INJECTION_FIX}\n{note}".strip(), strict=False)
             if retry is not None and not reply.grants_injection(retry.narration):
@@ -620,6 +632,7 @@ class Session:
         # call and nothing else, the same bargain as the rest.
         over = self.names.suspect(r.narration)
         if over:
+            self.agency.trip("name-reuse", over, detector=self.names.suspect)
             retry = call(_join(task, self.NAME_FIX.format(name=over)), strict=False)
             if retry is not None and not self.names.suspect(retry.narration):
                 r = retry
@@ -638,6 +651,8 @@ class Session:
             unbacked = reply.unbacked_numbers(r.narration, backed)
             if unbacked:
                 claims = "; ".join(unbacked)
+                self.agency.trip("unbacked-number", claims,
+                                 detector=reply.unbacked_numbers, arg=backed)
                 self._say_status(f"[dm] narration stated numbers the engine did not "
                                  f"produce ({claims}), re-drafting")
                 retry = call(_join(task, self.NUMBER_FIX.format(claims=claims)),
@@ -647,6 +662,10 @@ class Session:
         # Only prose the player was actually shown is counted, so the ledger
         # never records a name the model was talked out of using.
         self.names.observe(r.narration)
+        # Settled last, on the draft that was actually accepted: the caught/narrated
+        # distinction is decided by re-running each tripped detector over this text,
+        # and settling earlier would score the draft that was thrown away.
+        self.agency.settle(r.narration)
         return r
 
     def _say_status(self, text: str) -> None:
@@ -914,6 +933,7 @@ class Session:
         if args and args[0] in ("start", "end") and res.code == 0:
             self.names.begin()
             self.check_ledger.begin()
+            self.scene += 1            # the agency ledger counts violations per scene
         if res.needs_roll or res.needs_react:
             self.pending = {"args": list(args), "rolls": list(rolls), "reacts": list(reacts),
                             "react": res.needs_react}
@@ -1018,6 +1038,8 @@ class Session:
             return self._advise(line[len("/advise"):])
         if line.split() and line.split()[0] in ("/notes", "/gm-notes"):
             return self._notes_cmd(line[len(line.split()[0]):])
+        if line.split() and line.split()[0] in ("/agency", "/gm-agency"):
+            return self._agency_cmd(line[len(line.split()[0]):])
         if line == "/usage":
             return self._usage()
         if line == "/recap":
@@ -1101,14 +1123,19 @@ class Session:
         r = self._dm(engine=result, task=base)
         if ok or not reply.is_costless_failure(r.narration):
             return r
+        self.agency.trip("fail-forward", r.narration, detector=reply.is_costless_failure)
         retry = self._dm(engine=result, task=f"{base}\n{self.FAIL_FORWARD_FIX}".strip())
         # Keep the best draft: a rewrite that pays wins; otherwise the first draft if it
         # at least moved the world; otherwise a rewrite that at least is not a stall.
         if not reply.is_costless_failure(retry.narration):
+            self.agency.settle(retry.narration)
             return retry
         if not reply.is_dead_stop(r.narration):
+            self.agency.settle(r.narration)
             return r
-        return retry if not reply.is_dead_stop(retry.narration) else r
+        keep = retry if not reply.is_dead_stop(retry.narration) else r
+        self.agency.settle(keep.narration)
+        return keep
 
     def _cast_lookup(self, spell_name: str):
         """Resolve a `cast` field against the sheet. Returns (R, sheet, caster, spec, why):
@@ -1250,6 +1277,22 @@ class Session:
         return [f"[GM notes - last {min(limit, total)} of {total} in {self.notes.path}]\n\n"
                 f"{recent}"]
 
+    def _agency_cmd(self, rest: str) -> list:
+        """/agency [n]: the guardrail trips kept in <campaign>/localdm/agency.jsonl.
+
+        GM-only, like /notes, and for the same reason: a DM briefed on its own
+        guardrail report learns to write to the detector. The violations the loop's
+        guards cannot see are a separate question, measured with denominators in
+        docs/DM-BOUNDARY-BASELINE.md.
+        """
+        parts = (rest or "").split()
+        limit = 10
+        if parts:
+            if not parts[0].isdigit():
+                return [f"/agency takes a count, not {parts[0]!r}."]
+            limit = max(1, int(parts[0]))
+        return [agency_mod.render(self.agency, limit)]
+
     def _usage(self) -> list:
         path = self.memory.dir / "usage.jsonl"
         rows = llm.totals(path)
@@ -1384,6 +1427,14 @@ class Session:
             refused = [CHECK_MID_FIGHT.format(spec=r.check)] if r.check else []
             if r.cast:                   # same refusal for a spell: say it, never drop it
                 refused.append(CAST_MID_FIGHT.format(spell=r.cast))
+            # The two mid-fight forms the engine refuses rather than corrects: no
+            # draft is rewritten and nothing is rolled or spent, so the ledger's
+            # outcome for them is fixed at "refused" (no detector to re-run).
+            if r.check:
+                self.agency.trip("mid-fight-check", r.check)
+            if r.cast:
+                self.agency.trip("mid-fight-cast", r.cast)
+            self.agency.settle("")
             args = parse_player_command(r.command) if r.command else None
             if not args:
                 return refused + [NO_ACTION]
@@ -1407,6 +1458,8 @@ class Session:
         # resolved, where naming the outcome is the whole point, so a blanket
         # check in _dm() would rewrite the correct sentence every time.
         if r.check and reply.reveals_check_outcome(r.narration):
+            self.agency.trip("check-outcome", r.narration,
+                             detector=reply.reveals_check_outcome)
             retry = self._dm(player=line, engine=engine, notes=notes,
                              task=f"{CHECK_BEAT}\n{self.OUTCOME_FIX}".strip())
             if retry.check and not reply.reveals_check_outcome(retry.narration):
@@ -1424,10 +1477,17 @@ class Session:
         backed_cast = bool(cast_named) and self._cast_lookup(cast_named)[3] is not None
         if (r.narration and not backed_cast
                 and reply.states_an_unbacked_cast_result(r.narration)):
+            self.agency.trip("unbacked-cast", r.narration,
+                             detector=reply.states_an_unbacked_cast_result)
             retry = self._dm(player=line, engine=engine, notes=notes,
                              task=f"{CAST_BEAT}\n{self.CAST_FIX}".strip())
             if not reply.states_an_unbacked_cast_result(retry.narration):
                 r = retry
+        # Settled on the draft that was accepted, after both rewrites above: the
+        # caught/narrated distinction is decided by re-running each tripped detector
+        # over this text. `_dm` settled its own four on the way out, so anything
+        # pending here is one of these two.
+        self.agency.settle(r.narration)
         if r.narration:
             self._say(r.narration)
             out.append(r.narration)

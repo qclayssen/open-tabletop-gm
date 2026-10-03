@@ -12,6 +12,48 @@ This project is the LLM-agnostic, system-flexible fork of [claude-dnd-skill](htt
 
 ## [Unreleased]
 
+### Added: a GM-only ledger of agency violations and how each was corrected
+
+`scripts/localdm/agency.py` writes one JSON line per guardrail trip to
+`<campaign>/localdm/agency.jsonl`, and `/agency [n]` reads the tail back.
+
+Nine forms, one per guardrail in the DM loop: `agency`,
+`injection`, `name-reuse`, `unbacked-number`, `check-outcome`,
+`unbacked-cast`, `fail-forward`, `mid-fight-check`, `mid-fight-cast`.
+Each line records the turn and scene, the form, how many drafts
+tripped it, the outcome, the quoted evidence and a local timestamp.
+
+The outcome is the point, and it is three-way rather than two:
+
+- **caught** - the guardrail fired and the text the player was shown
+  does not trip it. The correction worked.
+- **narrated** - the guardrail fired and the shown text still trips it.
+  The retry was dirty, so `Session._dm` kept the first draft and the
+  player saw the violation. A log that recorded only "a trip" would
+  report the guardrail working every time, which is the opposite of what
+  a flag means.
+- **refused** - the engine refused outright, with no correction step.
+  The two mid-fight forms are always this: nothing was rolled or spent.
+
+A fourth, `unknown`, records a draft that tripped a guard and whose
+region never settled, because a silently dropped trip is
+indistinguishable from no trip at all.
+
+Retries dedupe on (turn, scene, form): the same guard firing on the
+retry is the same violation being corrected twice, so it is one line
+with a count rather than a rate inflated by however many retries the
+model needed.
+
+No extra model call: every trip is a regex the loop already ran, and
+the caught/narrated decision is a second pass of the same regex over
+the final text. GM-only and never fed to the DM, for the reason
+`notes.md` documents for advisor notes: a DM briefed on its own
+guardrail report learns to write to the detector.
+
+The shapes these guards cannot see are a separate question, measured
+with denominators in `docs/DM-BOUNDARY-BASELINE.md`. This ledger is
+not evidence about those.
+
 ### Fixed: the static system prompt was charged against the dynamic budget, evicting every recent turn
 
 `context.build_messages` counted `len(sys_msg)` inside the same character
