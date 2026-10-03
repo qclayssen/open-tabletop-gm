@@ -12,6 +12,40 @@ This project is the LLM-agnostic, system-flexible fork of [claude-dnd-skill](htt
 
 ## [Unreleased]
 
+### Fixed: the static system prompt was charged against the dynamic budget, evicting every recent turn
+
+`context.build_messages` counted `len(sys_msg)` inside the same character
+budget as the conversation (`fixed = len(sys_msg) + ...`). `prompts/dm.md` is
+9030 chars and the default `--budget` is 12000, so roughly 2070 chars were left
+for the campaign digest *and* the recent turns together, while the digest's own
+per-file caps allow 8500 (`state_digest` 3000 + `sheet_digest` 3000 +
+`notes_digest` 2500).
+
+Measured with `dnd-gm`'s `scripts/measure_turn_tokens.py` against the real
+builder:
+
+| digest chars | turns kept (before) | turns kept (now) | total tokens (now) |
+|---|---|---|---|
+| 0 | 8 | 8 | 2420 |
+| 2184 | 5 | 8 | 2697 |
+| 4797 | **0** | 8 | 3025 |
+| 8455 | **0** | 8 | 3482 |
+| 10192 | 0 | 8 | 3698 |
+
+Past about 4800 chars of digest the `## Recent turns` section vanished, so any
+campaign with a filled-in `state.md`, sheet or `npcs.md` got a full load of lore
+and zero conversation history. The static prompt does not compete for context
+with the conversation, it competes for cache, so it is no longer charged. The
+budget still bounds the dynamic message, the digest is still never trimmed, and
+the unit is still characters: converting it to tokens would move every existing
+session's effective context and is deliberately its own change.
+
+`/usage` now prints one line naming the split, so this cannot be invisible
+again:
+
+    prompt budget: 9030 static chars, cacheable and not charged  |  2951 dynamic
+    chars of 12000  |  recent turns 8/8 kept
+
 ### Fixed: three assertions that could not fail, and three test files that could not be run
 
 An audit (`qclayssen/dnd-gm` #234) named four suspected false greens. Each was

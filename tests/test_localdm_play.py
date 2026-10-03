@@ -634,7 +634,35 @@ def test_usage_lists_totals(tmp_path):
                                                         "completion_tokens": 40}})
     s = Session("demo", client, MODELS, camp_dir=d, bridge=FakeBridge())
     s.handle("hello")
-    assert s.handle("/usage") == ["dm  dm-local  1 calls  900 in  40 out"]
+    # The second line is the prompt-budget split added by #264; the totals line
+    # is unchanged and still pinned exactly.
+    assert s.handle("/usage") == [
+        "dm  dm-local  1 calls  900 in  40 out",
+        (f"prompt budget: {len(context.dm_prompt())} static chars, cacheable and not "
+         "charged  |  692 dynamic chars of 12000  |  recent turns 0/0 kept")]
+
+
+def test_usage_reports_the_static_and_dynamic_split(tmp_path):
+    """The budget's split was the invisible half of #264, so /usage names it.
+
+    Three turns, because `offered` is zero on a session's first call and a
+    kept/offered count of 0/0 cannot say anything. The assertion is on the
+    shape of the line: the static prompt's size is reported apart from the
+    dynamic allowance, which is exactly the separation that did not exist.
+    """
+    c = FakeClient(lambda m, msgs, role: "The reeds whisper." + NULLS)
+    s = Session("demo", c, MODELS, camp_dir=camp_dir(tmp_path), bridge=FakeBridge())
+    for line in ("I listen.", "I wait.", "I listen again."):
+        s.handle(line)
+    out = s.handle("/usage")
+    split = [ln for ln in out if ln.startswith("prompt budget:")]
+    assert len(split) == 1, out
+    line = split[0]
+    assert f"{len(context.dm_prompt())} static chars" in line
+    assert "cacheable and not charged" in line
+    assert "dynamic chars of 12000" in line
+    kept = line.rsplit("recent turns ", 1)[1]
+    assert kept.endswith(" kept") and not kept.startswith("0/"), line
 
 
 # ── end to end on the real engine, fake model ──────────────────────────────────
