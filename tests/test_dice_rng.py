@@ -31,7 +31,11 @@ def test_module_random_untouched_and_patchable(monkeypatch):
     state = random.getstate()
     dice.run("d20", silent=True, rng=dice.new_rng(1))
     assert random.getstate() == state
-    monkeypatch.setattr(random, "randint", lambda a, b: 20)   # play.py's seam
+    # The module-level generator stays patchable, which is the property:
+    # `dice` must never come to depend on it. (This comment used to say
+    # "play.py's seam" -- it was not, and after dnd-gm#306 it is not: the
+    # headless skill check reads `play._CHECK_RNG`, off `new_rng()`.)
+    monkeypatch.setattr(random, "randint", lambda a, b: 20)
     assert random.randint(1, 20) == 20
 
 

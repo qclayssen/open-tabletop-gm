@@ -59,6 +59,12 @@ from typing import Optional
 
 from paths import find_campaign
 
+# Aliased for the same reason `tactics/roller.py` and `combat.py` alias it: the
+# factory is the one place that knows how a seed becomes a generator, and an
+# unaliased `dice` in a module that also passes `dice` around as a local would be
+# shadowed by one of them without anyone noticing.
+import dice as _dice
+
 SCHEMA_VERSION = 2
 
 # One hidden d6 per faction per tick (Stars Without a Number "faction turn").
@@ -485,7 +491,12 @@ def tick_factions(campaign: str, days: int, rng: Optional[random.Random] = None)
     if not state.factions:
         return []
 
-    dice = rng or random.Random()
+    # Was `dice = rng or random.Random()`. Two faults in one line: the generator
+    # was built outside the factory, so it carried no `.seed_value` and the tick
+    # could not be quoted; and the local was named `dice`, which is the module's
+    # own name, so any `dice` reference in this scope silently became a random
+    # generator. Renamed, and built by the factory.
+    stream = rng if rng is not None else _dice.new_rng()
     today = in_game_date(campaign)
     stamp = f" ({today})" if today else ""
     lines = [f"[{GM_ONLY}] {_count(steps, unit)} passed{stamp} — one hidden d6 per faction per {unit}."]
@@ -507,7 +518,7 @@ def tick_factions(campaign: str, days: int, rng: Optional[random.Random] = None)
                 skipped[faction.name] = "added today"
                 continue
 
-            face = dice.randint(1, 6)
+            face = stream.randint(1, 6)
             progress = TICK_FACES[face]
             lean = faction.lean
             if lean:
@@ -569,7 +580,7 @@ def tick_for_calendar(campaign: str, days: int, seed: Optional[int] = None) -> s
     """Tick hook for calendar.py advance. Silent when the campaign has no clocks."""
     if days < 1 or not factions_file(campaign).exists():
         return ""
-    rng = random.Random(seed) if seed is not None else None
+    rng = _dice.new_rng(seed) if seed is not None else None
     lines = tick_factions(campaign, days, rng=rng)
     return "\n".join(lines)
 
@@ -865,7 +876,7 @@ def main() -> int:
     if   args.command == "add":           return add_faction(campaign, args.name, args.goal, args.clock)
     elif args.command == "tick":
         lines = tick_factions(campaign, args.days,
-                              rng=random.Random(args.seed) if args.seed is not None else None)
+                              rng=_dice.new_rng(args.seed) if args.seed is not None else None)
         for line in lines:
             print(line)
         return 0

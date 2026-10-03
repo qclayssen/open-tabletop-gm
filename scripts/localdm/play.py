@@ -45,7 +45,6 @@ import dataclasses
 import io
 import os
 import pathlib
-import random
 import re
 import shlex
 import sys
@@ -60,12 +59,34 @@ from localdm import advisor, autopilot, checks, context, display_bridge, llm, re
 from localdm.bridge import Bridge, PLAYER_VERBS, normalize, parse_player_command, resolve_names  # noqa: E402
 from tactics import fightq                                     # noqa: E402
 import safeio                                                   # noqa: E402
+# Aliased, not `import dice`: this module has a `dice` command in its dispatch
+# table, so an unaliased name is one refactor away from shadowing the module --
+# the same trap `tactics/roller.py` and `combat.py` both alias around.
+import dice as _dice                                           # noqa: E402
 from localdm.memory import Memory                               # noqa: E402
 from localdm import notes as notes_mod                          # noqa: E402
 from localdm.summarizer import Summarizer                       # noqa: E402
 from localdm import canon as canon_mod                         # noqa: E402
 from localdm import recap as recap_mod                         # noqa: E402
 from localdm import agency as agency_mod                       # noqa: E402
+
+#: The stream headless skill checks roll off. One per process, seeded by the
+#: canonical factory, so the seed is on the object as `.seed_value` and every
+#: check this table resolves is quotable after the fact.
+#:
+#: It was `random.randint(1, 20)` off the module-level generator, which is the
+#: defect #117 fixed everywhere else: a d20 the GM could not name a seed for, so
+#: it could not appear in a receipt and could not be re-run. Worse than the
+#: `combat.py` inconsistency #292 fixed, because that one at least had a seed on
+#: the command line. There is no way to seed this one from the CLI, so the only
+#: provenance available was "a number appeared".
+#:
+#: It fires on the fallback arm alone -- `self.display.request_roll(...)` returns
+#: None exactly when no display is registered -- so the roll a table got running
+#: headless was the unreproducible one. With a display attached the player rolls
+#: in the browser and that result is the player's to keep, which is why this is
+#: the fallback and not the only path.
+_CHECK_RNG = _dice.new_rng()
 
 # The narration cap, in sentences. dm.md carries the same number: the prompt and the
 # length retry below have to agree, or the retry is asking the model to break a rule
@@ -1060,9 +1081,16 @@ class Session:
             return [f"(engine) {_waiting(self.pending)}"]
         return self._player_turn(line)
 
-    def _ability_check(self, spec: str, line: str, meta: dict | None = None) -> list:
+    def _ability_check(self, spec: str, line: str, meta: dict | None = None,
+                       rng=None) -> list:
         """The DM asked for a check: the player rolls in the browser (or it is rolled here
-        with no display), then the DM narrates the outcome."""
+        with no display), then the DM narrates the outcome.
+
+        `rng` is the headless roll's stream and defaults to this module's, which
+        carries a quotable `.seed_value`. It is a parameter rather than a direct
+        `_CHECK_RNG` read so a replay can name the seed it is replaying from;
+        nothing on the live path passes it.
+        """
         req = checks.parse_request(spec, meta, strict=self.check_mode == "strict")
         skill, dc = req.skill, req.dc
         found = context.skill_bonus(self.camp_dir, skill)
@@ -1096,7 +1124,10 @@ class Session:
             self.display.narrate(self.take_narration())      # the scene first, then the roll prompt
             total = self.display.request_roll(who or "any", bonus, f"{skill} check", dc)
         if total is None:
-            total = random.randint(1, 20) + bonus
+            # The canonical factory, so the face came off a stream with a seed on
+            # it. Before this it was `random.randint(1, 20)` off the module-level
+            # generator: an unquotable d20, unseedable from any entry point.
+            total = (rng if rng is not None else _CHECK_RNG).randint(1, 20) + bonus
         article = "an" if skill[:1] in "AEIOU" else "a"
         ok = total >= dc
         if not ok:
