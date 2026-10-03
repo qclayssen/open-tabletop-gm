@@ -14,6 +14,8 @@ import re
 
 import pytest
 
+from tests.conftest import require_srd_dataset
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 DATA = ROOT / "systems" / "dnd5e" / "data" / "dnd5e_srd.json"
 
@@ -29,12 +31,27 @@ def _load_module():
 
 
 eb = _load_module()
-pytestmark = pytest.mark.skipif(
-    not DATA.exists(), reason="generated SRD dataset is gitignored and needs a build")
 
 
 @pytest.fixture(scope="module")
 def monsters():
+    """The SRD's monsters, and the one place in this file that reads the dataset.
+
+    It was a module-level `pytestmark = pytest.mark.skipif(not DATA.exists(), ...)`,
+    which meant 45 of this file's 48 tests reported as *skipped* on every fresh
+    clone and every CI run -- a green tick over an entire unchecked file. The gate
+    moved here instead of staying at the file boundary, for two reasons. It is
+    precise: the five tests in this file that read no SRD record still run
+    unprovisioned, and a file-wide gate would take them down with the other 45 for
+    no reason. And it is sufficient: `DATA` is read nowhere else in the file, so
+    this is the only place a missing dataset can arrive.
+
+    `scripts/provision_srd.py` runs before the suite and CI provisions the dataset,
+    so absence is now a red test carrying the command that fixes it, rather than a
+    skip that reads as a pass. See `tests/conftest.py::require_srd_dataset` for why
+    this is a failure and not a skip.
+    """
+    require_srd_dataset()
     with open(DATA, encoding="utf-8") as fh:
         import json
         return json.load(fh)["monsters"]

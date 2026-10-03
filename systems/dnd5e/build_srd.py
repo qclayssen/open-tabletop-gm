@@ -938,7 +938,12 @@ def _norm_monster_action(a: dict) -> dict:
             flags.append("success_conflict")
         # What happens besides the damage: a condition on a failed save is
         # structured like an attack rider; anything else is text for the GM.
-        after = re.split(r"half as much damage on a successful one\.|damage on a failed save\.", desc, 1)
+        # `maxsplit` by keyword. Positionally it is deprecated from 3.13 and
+        # raises the DeprecationWarning on every single record this build touches,
+        # which is the whole dataset — noise in a developer's terminal and noise
+        # in the CI log this build now runs in (dnd-gm#289).
+        after = re.split(r"half as much damage on a successful one\.|damage on a failed save\.",
+                         desc, maxsplit=1)
         tail = after[1].strip() if len(after) > 1 else ""
         if not out.get("damage") or tail:
             effects, leftover = _rider_effects(desc if not out.get("damage") else tail)

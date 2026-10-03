@@ -11,9 +11,10 @@ land is being told something false about the world — and with no record for th
 GM to consult, the same creature gets adjudicated differently from one turn to
 the next.
 
-These tests run against the GENERATED dataset when it exists (it is gitignored,
-so a fresh clone has not built it yet) and always test the normaliser itself,
-which is the part that regressed.
+These tests run against the GENERATED dataset and always test the normaliser
+itself, which is the part that regressed. The dataset is gitignored, so an
+unprovisioned checkout fails rather than skipping: `scripts/provision_srd.py`
+builds it, and CI runs that before the suite (dnd-gm#289).
 """
 from __future__ import annotations
 
@@ -21,6 +22,8 @@ import importlib.util
 import json
 import pathlib
 import unittest
+
+from tests.conftest import require_srd_dataset
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 DATA = ROOT / "systems" / "dnd5e" / "data" / "dnd5e_srd.json"
@@ -86,13 +89,26 @@ class FormatterTests(unittest.TestCase):
         self.assertNotIn("Vulnerable:", text)
 
 
-@unittest.skipUnless(DATA.exists(), "SRD dataset not built in this checkout")
 class BuiltDatasetTests(unittest.TestCase):
-    """Runs only where the dataset has been generated."""
+    """The same four fields, counted across the whole built dataset.
 
-    @classmethod
-    def setUpClass(cls):
-        cls.monsters = json.loads(DATA.read_text(encoding="utf-8"))["monsters"]
+    Was `@unittest.skipUnless(DATA.exists(), ...)`. That is two tests reporting as
+    *skipped* on every fresh clone and every CI run, which is two tests the suite
+    claims to have checked and has not. `scripts/provision_srd.py` runs before the
+    suite and CI provisions the dataset, so absence is now a failure that names
+    the command. See `tests/conftest.py::require_srd_dataset` for why this is a
+    failure and not a skip.
+
+    `setUp` and not `setUpClass`, deliberately: a `pytest.fail` raised in
+    `setUpClass` is reported as an ERROR at setup, while the same call in `setUp`
+    lands in the call phase and is reported as FAILED. Both are red and both are
+    impossible to mistake for a pass, but only one of them is a failed assertion,
+    and `agents/dev/verifier.md` asks for that distinction by name.
+    """
+
+    def setUp(self):
+        require_srd_dataset()
+        self.monsters = json.loads(DATA.read_text(encoding="utf-8"))["monsters"]
 
     def test_defenses_are_populated_across_the_dataset(self):
         """Counts, not presence. A field present on 0 creatures is the bug."""
