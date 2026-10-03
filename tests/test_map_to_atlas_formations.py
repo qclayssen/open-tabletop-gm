@@ -65,6 +65,12 @@ def camp(tmp_path, monkeypatch):
     root = tmp_path / "root"
     d = root / "campaigns" / "demo"
     d.mkdir(parents=True)
+    # A state.md, or it is not a campaign: map_to_atlas resolves through
+    # find_campaign, which validates the configured root, so an empty directory
+    # is a miss rather than a campaign (see
+    # tests/test_paths_campaign_resolution.py). This fixture was a two-entry
+    # shell -- the exact shape that made the name-only guard pass.
+    (d / "state.md").write_text("# Demo\n", encoding="utf-8")
     monkeypatch.setenv("GM_CAMPAIGN_ROOT", str(root))
     return d
 
