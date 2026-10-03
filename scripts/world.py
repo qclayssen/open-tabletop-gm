@@ -99,6 +99,20 @@ def state_file(campaign: str) -> pathlib.Path:
     return get_campaign_dir(campaign) / "state.md"
 
 
+def _calendar(campaign_dir) -> dict:
+    """A campaign's calendar.json, or {} for a campaign without one.
+
+    The one reader, because two scripts now need this file and a second
+    `json.loads` in each of them is how one of them ends up disagreeing about
+    what a campaign with no clock means.
+    """
+    try:
+        data = json.loads((pathlib.Path(campaign_dir) / "calendar.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
 def in_game_date(campaign: str) -> str:
     """Today's in-world date from calendar.json, or '' if there is no calendar.
 
@@ -106,11 +120,7 @@ def in_game_date(campaign: str) -> str:
     "3 Harvestmoon 1247" must be findable by that date when the GM goes
     looking three sessions later.
     """
-    cal = get_campaign_dir(campaign) / "calendar.json"
-    try:
-        data = json.loads(cal.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return ""
+    data = _calendar(get_campaign_dir(campaign))
     day, month, year = data.get("day"), data.get("month"), data.get("year")
     if day is None or month is None:
         return ""
@@ -118,6 +128,49 @@ def in_game_date(campaign: str) -> str:
     label = months[month - 1] if isinstance(months, list) and 1 <= month <= len(months) else f"Month {month}"
     stamp = f"{day} {label}" + (f" {year}" if year else "")
     return stamp.strip()
+
+
+def in_game_hour(campaign_dir) -> int | None:
+    """The campaign's clock as one number: hours since year 0, day 1, hour 0.
+
+    Or None for a campaign with no calendar. This is the same clock
+    `in_game_date` reads, reduced to something two moments can be subtracted
+    into, which is what an effect with a duration needs: it must expire when an
+    hour of the *fiction* has passed, and a table that stops for dinner has not
+    spent one.
+
+    takes a directory rather than a campaign name because the two callers have
+    different ones: tracker.py resolves the name itself, and the DM's context
+    builder is handed a path it already holds.
+
+    `day` and `month` are required and an absent year reads as 0. Only
+    differences matter, and a calendar.json carrying neither day nor month has no
+    clock to offer rather than a clock at zero.
+
+    Hour-granular, because calendar.json records no smaller unit: the number
+    of months per year is taken from the calendar's own `months` list, falling
+    back to the twelve-month assumption `_month_length` already makes, and a
+    duration shorter than an hour therefore lasts until the next hour of
+    in-world time. That is a limit of the calendar this repo keeps, stated here
+    rather than discovered by a player.
+    """
+    data = _calendar(campaign_dir)
+    if not data:
+        return None
+    try:
+        day, month = int(data["day"]), int(data["month"])
+        year = int(data.get("year") or 0)
+        hour = int(data.get("hour") or 0)
+    except (KeyError, TypeError, ValueError):
+        return None
+    months = data.get("months")
+    per_year = len(months) if isinstance(months, list) and months else 12
+    month_len = data.get("month_length") or 30
+    try:
+        month_len = max(1, int(month_len))
+    except (TypeError, ValueError):
+        month_len = 30
+    return ((max(0, year) * per_year + (max(0, month) - 1)) * month_len + (max(0, day) - 1)) * 24 + hour
 
 
 # ─── Data structures ──────────────────────────────────────────────────────────

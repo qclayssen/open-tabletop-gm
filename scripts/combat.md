@@ -50,6 +50,7 @@ SKILL=<skill-base>
 CAMP=<campaign-name>
 
 # Timed effects (duration: 10r rounds, 60m minutes, 8h hours, indef)
+python3 $SKILL/scripts/tracker.py -c $CAMP effect start "NAME" "Effect" 60m
 python3 $SKILL/scripts/tracker.py -c $CAMP effect start "NAME" "Effect" 10r conc
 python3 $SKILL/scripts/tracker.py -c $CAMP effect start "NAME" "Effect" indef
 python3 $SKILL/scripts/tracker.py -c $CAMP effect end   "NAME" "Effect"
@@ -77,6 +78,17 @@ python3 $SKILL/scripts/tracker.py -c $CAMP clear --all  # also clears death save
 ```
 
 **When to run:** condition applied/removed; concentration begins/breaks; PC drops to 0 HP; each death save; end of encounter → `clear`.
+
+**Which clock a timed effect expires on.** `60m` and `8h` expire against the
+campaign's own calendar (`calendar.json`), which `calendar.py advance` and
+`calendar.py rest` move. So a table that stops for dinner does not expire
+anything, and four hours of table time does expire a `60m` spell. Run
+`effect tick` after downtime as well as on a turn start; that is what re-reads
+the clock. `10r` is not on that clock at all: it counts ticks, because a round is
+a turn boundary. `indef` never expires. A campaign with no `calendar.json` (one
+that has not run `calendar.py init`) falls back to the wall clock, which is what
+it always did. The calendar has no unit smaller than an hour, so a duration
+under an hour lasts until the next hour of in-world time.
 
 ---
 
