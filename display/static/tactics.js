@@ -387,7 +387,10 @@
   // - the map name and its shape, so a different battle never inherits a grid
   // - the rows themselves: the terrain is drawn from them, and a map edited in
   //   place keeps its name and its W and H
-  // - image, zones, labels and colors: the rest of what the map contributes to
+  // - image, and the image_px and grid_align that decide where it is *drawn*:
+  //   an alignment the GM has just saved has to rebuild this layer, or the
+  //   cached picture stays under the new grid
+  // - zones, labels and colors: the rest of what the map contributes to
   //   the static drawing, all from the same map file as the rows
   // - the fog, above
   //
@@ -399,6 +402,7 @@
   function boardKey(sp, W, H) {
     const meta = (sp && sp.meta) || {}, g = (sp && sp.grid) || {};
     return JSON.stringify([meta.name || '', W, H, g.rows || null, meta.image || '',
+                           meta.image_px || null, meta.grid_align || null,
                            meta.zones || null, meta.labels || null, meta.colors || null,
                            fogKey(sp)]);
   }
@@ -471,6 +475,48 @@
   const pinOnBoard = (p, W, H) =>
     Number.isFinite(p.x) && Number.isFinite(p.y) &&
     p.x >= 0 && p.y >= 0 && p.x < W && p.y < H;
+
+  /* Where the map's artwork goes, as the attributes of its <image>.
+
+     The map file records two facts about its picture: how big it is
+     (`meta.image_px`) and how many of its pixels one 5 ft square spans, plus
+     where the first square starts (`meta.grid_align`, all three validated in
+     scripts/tactics/maps.py). With them the art scales by `k = cell / cell_px`
+     -- the same `cell` the grid lines are drawn at -- and sits at `-offset * k`,
+     so the grid on screen IS the grid the GM lined up against the file. Uniform
+     on both axes, and that is the whole point: a picture stretched to fill the
+     board instead has its 100px squares land at a different width than height,
+     and every distance read off it is subtly wrong.
+
+     With neither, this returns null and the caller falls back to the legacy
+     stretch. That branch is not "wrong" -- a map with no recorded size draws
+     exactly as it always has, which is what every map written before the size
+     was recorded depends on -- so the check is for *usable* numbers rather than
+     for their presence. One bad number anywhere takes the whole map back to the
+     legacy draw rather than to a NaN attribute.
+
+     `cell` is a parameter rather than the module-level C for the reason
+     `pinCentre` takes one: this block is extracted and run under node by
+     tests/test_display_tactics_ui.py, where there is no C. */
+  const artAttrs = (art, imagePx, align, W, H, cell) => {
+    const legacy = () => ({ x: 0, y: 0, width: W * cell, height: H * cell,
+                            preserveAspectRatio: 'none' });
+    if (!art || !imagePx || !align || !align.cell_px) return legacy();
+    const cellPx = align.cell_px, w = imagePx[0], h = imagePx[1];
+    const ox = align.offset_x == null ? 0 : align.offset_x;
+    const oy = align.offset_y == null ? 0 : align.offset_y;
+    // `typeof` rather than Number(), deliberately: Number("100") is 100, so a
+    // pitch that arrived as a string would quietly be accepted and drawn, while
+    // maps.py refuses exactly that value. This guard mirrors maps.grid_alignment
+    // so the two cannot disagree about what a usable number is -- a browser that
+    // is more forgiving than the compiler is how a rejected alignment comes back
+    // as a subtly wrong picture instead of a load error.
+    const num = v => typeof v === 'number' && isFinite(v);
+    if (!(cellPx > 0) || !num(cellPx) || !num(w) || !num(h) ||
+        !(w > 0) || !(h > 0) || !num(ox) || !num(oy)) return legacy();
+    const k = cell / cellPx;
+    return { x: -ox * k, y: -oy * k, width: w * k, height: h * k, cropped: true };
+  };
   /* end pure helpers */
 
   // Nudge a text element back inside the board, horizontally and vertically.
@@ -976,15 +1022,29 @@
     const threatHatch = svg('pattern', { id: 'tx-threat-hatch', width: 7, height: 7, patternUnits: 'userSpaceOnUse',
                                          patternTransform: 'rotate(-45)' }, s.querySelector('defs'));
     svg('line', { x1: 0, y1: 0, x2: 0, y2: 7, class: 'tx-threat-line' }, threatHatch);
-    // Map artwork, when the map has it (scripts/atlas_to_map.py writes one). The
-    // map's width/height were derived from the image by dividing its pixels by the
-    // grid cell size, so the grid here already lines up with the art and the image
-    // is stretched to fill the board exactly. preserveAspectRatio=none is what
-    // makes that true for a non-square image.
+    // Map artwork, when the map has it (scripts/art_import.py and
+    // scripts/atlas_to_map.py write one). Two ways to draw it, and which one is in
+    // force is the map's decision rather than the browser's: artAttrs scales the
+    // picture by C / cell_px and offsets it by the recorded origin when the map
+    // recorded both its size and its pitch, so the grid lines drawn below sit on
+    // the squares the GM lined up against the file; without them the picture is
+    // stretched to the board, which is what every map written before the size was
+    // recorded has always done.
     const art = (snap.meta && snap.meta.image) || '';
     if (art) {
-      svg('image', { x: 0, y: 0, width: W * C, height: H * C, preserveAspectRatio: 'none',
-                     href: '/maps/' + art, class: 'tx-art' }, s);
+      const aligned = artAttrs(art, snap.meta.image_px, snap.meta.grid_align, W, H, C);
+      const img = svg('image', Object.assign({ href: '/maps/' + art, class: 'tx-art' }, aligned),
+                      s);
+      if (aligned.cropped) {
+        // Aligned art is cropped to the board, not fitted to it. A picture whose
+        // pixels do not divide by its own cell size has leftovers, and stretching
+        // them into the last square is how the grid ends up drifting at the far
+        // edge of a long map. The clip lives in this board's own defs, which are
+        // rebuilt with the board, so the id cannot outlive what references it.
+        const clip = svg('clipPath', { id: 'tx-art-clip' }, s.querySelector('defs'));
+        svg('rect', { x: 0, y: 0, width: W * C, height: H * C }, clip);
+        img.setAttribute('clip-path', 'url(#tx-art-clip)');
+      }
     }
     // tx-terrain names the group in its own right, not just as the stylesheet's
     // hook for the over-art case: it is the layer the board cache keeps, so a

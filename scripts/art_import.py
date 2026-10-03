@@ -58,7 +58,7 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from tactics.maps import compile_map
+from tactics.maps import art_geometry, compile_map
 
 MAPS_DIR = ROOT / "display" / "maps"
 IMAGE_DIR = MAPS_DIR / "images"
@@ -195,6 +195,10 @@ def build_spec(slug: str, meta: dict, image_rel: str, credit: str) -> dict:
                  f"Terrain is unpainted: open /maps/{slug}/edit and paint walls, "
                 f"water and cover before running a fight here.",
         "image": image_rel,
+        # The picture's own size, from the header main() already read. Together
+        # with cell_px below it is what lets the display draw the art at the
+        # recorded pitch rather than stretching it to the board.
+        "image_px": [meta["px"][0], meta["px"][1]],
         "grid": {"cell_px": meta["cell_px"], "offset_x": 0, "offset_y": 0},
         "credit": credit,
         "source": meta["source"],
@@ -311,6 +315,15 @@ def main(argv: list[str] | None = None) -> int:
         w, h = spec["width"], spec["height"]
         print(f"{verb} {slug}: {w}x{h} squares, {w * SQUARE_FT}x{h * SQUARE_FT} ft, "
               f"{meta['cell_px']}px cell, art {meta['px'][0]}x{meta['px'][1]}")
+        # Leftover pixels are cropped by the renderer, and the GM is told rather
+        # than left to find it at the table. parse_name already refuses a
+        # picture that does not divide, so this is always zero today; it is
+        # printed because a map file may be hand-edited afterwards, and a
+        # silently-cropped strip is the kind of thing worth saying out loud.
+        leftover = art_geometry(spec)["leftover"]
+        if any(leftover):
+            print(f"        cropped: {leftover[0]}px off the right edge, "
+                  f"{leftover[1]}px off the bottom -- the grid does not reach them")
         if args.dry_run:
             continue
         image_dir.mkdir(parents=True, exist_ok=True)
