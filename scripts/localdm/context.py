@@ -12,8 +12,8 @@ import json
 import os
 import pathlib
 import re
-import time
 
+import tracker                     # scripts/ is on sys.path via localdm/__init__
 import world_queue                # scripts/ is on sys.path via localdm/__init__
 
 from . import canon as canon_mod
@@ -222,7 +222,13 @@ def _active_ac(camp_dir, name: str):
     """B4: the still-active AC override tracker.json has for `name` (e.g. from an
     out-of-combat Mage Armor cast), or None. This is a plain read of a number a
     caller already computed (play.py's _cast_spell) and expires with the effect
-    like any other tracker.json entry; no 5e rule is decided here."""
+    like any other tracker.json entry; no 5e rule is decided here.
+
+    Expiry is asked of tracker.effect_expired rather than recomputed here: an
+    effect's duration is measured against the campaign's calendar when it has
+    one, and a second copy of that arithmetic in the context builder is how the
+    sidebar and the tracker would come to disagree about whether Mage Armor is
+    still on."""
     try:
         state = json.loads((pathlib.Path(camp_dir) / "tracker.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -230,15 +236,11 @@ def _active_ac(camp_dir, name: str):
     ent = state.get(name.lower()) if isinstance(state, dict) else None
     if not ent:
         return None
-    now, best = time.time(), None
+    best = None
     for eff in ent.get("effects", []):
         if "ac" not in eff:
             continue
-        dt = eff.get("duration_type", "indefinite")
-        if dt in ("minutes", "hours") and now - eff.get("started_at", now) >= eff.get(
-                "duration_seconds", 0):
-            continue                        # expired
-        if dt == "rounds" and eff.get("duration_remaining", 0) <= 0:
+        if tracker.effect_expired(eff, camp_dir):
             continue                        # expired
         best = eff["ac"]
     return best

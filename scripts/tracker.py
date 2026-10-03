@@ -20,6 +20,9 @@ Usage:
     python3 tracker.py -c $CAMPAIGN concentrate <entity> break
 
     # Timed effects — duration formats: 10r (rounds), 60m (minutes), 8h (hours), indef
+    # Rounds tick when the GM runs `effect tick`. Minutes and hours tick against the
+    # campaign's own calendar (calendar.json), not the wall clock: see "Which clock"
+    # below.
     python3 tracker.py -c $CAMPAIGN effect start <entity> "<spell>" <duration> [conc]
     python3 tracker.py -c $CAMPAIGN effect end   <entity> "<spell>"
     python3 tracker.py -c $CAMPAIGN effect tick  <entity>   # call on that entity's turn start
@@ -35,6 +38,30 @@ Usage:
 
     # Clear (end of encounter — wipes conditions/concentrations/effects; preserves saves)
     python3 tracker.py -c $CAMPAIGN clear [--all]     # --all also clears saves
+
+Which clock an effect expires on
+--------------------------------
+An effect with a duration in minutes or hours expires against the campaign's own
+calendar: the number `world.in_game_hour` reads out of calendar.json, which
+`calendar.py advance` and `calendar.py rest` move. Wall time is the wrong clock
+for this and was wrong here: a 60m effect used to lapse sixty real minutes after
+it was cast, which expires a spell in the middle of a session the table paused,
+and never expires one the table played through in four hours of wall clock while
+sitting on a paused save.
+
+The fallback, and it is the behaviour every campaign without `calendar.py init`
+had before and still has: with no calendar to read, an effect is stamped and
+measured against `time.time()`. Rounds (`10r`) are not on either clock; they tick
+when `effect tick` runs, because a round is a turn boundary rather than a span of
+time. Indefinite effects (`indef`) never expire.
+
+The calendar is hour-granular (it records no smaller unit), so a duration shorter
+than an hour lasts until the next hour of in-world time.
+
+Effects stamped before this existed carry `started_at` and no `started_hour`;
+they keep expiring on the wall clock rather than being reinterpreted, because
+reinterpreting them would silently extend or cut short whatever the table was
+already running.
 """
 
 import json
@@ -75,13 +102,17 @@ CONDITION_COLOURS = {
 }
 
 
-def _state_path(campaign: str) -> str:
+def _camp_dir(campaign: str) -> pathlib.Path:
     try:
         d = _require_campaign(campaign)
     except CampaignNotFound as e:
         print(f"tracker.py: {e}", file=sys.stderr)
         raise SystemExit(2)
-    return os.path.join(str(d), "tracker.json")
+    return pathlib.Path(d)
+
+
+def _state_path(campaign: str) -> str:
+    return str(_camp_dir(campaign) / "tracker.json")
 
 
 def _load(campaign: str) -> dict:
@@ -108,8 +139,66 @@ def _entity(state: dict, name: str) -> dict:
     return state[key]
 
 
-def _parse_duration(dur_str: str) -> "dict | None":
-    """Parse a duration string into an effect dict fragment.
+# ─── which clock an effect expires on ────────────────────────────────────────
+
+def _stamp(campaign_dir) -> dict:
+    """The campaign's own "now", for stamping and for measuring an effect.
+
+    `{"kind": "campaign", "hour": <in-world hours since year 0>, "seconds":
+    <wall clock>}` when calendar.json exists, and `{"kind": "wall", "seconds":
+    ...}` when it does not. Both shapes carry `seconds` so a wall-stamped effect
+    stays measurable in a campaign that has gained a calendar since, and both
+    are produced here and nowhere else, so "which clock is this effect on" has
+    one answer.
+    """
+    import world
+    hour = world.in_game_hour(campaign_dir)
+    seconds = time.time()
+    return {"kind": "wall", "seconds": seconds} if hour is None else \
+        {"kind": "campaign", "hour": hour, "seconds": seconds}
+
+
+def _now(campaign: str) -> dict:
+    return _stamp(_camp_dir(campaign))
+
+
+def _elapsed_seconds(eff: dict, now: dict) -> float:
+    """How long ago an effect started, on the clock it was stamped with.
+
+    An effect stamped on the campaign clock is only ever measured on it, and
+    only while that clock is readable: with the calendar gone the elapsed time
+    is unknown, so the answer is 0 (not expired) rather than a guess, and
+    `status` says the clock is missing. One stamped on the wall clock is only
+    ever measured on that, whether or not the campaign has gained a calendar
+    since. Mixing the two would compare an hour of the fiction against an hour
+    of the room.
+    """
+    started = eff.get("started_hour")
+    if started is not None:
+        if now.get("kind") != "campaign":
+            return 0.0
+        return (int(now["hour"]) - int(started)) * 3600
+    return float(now["seconds"]) - float(eff.get("started_at", now["seconds"]))
+
+
+def effect_expired(eff: dict, campaign_dir) -> bool:
+    """Has this effect run out? The one reader of the rule.
+
+    Public because `localdm/context.py` asks the same question about the same
+    file when it reads an AC override out of tracker.json, and two readers of one
+    expiry rule is how the sidebar and the tracker start disagreeing.
+    """
+    dt = eff.get("duration_type", "indefinite")
+    if dt == "rounds":
+        return eff.get("duration_remaining", 0) <= 0
+    if dt not in ("minutes", "hours"):
+        return False
+    now = _stamp(campaign_dir)
+    return _elapsed_seconds(eff, now) >= float(eff.get("duration_seconds", 0))
+
+
+def _parse_duration(dur_str: str, now: dict) -> "dict | None":
+    """Parse a duration string into an effect dict fragment, stamped on `now`.
     Formats: 10r (rounds), 60m (minutes), 8h (hours), indef (indefinite).
     Returns None on bad input.
     """
@@ -122,29 +211,34 @@ def _parse_duration(dur_str: str) -> "dict | None":
     elif d.endswith("m"):
         try:
             secs = int(d[:-1]) * 60
-            return {"duration_type": "minutes", "duration_seconds": secs, "started_at": time.time()}
         except ValueError:
             return None
     elif d.endswith("h"):
         try:
             secs = int(d[:-1]) * 3600
-            return {"duration_type": "hours", "duration_seconds": secs, "started_at": time.time()}
         except ValueError:
             return None
     elif d == "indef":
         return {"duration_type": "indefinite"}
-    return None
+    else:
+        return None
+    out = {"duration_type": "minutes" if d.endswith("m") else "hours",
+           "duration_seconds": secs}
+    if now.get("kind") == "campaign":
+        out["started_hour"] = int(now["hour"])
+    else:
+        out["started_at"] = now["seconds"]
+    return out
 
 
-def _fmt_effect(eff: dict) -> str:
+def _fmt_effect(eff: dict, now: dict) -> str:
     """Return a short human-readable remaining-duration string."""
     dt = eff.get("duration_type", "indefinite")
     if dt == "rounds":
         r = eff.get("duration_remaining", 0)
         return f"{r} rnd"
     elif dt in ("minutes", "hours"):
-        elapsed = time.time() - eff.get("started_at", time.time())
-        remaining = max(0, eff.get("duration_seconds", 0) - elapsed)
+        remaining = max(0, eff.get("duration_seconds", 0) - _elapsed_seconds(eff, now))
         if remaining <= 0:
             return "expired"
         m, s = divmod(int(remaining), 60)
@@ -190,12 +284,13 @@ def cmd_effect(campaign: str, action: str, entity_name: str,
     without knowing any rule; it expires with the effect like everything else here."""
     state = _load(campaign)
     ent   = _entity(state, entity_name)
+    now   = _now(campaign)
 
     if action == "start":
         if not spell or not duration:
             print("  error: effect start requires <entity> <spell> <duration>")
             return
-        dur = _parse_duration(duration)
+        dur = _parse_duration(duration, now)
         if dur is None:
             print(f"  error: bad duration '{duration}' — use 10r / 60m / 8h / indef")
             return
@@ -214,7 +309,7 @@ def cmd_effect(campaign: str, action: str, entity_name: str,
                 print(f"  {entity_name}: dropped concentration on '{old}'")
             _send_announce(f"{entity_name} — concentrating on {spell}")
 
-        rem = _fmt_effect(effect)
+        rem = _fmt_effect(effect, now)
         conc_tag = " [conc]" if is_conc else ""
         print(f"  + {entity_name}: {spell}{conc_tag} · {rem}")
         _save(campaign, state)
@@ -256,9 +351,7 @@ def cmd_effect(campaign: str, action: str, entity_name: str,
                 else:
                     kept.append(e)
             elif dt in ("minutes", "hours"):
-                elapsed = time.time() - e.get("started_at", time.time())
-                remaining = e.get("duration_seconds", 0) - elapsed
-                if remaining <= 0:
+                if _elapsed_seconds(e, now) >= float(e.get("duration_seconds", 0)):
                     time_expired.append(e)
                 else:
                     kept.append(e)
@@ -275,7 +368,7 @@ def cmd_effect(campaign: str, action: str, entity_name: str,
 
         # Print tick summary
         if kept:
-            lines = [f"⧗ {e['name']} · {_fmt_effect(e)}" for e in kept]
+            lines = [f"⧗ {e['name']} · {_fmt_effect(e, now)}" for e in kept]
             print(f"  {entity_name} — effects: {', '.join(lines)}")
 
         for e in all_expired:
@@ -404,6 +497,12 @@ def cmd_status(campaign: str, filter_name: str = "") -> None:
     if filter_name:
         entities = [e for e in entities if filter_name.lower() in e["name"].lower()]
 
+    now = _now(campaign)
+    if now["kind"] != "campaign" and any(
+            e.get("started_hour") is not None for ent in entities
+            for e in ent.get("effects", [])):
+        print("  (no calendar.json: effects stamped in in-world time cannot be checked)")
+
     for ent in entities:
         name   = ent["name"]
         conds  = ent.get("conditions", [])
@@ -419,7 +518,7 @@ def cmd_status(campaign: str, filter_name: str = "") -> None:
         if effects:
             eff_strs = []
             for e in effects:
-                rem = _fmt_effect(e)
+                rem = _fmt_effect(e, now)
                 tag = " [conc]" if e.get("concentration") else ""
                 eff_strs.append(f"{e['name']}{tag} · {rem}")
             parts.append("Effects: " + ", ".join(eff_strs))
