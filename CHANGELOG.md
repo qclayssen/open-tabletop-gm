@@ -25,6 +25,16 @@ dataset present, none of the others can be verified, because the spell rows in t
 coverage instrument are read from the *production* SRD rather than the fixture copy
 (#231 -- a fixture must never be what a coverage number was measured against).
 
+Building it in CI then failed on the first run, at the rate limiter:
+`api.github.com` allows 60 requests/hour per IP to an unauthenticated caller and the
+hosted runner pool shares an egress IP, so every `api.github.com` fetch came back
+403 and `build_srd.py` wrote a dataset with zero class features and **exited 0** --
+its refusal to write covers the case where *every* category came back empty, which
+is not this case. `build_srd._auth_headers` now sends a bearer token when
+`SRD_BUILD_TOKEN`, `GITHUB_TOKEN` or `GH_TOKEN` is set, and sends exactly the header
+it always did when none is, so a local build is unaffected. The CI step also gates on
+completeness, because a raised rate limit is still not a promised one.
+
 **A fixture's coverage claim had gone false silently.**
 `test_every_documented_reason_is_reachable_from_the_fixture` failed because
 `build_srd` now writes `damage_choice_upcast` and `damage_multi` for flame-strike.
