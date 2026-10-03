@@ -4,6 +4,31 @@ Reads the markdown sheet the skill keeps (templates/character-sheet.md shape)
 into a Token, and writes combat results back into it: HP, temp HP, spent
 spell slots, hit dice, death saves and lasting conditions. Everything else in
 the sheet is left byte for byte as it was.
+
+WHERE A NUMBER CAME FROM
+========================
+
+A parser that cannot find a field has three honest answers and one dishonest one,
+and this module now tells them apart (issue #138).
+
+  stated     the sheet says it. Authoritative.
+  derived    computed from something the sheet does say (a saving throw from an
+             ability score, a DEX modifier from a DEX score). Authoritative.
+  default    the sheet is silent and a documented fallback was applied. The
+             number is real, it is being used to compute hit chances and movement
+             budgets, and nobody has been told. `DEFAULTS` below says which
+             fallbacks are CONSEQUENTIAL and why, and `explain()` renders that for a
+             GM.
+  missing    the sheet does not say and there is no defensible number. `None`,
+             and the consumers that matter already refuse with a message naming
+             the character (`tactics_spells.resolve` on a missing spell DC).
+
+The dishonest one was a fourth: a field that is PRESENT but unreadable -- "TBD",
+"---", a stray dash in a blank template -- was parsed as its fallback, so a
+half-filled sheet produced the same authoritative-looking token as a finished one.
+`_required_int` now refuses that case with the field, the sheet and the text that
+could not be read. Absent is not malformed, so an absent field still falls back; a
+present-and-unreadable one does not.
 """
 
 from __future__ import annotations
@@ -73,8 +98,81 @@ def _int(text: str, default: int = 0) -> int:
 
 
 def _field(text: str, label: str) -> str:
-    m = re.search(rf"\*\*{re.escape(label)}:\*\*\s*([^|\n]*)", text)
+    """The text after a `**Label:**`, up to the bar or the end of the line.
+
+    `[ \t]*` and not `\s*`, deliberately: `\s*` eats a newline, so a `**Speed:**` at
+    the end of a line with nothing after it read the NEXT line instead and returned
+    "1d6 (remaining: 1)", which `_int` turned into a speed of 1. That is the same
+    failure this module's header describes -- a number that was never on the sheet
+    arriving as an authoritative one -- reached from the other direction, and it only
+    showed up once the provenance work made the fields visible.
+    """
+    m = re.search(rf"\*\*{re.escape(label)}:\*\*[ \t]*([^|\n]*)", text)
     return m.group(1).strip() if m else ""
+
+
+# ── the fallback table: which numbers change an outcome, and why ──────────────
+#
+# `consequential` is the whole question #138 asks. A default that only changes a
+# label does not need explaining; one that changes a die roll does. The `why` is
+# written to be read by a GM in `explain()` output, so it says what the number is
+# used for rather than what it is.
+#
+# `None` in the fallback column means "no number is defensible", and every consumer
+# that matters already refuses rather than substituting one.
+DEFAULTS = {
+    "ac": (10, True,
+           "the sheet has no AC line; 10 is an unarmoured creature, and every attack roll "
+           "against this creature is computed from it"),
+    "speed": (30, True,
+              "the sheet has no Speed line; 30 ft is a humanoid walk, and the whole "
+              "movement budget for a turn comes from it"),
+    "level": (1, True,
+              "the sheet has no Level line; level 1 sets proficiency, the spell-slot table "
+              "and the hit dice"),
+    "dex_mod": (0, True,
+                "there is no readable DEX score; +0 changes Dex saves and Mage Armor"),
+    "saves": ({}, True,
+              "neither a Saving Throws table nor an Ability Scores table was readable; "
+              "every save is rolled at +0"),
+    "attack_bonus": (0, True,
+                     "the Attacks row's bonus column was empty; +0 is a real attack roll, "
+                     "not a missing one"),
+    "spell_dc": (None, False,
+                 "no spell save DC on the sheet; tactics_spells.resolve already refuses "
+                 "with the caster's name rather than guessing one"),
+    "spell_attack": (None, False,
+                     "no spell attack bonus on the sheet; tactics_spells.resolve refuses "
+                     "the same way"),
+    "passive_perception": (None, False,
+                           "no passive score on the sheet; checks.decide only reads one "
+                           "the sheet states"),
+    "temp_hp": (0, False, "0 is the truth about a character with no temporary hit points"),
+    "hit_dice": (None, False,
+                 "the sheet has no Hit Dice line; a long rest asks rather than assuming"),
+}
+
+#: The three provenance values a number in `extra["derived"]` can carry.
+STATED, DERIVED, DEFAULT = "stated", "derived", "default"
+
+
+def _required_int(text: str, label: str, sheet: str, default, field: str) -> tuple:
+    """`(value, provenance)` for one `**Label:**` field.
+
+    Absent falls back and says so. Present-but-unreadable refuses, because the only
+    alternative is a fallback number wearing the same authority as a stated one, and
+    that is the failure #138 is about. The message names the sheet, the field and the
+    text, so the fix is a keystroke rather than an investigation.
+    """
+    raw = _field(text, label)
+    if not raw:
+        return default, DEFAULT
+    m = re.search(r"[+-]?\d+", raw)
+    if not m:
+        raise ValueError(
+            f"{sheet}: the **{label}:** field reads {raw!r}, which has no number in it. "
+            f"Fix the field, or remove the line so {DEFAULTS[field][2]}.")
+    return int(m.group(0)), STATED
 
 
 def _attack(row: list):
@@ -205,20 +303,37 @@ def read_sheet(text: str, token_id: str, pos: tuple, path: str = "") -> Token:
     for row in _table_rows(_section(text, "Ability Scores")):
         if len(row) == 6 and all(re.match(r"\d+", c) for c in row):
             scores = {ab: _int(c) for ab, c in zip(ABILITIES, row)}
+    # A saving throw with no table is derived from the ability score; with neither
+    # table it is the documented +0 fallback, and either way the token carries which.
     saves = {ab: (s - 10) // 2 for ab, s in scores.items()}
+    saves_from = DERIVED if scores else DEFAULT
     for row in _table_rows(_section(text, "Saving Throws")):
         if len(row) == 6 and all(re.match(r"[+-]?\d", c) for c in row):
             saves = {ab: _int(c) for ab, c in zip(ABILITIES, row)}
+            saves_from = STATED
 
     attacks, save_spells = [], []
+    # Only labelled when there is an attack to have a bonus on. A sheet with no
+    # Attacks table has not stated a bonus and has not defaulted one either, and
+    # reporting a source for a field that does not exist is the blur this issue is
+    # about.
+    bonuses_from = None
     for row in _table_rows(_section(text, "Attacks"))[1:]:          # skip the header row
         a = _attack(row)
         if isinstance(a, tuple):
             save_spells.append(a[1])
         elif a:
             attacks.append(a)
+            if bonuses_from is None:
+                bonuses_from = STATED
+            if not re.search(r"[+-]?\d+", row[1] if len(row) > 1 else ""):
+                bonuses_from = DEFAULT
 
-    level = _int(_field(text, "Level"), 1)
+    ac, ac_from = _required_int(text, "AC", name, DEFAULTS["ac"][0], "ac")
+    speed, speed_from = _required_int(text, "Speed", name, DEFAULTS["speed"][0], "speed")
+    level, level_from = _required_int(text, "Level", name, DEFAULTS["level"][0], "level")
+    dex_mod, dex_from = ((scores["dex"] - 10) // 2, DERIVED) if "dex" in scores \
+        else (DEFAULTS["dex_mod"][0], DEFAULT)
     slots = {}
     for row in _table_rows(_section(text, "Spell Slots"))[1:]:
         if len(row) >= 3 and re.match(r"\d", row[0]) and _int(row[1]):
@@ -258,18 +373,29 @@ def read_sheet(text: str, token_id: str, pos: tuple, path: str = "") -> Token:
     if cm:
         conds = [c.strip().lower() for c in cm.group(0).split(":**", 1)[1].split(",")
                  if c.strip() and c.strip().lower() not in ("none", "-")]
+    derived = {"ac": ac_from, "speed": speed_from, "level": level_from,
+               "dex_mod": dex_from, "saves": saves_from,
+               # A sheet with a Passive Perception line states one; one without is
+               # absent rather than unknown-to-the-model, and `checks` reads only a
+               # stated value, so this is STATED by construction when present.
+               "passive_perception": STATED if passive else "missing",
+               "hit_dice": STATED if hd else "missing",
+               "spell_dc": STATED if spell_dc else "missing",
+               "spell_attack": STATED if spell_atk else "missing"}
+    if bonuses_from is not None:
+        derived["attack_bonus"] = bonuses_from
     return Token(
         id=token_id, name=name, side="pc", x=pos[0], y=pos[1],
-        hp=int(hp.group(2)), max_hp=int(hp.group(3)), ac=_int(ac_text, 10),
+        hp=int(hp.group(2)), max_hp=int(hp.group(3)), ac=ac,
         temp_hp=int(temp.group(2)) if temp else 0,
-        speed=_int(_field(text, "Speed"), 30),
-        dex_mod=(scores["dex"] - 10) // 2 if "dex" in scores else 0,
+        speed=speed,
+        dex_mod=dex_mod,
         controller="player", conditions=conds, attacks=attacks, saves=saves,
         death_saves={"successes": int(death.group(2)) if death else 0,
                      "failures": int(death.group(4)) if death else 0},
         source={"kind": "sheet", "path": path},
         extra={"ac_note": ac_text, "slots": slots, "save_spells": save_spells,
-               "hit_dice": hit_dice,
+               "hit_dice": hit_dice, "derived": derived, "ac_parts": ac_parts(text),
                "abilities": scores, "skills": skills, "level": level, "spells": spells,
                "features": _feature_names(text),
                # What a short rest can give back is a class question (Pact Magic,
@@ -280,6 +406,87 @@ def read_sheet(text: str, token_id: str, pos: tuple, path: str = "") -> Token:
                "spell_attack": int(spell_atk.group(1)) if spell_atk else None,
                "passive_perception": int(passive.group(1)) if passive else None},
     )
+
+
+# ── the AC decomposition (RI10), as labels, not as a new model ───────────────
+#
+# RI10 asks for `ac_base` / `ac_dex_bonus` / `ac_max_bonus` rather than one
+# integer, so an AC can change and the reason can be named. What it does NOT ask
+# for is adopting the external runtime that motivated it, and nothing here does:
+# `Token.ac` is still the integer every attack roll is computed from, and
+# `token_from_sheet` still sets it the way it always has. This returns the three
+# parts beside it, each with where it came from, which is the half of RI10 that is
+# a provenance question rather than an engine rewrite.
+_AC_NOTE = re.compile(r"\(\s*([+-]?\d+)\s*([^)]*)\)")
+
+
+def ac_parts(text: str) -> dict:
+    """The AC a sheet states, decomposed, with provenance.
+
+        "**AC:** 12 (13 with Mage Armor)"  ->
+            base 12, stated_with 13, dex_bonus +2, max_bonus -2
+
+    `max_bonus` is what the parenthetical adds over "13 + DEX", which is the number
+    Mage Armor or a shield contributes on its own. On the repository's own fixture
+    sheet that is **-2**: the sheet says 13 with Mage Armor where PHB p.144 says
+    13 + DEX, and with DEX 14 the rule gives 15. Reporting the discrepancy as a
+    number with a provenance is the point. Correcting it is not: the sheet is
+    campaign data, and this function only says what it says.
+
+    A sheet with no parenthetical has no `stated_with`, and `max_bonus` is then 0
+    rather than None, because "the sheet claims no bonus" is a fact rather than an
+    absence.
+    """
+    raw = _field(text, "AC")
+    out = {"base": None, "stated_with": None, "dex_bonus": 0, "max_bonus": 0,
+           "provenance": "missing", "note": ""}
+    base = re.match(r"\s*([+-]?\d+)", raw)
+    if not base:
+        out["note"] = ("the sheet has no readable AC line; the engine's 10 is the "
+                       "documented unarmoured fallback")
+        return out
+    out["base"] = int(base.group(1))
+    out["provenance"] = STATED
+    scores = {}
+    for row in _table_rows(_section(text, "Ability Scores")):
+        if len(row) == 6 and all(re.match(r"\d+", c) for c in row):
+            scores = {ab: _int(c) for ab, c in zip(ABILITIES, row)}
+    if "dex" in scores:
+        out["dex_bonus"] = (scores["dex"] - 10) // 2
+    note = _AC_NOTE.search(raw)
+    if note:
+        out["stated_with"] = int(note.group(1))
+        out["max_bonus"] = out["stated_with"] - 13 - out["dex_bonus"]
+        out["note"] = f"the sheet states {out['stated_with']} {note.group(2).strip()}".strip()
+        if out["max_bonus"] != 0 and "mage armor" in note.group(2).lower():
+            out["note"] += (f", and PHB p.144 gives 13 + DEX = "
+                            f"{13 + out['dex_bonus']}")
+    return out
+
+
+def explain(token) -> list:
+    """Every consequential fallback on this token, as a line a GM can act on.
+
+    Empty for a sheet that states everything, which is the common case and the reason
+    this is a function rather than a warning: a parser that always warns teaches a GM
+    to ignore it.
+    """
+    derived = (token.extra or {}).get("derived") or {}
+    out = []
+    for field, source in derived.items():
+        if source != DEFAULT or not DEFAULTS.get(field, (None, False, ""))[1]:
+            continue
+        out.append(f"{token.name}: {field} is {token_value(token, field)}; "
+                   f"{DEFAULTS[field][2]}.")
+    return out
+
+
+def token_value(token, field: str):
+    """The number `explain()` is talking about, for the field named."""
+    return {"ac": token.ac, "speed": token.speed, "level": token.extra.get("level"),
+            "dex_mod": token.dex_mod, "saves": token.saves,
+            "attack_bonus": [a.get("bonus") for a in token.attacks],
+            }.get(field)
 
 
 def lasting_conditions(token) -> list:
