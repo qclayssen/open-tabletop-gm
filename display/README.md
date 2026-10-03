@@ -68,6 +68,8 @@ http://<your-machine-ip>:5001
 https://<your-machine-ip>:5001
 ```
 
+**Four displays instead of one:** `http://localhost:5001/displays` — see below.
+
 **To display on a TV or other device:**
 - **Cast tab** — Chrome → three-dot menu → Cast → Cast tab → select your Chromecast or smart TV
 - **Screen mirror** — macOS Control Centre → Screen Mirroring → Apple TV / AirPlay receiver
@@ -90,6 +92,44 @@ to the sidebar on load.
 
 ---
 
+## The four displays
+
+The display grew a character sidebar, a combat panel and a party-input panel. With a
+TV, a tablet and a second monitor on the table, those three end up fighting for one
+screen. So each gets its own window:
+
+| URL | What it is for |
+|---|---|
+| `/?view=dm` | **The story**, full screen, with nothing else on it |
+| `/?view=map` | **The campaign overview map** — where the party has been |
+| `/?view=combat` | **The battle map**, initiative and actions, full screen |
+| `/?view=dice` | **What the DM asked for**, and who hasn't rolled yet |
+
+Open them from `http://localhost:5001/displays` — one button each, plus **Open all
+four** which tiles them two by two across the screen. `start-display.sh --displays`
+opens the launcher for you.
+
+**One server, four windows.** The four are the same page at four body classes, so
+they share one SSE connection and cannot drift out of step with each other. Four
+servers would mean "the map is one fight behind the story".
+
+A few things worth knowing:
+
+- **`/` is unchanged.** The full display still has everything. The four views are
+  additions, not a replacement.
+- **The combat window waits rather than sitting blank.** It says *No fight is
+  running* until initiative is rolled, so a dark screen and a crashed server are
+  not the same thing.
+- **A view you don't recognise shows the full display, not an error.** These
+  windows sit in front of a table for hours, and a stale bookmark has to show the
+  story.
+- **The map window needs an overview map.** A campaign without one says so on the
+  page rather than showing an empty frame — see `scripts/overview_map.py`.
+- **The dice window shows the request, not a dice pad.** It's the DM's screen, for
+  the table to read. Players still roll on their own phones.
+
+---
+
 ## How it works
 
 | Component | Role |
@@ -104,6 +144,9 @@ to the sidebar on load.
 | `templates/index.html` | The page markup, plus the four server-rendered values (LAN token, narrator voice, TTS flag, UI manifest) |
 | `static/display.js` | Typewriter rendering, sky canvas, particle system, scene crossfades |
 | `static/display.css` | Every rule for the page except the combat panel's, which is in `static/tactics.css` |
+| `static/displays.css` | The four view masks (`body.view-*`), the launcher, and the dice window |
+| `static/displays.js` | The Displays menu, the launcher's window tiling, and the dice window's cards |
+| `templates/launcher.html` | `/displays` — one tile per view, and the button that opens all four |
 
 The two static files are a verbatim move out of the template (audit item W2, 2026-09-30):
 the browser now caches and re-parses them separately from the Jinja-rendered markup.
@@ -196,6 +239,12 @@ name the side too. Colour is the third signal, never the only one.
 `Hide map` folds the panel down to its header and the initiative strip rather
 than hiding it: a folded panel still answers "whose turn is it" and "who is
 left", which is what a table watches between moves.
+
+On `/?view=combat` the panel *is* the window — it takes the whole screen rather
+than sitting beside the story — and folding it is overridden, because a folded
+panel on a screen with nothing else on it is a full screen of empty panel.
+Before initiative is rolled the window says **No fight is running** rather than
+going blank, so a dark screen and a dead server are not the same thing.
 
 #### Looking at it without a fight
 
@@ -342,11 +391,20 @@ bash $DISPLAY/start-display.sh
 bash $DISPLAY/start-display.sh --lan
 # or for LAN with TLS (public/untrusted networks):
 bash $DISPLAY/start-display.sh --lan --tls
+# or to open the four-display launcher as well:
+bash $DISPLAY/start-display.sh --displays
 
 # Open the display BEFORE starting your session
 open http://localhost:5001   # same machine
 # or: open http://<your-ip>:5001  (LAN device)
 # with --tls: open https://<your-ip>:5001
+
+# Four displays instead of one — the launcher, or each window by hand
+open http://localhost:5001/displays
+open http://localhost:5001/?view=dm       # the story, full screen
+open http://localhost:5001/?view=map      # the campaign overview map
+open http://localhost:5001/?view=combat   # the battle map, full screen
+open http://localhost:5001/?view=dice     # the DM's dice requests
 
 # Start a session — no wrapper needed
 claude   # then: /dnd load <campaign>
