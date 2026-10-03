@@ -39,6 +39,17 @@ this script is deliberately strict, and refuses rather than guesses:
 
 `--dry-run` prints what it would write and touches nothing.
 
+ATTACHING ART TO A MAP THAT ALREADY EXISTS
+------------------------------------------
+This script creates maps. It cannot attach a picture to one that is already
+being played: the repair path below restores a missing image and leaves the JSON
+alone, and every other route to a changed JSON is `--overwrite`, which replaces
+the file and takes the painted terrain with it.
+
+For that case use **`scripts/art_attach.py`**, which writes only the artwork
+metadata (`image`, `image_px`, `grid`, `credit`) and refuses a picture that does
+not fit the board rather than resizing a map somebody has fought on.
+
 ATTRIBUTION
 -----------
 Creator art carries the creator's name on the image. The map file records
