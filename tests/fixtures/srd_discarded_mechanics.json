@@ -1,0 +1,2004 @@
+{
+ "_comment": "Real upstream 5e-bits/5e-srd-api records (SRD 5.1, OGL v1.0), verbatim, for the three discarded-mechanic shapes #136 preserves. Chosen for what each is the clearest example of, named in _why.",
+ "_why": {
+  "multi_type_spell": "Flame Strike (fire+radiant, and an 'OR' upcast), Ice Storm (bludgeoning scales, cold does not), Meteor Swarm (two types, four separate points). The only three SRD spells upstream gives a multi-element damage list for; the parser used to delete all three tables.",
+  "poison_rider": "Assassin Shortsword: 7d6 poison on a failed DC 15 CON save, which parses into rider_effects and IS applied. Aboleth Tentacle: 1d12 acid every 10 minutes while diseased, which does not parse and stays the GM's. Giant Spider Bite: the case the roadmap called data loss and which is not - its poison reaches the token through rider_effects.",
+  "damage_choice": "Djinni Scimitar (lightning OR thunder, a creature's choice) and Druid Quarterstaff (three options, one of them shillelagh) - the two shapes of 'one of the following options'.",
+  "width_assumption": "Wall of Fire: a line spell that prints no width, so `width_assumed` is this parser's assumption of 5 ft rather than the SRD's. One of the six flags with no consumer; added here so the registry's coverage claim is backed by a record.",
+  "save_outcome_and_pure_effect": "Dominate Person: a save that resolves but whose SUCCESS is not half damage or nothing, so the engine narrates the outcome rather than guess it. Alarm: no attack, save, damage or heal at all, which is 194 of 319 spells and the engine's single largest coverage gap (it is not data loss).",
+  "the_two_dropped_flags": "Adult Red Dragon: its Fire Breath's success_type field contradicts its own printed text (unresolved, neither side picked), and Frightful Presence is a save whose area is in no known shape. Giant Frog: Swallow is prose only, kept verbatim in raw. These two are the ONLY flags whose data is genuinely dropped rather than preserved, so both need a record in this fixture for the registry census to be complete."
+ },
+ "spells": [
+  {
+   "url": "/api/2014/spells/flame-strike",
+   "name": "Flame Strike",
+   "index": "flame-strike",
+   "desc": [
+    "A vertical column of divine fire roars down from the heavens in a location you specify. Each creature in a 10-foot-radius, 40-foot-high cylinder centered on a point within range must make a dexterity saving throw. A creature takes 4d6 fire damage and 4d6 radiant damage on a failed save, or half as much damage on a successful one."
+   ],
+   "higher_level": [
+    "When you cast this spell using a spell slot of 6th level or higher, the fire damage or the radiant damage (your choice) increases by 1d6 for each slot level above 5th."
+   ],
+   "range": "60 feet",
+   "components": [
+    "V",
+    "S",
+    "M"
+   ],
+   "material": "Pinch of sulfur.",
+   "ritual": false,
+   "duration": "Instantaneous",
+   "casting_time": "1 action",
+   "level": 5,
+   "school": {
+    "index": "evocation",
+    "name": "Evocation",
+    "url": "/api/2014/magic-schools/evocation"
+   },
+   "classes": [
+    {
+     "index": "cleric",
+     "name": "Cleric",
+     "url": "/api/2014/classes/cleric"
+    }
+   ],
+   "subclasses": [
+    {
+     "index": "devotion",
+     "name": "Devotion",
+     "url": "/api/2014/subclasses/devotion"
+    },
+    {
+     "index": "fiend",
+     "name": "Fiend",
+     "url": "/api/2014/subclasses/fiend"
+    }
+   ],
+   "damage": [
+    {
+     "damage_type": {
+      "index": "fire",
+      "name": "Fire",
+      "url": "/api/2014/damage-types/fire"
+     },
+     "damage_at_slot_level": {
+      "5": "4d6",
+      "6": "4d6 OR 5d6",
+      "7": "4d6 OR 6d6",
+      "8": "4d6 OR 7d6",
+      "9": "4d6 OR 8d6"
+     }
+    },
+    {
+     "damage_type": {
+      "index": "radiant",
+      "name": "Radiant",
+      "url": "/api/2014/damage-types/radiant"
+     },
+     "damage_at_slot_level": {
+      "5": "4d6",
+      "6": "4d6 OR 5d6",
+      "7": "4d6 OR 6d6",
+      "8": "4d6 OR 7d6",
+      "9": "4d6 OR 8d6"
+     }
+    }
+   ],
+   "area_of_effect": {
+    "type": "cylinder",
+    "size": 40
+   },
+   "concentration": false,
+   "dc": {
+    "dc_type": {
+     "index": "dex",
+     "name": "DEX",
+     "url": "/api/2014/ability-scores/dex"
+    },
+    "dc_success": "half"
+   }
+  },
+  {
+   "url": "/api/2014/spells/ice-storm",
+   "name": "Ice Storm",
+   "index": "ice-storm",
+   "desc": [
+    "A hail of rock-hard ice pounds to the ground in a 20-foot-radius, 40-foot-high cylinder centered on a point within range. Each creature in the cylinder must make a dexterity saving throw. A creature takes 2d8 bludgeoning damage and 4d6 cold damage on a failed save, or half as much damage on a successful one.",
+    "Hailstones turn the storm's area of effect into difficult terrain until the end of your next turn."
+   ],
+   "higher_level": [
+    "When you cast this spell using a spell slot of 5th level or higher, the bludgeoning damage increases by 1d8 for each slot level above 4th."
+   ],
+   "range": "300 feet",
+   "components": [
+    "V",
+    "S",
+    "M"
+   ],
+   "material": "A pinch of dust and a few drops of water.",
+   "ritual": false,
+   "duration": "Instantaneous",
+   "casting_time": "1 action",
+   "level": 4,
+   "school": {
+    "index": "evocation",
+    "name": "Evocation",
+    "url": "/api/2014/magic-schools/evocation"
+   },
+   "classes": [
+    {
+     "index": "druid",
+     "name": "Druid",
+     "url": "/api/2014/classes/druid"
+    },
+    {
+     "index": "sorcerer",
+     "name": "Sorcerer",
+     "url": "/api/2014/classes/sorcerer"
+    },
+    {
+     "index": "wizard",
+     "name": "Wizard",
+     "url": "/api/2014/classes/wizard"
+    }
+   ],
+   "subclasses": [
+    {
+     "index": "land",
+     "name": "Land",
+     "url": "/api/2014/subclasses/land"
+    }
+   ],
+   "damage": [
+    {
+     "damage_type": {
+      "index": "bludgeoning",
+      "name": "Bludgeoning",
+      "url": "/api/2014/damage-types/bludgeoning"
+     },
+     "damage_at_slot_level": {
+      "4": "2d8",
+      "5": "3d8",
+      "6": "4d8",
+      "7": "5d8",
+      "8": "6d8",
+      "9": "7d8"
+     }
+    },
+    {
+     "damage_type": {
+      "index": "cold",
+      "name": "Cold",
+      "url": "/api/2014/damage-types/cold"
+     },
+     "damage_at_slot_level": {
+      "4": "4d6",
+      "5": "4d6",
+      "6": "4d6",
+      "7": "4d6",
+      "8": "4d6",
+      "9": "4d6"
+     }
+    }
+   ],
+   "area_of_effect": {
+    "type": "cylinder",
+    "size": 20
+   },
+   "concentration": false,
+   "dc": {
+    "dc_type": {
+     "index": "dex",
+     "name": "DEX",
+     "url": "/api/2014/ability-scores/dex"
+    },
+    "dc_success": "half"
+   }
+  },
+  {
+   "url": "/api/2014/spells/meteor-swarm",
+   "name": "Meteor Swarm",
+   "index": "meteor-swarm",
+   "desc": [
+    "Blazing orbs of fire plummet to the ground at four different points you can see within range. Each creature in a 40-foot-radius sphere centered on each point you choose must make a dexterity saving throw. The sphere spreads around corners. A creature takes 20d6 fire damage and 20d6 bludgeoning damage on a failed save, or half as much damage on a successful one. A creature in the area of more than one fiery burst is affected only once.",
+    "The spell damages objects in the area and ignites flammable objects that aren't being worn or carried."
+   ],
+   "range": "1 mile",
+   "components": [
+    "V",
+    "S"
+   ],
+   "ritual": false,
+   "duration": "Instantaneous",
+   "casting_time": "1 action",
+   "level": 9,
+   "school": {
+    "index": "evocation",
+    "name": "Evocation",
+    "url": "/api/2014/magic-schools/evocation"
+   },
+   "classes": [
+    {
+     "index": "sorcerer",
+     "name": "Sorcerer",
+     "url": "/api/2014/classes/sorcerer"
+    },
+    {
+     "index": "wizard",
+     "name": "Wizard",
+     "url": "/api/2014/classes/wizard"
+    }
+   ],
+   "subclasses": [],
+   "damage": [
+    {
+     "damage_type": {
+      "index": "fire",
+      "name": "Fire",
+      "url": "/api/2014/damage-types/fire"
+     },
+     "damage_at_slot_level": {
+      "9": "20d6"
+     }
+    },
+    {
+     "damage_type": {
+      "index": "bludgeoning",
+      "name": "Bludgeoning",
+      "url": "/api/2014/damage-types/bludgeoning"
+     },
+     "damage_at_slot_level": {
+      "9": "20d6"
+     }
+    }
+   ],
+   "area_of_effect": {
+    "type": "sphere",
+    "size": 40
+   },
+   "concentration": false,
+   "dc": {
+    "dc_type": {
+     "index": "dex",
+     "name": "DEX",
+     "url": "/api/2014/ability-scores/dex"
+    },
+    "dc_success": "half"
+   }
+  },
+  {
+   "url": "/api/2014/spells/spiritual-weapon",
+   "name": "Spiritual Weapon",
+   "index": "spiritual-weapon",
+   "desc": [
+    "You create a floating, spectral weapon within range that lasts for the duration or until you cast this spell again. When you cast the spell, you can make a melee spell attack against a creature within 5 feet of the weapon. On a hit, the target takes force damage equal to 1d8 + your spellcasting ability modifier.",
+    "As a bonus action on your turn, you can move the weapon up to 20 feet and repeat the attack against a creature within 5 feet of it.",
+    "The weapon can take whatever form you choose. Clerics of deities who are associated with a particular weapon (as St. Cuthbert is known for his mace and Thor for his hammer) make this spell's effect resemble that weapon."
+   ],
+   "higher_level": [
+    "When you cast this spell using a spell slot of 3rd level or higher, the damage increases by 1d8 for every two slot levels above the 2nd."
+   ],
+   "range": "60 feet",
+   "components": [
+    "V",
+    "S"
+   ],
+   "ritual": false,
+   "duration": "1 minute",
+   "casting_time": "1 bonus action",
+   "level": 2,
+   "school": {
+    "index": "evocation",
+    "name": "Evocation",
+    "url": "/api/2014/magic-schools/evocation"
+   },
+   "classes": [
+    {
+     "index": "cleric",
+     "name": "Cleric",
+     "url": "/api/2014/classes/cleric"
+    }
+   ],
+   "subclasses": [
+    {
+     "index": "lore",
+     "name": "Lore",
+     "url": "/api/2014/subclasses/lore"
+    },
+    {
+     "index": "life",
+     "name": "Life",
+     "url": "/api/2014/subclasses/life"
+    }
+   ],
+   "attack_type": "melee",
+   "damage": [
+    {
+     "damage_type": {
+      "index": "force",
+      "name": "Force",
+      "url": "/api/2014/damage-types/force"
+     },
+     "damage_at_slot_level": {
+      "2": "1d8 + MOD",
+      "3": "1d8 + MOD",
+      "4": "2d8 + MOD",
+      "5": "2d8 + MOD",
+      "6": "3d8 + MOD",
+      "7": "3d8 + MOD",
+      "8": "4d8 + MOD",
+      "9": "4d8 + MOD"
+     }
+    }
+   ],
+   "concentration": false
+  },
+  {
+   "url": "/api/2014/spells/fire-bolt",
+   "name": "Fire Bolt",
+   "index": "fire-bolt",
+   "desc": [
+    "You hurl a mote of fire at a creature or object within range. Make a ranged spell attack against the target. On a hit, the target takes 1d10 fire damage. A flammable object hit by this spell ignites if it isn't being worn or carried.",
+    "This spell's damage increases by 1d10 when you reach 5th level (2d10), 11th level (3d10), and 17th level (4d10)."
+   ],
+   "range": "120 feet",
+   "components": [
+    "V",
+    "S"
+   ],
+   "ritual": false,
+   "duration": "Instantaneous",
+   "casting_time": "1 action",
+   "level": 0,
+   "school": {
+    "index": "evocation",
+    "name": "Evocation",
+    "url": "/api/2014/magic-schools/evocation"
+   },
+   "classes": [
+    {
+     "index": "sorcerer",
+     "name": "Sorcerer",
+     "url": "/api/2014/classes/sorcerer"
+    },
+    {
+     "index": "wizard",
+     "name": "Wizard",
+     "url": "/api/2014/classes/wizard"
+    }
+   ],
+   "subclasses": [],
+   "attack_type": "ranged",
+   "damage": [
+    {
+     "damage_type": {
+      "index": "fire",
+      "name": "Fire",
+      "url": "/api/2014/damage-types/fire"
+     },
+     "damage_at_character_level": {
+      "1": "1d10",
+      "5": "2d10",
+      "11": "3d10",
+      "17": "4d10"
+     }
+    }
+   ],
+   "concentration": false
+  },
+  {
+   "url": "/api/2014/spells/wall-of-fire",
+   "name": "Wall of Fire",
+   "index": "wall-of-fire",
+   "desc": [
+    "You create a wall of fire on a solid surface within range. You can make the wall up to 60 feet long, 20 feet high, and 1 foot thick, or a ringed wall up to 20 feet in diameter, 20 feet high, and 1 foot thick. The wall is opaque and lasts for the duration.",
+    "When the wall appears, each creature within its area must make a Dexterity saving throw. On a failed save, a creature takes 5d8 fire damage, or half as much damage on a successful save.",
+    "One side of the wall, selected by you when you cast this spell, deals 5d8 fire damage to each creature that ends its turn within 10 feet o f that side or inside the wall. A creature takes the same damage when it enters the wall for the first time on a turn or ends its turn there. The other side of the wall deals no damage.",
+    "The other side of the wall deals no damage."
+   ],
+   "higher_level": [
+    "When you cast this spell using a spell slot of 5th level or higher, the damage increases by 1d8 for each slot level above 4th."
+   ],
+   "range": "120 feet",
+   "components": [
+    "V",
+    "S",
+    "M"
+   ],
+   "material": "A small piece of phosphorus.",
+   "ritual": false,
+   "duration": "Up to 1 minute",
+   "casting_time": "1 action",
+   "level": 4,
+   "school": {
+    "index": "evocation",
+    "name": "Evocation",
+    "url": "/api/2014/magic-schools/evocation"
+   },
+   "classes": [
+    {
+     "index": "druid",
+     "name": "Druid",
+     "url": "/api/2014/classes/druid"
+    },
+    {
+     "index": "sorcerer",
+     "name": "Sorcerer",
+     "url": "/api/2014/classes/sorcerer"
+    },
+    {
+     "index": "wizard",
+     "name": "Wizard",
+     "url": "/api/2014/classes/wizard"
+    }
+   ],
+   "subclasses": [
+    {
+     "index": "fiend",
+     "name": "Fiend",
+     "url": "/api/2014/subclasses/fiend"
+    }
+   ],
+   "damage": [
+    {
+     "damage_type": {
+      "index": "fire",
+      "name": "Fire",
+      "url": "/api/2014/damage-types/fire"
+     },
+     "damage_at_slot_level": {
+      "4": "5d8"
+     }
+    }
+   ],
+   "area_of_effect": {
+    "type": "line",
+    "size": 60
+   },
+   "concentration": true,
+   "dc": {
+    "dc_type": {
+     "index": "dex",
+     "name": "DEX",
+     "url": "/api/2014/ability-scores/dex"
+    },
+    "dc_success": "half"
+   }
+  },
+  {
+   "url": "/api/2014/spells/dominate-person",
+   "name": "Dominate Person",
+   "index": "dominate-person",
+   "desc": [
+    "You attempt to beguile a humanoid that you can see within range. It must succeed on a wisdom saving throw or be charmed by you for the duration. If you or creatures that are friendly to you are fighting it, it has advantage on the saving throw.",
+    "While the target is charmed, you have a telepathic link with it as long as the two of you are on the same plane of existence. You can use this telepathic link to issue commands to the creature while you are conscious (no action required), which it does its best to obey. You can specify a simple and general course of action, such as \"Attack that creature,\" \"Run over there,\" or \"Fetch that object.\" If the creature completes the order and doesn't receive further direction from you, it defends and preserves itself to the best of its ability.",
+    "You can use your action to take total and precise control of the target. Until the end of your next turn, the creature takes only the actions you choose, and doesn't do anything that you don't allow it to do. During this time you can also cause the creature to use a reaction, but this requires you to use your own reaction as well.",
+    "Each time the target takes damage, it makes a new wisdom saving throw against the spell. If the saving throw succeeds, the spell ends."
+   ],
+   "higher_level": [
+    "When you cast this spell using a 6th-level spell slot, the duration is concentration, up to 10 minutes. When you use a 7th-level spell slot, the duration is concentration, up to 1 hour. When you use a spell slot of 8th level or higher, the duration is concentration, up to 8 hours."
+   ],
+   "range": "60 feet",
+   "components": [
+    "V",
+    "S"
+   ],
+   "ritual": false,
+   "duration": "Up to 1 minute",
+   "casting_time": "1 action",
+   "level": 5,
+   "school": {
+    "index": "enchantment",
+    "name": "Enchantment",
+    "url": "/api/2014/magic-schools/enchantment"
+   },
+   "classes": [
+    {
+     "index": "bard",
+     "name": "Bard",
+     "url": "/api/2014/classes/bard"
+    },
+    {
+     "index": "sorcerer",
+     "name": "Sorcerer",
+     "url": "/api/2014/classes/sorcerer"
+    },
+    {
+     "index": "wizard",
+     "name": "Wizard",
+     "url": "/api/2014/classes/wizard"
+    }
+   ],
+   "subclasses": [],
+   "concentration": true,
+   "dc": {
+    "dc_type": {
+     "index": "wis",
+     "name": "WIS",
+     "url": "/api/2014/ability-scores/wis"
+    },
+    "dc_success": "other",
+    "desc": "Each time the target takes damage, it makes a new wisdom saving throw against the spell. If the saving throw succeeds, the spell ends."
+   }
+  },
+  {
+   "url": "/api/2014/spells/alarm",
+   "name": "Alarm",
+   "index": "alarm",
+   "desc": [
+    "You set an alarm against unwanted intrusion. Choose a door, a window, or an area within range that is no larger than a 20-foot cube. Until the spell ends, an alarm alerts you whenever a Tiny or larger creature touches or enters the warded area. When you cast the spell, you can designate creatures that won't set off the alarm. You also choose whether the alarm is mental or audible.",
+    "A mental alarm alerts you with a ping in your mind if you are within 1 mile of the warded area. This ping awakens you if you are sleeping.",
+    "An audible alarm produces the sound of a hand bell for 10 seconds within 60 feet."
+   ],
+   "range": "30 feet",
+   "components": [
+    "V",
+    "S",
+    "M"
+   ],
+   "material": "A tiny bell and a piece of fine silver wire.",
+   "ritual": true,
+   "duration": "8 hours",
+   "casting_time": "1 minute",
+   "level": 1,
+   "school": {
+    "index": "abjuration",
+    "name": "Abjuration",
+    "url": "/api/2014/magic-schools/abjuration"
+   },
+   "classes": [
+    {
+     "index": "ranger",
+     "name": "Ranger",
+     "url": "/api/2014/classes/ranger"
+    },
+    {
+     "index": "wizard",
+     "name": "Wizard",
+     "url": "/api/2014/classes/wizard"
+    }
+   ],
+   "subclasses": [
+    {
+     "index": "lore",
+     "name": "Lore",
+     "url": "/api/2014/subclasses/lore"
+    }
+   ],
+   "area_of_effect": {
+    "type": "cube",
+    "size": 20
+   },
+   "concentration": false
+  }
+ ],
+ "monsters": [
+  {
+   "url": "/api/2014/monsters/assassin",
+   "name": "Assassin",
+   "index": "assassin",
+   "desc": "Trained in the use of poison, assassins are remorseless killers who work for nobles, guildmasters, sovereigns, and anyone else who can afford them.",
+   "size": "Medium",
+   "type": "humanoid",
+   "alignment": "any non-good alignment",
+   "speed": {
+    "walk": "30 ft."
+   },
+   "strength": 11,
+   "dexterity": 16,
+   "constitution": 14,
+   "intelligence": 13,
+   "wisdom": 11,
+   "charisma": 10,
+   "hit_points": 78,
+   "hit_dice": "12d8",
+   "armor_class": [
+    {
+     "type": "armor",
+     "value": 15,
+     "armor": [
+      {
+       "index": "studded-leather-armor",
+       "name": "Studded Leather Armor",
+       "url": "/api/2014/equipment/studded-leather-armor"
+      }
+     ]
+    }
+   ],
+   "proficiencies": [
+    {
+     "value": 6,
+     "proficiency": {
+      "index": "saving-throw-dex",
+      "name": "Saving Throw: DEX",
+      "url": "/api/2014/proficiencies/saving-throw-dex"
+     }
+    },
+    {
+     "value": 4,
+     "proficiency": {
+      "index": "saving-throw-int",
+      "name": "Saving Throw: INT",
+      "url": "/api/2014/proficiencies/saving-throw-int"
+     }
+    },
+    {
+     "value": 6,
+     "proficiency": {
+      "index": "skill-acrobatics",
+      "name": "Skill: Acrobatics",
+      "url": "/api/2014/proficiencies/skill-acrobatics"
+     }
+    },
+    {
+     "value": 3,
+     "proficiency": {
+      "index": "skill-deception",
+      "name": "Skill: Deception",
+      "url": "/api/2014/proficiencies/skill-deception"
+     }
+    },
+    {
+     "value": 3,
+     "proficiency": {
+      "index": "skill-perception",
+      "name": "Skill: Perception",
+      "url": "/api/2014/proficiencies/skill-perception"
+     }
+    },
+    {
+     "value": 9,
+     "proficiency": {
+      "index": "skill-stealth",
+      "name": "Skill: Stealth",
+      "url": "/api/2014/proficiencies/skill-stealth"
+     }
+    }
+   ],
+   "senses": {
+    "passive_perception": 13
+   },
+   "languages": "Thieves' cant plus any two languages",
+   "damage_resistances": [
+    "poison"
+   ],
+   "damage_immunities": [],
+   "damage_vulnerabilities": [],
+   "condition_immunities": [],
+   "special_abilities": [
+    {
+     "name": "Assassinate",
+     "desc": "During its first turn, the assassin has advantage on attack rolls against any creature that hasn't taken a turn. Any hit the assassin scores against a surprised creature is a critical hit."
+    },
+    {
+     "name": "Evasion",
+     "desc": "If the assassin is subjected to an effect that allows it to make a Dexterity saving throw to take only half damage, the assassin instead takes no damage if it succeeds on the saving throw, and only half damage if it fails."
+    },
+    {
+     "name": "Sneak Attack (1/Turn)",
+     "desc": "The assassin deals an extra 13 (4d6) damage when it hits a target with a weapon attack and has advantage on the attack roll, or when the target is within 5 ft. of an ally of the assassin that isn't incapacitated and the assassin doesn't have disadvantage on the attack roll."
+    }
+   ],
+   "actions": [
+    {
+     "name": "Multiattack",
+     "multiattack_type": "actions",
+     "desc": "The assassin makes two shortsword attacks.",
+     "actions": [
+      {
+       "action_name": "Shortsword",
+       "count": "2",
+       "type": "melee"
+      }
+     ]
+    },
+    {
+     "name": "Shortsword",
+     "desc": "Melee Weapon Attack: +6 to hit, reach 5 ft., one target. Hit: 6 (1d6 + 3) piercing damage, and the target must make a DC 15 Constitution saving throw, taking 24 (7d6) poison damage on a failed save, or half as much damage on a successful one.",
+     "attack_bonus": 6,
+     "damage": [
+      {
+       "damage_type": {
+        "index": "piercing",
+        "name": "Piercing",
+        "url": "/api/2014/damage-types/piercing"
+       },
+       "damage_dice": "1d6+3"
+      },
+      {
+       "dc": {
+        "dc_type": {
+         "index": "con",
+         "name": "CON",
+         "url": "/api/2014/ability-scores/con"
+        },
+        "dc_value": 15,
+        "success_type": "half"
+       },
+       "damage_type": {
+        "index": "poison",
+        "name": "Poison",
+        "url": "/api/2014/damage-types/poison"
+       },
+       "damage_dice": "7d6"
+      }
+     ]
+    },
+    {
+     "name": "Light Crossbow",
+     "desc": "Ranged Weapon Attack: +6 to hit, range 80/320 ft., one target. Hit: 7 (1d8 + 3) piercing damage, and the target must make a DC 15 Constitution saving throw, taking 24 (7d6) poison damage on a failed save, or half as much damage on a successful one.",
+     "attack_bonus": 6,
+     "damage": [
+      {
+       "damage_type": {
+        "index": "piercing",
+        "name": "Piercing",
+        "url": "/api/2014/damage-types/piercing"
+       },
+       "damage_dice": "1d8+3"
+      },
+      {
+       "dc": {
+        "dc_type": {
+         "index": "con",
+         "name": "CON",
+         "url": "/api/2014/ability-scores/con"
+        },
+        "dc_value": 15,
+        "success_type": "half"
+       },
+       "damage_type": {
+        "index": "poison",
+        "name": "Poison",
+        "url": "/api/2014/damage-types/poison"
+       },
+       "damage_dice": "7d6"
+      }
+     ]
+    }
+   ],
+   "challenge_rating": 8,
+   "xp": 3900
+  },
+  {
+   "url": "/api/2014/monsters/aboleth",
+   "name": "Aboleth",
+   "index": "aboleth",
+   "size": "Large",
+   "type": "aberration",
+   "alignment": "lawful evil",
+   "speed": {
+    "walk": "10 ft.",
+    "swim": "40 ft."
+   },
+   "strength": 21,
+   "dexterity": 9,
+   "constitution": 15,
+   "intelligence": 18,
+   "wisdom": 15,
+   "charisma": 18,
+   "hit_points": 135,
+   "hit_dice": "18d10",
+   "armor_class": [
+    {
+     "type": "natural",
+     "value": 17
+    }
+   ],
+   "proficiencies": [
+    {
+     "value": 6,
+     "proficiency": {
+      "index": "saving-throw-con",
+      "name": "Saving Throw: CON",
+      "url": "/api/2014/proficiencies/saving-throw-con"
+     }
+    },
+    {
+     "value": 8,
+     "proficiency": {
+      "index": "saving-throw-int",
+      "name": "Saving Throw: INT",
+      "url": "/api/2014/proficiencies/saving-throw-int"
+     }
+    },
+    {
+     "value": 6,
+     "proficiency": {
+      "index": "saving-throw-wis",
+      "name": "Saving Throw: WIS",
+      "url": "/api/2014/proficiencies/saving-throw-wis"
+     }
+    },
+    {
+     "value": 12,
+     "proficiency": {
+      "index": "skill-history",
+      "name": "Skill: History",
+      "url": "/api/2014/proficiencies/skill-history"
+     }
+    },
+    {
+     "value": 10,
+     "proficiency": {
+      "index": "skill-perception",
+      "name": "Skill: Perception",
+      "url": "/api/2014/proficiencies/skill-perception"
+     }
+    }
+   ],
+   "senses": {
+    "darkvision": "120 ft.",
+    "passive_perception": 20
+   },
+   "languages": "Deep Speech, telepathy 120 ft.",
+   "damage_resistances": [],
+   "damage_immunities": [],
+   "damage_vulnerabilities": [],
+   "condition_immunities": [],
+   "special_abilities": [
+    {
+     "name": "Amphibious",
+     "desc": "The aboleth can breathe air and water."
+    },
+    {
+     "name": "Mucous Cloud",
+     "desc": "While underwater, the aboleth is surrounded by transformative mucus. A creature that touches the aboleth or that hits it with a melee attack while within 5 ft. of it must make a DC 14 Constitution saving throw. On a failure, the creature is diseased for 1d4 hours. The diseased creature can breathe only underwater.",
+     "dc": {
+      "dc_type": {
+       "index": "con",
+       "name": "CON",
+       "url": "/api/2014/ability-scores/con"
+      },
+      "dc_value": 14,
+      "success_type": "none"
+     }
+    },
+    {
+     "name": "Probing Telepathy",
+     "desc": "If a creature communicates telepathically with the aboleth, the aboleth learns the creature's greatest desires if the aboleth can see the creature."
+    }
+   ],
+   "actions": [
+    {
+     "name": "Multiattack",
+     "multiattack_type": "actions",
+     "desc": "The aboleth makes three tentacle attacks.",
+     "actions": [
+      {
+       "action_name": "Tentacle",
+       "count": "3",
+       "type": "melee"
+      }
+     ]
+    },
+    {
+     "name": "Tentacle",
+     "desc": "Melee Weapon Attack: +9 to hit, reach 10 ft., one target. Hit: 12 (2d6 + 5) bludgeoning damage. If the target is a creature, it must succeed on a DC 14 Constitution saving throw or become diseased. The disease has no effect for 1 minute and can be removed by any magic that cures disease. After 1 minute, the diseased creature's skin becomes translucent and slimy, the creature can't regain hit points unless it is underwater, and the disease can be removed only by heal or another disease-curing spell of 6th level or higher. When the creature is outside a body of water, it takes 6 (1d12) acid damage every 10 minutes unless moisture is applied to the skin before 10 minutes have passed.",
+     "attack_bonus": 9,
+     "dc": {
+      "dc_type": {
+       "index": "con",
+       "name": "CON",
+       "url": "/api/2014/ability-scores/con"
+      },
+      "dc_value": 14,
+      "success_type": "none"
+     },
+     "damage": [
+      {
+       "damage_type": {
+        "index": "bludgeoning",
+        "name": "Bludgeoning",
+        "url": "/api/2014/damage-types/bludgeoning"
+       },
+       "damage_dice": "2d6+5"
+      },
+      {
+       "damage_type": {
+        "index": "acid",
+        "name": "Acid",
+        "url": "/api/2014/damage-types/acid"
+       },
+       "damage_dice": "1d12"
+      }
+     ]
+    },
+    {
+     "name": "Tail",
+     "desc": "Melee Weapon Attack: +9 to hit, reach 10 ft., one target. Hit: 15 (3d6 + 5) bludgeoning damage.",
+     "attack_bonus": 9,
+     "damage": [
+      {
+       "damage_type": {
+        "index": "bludgeoning",
+        "name": "Bludgeoning",
+        "url": "/api/2014/damage-types/bludgeoning"
+       },
+       "damage_dice": "3d6+5"
+      }
+     ]
+    },
+    {
+     "name": "Enslave",
+     "desc": "The aboleth targets one creature it can see within 30 ft. of it. The target must succeed on a DC 14 Wisdom saving throw or be magically charmed by the aboleth until the aboleth dies or until it is on a different plane of existence from the target. The charmed target is under the aboleth's control and can't take reactions, and the aboleth and the target can communicate telepathically with each other over any distance.\nWhenever the charmed target takes damage, the target can repeat the saving throw. On a success, the effect ends. No more than once every 24 hours, the target can also repeat the saving throw when it is at least 1 mile away from the aboleth.",
+     "usage": {
+      "type": "per day",
+      "times": 3
+     },
+     "dc": {
+      "dc_type": {
+       "index": "wis",
+       "name": "WIS",
+       "url": "/api/2014/ability-scores/wis"
+      },
+      "dc_value": 14,
+      "success_type": "none"
+     }
+    }
+   ],
+   "legendary_actions": [
+    {
+     "name": "Detect",
+     "desc": "The aboleth makes a Wisdom (Perception) check."
+    },
+    {
+     "name": "Tail Swipe",
+     "desc": "The aboleth makes one tail attack."
+    },
+    {
+     "name": "Psychic Drain (Costs 2 Actions)",
+     "desc": "One creature charmed by the aboleth takes 10 (3d6) psychic damage, and the aboleth regains hit points equal to the damage the creature takes.",
+     "damage": [
+      {
+       "damage_type": {
+        "index": "psychic",
+        "name": "Psychic",
+        "url": "/api/2014/damage-types/psychic"
+       },
+       "damage_dice": "3d6"
+      }
+     ]
+    }
+   ],
+   "challenge_rating": 10,
+   "xp": 5900
+  },
+  {
+   "url": "/api/2014/monsters/giant-spider",
+   "name": "Giant Spider",
+   "index": "giant-spider",
+   "desc": "To snare its prey, a giant spider spins elaborate webs or shoots sticky strands of webbing from its abdomen. Giant spiders are most commonly found underground, making their lairs on ceilings or in dark, web-filled crevices. Such lairs are often festooned with web cocoons holding past victims.",
+   "size": "Large",
+   "type": "beast",
+   "alignment": "unaligned",
+   "speed": {
+    "walk": "30 ft.",
+    "climb": "30 ft."
+   },
+   "strength": 14,
+   "dexterity": 16,
+   "constitution": 12,
+   "intelligence": 2,
+   "wisdom": 11,
+   "charisma": 4,
+   "hit_points": 26,
+   "hit_dice": "4d10",
+   "armor_class": [
+    {
+     "type": "natural",
+     "value": 14
+    }
+   ],
+   "proficiencies": [
+    {
+     "value": 7,
+     "proficiency": {
+      "index": "skill-stealth",
+      "name": "Skill: Stealth",
+      "url": "/api/2014/proficiencies/skill-stealth"
+     }
+    }
+   ],
+   "senses": {
+    "blindsight": "10 ft.",
+    "darkvision": "60 ft.",
+    "passive_perception": 10
+   },
+   "languages": "",
+   "damage_resistances": [],
+   "damage_immunities": [],
+   "damage_vulnerabilities": [],
+   "condition_immunities": [],
+   "special_abilities": [
+    {
+     "name": "Spider Climb",
+     "desc": "The spider can climb difficult surfaces, including upside down on ceilings, without needing to make an ability check."
+    },
+    {
+     "name": "Web Sense",
+     "desc": "While in contact with a web, the spider knows the exact location of any other creature in contact with the same web."
+    },
+    {
+     "name": "Web Walker",
+     "desc": "The spider ignores movement restrictions caused by webbing."
+    }
+   ],
+   "actions": [
+    {
+     "name": "Bite",
+     "desc": "Melee Weapon Attack: +5 to hit, reach 5 ft., one creature. Hit: 7 (1d8 + 3) piercing damage, and the target must make a DC 11 Constitution saving throw, taking 9 (2d8) poison damage on a failed save, or half as much damage on a successful one. If the poison damage reduces the target to 0 hit points, the target is stable but poisoned for 1 hour, even after regaining hit points, and is paralyzed while poisoned in this way.",
+     "attack_bonus": 5,
+     "damage": [
+      {
+       "damage_type": {
+        "index": "piercing",
+        "name": "Piercing",
+        "url": "/api/2014/damage-types/piercing"
+       },
+       "damage_dice": "1d8+3"
+      }
+     ]
+    },
+    {
+     "name": "Web",
+     "desc": "Ranged Weapon Attack: +5 to hit, range 30/60 ft., one creature. Hit: The target is restrained by webbing. As an action, the restrained target can make a DC 12 Strength check, bursting the webbing on a success. The webbing can also be attacked and destroyed (AC 10; hp 5; vulnerability to fire damage; immunity to bludgeoning, poison, and psychic damage).",
+     "usage": {
+      "type": "recharge on roll",
+      "dice": "1d6",
+      "min_value": 5
+     },
+     "attack_bonus": 5
+    }
+   ],
+   "challenge_rating": 1,
+   "xp": 200
+  },
+  {
+   "url": "/api/2014/monsters/djinni",
+   "name": "Djinni",
+   "index": "djinni",
+   "size": "Large",
+   "type": "elemental",
+   "alignment": "chaotic good",
+   "speed": {
+    "walk": "30 ft.",
+    "fly": "90 ft."
+   },
+   "strength": 21,
+   "dexterity": 15,
+   "constitution": 22,
+   "intelligence": 15,
+   "wisdom": 16,
+   "charisma": 20,
+   "hit_points": 161,
+   "hit_dice": "14d10",
+   "armor_class": [
+    {
+     "type": "natural",
+     "value": 17
+    }
+   ],
+   "proficiencies": [
+    {
+     "value": 6,
+     "proficiency": {
+      "index": "saving-throw-dex",
+      "name": "Saving Throw: DEX",
+      "url": "/api/2014/proficiencies/saving-throw-dex"
+     }
+    },
+    {
+     "value": 7,
+     "proficiency": {
+      "index": "saving-throw-wis",
+      "name": "Saving Throw: WIS",
+      "url": "/api/2014/proficiencies/saving-throw-wis"
+     }
+    },
+    {
+     "value": 9,
+     "proficiency": {
+      "index": "saving-throw-cha",
+      "name": "Saving Throw: CHA",
+      "url": "/api/2014/proficiencies/saving-throw-cha"
+     }
+    }
+   ],
+   "senses": {
+    "darkvision": "120 ft.",
+    "passive_perception": 13
+   },
+   "languages": "Auran",
+   "damage_resistances": [],
+   "damage_immunities": [
+    "lightning",
+    "thunder"
+   ],
+   "damage_vulnerabilities": [],
+   "condition_immunities": [],
+   "special_abilities": [
+    {
+     "name": "Elemental Demise",
+     "desc": "If the djinni dies, its body disintegrates into a warm breeze, leaving behind only equipment the djinni was wearing or carrying."
+    },
+    {
+     "name": "Innate Spellcasting",
+     "desc": "The djinni's innate spellcasting ability is Charisma (spell save DC 17, +9 to hit with spell attacks). It can innately cast the following spells, requiring no material components:\n\nAt will: detect evil and good, detect magic, thunderwave\n3/day each: create food and water (can create wine instead of water), tongues, wind walk\n1/day each: conjure elemental (air elemental only), creation, gaseous form, invisibility, major image, plane shift",
+     "spellcasting": {
+      "ability": {
+       "index": "cha",
+       "name": "CHA",
+       "url": "/api/2014/ability-scores/cha"
+      },
+      "dc": 17,
+      "modifier": 9,
+      "components_required": [
+       "V",
+       "S"
+      ],
+      "spells": [
+       {
+        "name": "Detect Evil and Good",
+        "level": 1,
+        "url": "/api/2014/spells/detect-evil-and-good",
+        "usage": {
+         "type": "at will"
+        }
+       },
+       {
+        "name": "Detect Magic",
+        "level": 1,
+        "url": "/api/2014/spells/detect-magic",
+        "usage": {
+         "type": "at will"
+        }
+       },
+       {
+        "name": "Thunderwave",
+        "level": 1,
+        "url": "/api/2014/spells/thunderwave",
+        "usage": {
+         "type": "at will"
+        }
+       },
+       {
+        "name": "Create Food and Water",
+        "level": 3,
+        "notes": "Can create wine instead of water",
+        "url": "/api/2014/spells/create-food-and-water",
+        "usage": {
+         "type": "per day",
+         "times": 3
+        }
+       },
+       {
+        "name": "Tongues",
+        "level": 3,
+        "url": "/api/2014/spells/tongues",
+        "usage": {
+         "type": "per day",
+         "times": 3
+        }
+       },
+       {
+        "name": "Wind Walk",
+        "level": 6,
+        "url": "/api/2014/spells/wind-walk",
+        "usage": {
+         "type": "per day",
+         "times": 3
+        }
+       },
+       {
+        "name": "Conjure Elemental",
+        "level": 5,
+        "notes": "Air Elemental Only",
+        "url": "/api/2014/spells/conjure-elemental",
+        "usage": {
+         "type": "per day",
+         "times": 1
+        }
+       },
+       {
+        "name": "Creation",
+        "level": 5,
+        "url": "/api/2014/spells/creation",
+        "usage": {
+         "type": "per day",
+         "times": 1
+        }
+       },
+       {
+        "name": "Gaseous Form",
+        "level": 3,
+        "url": "/api/2014/spells/gaseous-form",
+        "usage": {
+         "type": "per day",
+         "times": 1
+        }
+       },
+       {
+        "name": "Invisibility",
+        "level": 2,
+        "url": "/api/2014/spells/invisibility",
+        "usage": {
+         "type": "per day",
+         "times": 1
+        }
+       },
+       {
+        "name": "Major Image",
+        "level": 3,
+        "url": "/api/2014/spells/major-image",
+        "usage": {
+         "type": "per day",
+         "times": 1
+        }
+       },
+       {
+        "name": "Plane Shift",
+        "level": 7,
+        "url": "/api/2014/spells/plane-shift",
+        "usage": {
+         "type": "per day",
+         "times": 1
+        }
+       }
+      ]
+     }
+    }
+   ],
+   "actions": [
+    {
+     "name": "Multiattack",
+     "multiattack_type": "actions",
+     "desc": "The djinni makes three scimitar attacks.",
+     "actions": [
+      {
+       "action_name": "Scimitar",
+       "count": "3",
+       "type": "melee"
+      }
+     ]
+    },
+    {
+     "name": "Scimitar",
+     "desc": "Melee Weapon Attack: +9 to hit, reach 5 ft., one target. Hit: 12 (2d6 + 5) slashing damage plus 3 (1d6) lightning or thunder damage (djinni's choice).",
+     "attack_bonus": 9,
+     "damage": [
+      {
+       "damage_type": {
+        "index": "slashing",
+        "name": "Slashing",
+        "url": "/api/2014/damage-types/slashing"
+       },
+       "damage_dice": "2d6+5"
+      },
+      {
+       "choose": 1,
+       "type": "damage",
+       "from": {
+        "option_set_type": "options_array",
+        "options": [
+         {
+          "option_type": "damage",
+          "damage_type": {
+           "index": "lightning",
+           "name": "Lightning",
+           "url": "/api/2014/damage-types/lightning"
+          },
+          "damage_dice": "1d6"
+         },
+         {
+          "option_type": "damage",
+          "damage_type": {
+           "index": "thunder",
+           "name": "Thunder",
+           "url": "/api/2014/damage-types/thunder"
+          },
+          "damage_dice": "1d6"
+         }
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "Create Whirlwind",
+     "desc": "A 5-foot-radius, 30-foot-tall cylinder of swirling air magically forms on a point the djinni can see within 120 feet of it. The whirlwind lasts as long as the djinni maintains concentration (as if concentrating on a spell). Any creature but the djinni that enters the whirlwind must succeed on a DC 18 Strength saving throw or be restrained by it. The djinni can move the whirlwind up to 60 feet as an action, and creatures restrained by the whirlwind move with it. The whirlwind ends if the djinni loses sight of it.\nA creature can use its action to free a creature restrained by the whirlwind, including itself, by succeeding on a DC 18 Strength check. If the check succeeds, the creature is no longer restrained and moves to the nearest space outside the whirlwind.",
+     "dc": {
+      "dc_type": {
+       "index": "str",
+       "name": "STR",
+       "url": "/api/2014/ability-scores/str"
+      },
+      "dc_value": 18,
+      "success_type": "none"
+     }
+    }
+   ],
+   "challenge_rating": 11,
+   "xp": 7200
+  },
+  {
+   "url": "/api/2014/monsters/druid",
+   "name": "Druid",
+   "index": "druid",
+   "desc": "**Druids** dwell in forests and other secluded wilderness locations, where they protect the natural world from monsters and the encroachment of civilization. Some are **tribal shamans** who heal the sick, pray to animal spirits, and provide spiritual guidance.",
+   "size": "Medium",
+   "type": "humanoid",
+   "alignment": "any alignment",
+   "speed": {
+    "walk": "30 ft."
+   },
+   "strength": 10,
+   "dexterity": 12,
+   "constitution": 13,
+   "intelligence": 12,
+   "wisdom": 15,
+   "charisma": 11,
+   "hit_points": 27,
+   "hit_dice": "5d8",
+   "armor_class": [
+    {
+     "type": "dex",
+     "value": 11
+    },
+    {
+     "type": "spell",
+     "value": 16,
+     "spell": {
+      "index": "barkskin",
+      "name": "Barkskin",
+      "url": "/api/2014/spells/barkskin"
+     }
+    }
+   ],
+   "proficiencies": [
+    {
+     "value": 4,
+     "proficiency": {
+      "index": "skill-medicine",
+      "name": "Skill: Medicine",
+      "url": "/api/2014/proficiencies/skill-medicine"
+     }
+    },
+    {
+     "value": 3,
+     "proficiency": {
+      "index": "skill-nature",
+      "name": "Skill: Nature",
+      "url": "/api/2014/proficiencies/skill-nature"
+     }
+    },
+    {
+     "value": 4,
+     "proficiency": {
+      "index": "skill-perception",
+      "name": "Skill: Perception",
+      "url": "/api/2014/proficiencies/skill-perception"
+     }
+    }
+   ],
+   "senses": {
+    "passive_perception": 14
+   },
+   "languages": "Druidic plus any two languages",
+   "damage_resistances": [],
+   "damage_immunities": [],
+   "damage_vulnerabilities": [],
+   "condition_immunities": [],
+   "special_abilities": [
+    {
+     "name": "Spellcasting",
+     "desc": "The druid is a 4th-level spellcaster. Its spellcasting ability is Wisdom (spell save DC 12, +4 to hit with spell attacks). It has the following druid spells prepared:\n\n- Cantrips (at will): druidcraft, produce flame, shillelagh\n- 1st level (4 slots): entangle, longstrider, speak with animals, thunderwave\n- 2nd level (3 slots): animal messenger, barkskin",
+     "spellcasting": {
+      "level": 4,
+      "ability": {
+       "index": "wis",
+       "name": "WIS",
+       "url": "/api/2014/ability-scores/wis"
+      },
+      "dc": 12,
+      "modifier": 4,
+      "components_required": [
+       "V",
+       "S",
+       "M"
+      ],
+      "school": "druid",
+      "slots": {
+       "1": 4,
+       "2": 3
+      },
+      "spells": [
+       {
+        "name": "Druidcraft",
+        "level": 0,
+        "url": "/api/2014/spells/druidcraft"
+       },
+       {
+        "name": "Produce Flame",
+        "level": 0,
+        "url": "/api/2014/spells/produce-flame"
+       },
+       {
+        "name": "Shillelagh",
+        "level": 0,
+        "url": "/api/2014/spells/shillelagh"
+       },
+       {
+        "name": "Entangle",
+        "level": 1,
+        "url": "/api/2014/spells/entangle"
+       },
+       {
+        "name": "Longstrider",
+        "level": 1,
+        "url": "/api/2014/spells/longstrider"
+       },
+       {
+        "name": "Speak with Animals",
+        "level": 1,
+        "url": "/api/2014/spells/speak-with-animals"
+       },
+       {
+        "name": "Thunderwave",
+        "level": 1,
+        "url": "/api/2014/spells/thunderwave"
+       },
+       {
+        "name": "Animal Messenger",
+        "level": 2,
+        "url": "/api/2014/spells/animal-messenger"
+       },
+       {
+        "name": "Barkskin",
+        "level": 2,
+        "url": "/api/2014/spells/barkskin"
+       }
+      ]
+     }
+    }
+   ],
+   "actions": [
+    {
+     "name": "Quarterstaff",
+     "desc": " Melee Weapon Attack: +2 to hit (+4 to hit with shillelagh), reach 5 ft., one target. Hit: 3 (1d6) bludgeoning damage, 4 (1d8) bludgeoning damage if wielded with two hands, or 6 (1d8 + 2) bludgeoning damage with shillelagh.",
+     "attack_bonus": 2,
+     "damage": [
+      {
+       "choose": 1,
+       "type": "damage",
+       "from": {
+        "option_set_type": "options_array",
+        "options": [
+         {
+          "option_type": "damage",
+          "damage_type": {
+           "index": "bludgeoning",
+           "name": "Bludgeoning",
+           "url": "/api/2014/damage-types/bludgeoning"
+          },
+          "damage_dice": "1d6",
+          "notes": "One handed"
+         },
+         {
+          "option_type": "damage",
+          "damage_type": {
+           "index": "bludgeoning",
+           "name": "Bludgeoning",
+           "url": "/api/2014/damage-types/bludgeoning"
+          },
+          "damage_dice": "1d8",
+          "notes": "Two handed"
+         },
+         {
+          "option_type": "damage",
+          "damage_type": {
+           "index": "bludgeoning",
+           "name": "Bludgeoning",
+           "url": "/api/2014/damage-types/bludgeoning"
+          },
+          "damage_dice": "1d8+2",
+          "notes": "With shillelagh"
+         }
+        ]
+       }
+      }
+     ]
+    }
+   ],
+   "challenge_rating": 2,
+   "xp": 450
+  },
+  {
+   "url": "/api/2014/monsters/salamander",
+   "name": "Salamander",
+   "index": "salamander",
+   "size": "Large",
+   "type": "elemental",
+   "alignment": "neutral evil",
+   "speed": {
+    "walk": "30 ft."
+   },
+   "strength": 18,
+   "dexterity": 14,
+   "constitution": 15,
+   "intelligence": 11,
+   "wisdom": 10,
+   "charisma": 12,
+   "hit_points": 90,
+   "hit_dice": "12d10",
+   "armor_class": [
+    {
+     "type": "natural",
+     "value": 15
+    }
+   ],
+   "proficiencies": [],
+   "senses": {
+    "darkvision": "60 ft.",
+    "passive_perception": 10
+   },
+   "languages": "Ignan",
+   "damage_resistances": [
+    "bludgeoning, piercing, and slashing from nonmagical weapons"
+   ],
+   "damage_immunities": [
+    "fire"
+   ],
+   "damage_vulnerabilities": [
+    "cold"
+   ],
+   "condition_immunities": [],
+   "special_abilities": [
+    {
+     "name": "Heated Body",
+     "desc": "A creature that touches the salamander or hits it with a melee attack while within 5 ft. of it takes 7 (2d6) fire damage.",
+     "damage": [
+      {
+       "damage_type": {
+        "index": "fire",
+        "name": "Fire",
+        "url": "/api/2014/damage-types/fire"
+       },
+       "damage_dice": "2d6"
+      }
+     ]
+    },
+    {
+     "name": "Heated Weapons",
+     "desc": "Any metal melee weapon the salamander wields deals an extra 3 (1d6) fire damage on a hit (included in the attack)."
+    }
+   ],
+   "actions": [
+    {
+     "name": "Multiattack",
+     "multiattack_type": "actions",
+     "desc": "The salamander makes two attacks: one with its spear and one with its tail.",
+     "actions": [
+      {
+       "action_name": "Spear",
+       "count": "1",
+       "type": "melee"
+      },
+      {
+       "action_name": "Tail",
+       "count": "1",
+       "type": "melee"
+      }
+     ]
+    },
+    {
+     "name": "Spear",
+     "desc": "Melee or Ranged Weapon Attack: +7 to hit, reach 5 ft. or range 20/60 ft., one target. Hit: 11 (2d6 + 4) piercing damage, or 13 (2d8 + 4) piercing damage if used with two hands to make a melee attack, plus 3 (1d6) fire damage.",
+     "attack_bonus": 7,
+     "damage": [
+      {
+       "choose": 1,
+       "type": "damage",
+       "from": {
+        "option_set_type": "options_array",
+        "options": [
+         {
+          "option_type": "damage",
+          "notes": "One handed",
+          "damage_type": {
+           "index": "piercing",
+           "name": "Piercing",
+           "url": "/api/2014/damage-types/piercing"
+          },
+          "damage_dice": "2d6+4"
+         },
+         {
+          "option_type": "damage",
+          "notes": "Two handed",
+          "damage_type": {
+           "index": "piercing",
+           "name": "Piercing",
+           "url": "/api/2014/damage-types/piercing"
+          },
+          "damage_dice": "2d8+4"
+         }
+        ]
+       }
+      },
+      {
+       "damage_type": {
+        "index": "fire",
+        "name": "Fire",
+        "url": "/api/2014/damage-types/fire"
+       },
+       "damage_dice": "1d6"
+      }
+     ]
+    },
+    {
+     "name": "Tail",
+     "desc": "Melee Weapon Attack: +7 to hit, reach 10 ft., one target. Hit: 11 (2d6 + 4) bludgeoning damage plus 7 (2d6) fire damage, and the target is grappled (escape DC 14). Until this grapple ends, the target is restrained, the salamander can automatically hit the target with its tail, and the salamander can't make tail attacks against other targets.",
+     "attack_bonus": 7,
+     "damage": [
+      {
+       "damage_type": {
+        "index": "bludgeoning",
+        "name": "Bludgeoning",
+        "url": "/api/2014/damage-types/bludgeoning"
+       },
+       "damage_dice": "2d6+4"
+      },
+      {
+       "damage_type": {
+        "index": "fire",
+        "name": "Fire",
+        "url": "/api/2014/damage-types/fire"
+       },
+       "damage_dice": "2d6"
+      }
+     ]
+    }
+   ],
+   "challenge_rating": 5,
+   "xp": 1800
+  },
+  {
+   "url": "/api/2014/monsters/adult-red-dragon",
+   "name": "Adult Red Dragon",
+   "index": "adult-red-dragon",
+   "size": "Huge",
+   "type": "dragon",
+   "alignment": "chaotic evil",
+   "speed": {
+    "walk": "40 ft.",
+    "climb": "40 ft.",
+    "fly": "80 ft."
+   },
+   "strength": 27,
+   "dexterity": 10,
+   "constitution": 25,
+   "intelligence": 16,
+   "wisdom": 13,
+   "charisma": 21,
+   "hit_points": 256,
+   "hit_dice": "19d12",
+   "armor_class": [
+    {
+     "type": "natural",
+     "value": 19
+    }
+   ],
+   "proficiencies": [
+    {
+     "value": 6,
+     "proficiency": {
+      "index": "saving-throw-dex",
+      "name": "Saving Throw: DEX",
+      "url": "/api/2014/proficiencies/saving-throw-dex"
+     }
+    },
+    {
+     "value": 13,
+     "proficiency": {
+      "index": "saving-throw-con",
+      "name": "Saving Throw: CON",
+      "url": "/api/2014/proficiencies/saving-throw-con"
+     }
+    },
+    {
+     "value": 7,
+     "proficiency": {
+      "index": "saving-throw-wis",
+      "name": "Saving Throw: WIS",
+      "url": "/api/2014/proficiencies/saving-throw-wis"
+     }
+    },
+    {
+     "value": 11,
+     "proficiency": {
+      "index": "saving-throw-cha",
+      "name": "Saving Throw: CHA",
+      "url": "/api/2014/proficiencies/saving-throw-cha"
+     }
+    },
+    {
+     "value": 13,
+     "proficiency": {
+      "index": "skill-perception",
+      "name": "Skill: Perception",
+      "url": "/api/2014/proficiencies/skill-perception"
+     }
+    },
+    {
+     "value": 6,
+     "proficiency": {
+      "index": "skill-stealth",
+      "name": "Skill: Stealth",
+      "url": "/api/2014/proficiencies/skill-stealth"
+     }
+    }
+   ],
+   "senses": {
+    "blindsight": "60 ft.",
+    "darkvision": "120 ft.",
+    "passive_perception": 23
+   },
+   "languages": "Common, Draconic",
+   "damage_resistances": [],
+   "damage_immunities": [
+    "fire"
+   ],
+   "damage_vulnerabilities": [],
+   "condition_immunities": [],
+   "special_abilities": [
+    {
+     "name": "Legendary Resistance",
+     "desc": "If the dragon fails a saving throw, it can choose to succeed instead.",
+     "usage": {
+      "type": "per day",
+      "times": 3
+     }
+    }
+   ],
+   "actions": [
+    {
+     "name": "Multiattack",
+     "multiattack_type": "actions",
+     "desc": "The dragon can use its Frightful Presence. It then makes three attacks: one with its bite and two with its claws.",
+     "actions": [
+      {
+       "action_name": "Frightful Presence",
+       "count": "1",
+       "type": "ability"
+      },
+      {
+       "action_name": "Bite",
+       "count": "1",
+       "type": "melee"
+      },
+      {
+       "action_name": "Claw",
+       "count": "2",
+       "type": "melee"
+      }
+     ]
+    },
+    {
+     "name": "Bite",
+     "desc": "Melee Weapon Attack: +14 to hit, reach 10 ft., one target. Hit: 19 (2d10 + 8) piercing damage plus 7 (2d6) fire damage.",
+     "attack_bonus": 14,
+     "damage": [
+      {
+       "damage_type": {
+        "index": "piercing",
+        "name": "Piercing",
+        "url": "/api/2014/damage-types/piercing"
+       },
+       "damage_dice": "2d10+8"
+      },
+      {
+       "damage_type": {
+        "index": "fire",
+        "name": "Fire",
+        "url": "/api/2014/damage-types/fire"
+       },
+       "damage_dice": "2d6"
+      }
+     ]
+    },
+    {
+     "name": "Claw",
+     "desc": "Melee Weapon Attack: +14 to hit, reach 5 ft., one target. Hit: 15 (2d6 + 8) slashing damage.",
+     "attack_bonus": 14,
+     "damage": [
+      {
+       "damage_type": {
+        "index": "slashing",
+        "name": "Slashing",
+        "url": "/api/2014/damage-types/slashing"
+       },
+       "damage_dice": "2d6+8"
+      }
+     ]
+    },
+    {
+     "name": "Tail",
+     "desc": "Melee Weapon Attack: +14 to hit, reach 15 ft., one target. Hit: 17 (2d8 + 8) bludgeoning damage.",
+     "attack_bonus": 14,
+     "damage": [
+      {
+       "damage_type": {
+        "index": "bludgeoning",
+        "name": "Bludgeoning",
+        "url": "/api/2014/damage-types/bludgeoning"
+       },
+       "damage_dice": "2d8+8"
+      }
+     ]
+    },
+    {
+     "name": "Frightful Presence",
+     "desc": "Each creature of the dragon's choice that is within 120 ft. of the dragon and aware of it must succeed on a DC 19 Wisdom saving throw or become frightened for 1 minute. A creature can repeat the saving throw at the end of each of its turns, ending the effect on itself on a success. If a creature's saving throw is successful or the effect ends for it, the creature is immune to the dragon's Frightful Presence for the next 24 hours.",
+     "dc": {
+      "dc_type": {
+       "index": "wis",
+       "name": "WIS",
+       "url": "/api/2014/ability-scores/wis"
+      },
+      "dc_value": 19,
+      "success_type": "none"
+     }
+    },
+    {
+     "name": "Fire Breath",
+     "desc": "The dragon exhales fire in a 60-foot cone. Each creature in that area must make a DC 21 Dexterity saving throw, taking 63 (18d6) fire damage on a failed save, or half as much damage on a successful one.",
+     "usage": {
+      "type": "recharge on roll",
+      "dice": "1d6",
+      "min_value": 5
+     },
+     "dc": {
+      "dc_type": {
+       "index": "dex",
+       "name": "DEX",
+       "url": "/api/2014/ability-scores/dex"
+      },
+      "dc_value": 21,
+      "success_type": "none"
+     },
+     "damage": [
+      {
+       "damage_type": {
+        "index": "fire",
+        "name": "Fire",
+        "url": "/api/2014/damage-types/fire"
+       },
+       "damage_dice": "18d6"
+      }
+     ]
+    }
+   ],
+   "legendary_actions": [
+    {
+     "name": "Detect",
+     "desc": "The dragon makes a Wisdom (Perception) check."
+    },
+    {
+     "name": "Tail Attack",
+     "desc": "The dragon makes a tail attack."
+    },
+    {
+     "name": "Wing Attack (Costs 2 Actions)",
+     "desc": "The dragon beats its wings. Each creature within 10 ft. of the dragon must succeed on a DC 22 Dexterity saving throw or take 15 (2d6 + 8) bludgeoning damage and be knocked prone. The dragon can then fly up to half its flying speed.",
+     "dc": {
+      "dc_type": {
+       "index": "dex",
+       "name": "DEX",
+       "url": "/api/2014/ability-scores/dex"
+      },
+      "dc_value": 22,
+      "success_type": "none"
+     },
+     "damage": [
+      {
+       "damage_type": {
+        "index": "bludgeoning",
+        "name": "Bludgeoning",
+        "url": "/api/2014/damage-types/bludgeoning"
+       },
+       "damage_dice": "2d6+8"
+      }
+     ]
+    }
+   ],
+   "challenge_rating": 17,
+   "xp": 18000
+  },
+  {
+   "url": "/api/2014/monsters/giant-frog",
+   "name": "Giant Frog",
+   "index": "giant-frog",
+   "size": "Medium",
+   "type": "beast",
+   "alignment": "unaligned",
+   "speed": {
+    "walk": "30 ft.",
+    "swim": "30 ft."
+   },
+   "strength": 12,
+   "dexterity": 13,
+   "constitution": 11,
+   "intelligence": 2,
+   "wisdom": 10,
+   "charisma": 3,
+   "hit_points": 18,
+   "hit_dice": "4d8",
+   "armor_class": [
+    {
+     "type": "dex",
+     "value": 11
+    }
+   ],
+   "proficiencies": [
+    {
+     "value": 2,
+     "proficiency": {
+      "index": "skill-perception",
+      "name": "Skill: Perception",
+      "url": "/api/2014/proficiencies/skill-perception"
+     }
+    },
+    {
+     "value": 3,
+     "proficiency": {
+      "index": "skill-stealth",
+      "name": "Skill: Stealth",
+      "url": "/api/2014/proficiencies/skill-stealth"
+     }
+    }
+   ],
+   "senses": {
+    "darkvision": "30 ft.",
+    "passive_perception": 12
+   },
+   "languages": "",
+   "damage_resistances": [],
+   "damage_immunities": [],
+   "damage_vulnerabilities": [],
+   "condition_immunities": [],
+   "special_abilities": [
+    {
+     "name": "Amphibious",
+     "desc": "The frog can breathe air and water"
+    },
+    {
+     "name": "Standing Leap",
+     "desc": "The frog's long jump is up to 20 ft. and its high jump is up to 10 ft., with or without a running start."
+    }
+   ],
+   "actions": [
+    {
+     "name": "Bite",
+     "desc": "Melee Weapon Attack: +3 to hit, reach 5 ft., one target. Hit: 4 (1d6 + 1) piercing damage, and the target is grappled (escape DC 11). Until this grapple ends, the target is restrained, and the frog can't bite another target.",
+     "attack_bonus": 3,
+     "damage": [
+      {
+       "damage_type": {
+        "index": "piercing",
+        "name": "Piercing",
+        "url": "/api/2014/damage-types/piercing"
+       },
+       "damage_dice": "1d6+1"
+      }
+     ]
+    },
+    {
+     "name": "Swallow",
+     "desc": "The frog makes one bite attack against a Small or smaller target it is grappling. If the attack hits, the target is swallowed, and the grapple ends. The swallowed target is blinded and restrained, it has total cover against attacks and other effects outside the frog, and it takes 5 (2d4) acid damage at the start of each of the frog's turns. The frog can have only one target swallowed at a time. If the frog dies, a swallowed creature is no longer restrained by it and can escape from the corpse using 5 ft. of movement, exiting prone."
+    }
+   ],
+   "challenge_rating": 0.25,
+   "xp": 50
+  }
+ ]
+}
