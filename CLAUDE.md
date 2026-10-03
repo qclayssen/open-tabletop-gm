@@ -19,6 +19,20 @@ turn-based mode. Branch: `tactical-combat`.
 - Python stdlib plus Flask only (Flask is already a display dependency). Ask
   before adding any package. Code must run on Python 3.10 (CI floor) and on
   Windows with a non-UTF-8 locale (always pass `encoding="utf-8"`).
+  - **The 3.10 floor is checked.** `.github/workflows/tests.yml`'s `floor-310`
+    job runs `scripts/check_py_floor.py` (post-floor syntax, over every tracked
+    `.py`) and then the engine glob `tests/test_tactics_*.py` on 3.10. Syntax is
+    the checker's half; the API half is execution, which is why the glob runs
+    there rather than the full suite. `python3 scripts/check_py_floor.py
+    --selftest` proves the checker can still fail.
+  - **The Windows half of this rule is deliberately not checked, and that is a
+    recorded decision rather than an oversight.** `2d6f582` (#103) dropped the
+    ubuntu and windows matrix legs and the non-UTF-8 locale job, and recorded the
+    reason in the workflow itself: *"a UTF-8 default is all a macOS runner ever
+    hands you, so a cp936 or cp1251 console can now regress uncaught. That was
+    accepted knowingly. Reinstating the coverage is a decision to make
+    deliberately, not a gap to fix helpfully."* Do not restore it as a drive-by
+    fix; it needs its own decision and its own brief.
 - 5e-specific rules live in `systems/dnd5e/`, behind `scripts/tactics/rules.py`, and are 2014 only; the SRD build reads the 2014 packs (asserted in `tests/test_srd_sources.py`).
 - No em dashes in docs, comments or UI text written for this fork.
 - Small focused commits. Keep every existing test passing.
@@ -75,6 +89,10 @@ scripts/localdm/             local DM loop: one small-model call per turn, advis
   briefs_sync.py             the advisor briefs have one source of truth: this repo's
                               prompts/advisors/. The outer dnd-gm agents/ copy is generated
                               from it, and briefs_sync.py --check fails when they differ
+scripts/check_py_floor.py    the Python 3.10 floor, as a check rather than a claim: compiles
+                              every tracked .py under the running interpreter (syntax half),
+                              and --selftest proves the checker can still fail. The API half
+                              of the floor is the engine glob running on 3.10 in CI
 systems/dnd5e/
   tactics_rules.py           5e rules: advantage, crits, cover, resistances, 0 HP,
                              death saves, saves and save chance, SRD monster -> Token
@@ -111,7 +129,9 @@ Engine conventions:
 
 ```bash
 python3 -m pytest tests/ -q                       # full suite
-python3 -m pytest tests/test_tactics_*.py -q      # engine only
+python3 -m pytest tests/test_tactics_*.py -q      # engine only (what the 3.10 floor job runs)
+python3 scripts/check_py_floor.py                 # post-floor syntax in tracked .py
+python3 scripts/check_py_floor.py --selftest      # prove that checker can fail
 python3 systems/dnd5e/build_srd.py --no-fvtt      # build 2014 SRD data (network)
 python3 systems/dnd5e/lookup.py monster "giant frog" --json
 python3 scripts/tactics/demo.py --seed 4          # scripted fight, prints every command

@@ -6,7 +6,13 @@ on:
   # PR is green *before* you push the last commit to it, so it only needs to
   # answer the question on the PR. A push trigger would double the minutes for
   # a result nobody reads.
-  merge_group:
+  #
+  # `merge_group` was here and was removed 2026-10-03 (#155). GitHub's own merge
+  # queue is not available on this plan -- the API rejects the `merge_queue`
+  # ruleset rule with an empty validation error, which is how it says "not in
+  # your plan" -- so that trigger can never fire. It read in the workflow file as
+  # a rule enforcing a merge-time check and enforced nothing. If the plan ever
+  # changes, putting it back is a deliberate edit with a reason attached.
 
 permissions:
   contents: read
@@ -68,3 +74,85 @@ jobs:
         # test_campaign_lint) with no collision, and the full suite passes under
         # both serial and -n 4 with identical counts.
         run: python -m pytest tests/ -q -n 4
+  floor-310:
+    # The Python 3.10 floor, as a checked fact rather than an honour-system rule.
+    #
+    # `CLAUDE.md` says code must run on 3.10 and calls it the "CI floor". Until
+    # this job existed, nothing ran on 3.10: the workflow removed in `6e78d4d`
+    # had been the only thing, and it ran a `macos x {3.10, 3.13}` matrix. The
+    # workflow that came back runs 3.13 only, so the floor was asserted in prose
+    # and checked nowhere. That is the gap this job closes, and nothing wider.
+    #
+    # One version, not a matrix, and not on the `pytest` job's runner. Three
+    # reasons, each measured rather than preferred:
+    #   * the full suite installs Playwright and drives headless Chromium. On a
+    #     third version that is ~4 more minutes of browser startup to re-answer
+    #     a question about Python, not about the display.
+    #   * `tests/test_tactics_*.py` is 288 tests in 2m08s and is where the rules
+    #     live. It is the subset the floor claim is actually about.
+    #   * `ubuntu-latest` instead of `macos-latest`: 3x the runners for free on
+    #     this plan. The glob has no macOS dependency -- measured, in a venv
+    #     holding nothing but pytest, 288 passed -- so the runner is a
+    #     cost decision and not a correctness one.
+    name: python 3.10 floor (engine glob)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.10'
+
+      - name: Install test dependencies
+        # `pytest` and nothing else. Measured: the engine glob imports pytest,
+        # the stdlib and this repo's own `tactics` package. No flask, no pyyaml,
+        # no playwright -- those are the full suite's, and copying that install
+        # line here would have been a recollection rather than a measurement.
+        run: python -m pip install --upgrade pip pytest
+
+      - name: The interpreter really is the floor
+        # Two assertions, because a job that silently runs on the wrong
+        # interpreter is a green check mark for nothing. The first is the
+        # version. The second is that a 3.11 API is genuinely absent here, which
+        # is what proves the API half of the floor is armed rather than assumed:
+        # `enum.StrEnum` is a name, not grammar, so check_py_floor.py cannot see
+        # it and only running code on 3.10 can. If the floor is ever raised,
+        # this step goes red and says why, which is the correct alarm.
+        run: |
+          python - <<'PY'
+          import sys
+          assert sys.version_info[:2] == (3, 10), \
+              f"this job must run on 3.10, not {sys.version.split()[0]}"
+          import enum, datetime
+          assert not hasattr(enum, "StrEnum"), "3.11+ API present: not the floor"
+          assert not hasattr(datetime, "UTC"), "3.11+ API present: not the floor"
+          print(f"floor interpreter confirmed: {sys.version.split()[0]}")
+          print("3.11 APIs confirmed absent, so a use of one would raise here")
+          PY
+
+      - name: Prove the floor checker can fail
+        # `scripts/check_py_floor.py --selftest` writes post-floor fixtures to a
+        # temporary git repo and asserts the checker rejects them. On this
+        # interpreter, "reject `except*`" is a real assertion rather than a
+        # formality.
+        #
+        # The grep is not redundant. Two mutants survive an in-process selftest,
+        # both of them disabling its own reporting, and this is what catches
+        # them: `--selftest` can print "SELFTEST FAILED" on every fixture and
+        # still exit 0. See the script's "What the selftest cannot do".
+        run: |
+          out=$(python scripts/check_py_floor.py --selftest); status=$?
+          printf '%s\n' "$out"
+          if printf '%s\n' "$out" | grep -q 'SELFTEST FAILED'; then
+            echo "::error::the floor checker reported a failure and may still exit 0"
+            exit 1
+          fi
+          exit $status
+
+      - name: No tracked source uses post-floor syntax
+        run: python scripts/check_py_floor.py --require-floor
+
+      - name: The engine glob on the floor
+        # The API half of the floor claim. Everything here is executed on 3.10,
+        # so a 3.11+ name, keyword argument or stdlib member is an error rather
+        # than something no check ever looks at.
+        run: python -m pytest tests/test_tactics_*.py -q
