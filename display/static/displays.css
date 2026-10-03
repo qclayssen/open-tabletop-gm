@@ -1,0 +1,314 @@
+/* displays.css — the four-display mode: ?view=dm|map|combat|dice, the launcher
+   at /displays, and the dice window.
+
+   Its own file, like atlas.css and mapseditor.css, because two of these pages
+   do not load display.css at all (the launcher, the overview map as a display)
+   and because the view rules are a layer *over* that stylesheet: display.css
+   still owns the story, the sidebar and the scene, and this file only decides
+   which of them a given window shows.
+
+   The four views are additive masks on `body.view-*`. Nothing is hidden by
+   removing it from the document — the same DOM serves every view — so a window
+   that is showing the classic DM view and a window showing combat are the same
+   page at two settings, and one SSE connection feeds both.
+
+   Naming: view-full is the default, with no rules here at all. A view whose
+   class is not in this file is the full display, which is what the server
+   resolves anything it does not recognise to. */
+.launcher-page,
+.atlas-display,
+.view-dm,
+.view-combat,
+.view-dice {
+  /* The dark theatre palette, restated from tactics.css because the launcher
+     and the map display do not load that stylesheet. */
+  --dz-paper: #140F09;
+  --dz-panel: #1D160E;
+  --dz-ink:   #E6D8B8;
+  --dz-brass: #D2A24A;
+  --dz-muted: #A8977A;
+  --dz-line:  #3A2E1E;
+}
+
+/* ── ?view=dm — the classic DM display ────────────────────────────────────────
+   The story, and the atmosphere around it, with every panel that is not the
+   story taken off the screen. This is the display as it read before the
+   sidebar, the combat panel and the party input existed: one column of prose,
+   a scene behind it, and nothing to read but the tale.
+
+   `#phone-mode-btn` is display.js's, appended to the body at load. It is a GM
+   control for handing a *phone* to a player, and on a screen the table is
+   looking at it is a floating button explaining a thing nobody there can do. */
+.view-dm #sidebar,
+.view-dm #sidebar-toggle,
+.view-dm #overview-link,
+.view-dm #world-clock,
+.view-dm #ruleset-badge,
+.view-dm #audio-controls,
+.view-dm #dm-help-btn,
+.view-dm #input-panel,
+.view-dm #dice-pending-badge,
+.view-dm #tx-panel,
+.view-dm #combat-idle,
+.view-dm #dice-display,
+.view-dm #phone-mode-btn,
+.view-dm #phone-mode-menu {
+  display: none !important;
+}
+/* Nothing is beside the prose, so it does not reserve a column for anything.
+   The default reserves max(340px, 18vw) on each side for the two rails, and
+   leaving that in place on a display with no rails is a 680px hole in the
+   middle of a TV. */
+.view-dm #text-scroll {
+  padding: var(--text-top-inset, 72px) 8vw 64px 8vw;
+}
+.view-dm #text-content { max-width: 1100px; }
+
+/* ── ?view=combat — the battle map, full screen ───────────────────────────────
+   #tx-panel is tactics.js's, positioned for a panel beside the story
+   (fixed, inset from three edges, capped height). Here it is the whole page,
+   so the board gets the pixels the prose column was taking. */
+.view-combat #text-scroll,
+.view-combat #sidebar,
+.view-combat #sidebar-toggle,
+.view-combat #overview-link,
+.view-combat #world-clock,
+.view-combat #ruleset-badge,
+.view-combat #audio-controls,
+.view-combat #dm-help-btn,
+.view-combat #input-panel,
+.view-combat #dice-pending-badge,
+.view-combat #dice-display,
+.view-combat #bg-a,
+.view-combat #bg-b,
+.view-combat #sky,
+.view-combat #particles,
+.view-combat #vignette,
+.view-combat #frame,
+.view-combat #scene-indicator,
+.view-combat #corner-logo,
+.view-combat #bottom-fade,
+.view-combat #phone-mode-btn,
+.view-combat #phone-mode-menu {
+  display: none !important;
+}
+.view-combat #tx-panel {
+  top: 0; left: 0; right: 0;
+  max-height: none;
+  height: 100vh;
+  height: 100dvh;
+  border: none; border-radius: 0;
+  box-shadow: none;
+  padding: 14px 16px;
+}
+/* Folded with "Hide map" on the full display, so the panel keeps its header and
+   initiative strip. Folded *here*, it leaves a full screen of empty panel. */
+.view-combat.tx-min #tx-panel .tx-body { display: block; }
+.view-combat.tx-min #tx-panel { max-height: none; }
+
+/* The empty state, shown only while the panel is hidden. tactics.js writes
+   `hidden` on #tx-panel; a CSS sibling cannot see that, so this is `:has()` on
+   the panel's own attribute — no mirrored state to keep in step. Before
+   tactics.js has built the panel there is no #tx-panel to match, so the card is
+   not shown for the fraction of a second between load and first paint. */
+#combat-idle { display: none; }
+.view-combat:has(#tx-panel[hidden]) #combat-idle { display: flex; }
+.cidle-glyph { font-size: 64px; opacity: .35; line-height: 1; }
+.cidle-title { font-family: 'Cinzel', Georgia, serif; font-size: 26px; margin: .4rem 0 .2rem; }
+.cidle-body { color: var(--dz-muted, #A8977A); max-width: 34ch; text-align: center; }
+#combat-idle {
+  position: fixed; inset: 0; z-index: 4;
+  flex-direction: column; align-items: center; justify-content: center;
+  gap: .2rem; text-align: center;
+  background: var(--dz-paper, #140F09); color: var(--dz-ink, #E6D8B8);
+  font: 16px/1.5 system-ui, sans-serif;
+}
+
+/* ── ?view=dice — the DM's roll requests ──────────────────────────────────────
+   No scene and no prose: this window is about one thing, and a background that
+   crossfades every time the DM says "torch" is noise behind a number. */
+.view-dice #text-scroll,
+.view-dice #sidebar,
+.view-dice #sidebar-toggle,
+.view-dice #overview-link,
+.view-dice #world-clock,
+.view-dice #ruleset-badge,
+.view-dice #audio-controls,
+.view-dice #dm-help-btn,
+.view-dice #input-panel,
+.view-dice #dice-pending-badge,
+.view-dice #tx-panel,
+.view-dice #combat-idle,
+.view-dice #bg-a,
+.view-dice #bg-b,
+.view-dice #sky,
+.view-dice #particles,
+.view-dice #vignette,
+.view-dice #frame,
+.view-dice #scene-indicator,
+.view-dice #corner-logo,
+.view-dice #bottom-fade,
+.view-dice #phone-mode-btn,
+.view-dice #phone-mode-menu {
+  display: none !important;
+}
+
+#dice-display { display: none; }
+.view-dice #dice-display {
+  display: flex; flex-direction: column;
+  position: fixed; inset: 0; z-index: 4;
+  background: var(--dz-paper); color: var(--dz-ink);
+  font: 16px/1.5 system-ui, sans-serif;
+}
+#dice-display-head {
+  flex: none; display: flex; align-items: baseline; gap: 1rem;
+  padding: 1rem 1.5rem; border-bottom: 1px solid var(--dz-line);
+}
+#dice-display-title {
+  font-family: 'Cinzel', Georgia, serif; font-size: 1.25rem;
+  letter-spacing: .06em; color: var(--dz-brass);
+}
+#dice-display-campaign { color: var(--dz-muted); font-size: .9rem; }
+#dice-display-body { flex: 1 1 auto; overflow-y: auto; padding: 1.5rem; }
+#dice-idle { color: var(--dz-muted); text-align: center; margin-top: 3rem; font-size: 1.1rem; }
+#dice-requests { list-style: none; margin: 0; padding: 0; display: grid; gap: 1rem; }
+
+.dreq {
+  background: var(--dz-panel); border: 1px solid var(--dz-line);
+  border-radius: 8px; padding: 1rem 1.25rem;
+}
+.dreq-done { border-color: rgba(79,184,168,.5); }
+.dreq-waiting { border-color: var(--dz-brass); box-shadow: 0 0 0 1px rgba(210,162,74,.25); }
+.dreq-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: .75rem; }
+.dreq-who {
+  font-family: 'Cinzel', Georgia, serif; font-size: 1.6rem;
+  letter-spacing: .03em; color: var(--dz-ink);
+}
+.dreq-roll {
+  font: 700 1.5rem/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--dz-brass); letter-spacing: .02em;
+}
+.dreq-roll.adv { color: #7FC7A8; }
+.dreq-roll.dis { color: #E0716F; }
+.dreq-label { color: var(--dz-ink); }
+.dreq-dc {
+  margin-left: auto; color: var(--dz-muted);
+  font: 600 .95rem/1 system-ui, sans-serif;
+}
+.dreq-state {
+  margin-top: .5rem; color: var(--dz-muted); font-size: .9rem;
+  display: flex; flex-wrap: wrap; gap: .4rem; align-items: center;
+}
+/* A name with its roll beside it. Two signals, not one: the tick is the
+   shape, the grey is the colour, so the state survives a colour-blind reader
+   and a washed-out projector. */
+.dchip {
+  display: inline-flex; align-items: center; gap: .35rem;
+  padding: .15rem .55rem; border-radius: 999px;
+  border: 1px solid var(--dz-line); color: var(--dz-muted);
+  font: 500 .9rem/1.4 system-ui, sans-serif;
+}
+.dchip.rolled { color: var(--dz-ink); border-color: rgba(79,184,168,.6); }
+.dchip-wait { color: var(--dz-brass); border-color: var(--dz-brass); }
+.dreq-results { margin: .6rem 0 0; padding: 0; list-style: none; display: grid; gap: .3rem; }
+.dreq-result {
+  font: 1.05rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--dz-ink);
+  border-left: 3px solid var(--dz-brass); padding: .15rem 0 .15rem .6rem;
+}
+.dreq-cancelled { color: #E0716F; font-size: .9rem; margin-top: .5rem; }
+
+/* ── The launcher (/displays) ───────────────────────────────────────────────── */
+.launcher-page {
+  margin: 0; min-height: 100vh;
+  background: radial-gradient(120% 90% at 50% 0%, #241A10 0%, var(--dz-paper) 60%);
+  color: var(--dz-ink); font: 16px/1.5 system-ui, sans-serif;
+}
+.launcher { max-width: 68rem; margin: 0 auto; padding: 2.5rem 1.25rem 3rem; }
+.launcher-head { display: flex; align-items: center; gap: 1.25rem; flex-wrap: wrap; }
+.launcher-logo { width: 56px; height: 56px; object-fit: contain; }
+.launcher h1 {
+  margin: 0; font-family: 'Cinzel', Georgia, serif;
+  font-size: 1.9rem; letter-spacing: .05em; color: var(--dz-ink);
+}
+.launcher-sub { margin: .2rem 0 0; color: var(--dz-muted); }
+.launcher-all {
+  margin-left: auto; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: .15rem;
+  padding: .7rem 1.4rem; border-radius: 8px;
+  border: 1px solid var(--dz-brass); background: var(--dz-panel);
+  color: var(--dz-brass); font: 600 1rem/1.2 system-ui, sans-serif;
+}
+.launcher-all small { font-weight: 400; color: var(--dz-muted); font-size: .75rem; }
+.launcher-all:hover { background: var(--dz-brass); color: var(--dz-paper); }
+.launcher-all:hover small { color: var(--dz-paper); }
+
+.launcher-tiles {
+  list-style: none; margin: 2rem 0 0; padding: 0;
+  display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+}
+.launcher-tile a {
+  display: grid; gap: .35rem; height: 100%;
+  padding: 1.25rem; border-radius: 8px; text-decoration: none;
+  background: var(--dz-panel); border: 1px solid var(--dz-line); color: var(--dz-ink);
+  transition: border-color .15s ease, transform .15s ease;
+}
+.launcher-tile a:hover, .launcher-tile a:focus-visible {
+  border-color: var(--dz-brass); transform: translateY(-2px); outline: none;
+}
+.launcher-glyph { font-size: 2rem; line-height: 1; }
+.launcher-label { font-family: 'Cinzel', Georgia, serif; font-size: 1.25rem; }
+.launcher-blurb { color: var(--dz-muted); font-size: .9rem; }
+.launcher-url { color: var(--dz-brass); font-size: .8rem; opacity: .8; }
+.launcher-note { min-height: 1.4em; color: var(--dz-brass); margin: 1rem 0 0; }
+.launcher-foot { display: flex; gap: 1.5rem; flex-wrap: wrap; margin-top: 2rem; }
+.launcher-foot a { color: var(--dz-muted); }
+.launcher-foot a:hover { color: var(--dz-brass); }
+
+/* ── The in-page menu that reaches the other three ─────────────────────────── */
+#displays-rail { position: fixed; left: 12px; bottom: 12px; z-index: 850; }
+#displays-btn {
+  cursor: pointer; padding: 7px 12px; border-radius: 6px;
+  border: 1px solid rgba(180,140,60,0.5); background: rgba(20,16,10,0.85);
+  color: #e8d9b0; font: 600 13px/1.4 system-ui, sans-serif; min-height: 36px;
+}
+#displays-btn:hover { border-color: var(--dz-brass, #D2A24A); }
+#displays-menu {
+  position: absolute; bottom: calc(100% + 6px); left: 0; min-width: 19rem;
+  padding: .35rem; border-radius: 8px;
+  background: rgba(20,16,10,0.96); border: 1px solid rgba(180,140,60,0.5);
+  box-shadow: 0 10px 30px rgba(0,0,0,.45);
+}
+#displays-menu[hidden] { display: none; }
+.dm-opt {
+  display: grid; gap: .1rem; padding: .45rem .6rem; border-radius: 5px;
+  text-decoration: none; color: #e8d9b0;
+}
+.dm-opt:hover, .dm-opt:focus-visible { background: rgba(180,140,60,0.18); outline: none; }
+.dm-opt-label { font: 600 13px/1.3 system-ui, sans-serif; }
+.dm-opt-blurb { font-size: 11.5px; opacity: .7; }
+.dm-opt-all { margin-top: .25rem; border-top: 1px solid rgba(180,140,60,0.3); padding-top: .5rem;
+              color: var(--dz-brass, #D2A24A); }
+
+/* The rail is a GM control: it opens windows, and a table screen has no use
+   for that. Off on the combat and dice windows, which promise to be nothing but
+   their one thing, and off the map display, which has its own header link. On
+   ?view=dm and on the full display it stays — a second monitor opened by hand
+   is exactly the window someone needs the door out of. */
+.view-combat #displays-rail,
+.view-dice #displays-rail,
+.atlas-display #displays-rail { display: none; }
+
+/* ── The overview map as a display ─────────────────────────────────────────────
+   The map page is laid out for a browser window it may be sharing with the
+   rest of the display. Opened as a window of its own it gets the screen. */
+.atlas-display .atlas-header { padding: 1rem 1.25rem; }
+.atlas-display .atlas-main { padding: 0 1.25rem 1.25rem; }
+.atlas-note {
+  color: var(--dz-muted, #A8977A); font-size: 1.05rem;
+  margin: 4rem auto; max-width: 40ch; text-align: center;
+}
+
+@media (pointer: coarse) {
+  #displays-btn { min-height: 44px; }
+}

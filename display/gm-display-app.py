@@ -1330,27 +1330,93 @@ _dice_pending: dict = {}
 _dice_pending_lock = threading.Lock()
 # Finished requests keep their roll texts so --wait can print them to the GM.
 _dice_done: dict = {}           # request_id → [roll text, ...], oldest first
+_dice_done_meta: dict = {}      # request_id → the request's own {spec, modifier, ...}
 _dice_cancelled: set = set()    # ids in _dice_done that the GM cancelled
 _DICE_DONE_KEEP = 50
+#: How many finished requests a newly-connected browser is told about. The dice
+#: display shows the rolls of this session and no older: enough for a reload
+#: mid-request, short enough that the window is not a scrollback of the evening.
+_DICE_DONE_REPLAY = 5
 
 
-def _dice_finish(req_id: str, results: list, cancelled: bool = False) -> None:
-    """Keep a finished request's rolls for --wait. Caller holds _dice_pending_lock."""
+def _dice_finish(req_id: str, results: list, meta: dict = None,
+                 chars: list = None, cancelled: bool = False) -> None:
+    """Keep a finished request's rolls for --wait. Caller holds _dice_pending_lock.
+
+    The rolls and the request's own description are kept in two dictionaries
+    rather than one value, because `_dice_done[req_id]` is a *list of strings* and
+    three call sites and a test read it as exactly that. Changing the shape to
+    `{"results": [...], "meta": {...}}` would silently turn `list(_dice_done[id])`
+    from the rolls into the dict's keys, and `--wait` would print nothing while
+    reporting success. So `_dice_done` is left alone and `_dice_done_meta` is
+    retired alongside it, in the same loop, under the same cap.
+    """
     _dice_done[req_id] = results
+    if meta or chars:
+        # `characters` matters as much as the meta and costs the same to keep:
+        # without it a window opened after the request finished has no name to
+        # put on the card, and falls back to "The table" for a check addressed to
+        # two specific people. The empty `chars` set is what marks a request
+        # finished, so the names have to be copied out before it is dropped.
+        _dice_done_meta[req_id] = dict(meta or {})
+        if chars:
+            _dice_done_meta[req_id]["characters"] = sorted(chars)
     if cancelled:
         _dice_cancelled.add(req_id)
     while len(_dice_done) > _DICE_DONE_KEEP:
         oldest = next(iter(_dice_done))
         del _dice_done[oldest]
+        _dice_done_meta.pop(oldest, None)
         _dice_cancelled.discard(oldest)
 
 
 def _dice_pending_snapshot() -> list:
+    """Every request still waiting on somebody, with the whole request in it.
+
+    `pending` and `label` are what the "Waiting on …" badge has always read. The
+    rest of the request is here because `/?view=dice` is a display *about* the
+    roll: it has to say what was asked for — which die, what modifier, which DC —
+    and a badge-only payload makes it ask the server a question per request, per
+    reconnect, for something the server already had in hand. Additive: a
+    consumer that reads two of these keys is unaffected by the other six.
+    """
     with _dice_pending_lock:
         return [
-            {"request_id": rid, "pending": sorted(e["chars"]), "label": e["meta"].get("label", "")}
+            {"request_id": rid,
+             "pending": sorted(e["chars"]),
+             "label": e["meta"].get("label", ""),
+             # Who it was asked of, which is not the same as who is still
+             # holding a die. The dice window draws a chip per name, so without
+             # this it shows only the people still to roll and a name vanishes
+             # off the card the instant they answer.
+             "characters": sorted(e.get("asked") or e["chars"]),
+             "spec": e["meta"].get("spec", "1d20"),
+             "modifier": e["meta"].get("modifier", 0),
+             "advantage": e["meta"].get("advantage", "normal"),
+             "dc": e["meta"].get("dc"),
+             "results": list(e.get("results", []))}
             for rid, e in _dice_pending.items() if e["chars"]
         ]
+
+
+def _dice_results_payload(req_id: str, results: list) -> dict:
+    """The last roll of a request, for the dice display.
+
+    A finished request leaves `_dice_pending`, so it leaves the pending snapshot
+    with it: without this the dice display would empty itself the instant the
+    final roll landed, taking the answer off the screen a beat after the table
+    asked for it. The rolls already reach the story display as narration; this is
+    the same text, addressed to the panel that is showing the request.
+
+    `meta` rides along for the same reason `dice_pending` carries it: a window
+    that connects late, or reloads, gets rolls and an id but never saw
+    `dice_request`, so without the description it renders "1d20 +0" for what was
+    a 2d6 +3 Strength check. The only place those values still exist is
+    `_dice_done_meta`, so they are read from there rather than from a request
+    that no longer exists.
+    """
+    return {"request_id": req_id, "results": list(results),
+            "meta": dict(_dice_done_meta.get(req_id) or {})}
 
 
 
@@ -1501,16 +1567,80 @@ def _load_ui_manifest() -> str:
     return json.dumps(manifest, separators=(",", ":")).replace("<", "\\u003c")
 
 
+# ── The four displays ────────────────────────────────────────────────────────
+#
+# One server, four windows. `?view=` says what a window is *for*; /displays
+# opens the set. Every view is this same page with a different body class, so
+# all four ride one SSE connection and nothing has to be kept in step between
+# four servers — which is what "the map is one fight behind the story" would
+# otherwise mean.
+#
+# "map" is the exception: it renders the overview page instead of this one,
+# because the map has its own stylesheet and its own script and inlining it
+# would put two sets of custom properties in one document.
+#
+# Anything unrecognised is the full display, not a 404. These windows sit on a
+# TV for the length of a session: a bookmark from an older build, or a ?view=
+# typo typed into a phone at the table, must show the story rather than an error
+# page in front of the players.
+_VIEW_FULL = "full"
+_VIEWS = ("dm", "map", "combat", "dice")
+
+#: (view key, label, one line for the launcher tile). One list, rendered by
+#: Jinja into both the launcher and the menu on the display itself, so the set
+#: of displays is named in exactly one place.
+_VIEW_TILES = (
+    ("dm", "Classic DM",
+     "The story, full screen, with nothing else on it."),
+    ("map", "Map",
+     "The campaign overview: where the party has been and what is left."),
+    ("combat", "Combat",
+     "The battle map, the initiative order and the actions, full screen."),
+    ("dice", "Dice",
+     "What the DM has asked for, and who has not rolled yet."),
+)
+
+
+def _resolve_view(raw) -> str:
+    """`?view=` → one of the view keys, or "full" for the default display.
+
+    `input` is not in the set and does not need to be: that is the phone's
+    player-input mode, resolved in the browser from `?view=input` / `?char=`,
+    and it renders this same template. Leaving it out here is what keeps one
+    page load from claiming to be both a phone's input screen and a TV's
+    combat board.
+    """
+    view = (raw or "").strip().lower()
+    return view if view in _VIEWS else _VIEW_FULL
+
+
 @app.route("/")
 def index():
+    view = _resolve_view(request.args.get("view"))
+    if view == "map":
+        return _overview_display()
     # Pass LAN token to template so the browser can authenticate /help-request
     return render_template(
         "index.html",
+        view=view,
+        views=_VIEW_TILES,
         lan_token=_lan_token or "",
         narrator_voice=_read_narrator_voice(),
         tts_available=(_tts is not None),
         ui_manifest=_load_ui_manifest(),
     )
+
+
+@app.route("/displays", methods=["GET"])
+def displays_launcher():
+    """The launcher: one page with a button per display, and the set at once.
+
+    Its own page rather than a menu in the display, because the thing it has to
+    do is open *other* windows, and a browser will only let it do that from a
+    page the GM is looking at rather than from one buried on a TV.
+    """
+    return render_template("launcher.html", views=_VIEW_TILES,
+                           campaign=_active_campaign_name() or "")
 
 
 @app.route("/icons/<path:filename>")
@@ -1580,13 +1710,60 @@ def atlas_overview(slug):
     if found is None:
         return Response("No such overview map.", status=404,
                         mimetype="text/plain; charset=utf-8")
+    return _atlas_page(slug, found)
+
+
+def _atlas_page(slug, found, display_mode=False):
+    """Render one overview spec, with its unrevealed pins already dropped.
+
+    Shared by `/atlas/<slug>` and `/?view=map` so the two cannot drift: the
+    redaction happens here, so a second caller cannot get the page without it.
+    """
     import overview_map as _overview_map
     shown = _overview_map.revealed(found[0])
     # "<" is escaped because this lands inside a <script> block (as map_edit).
     return render_template(
         "atlas.html", map_name=shown["name"],
         image_url="/atlas/" + shown["slug"] + "/image",
-        map_json=json.dumps(shown, ensure_ascii=False).replace("<", "\\u003c"))
+        map_json=json.dumps(shown, ensure_ascii=False).replace("<", "\\u003c"),
+        display_mode=display_mode)
+
+
+def _overview_display():
+    """`/?view=map` — the overview map as one of the four displays.
+
+    Resolves the same map `/atlas` does, the first loadable spec by slug, so the
+    launcher opens the map the "Overview Map" link would have opened.
+
+    A campaign with no overview map gets a page that says so rather than
+    /atlas's plain-text 404. This one is opened onto a second screen by the
+    launcher and nobody is standing at it to read a stack trace: a window that
+    says why it is empty is a window the GM can read across the table, and an
+    empty one is indistinguishable from a broken server.
+    """
+    camp = _pin_campaign()
+    if camp is None:
+        return _no_overview("No campaign is loaded, so there is no map to show.")
+    import overview_map as _overview_map
+    for slug in _overview_map.available(camp):
+        found = _atlas_spec(slug)
+        if found is not None:
+            return _atlas_page(slug, found, display_mode=True)
+    return _no_overview("This campaign has no overview map yet.")
+
+
+def _no_overview(reason):
+    """The map display with no map behind it. 200, and says why.
+
+    Not a 404: the display is up and serving, the campaign simply has no overview
+    spec yet, and a status code on a screen in the corner of the room is not
+    information anybody can use.
+    """
+    empty = {"extent": [1, 1], "name": "Overview", "pins": []}
+    return render_template(
+        "atlas.html", map_name="Overview map",
+        image_url="", map_json=json.dumps(empty), note=reason,
+        display_mode=True)
 
 
 @app.route("/atlas/<slug>/image", methods=["GET"])
@@ -2959,6 +3136,7 @@ def player_dice():
     # Correlate against any pending DM request. Case-insensitive match on the
     # character name — drop them from the request's expected-rollers set.
     pending_changed = False
+    finished = None
     if req_id:
         with _dice_pending_lock:
             entry = _dice_pending.get(req_id)
@@ -2970,10 +3148,14 @@ def player_dice():
                     entry.setdefault("results", []).append(text)
                     pending_changed = True
                     if not entry["chars"]:
+                        _dice_finish(req_id, entry["results"], entry["meta"],
+                                     entry.get("asked"))
                         _dice_pending.pop(req_id, None)
-                        _dice_finish(req_id, entry["results"])
+                        finished = _dice_results_payload(req_id, entry["results"])
     if pending_changed:
         _broadcast({"dice_pending": _dice_pending_snapshot()})
+    if finished:
+        _broadcast({"dice_results": finished})
 
     return jsonify({
         "character": character,
@@ -3038,6 +3220,12 @@ def dice_request():
         with _dice_pending_lock:
             _dice_pending[request_id] = {
                 "chars": set(trackable),
+                # `asked` is the full addressee list, kept separately from
+                # `chars` because `chars` is drained as people roll and reaches
+                # empty — and an empty set is exactly what marks the request
+                # finished. The names have to survive it to be of any use to a
+                # display that connects after the last roll.
+                "asked": list(trackable),
                 "meta": {"spec": spec, "modifier": modifier, "advantage": adv, "label": label, "dc": dc_val},
                 "started_at": time.time(),
             }
@@ -3115,7 +3303,8 @@ def dice_request_cancel(request_id):
     with _dice_pending_lock:
         entry = _dice_pending.pop(request_id, None)
         if entry is not None:
-            _dice_finish(request_id, entry.get("results", []), cancelled=True)
+            _dice_finish(request_id, entry.get("results", []), entry.get("meta"),
+                         entry.get("asked"), cancelled=True)
     _broadcast({"dice_pending": _dice_pending_snapshot(), "dice_request_cancelled": request_id})
     return "", 204
 
@@ -3764,6 +3953,15 @@ def stream():
     snap = _dice_pending_snapshot()
     if snap:
         q.put_nowait({"dice_pending": snap})
+
+    # And the rolls that already came back, so a reloaded dice display is not
+    # blank while the DM waits on the players still to roll. The last few only:
+    # _dice_done is a 50-entry ring kept for --wait, and a display window that
+    # has been open since the tavern is not showing last night's Stealth check.
+    with _dice_pending_lock:
+        recent = list(_dice_done.items())[-_DICE_DONE_REPLAY:]
+    for rid, results in recent:
+        q.put_nowait({"dice_results": _dice_results_payload(rid, results)})
 
     # Replay every active dice_request so phones that connected *after* a GM
     # broadcast still pre-fill their pad and store the request_id. Without this,
