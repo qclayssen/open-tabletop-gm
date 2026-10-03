@@ -4884,8 +4884,17 @@ function _initDicePad() {
       : result.subtotal;
     lockTo(displayFace);
 
+    // The bonus die is rendered as a die. "+4" here would claim a flat number
+    // the d4 did not roll, and the table reads this line rather than the JSON.
+    // Built from esc()ed parts only. Every value crossing into innerHTML has to
+    // go through esc(): `result.bonus` and each face are server data, and the
+    // XSS scanner (tests/test_display_xss.py) reads an interpolated local as
+    // unescaped unless every hole in it is wrapped.
+    const bonusStr = (result.bonus && (result.bonus_faces || []).length)
+      ? ` + ${esc(result.bonus)} [${result.bonus_faces.map(esc).join(', ')}]`
+      : '';
     const line = document.getElementById('dp-result-line');
-    line.innerHTML = `${esc(result.spec)}${result.modifier ? (result.modifier > 0 ? '+' : '') + esc(result.modifier) : ''}` +
+    line.innerHTML = `${esc(result.spec)}${esc(bonusStr)}${result.modifier ? (result.modifier > 0 ? '+' : '') + esc(result.modifier) : ''}` +
                      ` &nbsp;→&nbsp; <span class="total">${esc(result.total)}</span>` +
                      (result.both ? ` &nbsp;<span style="opacity:.7">(${result.both.map(esc).join(' / ')} ${esc(result.advantage)})</span>` : '');
     if (navigator.vibrate) navigator.vibrate(30);
