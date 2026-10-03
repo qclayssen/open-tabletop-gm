@@ -35,7 +35,7 @@ import os
 import pathlib
 import shutil
 
-from .maps import MAPS_DIR, compile_map
+from .maps import MAPS_DIR, art_geometry, compile_map
 
 # How many times apply_strokes() re-derives the cover looking for a fixed
 # point. Two is what every map here needs; the cap is there so a pathological
@@ -262,6 +262,111 @@ def write(path, spec: dict):
     return bak if bak.exists() else path
 
 
+def alignment(spec: dict) -> dict:
+    """The map's recorded artwork alignment, for the editor to draw and to save.
+
+    Shape is fixed here rather than passed through, so the editor page, the save
+    route and `maps.compile_map` all read the same four numbers. A map with no
+    recorded pitch gets zeros: the editor has to show *something* in its inputs,
+    and a blank field that silently becomes 0 on save is worse than a 0 that was
+    always going to be 0.
+
+    `cell_px` is the only one that has to be there to save, because a pitch with
+    no size is a scale of nothing (see `maps.image_px`).
+    """
+    grid = spec.get("grid") or {}
+    size = spec.get("image_px") or []
+    def number(value):
+        return value if isinstance(value, (int, float)) and not isinstance(value, bool) else 0
+    return {"cell_px": number(grid.get("cell_px")),
+            "offset_x": number(grid.get("offset_x")),
+            "offset_y": number(grid.get("offset_y")),
+            "image_px": [number(size[0]), number(size[1])] if len(size) == 2 else [],
+            "has_image": bool(spec.get("image"))}
+
+
+def apply_alignment(spec: dict, body: dict) -> dict:
+    """spec + three numbers -> a new spec with only `grid` and `image_px` changed.
+
+    The same contract as `apply_strokes` and for the same reason: a map a GM has
+    fought on is not something to re-derive, so this assigns two keys and leaves
+    every other one exactly as it was. `features`, `spawns`, `zones`, `labels`,
+    `base`, `width` and `height` are not read, not copied, not normalised -- a
+    save from the alignment box cannot move a creature.
+
+    Raises ValueError with a message meant for a GM rather than a stack trace:
+    the same shape `apply_strokes` uses, and for the same reason -- every failure
+    here is a bad request from a browser, not a wrong type inside this process.
+
+    The candidate goes through `compile_map` before it is returned, so a map this
+    produced is one the engine has already agreed to load.
+    """
+    if not isinstance(body, dict):
+        raise ValueError("the request body must be an object")
+    values = {}
+    for key in ("cell_px", "offset_x", "offset_y"):
+        if key not in body:
+            raise ValueError(f"{key} is required")
+        raw = body[key]
+        if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+            # Reached as the JSON `true`, not as Python's: a browser form that
+            # sends a boolean where a number belongs is a bad request, and
+            # `True == 1` would silently write a 1px cell.
+            raise ValueError(f"{key} must be a number")
+        value = float(raw)
+        if value != value or value in (float("inf"), float("-inf")):
+            raise ValueError(f"{key} must be a finite number")
+        values[key] = value
+    if values["cell_px"] <= 0:
+        raise ValueError(f"cell_px must be greater than 0, not {values['cell_px']:g}")
+
+    out = dict(spec)
+    out["grid"] = {"cell_px": values["cell_px"],
+                   "offset_x": values["offset_x"], "offset_y": values["offset_y"]}
+    # A size is only meaningful next to a picture. `image_px` is dropped rather
+    # than refused here: this is the alignment box, and a GM aligning a map that
+    # has no art yet is doing something reasonable.
+    if spec.get("image") and spec.get("image_px"):
+        out["image_px"] = list(spec["image_px"])
+    elif not spec.get("image"):
+        out.pop("image_px", None)
+    compile_map(out)                       # the engine is the final word
+    return out
+
+
+def alignment_fits(spec: dict, body: dict) -> dict:
+    """What the editor shows live while a GM drags: board coverage, or why not.
+
+    A pure function on the three numbers, so the overlay and the save can never
+    disagree -- the overlay says "32x32 squares" and the save is refused for the
+    same reason from the same call. Returns `{"cells": [w, h], "leftover":
+    [x, y], "exact": bool}`.
+
+    Never raises. This runs on every drag frame in a browser, and a refusal here
+    would be an unhandled error in a page whose whole job is to let the GM try
+    numbers. A bad value comes back as `exact: False` with no cells, and the save
+    is where it is refused.
+    """
+    empty = {"cells": [], "leftover": [], "exact": False}
+    try:
+        if not isinstance(body, dict):
+            return empty
+        cell = float(body["cell_px"])
+        if cell <= 0 or cell != cell or cell in (float("inf"), float("-inf")):
+            return empty
+        size = spec.get("image_px")
+        if not (isinstance(size, (list, tuple)) and len(size) == 2):
+            return empty
+        geometry = art_geometry({"image_px": list(size),
+                                 "grid": {"cell_px": cell,
+                                          "offset_x": float(body.get("offset_x", 0) or 0),
+                                          "offset_y": float(body.get("offset_y", 0) or 0)}})
+    except (KeyError, TypeError, ValueError):
+        return empty
+    return {"cells": geometry["cells"], "leftover": geometry["leftover"],
+            "exact": not any(geometry["leftover"])}
+
+
 def editor_state(spec: dict, slug: str) -> dict:
     """Everything the editor page draws from, as one JSON blob.
 
@@ -281,6 +386,9 @@ def editor_state(spec: dict, slug: str) -> dict:
         "labels": compiled["meta"]["labels"],
         "zones": spec.get("zones", []),
         "image": compiled["meta"].get("image", ""),
+        # What the alignment box starts from. Present for every map, including
+        # one with no artwork yet, so the page never has to branch on it.
+        "alignment": alignment(spec),
         "palette": palette(spec),
         "has_features": bool(spec.get("features")),
     }
