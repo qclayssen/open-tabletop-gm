@@ -4,7 +4,7 @@ from __future__ import annotations
 import random
 import sys
 
-from tests.localdm_fakes import FakeBridge, FakeClient
+from tests.localdm_fakes import FakeBridge, FakeClient, fixed_check_roll
 from localdm import checks, reply
 from localdm.play import Session
 from tests.test_localdm_play import MODELS, NULLS, camp_dir
@@ -101,9 +101,14 @@ def _session(tmp_path, directives):
 
 
 def _roll_counter(monkeypatch, face):
-    rolls = []
-    monkeypatch.setattr(random, "randint", lambda a, b: rolls.append((a, b)) or face)
-    return rolls
+    """Count skill-check rolls and pin the face.
+
+    This patched the `random` module, which stopped working when `play.py` moved
+    its check onto `dice.new_rng()` -- the patch became a no-op and these
+    assertions silently stopped counting. The seam is `play._CHECK_RNG` now; see
+    `tests.localdm_fakes.fixed_check_roll`.
+    """
+    return fixed_check_roll(monkeypatch, face)
 
 
 def test_scenario_passive_stakes_and_retry(tmp_path, monkeypatch):

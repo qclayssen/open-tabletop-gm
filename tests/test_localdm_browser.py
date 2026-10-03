@@ -94,11 +94,27 @@ def test_small_length_directive_is_a_cap_and_the_default_is_ignored(tmp_path):
     assert "I wave again." in last_user(c) and "[[" not in last_user(c)
 
 
+class _FixedRoll:
+    """The face this test needs, without touching the `random` module.
+
+    This used to be `monkeypatch.setattr("localdm.play.random.randint", ...)`, which
+    reached into the module-level generator to force a 12 -- so the rest of the
+    process drew from a patched generator for the rest of the test. The check now
+    rolls off this module's own stream, so forcing a face is a local stub. The
+    `(1, 20)` assertion is the part worth keeping: the check is still a d20.
+    """
+    seed_value = 12
+
+    def randint(self, low, high):
+        assert (low, high) == (1, 20)
+        return 12
+
+
 def test_ability_check_rolls_then_the_dm_narrates_the_outcome(tmp_path, monkeypatch):
     replies = iter(['You start to search the shed.\n{"escalate": null, "command": null, '
                     '"check": "Investigation 16"}', "Behind the crates, a torn sleeve." + NULLS])
     c, s = session(tmp_path, lambda m, msgs, role: next(replies))
-    monkeypatch.setattr("localdm.play.random.randint", lambda a, b: 12)
+    monkeypatch.setattr("localdm.play._CHECK_RNG", _FixedRoll())
     out = s.handle("I search the shed.")
     assert out[0] == "You start to search the shed."
     assert "17 against DC 16: success" in out[1]
