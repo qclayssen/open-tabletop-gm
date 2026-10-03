@@ -192,6 +192,55 @@ Effects (`tactics/effects.py`) are small dicts on the affected token: who made i
 
 `systems/dnd5e/tactics_rules.py` is the reference implementation (2014 rules), and `tests/test_tactics_rules_dnd5e.py` shows how to test one with scripted dice. The design methods delegate to `systems/dnd5e/encounter.py`, which is where the encounter-budget tables live — the same split as `tactics_spells.py` next to `tactics_sheet.py`, and for the same reason: the table is the thing that changes between editions, so it should be a file you can replace without touching the rules adapter.
 
+### Two things the method table above used to leave out
+
+Both were found by `tests/test_rules_conformance.py` running the same assertions against a second, deliberately dumber system (`tests/fake_rules.py`), and both are recorded in `scripts/tactics/rules.py` now. Read them before you write `attack`.
+
+**`attack` applies the damage, not the engine.** On a hit, call your own `damage` and put *its result dict* in the returned `damage` key (`None` on a miss). `engine._resolve_attack` never calls `damage` on the attack path; it passes `res["damage"]` straight to `effects.after_damage`, which reads `concentration_dc` off it. Return the rolled parts instead and the hit silently deals nothing, which is what a first `FakeRules` did on the literal reading of an older version of the docstring.
+
+**A creature at 0 hit points is `dead`.** `end_turn` decides a fight is over by asking whether any hostile is still `active`, and `Token.active` is `not dead`. If your system's way out of the fight is not a 0 hit point total, then whatever records it has to set `token.dead`, because that is the field the engine reads. `stable` is 5e's word for 5e's stabilising ritual; the board does not understand it, and a fight in which a dropped creature never leaves just goes on to the next round.
+
+### The port checklist
+
+`tests/test_rules_conformance.py` parametrizes over every `systems/*/tactics_rules.py` that loads, plus the toy system, so dropping a file into `systems/` puts it through all of this with no edit here. Run it before you say you are done:
+
+```bash
+python3 -m pytest tests/test_rules_conformance.py -q
+```
+
+What it holds you to, and why each one is a real requirement rather than a style rule:
+
+| Asserted | Requirement |
+|---|---|
+| every method on `Rules` exists and is callable | the contract is read off the base class, so a method added to the interface is covered the day it is added |
+| no extra public methods | a subclass answering something the interface never asked for is a fork, not a port |
+| `condition_modifiers` returns the same keys always | the engine reads every key on every roll; a missing one is a `KeyError` mid-fight |
+| `can_act`, `can_react`, `ac`, `speed`, `reach`, `turn_budget`, … do not mutate the token | these are called for previews, for AI options and for the sidebar; a ruleset that answers a question by writing the answer down lies between two of them |
+| `damage` never reports a negative change and clamps at 0 | the engine prints hit points to a player without re-checking the arithmetic |
+| a creature at 0 HP is no longer `active` | see above: this is how a fight ends |
+| `hit_chance` equals `attack`, enumerated over all twenty d20 faces | the number the player commits on has to be the number the roll had. A ruleset can agree on average and disagree face by face, and that is the case that matters |
+| `attack` and `saving_throw` return `text` and the die they rolled | the CLI prints the text and the log and the receipt carry the roll |
+| `attack["damage"]` is the dict `damage` returned, empty on a miss | see above |
+| a sheet round-trips through `token_from_sheet` and `write_back` | otherwise a fight's results cannot get back onto the character |
+| the same scripted dice give the same answer three times | a roll receipt is a promise to replay, and a system that reads a clock or a global cannot keep it |
+
+Two things it deliberately does not test. `spell` is left to your own tests, because a spec engine is 5e's shape and asserting it would push every other system toward 5e. And the encounter-design tables are left alone entirely: `NotImplementedError` is the documented honest answer, and a toy ruleset that invented an encounter budget would be a second way to have a wrong number in the code.
+
+### The 5e the engine still carries, and what it costs
+
+Measured, not read off the source. `tests/fake_rules.py` answers every method with the simplest defensible answer and nothing else, then runs a whole fight: start, move, attack, end-turn, fight over. What it found, and what each item would cost to make genuinely neutral rather than harmlessly dormant:
+
+| 5e in the engine | Where | Behind the interface? | What the toy measured | Engine lines to neutralise |
+|---|---|---|---|---|
+| spell slots (`slots.py`, 382 lines) | `slots.py`, imported by `actions`, `effects`, `rest`, `spells` | yes, by not asking: `known_spells` and `spell` gate every path | a whole fight with all twelve slot entry points poisoned: **0 calls** | 0 to keep a slotless system working; ~40 to guard the rest and CLI paths that no ruleset can reach yet |
+| Shield and Silvery Barbs | `effects.on_hit` (296-345), reached through `AttackContext.react` | yes, and opt-in **from the rules side**: a system with no reaction to a hit never calls the hook | `on_hit` ran **0** times on the toy fight and **1** time on the same fight in 5e | 0 to stay dormant; ~100 to rename the hook and move the spell lookups behind `Rules` |
+| Dodge, Disengage, Dash | `engine._simple_action` (858-882), `TurnState.disengaged`, `Token.dodging` | behaviour yes, names no: `dodging` is written by the engine and read **only** by `systems/dnd5e/tactics_rules.py` | all three are no-ops for a system whose `condition_modifiers` returns `None` throughout | ~25 to rename three actions to interface terms |
+| `death_save` as a pending turn state | `state.TurnState.pending`, `engine._require_turn` | yes: `Rules.death_save` sets it, and a system with none never does | start/move/attack/end-turn ran with it always unused | 0 |
+| **who applies damage** | `engine._resolve_attack` never calls `R.damage` | **no**, until this release: the interface docstring said "parts: already rolled" | the toy fight ran to completion and dealt **0** damage | **0**; the docstring was wrong and is fixed |
+| **who retires a creature** | `engine.end_turn` (217), `Token.active` | **no**, until this release | the toy wrote `stable = True`; the fight never ended | **0**; the docstring was wrong and is fixed |
+
+None of it is why the engine is stuck on 5e, and none of it needs doing now. The engine already runs a second system. What is left is naming, not behaviour, and the two items that actually bit were both documentation, both fixed here. The BRP port stays deferred: nothing about the interface blocks it, and nothing about the interface makes it worth 1500 lines and its own test set for a system no current campaign plays. Revisit it when a BRP campaign exists.
+
 ---
 
 ## Step-by-step: building a new system module
@@ -219,6 +268,9 @@ Run `/gm new <campaign-name>` and specify your system when prompted. The skill w
 
 ### Step 5 — Iterate
 The first session will reveal gaps. A dice pool system where the GM isn't counting successes correctly, a resource the GM isn't tracking — these are quick fixes in `system.md`. Over time your system module becomes a complete rules reference the GM can rely on.
+
+### Step 6: Grid combat (optional)
+If you want grid combat, drop a `systems/<your-system>/tactics_rules.py` next to `system.md` and run `python3 -m pytest tests/test_rules_conformance.py -q`. It finds your file on its own and holds it to every row of the port checklist above, with no test of yours to write first. The 2014 rules in `systems/dnd5e/tactics_rules.py` are the worked example to copy.
 
 ---
 
