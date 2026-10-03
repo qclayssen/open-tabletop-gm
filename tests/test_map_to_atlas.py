@@ -207,8 +207,30 @@ def test_sidecar_names_the_scene(env):
         (env[1] / "atlas-vtt/collections/Strixhaven/scenes/test-cave.json").read_text(encoding="utf-8"))
     assert sidecar["name"] == "Test Cave"
     assert sidecar["mapPath"] == "atlas-vtt/collections/Strixhaven/Test Cave.atlasmap"
-    assert sidecar["mapPath"] in {p.name for p in
-                                  (env[1] / "atlas-vtt/collections/Strixhaven").glob("*.atlasmap")} or True
+    # The sidecar must name the map this export actually wrote, not some other
+    # `.atlasmap` in the folder.
+    #
+    # This assertion used to read
+    #
+    #     assert sidecar["mapPath"] in {p.name for p in ...glob("*.atlasmap")} or True
+    #
+    # and the `or True` was recorded as "a machine difference". It was not. The
+    # left side is a vault-relative path and the set holds bare file names, so
+    # the two could never be equal on *any* machine: the assertion was
+    # structurally incapable of passing and the escape hatch was covering that,
+    # not an install difference. Measured both ways -- dropping `or True` alone
+    # turns this red with
+    # `assert 'atlas-vtt/collections/Strixhaven/Test Cave.atlasmap'
+    #  in {'Test Cave.atlasmap'}`.
+    #
+    # The next test already proves the file exists at that path; what this one
+    # uniquely says is that the name in the sidecar is the exported map's. So
+    # compare the two names, and fail loudly if nothing was exported at all,
+    # because an empty set would otherwise satisfy the "in" trivially.
+    exported = {p.name for p in
+                (env[1] / "atlas-vtt/collections/Strixhaven").glob("*.atlasmap")}
+    assert exported, "no .atlasmap was exported, so this proves nothing"
+    assert pathlib.PurePosixPath(sidecar["mapPath"]).name in exported
 
 
 def test_sidecar_points_at_a_file_that_exists(env):

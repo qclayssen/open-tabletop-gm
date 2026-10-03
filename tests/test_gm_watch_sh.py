@@ -249,6 +249,19 @@ class WatcherProcessLifecycle(unittest.TestCase):
         t0 = time.monotonic()
         p.terminate()
         p.wait(timeout=15)
+        # The bound is 8s and the measured latency is ~1.1s, so this is roughly
+        # 7x headroom, not a tight race. Measured, eight runs: 1.0993, 1.1031,
+        # 1.1041, 1.1116, 1.1216, 1.1221, 1.1271, 1.1272 -- a spread of 0.028s.
+        # The 1.1s is the watcher's `--interval 1` poll, i.e. the trap waits out
+        # the turn in flight rather than interrupting it, which is the behaviour
+        # this asserts.
+        #
+        # `p.wait(timeout=15)` above is the hard bound and raises if the trap is
+        # deferred that long; the 8 is the "not deferred until the next turn"
+        # line and is deliberately looser, because a slower runner must not turn
+        # this red. Tightening it is a decision with a measured cost, not a
+        # cleanup: the number is documented here so nobody has to re-derive it to
+        # find out whether it is safe to move.
         self.assertLess(time.monotonic() - t0, 8, "trap was deferred until the turn returned")
         self.assertTrue(self.wait_for(lambda: not self.alive(turn), 5), "turn left orphaned")
         self.assertTrue(self.termed.exists(), "turn was not sent TERM")
@@ -280,9 +293,23 @@ class WatcherProcessLifecycle(unittest.TestCase):
 
     def test_simultaneous_starts_yield_exactly_one_watcher(self):
         ps = [self.start("sess", "--interval", "1") for _ in range(6)]
-        time.sleep(4)
-        running = [p for p in ps if p.poll() is None]
-        self.assertEqual(len(running), 1, [p.poll() for p in ps])
+        # A fixed `sleep(4)` then `assertEqual(len(running), 1)` is the one
+        # machine-dependent assertion in this file, and it was not the one the
+        # audit named. It goes red on a *loaded* runner -- six `/bin/sh`
+        # processes starting at once under a full parallel pytest -- because a
+        # loser that has not finished failing its startup is still alive at 4s
+        # and the count is 2. Every other wait in this file already uses
+        # `wait_for`, which is the file's own answer to "how long is long
+        # enough"; this one reached for a literal instead.
+        #
+        # `wait_for` keeps the assertion's meaning exactly -- six simultaneous
+        # starts settle on one survivor -- and drops the guess about how fast
+        # that happens. Measured on this machine the settle is already complete
+        # at the first probe after 4s (1 of 6 alive, five runs), so this is
+        # tolerance rather than a different claim.
+        self.assertTrue(
+            self.wait_for(lambda: len([p for p in ps if p.poll() is None]) == 1, 30),
+            [p.poll() for p in ps])
 
     def test_recycled_pid_does_not_block_startup(self):
         # A live process that is NOT a gm-watch owns the pid in a stale lock.
