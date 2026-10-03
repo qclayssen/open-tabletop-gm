@@ -544,21 +544,39 @@ def test_a_rest_written_by_the_sequence_is_readable_by_the_next_session(camp, ca
 def test_the_features_this_issue_defers_are_still_absent():
     """#188's fourth criterion: "feature-specific tests await implementations".
 
-    Written as an assertion of absence rather than a to-do, so it is a fact that
-    can be checked and it says what to do the day the fact stops holding. When
-    one of these lands, this test fails and names the deferred test that is now
-    due:
+    Two deferrals, and they are in different states. Saying so is the point: a
+    single assertion of absence could not tell "still waiting" from "already
+    arrived", and this file's reader cannot tell either without checking.
 
-      * `FakeRules` (#195) — a lightweight `Rules` stub, so the engine's
-        interface is provable without a second system. Its conformance tests
-        cannot be written against a stub that does not exist.
-      * inventory and other bounded resources (CAT-6) — `fightq.py` has an
-        "inventory" topic that computes nothing, and `Rules` has no inventory
-        method, so there is no bounded resource to hold inside its bound.
+    **#195's FakeRules HAS LANDED.** `open-tabletop-gm#224` put
+    `tests/fake_rules.py` and `tests/test_rules_conformance.py` into the SAME PR,
+    so the stub and the conformance suite that was waiting on it are both here.
+    The tripwire that used to assert the stub's absence was right when written
+    and is now a false alarm, not a regression: its predicate looked only for
+    `class FakeRules` and never for the tests that consume the stub, so it fired
+    on the very PR that retired it. The deferral is closed, so this half asserts
+    the closure positively instead -- "done" is as checkable as "not yet", and a
+    stub with no conformance suite behind it is the state worth catching.
+
+    **inventory (CAT-6) is STILL deferred.** `fightq.py` has an "inventory" topic
+    that computes nothing and `Rules` has no inventory method, so there is no
+    bounded resource to hold inside its bound. This half still asserts absence,
+    and is the half that fires the day CAT-6 lands.
     """
     from tactics import rules as rules_mod
-    others = [p for p in (ROOT / "tests").glob("*.py") if p.name != pathlib.Path(__file__).name]
-    assert not [p for p in others if "class FakeRules" in p.read_text(encoding="utf-8")], \
-        "#195's FakeRules has landed: its conformance tests are now due here"
+
+    tests_dir = ROOT / "tests"
+    assert (tests_dir / "fake_rules.py").is_file(), (
+        "#195's FakeRules stub is gone. It landed with the conformance suite that "
+        "proves the Rules contract, and dropping one without the other leaves "
+        "tests/test_rules_conformance.py with nothing to exercise.")
+    conformance = tests_dir / "test_rules_conformance.py"
+    assert conformance.is_file(), (
+        "#195's FakeRules landed WITHOUT its conformance tests. The stub alone "
+        "does not retire this deferral: #224 is what closed it, and it closed it "
+        "by proving the contract against a second system.")
+    assert "fake_rules" in conformance.read_text(encoding="utf-8"), (
+        "the conformance suite no longer references the stub, so FakeRules is a "
+        "toy system with nothing asserting its behaviour")
     assert not hasattr(rules_mod.Rules, "inventory"), \
         "Rules.inventory has landed: the bounded-resource invariant is now due here"
