@@ -64,8 +64,14 @@ def _post(path: str, payload: dict) -> None:
 
 # ─── tracker.json ─────────────────────────────────────────────────────────────
 
-def sync_tracker(camp_dir, enc, drop_monsters: bool = False) -> None:
-    """Write each token's conditions and death saves in tracker.py's format."""
+def tracker_state(camp_dir, enc, drop_monsters: bool = False) -> dict:
+    """tracker.json's next contents, merged onto whatever is already on disk.
+
+    Split out from the write because the out-of-combat rest has to know what the
+    tracker will say before it writes anything: the sheets, the tracker and the
+    calendar are one transaction, and a store whose new text cannot be computed
+    without writing it cannot be part of one.
+    """
     path = pathlib.Path(camp_dir) / "tracker.json"
     state = safeio.load_json_safe(path)
     for t in enc.tokens.values():
@@ -79,7 +85,13 @@ def sync_tracker(camp_dir, enc, drop_monsters: bool = False) -> None:
         ent["concentration"] = t.concentration
         ent["death_saves"] = {"successes": t.death_saves["successes"],
                               "failures": t.death_saves["failures"], "stable": t.stable}
-    safeio.atomic_write_json(path, state)
+    return state
+
+
+def sync_tracker(camp_dir, enc, drop_monsters: bool = False) -> None:
+    """Write each token's conditions and death saves in tracker.py's format."""
+    safeio.atomic_write_json(pathlib.Path(camp_dir) / "tracker.json",
+                             tracker_state(camp_dir, enc, drop_monsters))
 
 
 # ─── display ──────────────────────────────────────────────────────────────────
@@ -272,25 +284,37 @@ def short_diff(old: str, new: str) -> str:
                      if l[:1] in "+-" and not l.startswith(("+++", "---")))
 
 
-def write_sheets(camp_dir, enc, rules) -> list:
-    """Write each PC's results into the campaign's own sheet copy, after
-    backing it up to <sheet>.md.bak. Returns [(name, path or None, diff)]."""
+def stage_sheets(camp_dir, enc, rules) -> list:
+    """Every PC's sheet with this token's results written in, and nothing on disk yet.
+
+    `[(name, path or None, old_text, new_text)]`. The read and the write are
+    separated for the same reason tracker_state() is: a rest that cannot read
+    every sheet must not have written any of them.
+    """
     out = []
     for t in enc.tokens.values():
         if t.side != "pc":
             continue
         path = find_sheet(camp_dir, t.name)
         if path is None:
-            out.append((t.name, None, ""))
+            out.append((t.name, None, "", ""))
             continue
         old = path.read_text(encoding="utf-8")
         t.conditions = rules.lasting_conditions(t)
-        new = rules.write_back(old, t)
+        out.append((t.name, path, old, rules.write_back(old, t)))
+    return out
+
+
+def write_sheets(camp_dir, enc, rules) -> list:
+    """Write each PC's results into the campaign's own sheet copy, after
+    backing it up to <sheet>.md.bak. Returns [(name, path or None, diff)]."""
+    out = []
+    for name, path, old, new in stage_sheets(camp_dir, enc, rules):
         diff = ""
-        if new != old:
+        if path is not None and new != old:
             safeio.atomic_write_text(path, new)   # keeps the .bak
             diff = short_diff(old, new)
-        out.append((t.name, path, diff))
+        out.append((name, path, diff))
     return out
 
 
