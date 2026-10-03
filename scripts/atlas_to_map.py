@@ -48,7 +48,7 @@ _MAPS = pathlib.Path(__file__).resolve().parents[1] / "display" / "maps"
 if str(_MAPS.parent) not in sys.path:
     sys.path.insert(0, str(_MAPS.parent))
 
-from tactics.maps import compile_map
+from tactics.maps import art_geometry, compile_map
 
 ATLAS_SCHEMA = "atlas-vtt"
 
@@ -147,6 +147,27 @@ def grid_geometry(scene: dict, scene_path: Path) -> tuple[int, int, int, int]:
     return size, width, height, feet
 
 
+def _background_px(scene: dict, scene_path: Path) -> tuple:
+    """The background's own pixel size, or (0, 0) when it is remote or missing.
+
+    A separate call rather than a fifth element of `grid_geometry`'s tuple: three
+    tests unpack that four-tuple by position, and widening it would break a
+    caller that has nothing to do with this value. A scene with no local
+    background cannot become a map with artwork (main() writes `image: None` in
+    that case), so there is nothing here to refuse.
+    """
+    bg = scene.get("background")
+    if not bg:
+        return (0, 0)
+    source = resolve_background(scene_path, bg)
+    if source is None:
+        return (0, 0)
+    try:
+        return image_size(source)
+    except ValueError:
+        return (0, 0)
+
+
 def image_size(path: pathlib.Path) -> tuple[int, int]:
     """Pixel dimensions of a PNG or JPEG, read from the header.
 
@@ -196,6 +217,7 @@ def build_map(scene: dict, name: str, scene_path: Path) -> dict:
             "OBSIDIAN-INTEGRATION-DECISION.md KC4.")
 
     cell, width, height, feet = grid_geometry(scene, scene_path)
+    px = _background_px(scene, scene_path)
     if feet != 5:
         raise ValueError(
             f"scene grid is {feet} ft per cell; the engine assumes 5 ft squares "
@@ -209,6 +231,8 @@ def build_map(scene: dict, name: str, scene_path: Path) -> dict:
         "width": width,
         "height": height,
         "image": None,
+        # The background's own pixel size, so the renderer can draw the art at
+        # the recorded pitch instead of stretching it to the board.
         # Grid alignment, in Atlas's own pixels, carried through unchanged.
         "grid": {
             "cell_px": cell,
@@ -221,7 +245,29 @@ def build_map(scene: dict, name: str, scene_path: Path) -> dict:
         # is documented in display/maps/README.md.
         "features": [],
     }
+    # Only when there is a picture to measure: (0, 0) is how _background_px says
+    # "remote or missing", and a zero dimension is not a size. main() writes
+    # `image: None` in that case, so a map with neither key is what gets saved.
+    if px[0] > 0 and px[1] > 0:
+        spec["image_px"] = [px[0], px[1]]
     return spec
+
+
+def _report_leftover(spec: dict) -> None:
+    """Name the image pixels the grid does not reach, when there are any.
+
+    Atlas lets a picture be any size and the grid any pitch, so a scene can
+    leave a strip the squares do not cover. Those pixels used to be stretched
+    into the last square, which spreads the whole board and makes the grid drift
+    by a pixel every few cells at the far edge. The renderer now crops them, and
+    this says so, because a cropped strip is a decision somebody should see.
+    """
+    if not spec.get("image"):
+        return
+    leftover = art_geometry(spec)["leftover"]
+    if any(leftover):
+        print(f"cropping {leftover[0]}px off the right and {leftover[1]}px off the "
+              f"bottom: the {spec['grid']['cell_px']}px grid does not reach them")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -249,6 +295,7 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({**spec, "features": ["<paint terrain here>"]}, indent=2))
         print(f"\ncell {spec['grid']['cell_px']}px, {spec['width']}x{spec['height']} cells, "
               f"5 ft each, image {scene.get('background') or '(none)'}")
+        _report_leftover(spec)
         return 0
 
     out_dir = args.out_dir
@@ -279,6 +326,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"wrote {map_path}")
     if spec.get("image"):
         print(f"image  {out_dir / spec['image']}")
+    _report_leftover(spec)
 
     check = (
         "python3 -c \"import sys; sys.path.insert(0,'scripts'); "
