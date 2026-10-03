@@ -549,16 +549,32 @@ def test_the_features_this_issue_defers_are_still_absent():
     one of these lands, this test fails and names the deferred test that is now
     due:
 
-      * `FakeRules` (#195) — a lightweight `Rules` stub, so the engine's
-        interface is provable without a second system. Its conformance tests
-        cannot be written against a stub that does not exist.
       * inventory and other bounded resources (CAT-6) — `fightq.py` has an
         "inventory" topic that computes nothing, and `Rules` has no inventory
         method, so there is no bounded resource to hold inside its bound.
+
+    `FakeRules` (#195) was on this list and is no longer. It landed, in PR #224
+    ("test(rules): prove the Rules contract against a second system"), together
+    with the conformance suite that was waiting for it. That is the list working
+    as designed: the tripwire fired, and the work it named got done. So the
+    entry is not deleted silently -- it is turned around. The assertion below now
+    says the thing that is TRUE, and keeps its teeth: `FakeRules` exists AND
+    something checks the engine against it. Before, the suite could have deleted
+    `tests/test_rules_conformance.py` and stayed green, because the deferral
+    only ever asserted that the stub was missing.
     """
     from tactics import rules as rules_mod
-    others = [p for p in (ROOT / "tests").glob("*.py") if p.name != pathlib.Path(__file__).name]
-    assert not [p for p in others if "class FakeRules" in p.read_text(encoding="utf-8")], \
-        "#195's FakeRules has landed: its conformance tests are now due here"
+
+    # ── #195's FakeRules landed (#224); what it was deferred FOR must still exist ──
+    conformance = ROOT / "tests" / "test_rules_conformance.py"
+    assert conformance.exists(), (
+        "#195's FakeRules landed in #224 with its conformance suite. If that suite "
+        "is being removed, the Rules interface is no longer provable against a "
+        "second system and this file needs to say so on purpose, not by deletion.")
+    body = conformance.read_text(encoding="utf-8")
+    assert "FakeRules" in body, (
+        "test_rules_conformance.py no longer mentions FakeRules, so the engine's "
+        "interface is not being checked against the toy system any more. #224 is "
+        "what made this possible; losing it silently is the failure this guards.")
     assert not hasattr(rules_mod.Rules, "inventory"), \
         "Rules.inventory has landed: the bounded-resource invariant is now due here"

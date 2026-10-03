@@ -12,6 +12,75 @@ This project is the LLM-agnostic, system-flexible fork of [claude-dnd-skill](htt
 
 ## [Unreleased]
 
+### Fixed: main was red, and three of the reasons were the tests being wrong
+
+`main` failed 10 tests. Four distinct causes, and only one of them was an
+environment problem:
+
+**The dataset is never built in CI** (#289). `systems/dnd5e/data/dnd5e_srd.json` is
+generated output and has been gitignored since the first release, and the workflow
+never runs `build_srd.py`. So every fresh clone and every CI run has no dataset, and
+the tests that need one fail on purpose. This is the load-bearing fix: without the
+dataset present, none of the others can be verified, because the spell rows in the
+coverage instrument are read from the *production* SRD rather than the fixture copy
+(#231 -- a fixture must never be what a coverage number was measured against).
+
+Building it in CI then failed on the first run, at the rate limiter:
+`api.github.com` allows 60 requests/hour per IP to an unauthenticated caller and the
+hosted runner pool shares an egress IP, so every `api.github.com` fetch came back
+403 and `build_srd.py` wrote a dataset with zero class features and **exited 0** --
+its refusal to write covers the case where *every* category came back empty, which
+is not this case. `build_srd._auth_headers` now sends a bearer token when
+`SRD_BUILD_TOKEN`, `GITHUB_TOKEN` or `GH_TOKEN` is set, and sends exactly the header
+it always did when none is, so a local build is unaffected. The CI step also gates on
+completeness, because a raised rate limit is still not a promised one.
+
+**A fixture's coverage claim had gone false silently.**
+`test_every_documented_reason_is_reachable_from_the_fixture` failed because
+`build_srd` now writes `damage_choice_upcast` and `damage_multi` for flame-strike.
+Neither is blocking, so the record that used to be the fixture's only route to
+`blocking_flag` fell through to `no_anchor` and the reason became unreachable -- with
+nothing failing loudly, because the fixture's own `_covers` map still claimed it.
+`dream` now carries that reason: its 2014 SRD range is the literal word "Special",
+which carries no number for the resolver to place, so it is flagged
+`range_unparsed`. Chosen over spiritual weapon and wall of fire, which also reach
+`blocking_flag` but only because their own text is currently unparseable -- "Special"
+survives the next SRD revision. The `_covers` text claiming flame-strike narrates on
+`area_placement` is corrected rather than left to mislead the next reader.
+
+**A test asserted a gap the code had deliberately closed.**
+`test_the_real_dataset_carries_provenance` asserted `not fvtt.get("sha")` -- that a
+provenance gap still existed, with a comment saying so. `build_srd` now records the
+foundryvtt tree sha it actually read, and records `""` rather than guessing when the
+tree cannot be read. Asserting the gap would have failed on the fix. The assertion is
+now a shape check: a sha is either a full 40-character lowercase git object id or
+empty to say the tree could not be read. Anything else is provenance that looks
+specific and is not, which is the failure the test exists to prevent. Deliberately not
+an equality check against a pinned sha -- that value moves whenever upstream
+`foundryvtt/dnd5e` advances.
+
+**A deferral tripwire outlived the thing it was watching for.**
+`test_the_features_this_issue_defers_are_still_absent` asserted that no test file
+contained `class FakeRules`, so that #195's arrival would demand its conformance
+tests. #224 landed `FakeRules` *and* that suite, so the tripwire fired on work that
+was already done. It is turned around rather than deleted: the assertion now says
+`tests/test_rules_conformance.py` exists *and* still mentions `FakeRules`. Before,
+the suite could have deleted the conformance file outright and stayed green.
+
+**And the one real defect: two merged PRs specified opposite behaviour.** #127 and
+#251 were merged twenty-four minutes apart, each verified against `origin/main` at
+branch time, so each reported a green suite correctly and neither could see the
+other. #127 said a question-shaped cast reaches the cast and spends a slot; #251's
+`is_questionish` guard says the negation. #251 ships, and its test
+(`test_an_unclaimed_status_question_can_reach_a_cast_and_spend_a_slot`) is re-pinned
+to the behaviour the engine actually has: the cast is refused, no slot is spent, and
+the player is told why. Removing the guard still fails it.
+
+The guard's cost is real and stays open: a player who asks conversationally gets
+nothing, which is the complaint #127 was filed about. The refusal tells them to
+re-ask in the imperative, but nothing offers to cast it for them. That confirm
+affordance is filed as its own issue rather than quietly settled here.
+
 ### Added: a GM-only ledger of agency violations and how each was corrected
 
 `scripts/localdm/agency.py` writes one JSON line per guardrail trip to
