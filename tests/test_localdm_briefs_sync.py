@@ -164,6 +164,112 @@ def test_outer_agents_dir_discovery_ignores_a_missing_directory(tmp_path, monkey
     assert briefs_sync.outer_agents_dir() is None
 
 
+def test_explicit_missing_agents_dir_fails_and_names_path(tmp_path, capsys):
+    missing = tmp_path / "not-there"
+
+    assert briefs_sync.main(["--check", "--agents-dir", str(missing)]) != 0
+    output = capsys.readouterr().out
+    assert str(missing) in output
+    assert "advisor briefs are in sync" not in output
+
+
+def test_explicit_non_directory_agents_dir_fails_and_names_path(tmp_path, capsys):
+    not_a_directory = tmp_path / "file"
+    not_a_directory.write_text("not a directory", encoding="utf-8")
+
+    assert briefs_sync.main(["--check", "--agents-dir", str(not_a_directory)]) != 0
+    output = capsys.readouterr().out
+    assert str(not_a_directory) in output
+    assert "advisor briefs are in sync" not in output
+
+
+def test_no_agents_dir_argument_keeps_manifest_only_check(tmp_path, monkeypatch, capsys):
+    """The documented case, and the reason this is not just "always fail".
+
+    A plain clone of this repo has no outer checkout, so `--check` cannot answer
+    the question at all; the committed manifest is the authority there. Degrading
+    to a manifest-only check is correct, and the note says so. Making it loud
+    instead would have broken the documented CI story to fix a different bug.
+    """
+    monkeypatch.setattr(briefs_sync, "outer_agents_dir", lambda _agents_dir=None: None)
+    monkeypatch.setattr(briefs_sync, "council_problems", lambda: [])
+    monkeypatch.setattr(briefs_sync, "check_manifest", lambda: [])
+
+    assert briefs_sync.main(["--check"]) == 0
+    output = capsys.readouterr().out
+    assert "no outer agents/ directory found" in output
+    assert "advisor briefs are in sync" in output
+
+
+def test_an_env_named_agents_dir_that_is_not_a_directory_fails(tmp_path, monkeypatch, capsys):
+    """The same hole by the other route in.
+
+    `ENV_AGENTS_DIR` is not discovery. Someone set it, on purpose, to point at a
+    sibling checkout -- it is how the outer repo's verification reaches one from
+    inside a worktree. A stale value is a mistake worth reporting, and it
+    produced exactly the false "in sync" the flag now refuses.
+    """
+    monkeypatch.setattr(briefs_sync, "council_problems", lambda: [])
+    monkeypatch.setattr(briefs_sync, "check_manifest", lambda: [])
+    monkeypatch.setenv(briefs_sync.ENV_AGENTS_DIR, str(tmp_path / "gone"))
+
+    assert briefs_sync.main(["--check"]) != 0
+    output = capsys.readouterr().out
+    assert str(tmp_path / "gone") in output
+    assert "advisor briefs are in sync" not in output
+
+
+def test_a_valid_env_named_agents_dir_still_compares(tmp_path, monkeypatch, capsys):
+    """The env route must keep working, or the guard above is a trap.
+
+    `_scratch` gives a throwaway pair of directories, so this does not skip when
+    the outer checkout is not beside the code repo -- which is what made the
+    two-repo verification runnable by hand in the first place.
+    """
+    _, agents = _scratch(tmp_path)
+    monkeypatch.setattr(briefs_sync, "council_problems", lambda: [])
+    monkeypatch.setattr(briefs_sync, "check_manifest", lambda: [])
+    monkeypatch.setenv(briefs_sync.ENV_AGENTS_DIR, str(agents))
+
+    assert briefs_sync.main(["--check"]) == 0
+    output = capsys.readouterr().out
+    assert f"compared against {agents}" in output
+    assert "advisor briefs are in sync" in output
+
+
+def test_a_drifted_env_named_agents_dir_is_reported(tmp_path, monkeypatch, capsys):
+    """The other half: a named directory that *is* there still gets compared, so
+    the stricter exit did not cost the env route its actual job."""
+    _, agents = _scratch(tmp_path)
+    (agents / "_shared.md").write_text("drifted\n", encoding="utf-8")
+    monkeypatch.setattr(briefs_sync, "council_problems", lambda: [])
+    monkeypatch.setattr(briefs_sync, "check_manifest", lambda: [])
+    monkeypatch.setenv(briefs_sync.ENV_AGENTS_DIR, str(agents))
+
+    assert briefs_sync.main(["--check"]) != 0
+    assert "drifted: _shared.md" in capsys.readouterr().out
+
+
+def test_install_agents_cannot_be_reached_by_the_stricter_check(tmp_path, capsys):
+    """Acceptance point 3, checked rather than argued.
+
+    `install_agents.py` drives this script with `[..., "--agents-dir", PATH]` and
+    **no `--check`**, so it always takes the generation half. `sync()` resolves
+    the same directory and raises `ValueError` on one that is not there, which
+    `main()` has already turned into exit 1 since before this fix. So the stricter
+    `--check` exit cannot reach any of `install_agents.py`'s three states, and
+    `--no-sync` still bypasses the script entirely.
+
+    If someone later adds `--check` to that call, this test is the one that says
+    the state table has to be revisited.
+    """
+    missing = tmp_path / "not-there"
+
+    # The generation half, which is the one install_agents.py calls.
+    assert briefs_sync.main(["--agents-dir", str(missing)]) != 0
+    assert str(missing) in capsys.readouterr().out
+
+
 def test_declared_dev_council_is_the_set_the_outer_repo_actually_carries():
     """The dev-council list is a claim about another repo, so it is checked.
 
