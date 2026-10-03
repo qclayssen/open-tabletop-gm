@@ -12,6 +12,63 @@ This project is the LLM-agnostic, system-flexible fork of [claude-dnd-skill](htt
 
 ## [Unreleased]
 
+### Fixed: three assertions that could not fail, and three test files that could not be run
+
+An audit (`qclayssen/dnd-gm` #234) named four suspected false greens. Each was
+checked before being repaired, and the recorded failure modes did not all hold.
+
+- **`tests/test_map_to_atlas.py` compared a path against a file name.** The
+  sidecar's `mapPath` is a vault-relative path
+  (`atlas-vtt/collections/Strixhaven/Test Cave.atlasmap`); the set was built from
+  `{p.name for p in ...glob("*.atlasmap")}`, which holds bare names. The two could
+  never be equal on any machine, and the assertion ended in `or True`. The audit
+  recorded the `or True` as "a marker that a machine difference was papered over";
+  it was not. Dropping `or True` alone turns the test red with `assert
+  'atlas-vtt/collections/Strixhaven/Test Cave.atlasmap' in {'Test Cave.atlasmap'}`.
+  Now compares names, and fails loudly if nothing was exported at all, since an
+  empty set would satisfy the `in` trivially.
+- **`tests/test_schemas.py::test_schema_field_can_be_told_to_keep_unknown_keys`
+  asserted nothing.** It proved the field stops raising and never checked that the
+  unknown key survives. Preservation turns out to be unconditional -- `coerce`
+  starts from `dict(value)` and `validate` is what consults `allow_unknown` -- so
+  a `coerce` rewritten to filter down to the declared fields would pass the old
+  body untouched. Now asserts the returned dict, and that the same key is still
+  refused without the flag.
+- **`tests/test_gm_watch_sh.py`'s 8s bound was undocumented, and the audit had the
+  direction backwards.** It recorded "asserts wall-clock deadlines with no
+  margin"; measured, the trap latency is 1.0993-1.1272s over eight runs (spread
+  0.028s), so 8s is roughly 7x headroom rather than a tight race. The 1.1s is the
+  watcher's `--interval 1` poll. The number is now documented with the measurement
+  so nobody re-derives it to find out whether it is safe to move.
+- **The real machine dependence in that file was a different assertion.**
+  `test_simultaneous_starts_yield_exactly_one_watcher` used a bare
+  `time.sleep(4)` and `assertEqual(len(running), 1)`, which goes red on a loaded
+  runner -- six `/bin/sh` processes starting at once under a parallel pytest --
+  because a loser that has not finished failing startup is still alive at 4s.
+  Every other wait in the file already used the file's own `wait_for`; this one
+  reached for a literal. Now it does too.
+- **`tests/conftest.py` (new): three test files could not be collected alone.**
+  `test_schemas.py`, `test_dice_rng.py` and `test_localdm_stall.py` import
+  `tactics`, `dice` and `localdm` from `scripts/` and never put it on
+  `sys.path`. They passed in a full-suite run only because another module adds it
+  while the collection is being built. Measured: each of the 137 files in
+  `tests/` run alone with CI's exact invocation, 3 error at import. This is not
+  cosmetic: a mutation proof against those files reports a *collection error*
+  where it should report a failed assertion, and both are non-zero.
+
+Not changed, because the finding did not hold:
+
+- **The two portrait tests at `tests/test_token_portraits.py` are already
+  superseded.** Both guard on `_manifest_art_on_disk()` and `pytest.skip`, and the
+  docstring records that the guards were rewritten so a *partial* install is
+  checked rather than skipped -- which is the audit's stated concern, answered on
+  purpose. The hermetic twin of the machine-dependent half
+  (`test_a_full_install_is_a_clean_check`) already exists.
+- **"Explicit optional skips" already holds.** Measured: 2893 passed, 100 skipped,
+  and every skip names either the environment variable that enables it
+  (`OTGM_NETWORK_TESTS=1`, `DISPLAY_RENDER_TESTS=1`) or the command that would
+  produce what is missing (`npm install`, an SRD build, the portrait install).
+
 ### Fixed: four entry points asked whether a campaign *exists* instead of whether it *is* one
 `paths.find_campaign` documents its own contract at `scripts/paths.py:121-124`: on a miss it returns `campaign_dir(name)`, "a path that does not exist unless a shell is sitting there, so callers must not read its existence as a hit. Ask `_is_campaign`." Four callers did not ask.
 

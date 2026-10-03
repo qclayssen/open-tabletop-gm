@@ -139,8 +139,27 @@ def test_schema_field_reports_the_path_and_refuses_an_unknown_key():
 
 
 def test_schema_field_can_be_told_to_keep_unknown_keys():
+    """`allow_unknown` has two halves and the old body checked one of them.
+
+    It proved the field stops raising, which was worth having. It never checked
+    that the unknown key *survives*, which is the half the test's name claims
+    and the half a caller relies on: a GM note a schema does not model has to
+    come back out of `clean()` or it is dropped on the next save.
+
+    Preservation turns out to be unconditional. `coerce` starts from
+    `dict(value)` and only overwrites the keys it knows, and `validate` is what
+    consults `allow_unknown`. So a `coerce` rewritten to filter down to the
+    declared fields would raise nothing, preserve nothing, and pass the old body
+    untouched. Asserting the returned dict is what pins it.
+    """
     f = SchemaField({"hp": NumberField()}, allow_unknown=True)
-    f.clean({"hp": 1, "note": "GM added this"})
+    out = f.clean({"hp": 1, "note": "GM added this", "conditions": ["prone"]})
+    assert out == {"hp": 1, "note": "GM added this", "conditions": ["prone"]}
+    # And the same field still refuses the key it was told about, so "keep" is
+    # not the same as "ignore the setting": the flag is the only difference
+    # between the two calls above and the refusal the sibling test pins.
+    with pytest.raises(SchemaError, match="unknown field 'note'"):
+        SchemaField({"hp": NumberField()}).clean({"hp": 1, "note": "x"})
 
 
 def test_formula_field_evaluates_over_a_closed_set_of_names():
