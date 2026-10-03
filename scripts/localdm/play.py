@@ -1443,7 +1443,7 @@ def _missing_campaign_message(name, camp_dir) -> str:
 
 
 def main(argv=None) -> int:
-    from paths import find_campaign
+    from paths import find_campaign, _is_campaign
     ap = argparse.ArgumentParser(prog="play.py", description=__doc__.split("\n\n")[0],
                                  formatter_class=argparse.RawDescriptionHelpFormatter,
                                  epilog=__doc__.split("\n\n", 1)[1])
@@ -1483,7 +1483,10 @@ def main(argv=None) -> int:
     if not args.campaign:
         ap.error("which campaign? Usage: play.py <campaign>")
     camp_dir = find_campaign(args.campaign)
-    if not camp_dir.exists():
+    # _is_campaign, not exists(). find_campaign's not-found sentinel is
+    # campaign_dir(name), which does exist whenever a stale shell sits there --
+    # so exists() would start the session against an empty campaign.
+    if not _is_campaign(camp_dir):
         print(_missing_campaign_message(args.campaign, camp_dir))
         return 1
     usage = camp_dir / "localdm" / "usage.jsonl"
