@@ -1,8 +1,8 @@
 {
- "_comment": "A deliberately tiny dataset for tests/test_rules_coverage.py. Every record is a real 5e-bits SRD 5.1 record taken from dnd5e_srd.json, so the instrument is exercised against the same shapes it meets in the full dataset. Chosen so that every state and every documented reason is reachable offline, and so a fresh clone -- which has NO dnd5e_srd.json at all -- can still measure something rather than only ever reporting 'unmeasured'.",
+ "_comment": "A deliberately tiny dataset for tests/test_rules_coverage.py. Every record is a real 5e-bits SRD 5.1 record taken from dnd5e_srd.json, so the instrument is exercised against the same shapes it meets in the full dataset. Chosen so that every state and every documented reason is reachable, and so a fresh clone -- which has NO dnd5e_srd.json at all -- can still measure something rather than only ever reporting 'unmeasured'. ONE LIMITATION, corrected 2026-10-03, because the old wording claimed otherwise: the SPELL rows are not self-contained. rules_coverage._spell_rows installs the PRODUCTION tactics_spells._srd for the duration of the measurement (issue #231 -- a test fixture must never be what a coverage number was measured against), so a spell's state is decided by its record in the real dataset and not by the copy kept here. The spell reasons therefore need the dataset built: python3 systems/dnd5e/build_srd.py. Without it every spell raises, every spell row comes back no_anchor, and the four resolver-decided reasons (builtin_forced_narrate, builtin_level_narrate, blocking_flag, save_nothing_to_apply) are unreachable. Conditions, features, monsters and items are read from THIS file and stay reachable with no dataset at all.",
  "_covers": {
   "mechanical spell": "fire-bolt: an attack cantrip the engine casts itself",
-  "reference spell": "flame-strike: two damage types plus area_placement, so it narrates",
+  "reference spell": "flame-strike: two damage types at once, so the engine narrates. It USED to be listed here as narrating on area_placement, which is one of the three blocking flags, and this record was the only thing in the fixture reaching blocking_flag. build_srd now writes damage_choice_upcast and damage_multi for flame-strike, neither of which is blocking, so it falls through to no_anchor and blocking_flag went unreachable. dream below carries that reason now, which is why the reason is still auditable.",
   "condition mechanical": "blinded: every SRD clause the engine enforces",
   "condition reference": "petrified: applied, but 'resistance to all damage' is not",
   "condition with no table entry": "frozen: named in the dataset, absent from CONDITION_EFFECTS",
@@ -20,7 +20,8 @@
   "monster action_unparsed": "giant frog: Swallow is prose the parser could not decompose",
   "monster no_structured_action": "sea horse: nothing on it is a shape the engine can run",
   "condition documented deviation": "charmed: the engine makes the attack at disadvantage instead of refusing it, which the SRD does not do. The code says so above CONDITION_EFFECTS, so this is a deliberate house ruling and the report calls it a deviation rather than a bug.",
-  "condition clause not enforced": "unconscious: applied, but 'is unaware of its surroundings' is not. Its consequence in play is that a charm or frighten lands on an unaware target without a save."
+  "condition clause not enforced": "unconscious: applied, but 'is unaware of its surroundings' is not. Its consequence in play is that a charm or frighten lands on an unaware target without a save.",
+  "spell blocking_flag": "dream: its 2014 SRD range is the word 'Special', which carries no number for the resolver to place, so build_srd flags it range_unparsed and tactics_spells treats that as blocking. Chosen over spiritual weapon and wall of fire, which reach blocking_flag through damage_unparsed and area_placement, because 'Special' will still be 'Special' in the next SRD revision."
  },
  "spells": [
   {
@@ -251,6 +252,47 @@
     },
     "flags": [
      "save_effect"
+    ]
+   }
+  },
+  {
+   "name": "Dream",
+   "index": "dream",
+   "description": "This spell shapes a creature's dreams. Choose a creature known to you as the target of this spell. The target must be on the same plane of existence as you. Creatures that don't sleep, such as elves, can't be contacted by this spell. You, or a willing creature you touch, enters a trance state, acting as a messenger.\n\nWhile in the trance, the messenger is aware of his or her surroundings, but can't take actions or move.\n\nIf the target is asleep, the messenger appears in the target's dreams and can converse with the target as long as it remains asleep, through the duration of the spell. The messenger can also shape the environment of the dream, creating landscapes, objects, and other images. The messenger can emerge from the trance at any time, ending the effect of the spell early. The target recalls the dream perfectly upon waking. If the target is awake when you cast the spell, the messenger knows it, and can either end the trance (and the spell) or wait for the target to fall asleep, at which point the messenger appears in the target's dreams.\n\nYou can make the messenger appear monstrous and terrifying to the target. If you do, the messenger can deliver a message of no more than ten words and then the target must make a wisdom saving throw. On a failed save, echoes of the phantasmal monstrosity spawn a nightmare that lasts the duration of the target's sleep and prevents the target from gaining any benefit from that rest. In addition, when the target wakes up, it takes 3d6 psychic damage.\n\nIf you have a body part, lock of hair, clipping from a nail, or similar portion of the target's body, the target makes its saving throw with disadvantage.",
+   "higher_level": "",
+   "level": 5,
+   "school": "Illusion",
+   "casting_time": "1 minute",
+   "range": "Special",
+   "components": [
+    "V",
+    "S",
+    "M"
+   ],
+   "material": "A handful of sand, a dab of ink, and a writing quill plucked from a sleeping bird.",
+   "duration": "8 hours",
+   "concentration": false,
+   "ritual": false,
+   "classes": [
+    "Bard",
+    "Warlock",
+    "Wizard"
+   ],
+   "mechanics": {
+    "casting": "other",
+    "concentration": false,
+    "save": {
+     "ability": "wis",
+     "on_success": "none"
+    },
+    "damage": {
+     "type": "psychic",
+     "slot": {
+      "5": "3d6"
+     }
+    },
+    "flags": [
+     "range_unparsed"
     ]
    }
   }
@@ -823,10 +865,10 @@
  ],
  "_meta": {
   "built_at": "fixture",
-  "total_records": 21,
+  "total_records": 22,
   "edition": "2014",
   "record_counts": {
-   "spells": 6,
+   "spells": 7,
    "conditions": 5,
    "features": 3,
    "monsters": 5,

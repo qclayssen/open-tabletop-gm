@@ -49,6 +49,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import pathlib
+import re
 import subprocess
 import sys
 
@@ -204,12 +205,31 @@ def test_every_record_is_one_of_three_states_with_a_valid_reason(fixture_report)
             assert row["state"] in rc._REASON_STATES[row["reason"]], row
 
 
+#: The spell reasons that need `tactics_spells.resolve` to return something, as
+#: opposed to raising. `_spell_rows` measures against the PRODUCTION
+#: `tactics_spells._srd` (issue #231), so these depend on the real dataset being
+#: built, not on this fixture. Without it every spell raises, every spell row
+#: comes back `no_anchor`, and exactly these four go missing -- which is a fact
+#: about the absent dataset and says nothing about the fixture.
+DATASET_DEPENDENT_SPELL_REASONS = {
+    "builtin_forced_narrate", "builtin_level_narrate",
+    "blocking_flag", "save_nothing_to_apply",
+}
+
+
 def test_every_documented_reason_is_reachable_from_the_fixture(fixture_report):
     """A reason nobody can produce is a reason nobody can audit.
 
     Mutant: a REASONS entry that no record in the fixture emits. That entry
     would be documentation of a state the instrument cannot actually report,
     which is worse than not having it.
+
+    This does not skip when the dataset is missing, because a skip nobody reads
+    is how `blocking_flag` stayed unreachable for as long as it did. It asserts
+    the weaker true claim instead, and asserts it strictly: with no dataset the
+    four resolver-decided spell reasons are unreachable AND every spell row
+    carries the resolver's own error, which is what proves the gap is the absent
+    dataset rather than a hole in the fixture.
     """
     seen = set()
     for row in fixture_report["records"]:
@@ -226,8 +246,22 @@ def test_every_documented_reason_is_reachable_from_the_fixture(fixture_report):
                 "action_damage_unresolved", "no_table_entry",
                 "clause_not_enforced", "unsupported_listed",
                 "unsupported_unlisted", "reference_only"}
-    assert expected - seen == set(), (
-        f"documented but unreachable from the fixture: {sorted(expected - seen)}")
+    missing = expected - seen
+    if missing == DATASET_DEPENDENT_SPELL_REASONS:
+        assert not DATA.exists(), (
+            "the real dataset IS built, so those four reasons must be reachable. "
+            f"Still missing: {sorted(missing)}. A spell in the fixture no longer "
+            "produces the reason it was added for.")
+        spells = [r for r in fixture_report["records"] if r["category"] == "spell"]
+        assert spells, "the fixture holds no spells at all"
+        for row in spells:
+            assert row["reason"] == "no_anchor", row
+            assert (row.get("detail") or {}).get("error"), (
+                f"spell {row['index']} came back no_anchor with no resolver error, so "
+                "the dataset is absent but something else is also wrong: " f"{row}")
+    else:
+        assert missing == set(), (
+            f"documented but unreachable from the fixture: {sorted(missing)}")
     # ...and every reason the fixture does not reach is reachable somewhere.
     assert set(rc.REASONS) - seen == {"dataset_absent"}, set(rc.REASONS) - seen
 
@@ -616,11 +650,22 @@ def test_every_axis_is_present_with_a_computed_total(real, fixture_report):
 def test_the_real_dataset_carries_provenance(real):
     """Provenance is not optional: a coverage number without it is anonymous.
 
-    This is also where the missing piece shows. `dnd5e_srd.json` records a sha
-    for 5e-bits and NOT for foundryvtt, because `build_srd.cmd_build` calls
-    `_latest_sha(FVTT_COMMITS)` and then discards the value that `_build_fvtt`
-    returns. That is a real gap in 260 features' provenance and is named here
-    rather than printed as "?" and passed over.
+    The gap this test used to pin is closed, and the assertion is now the other
+    way round. It was written by #207 to record that `dnd5e_srd.json` carried a
+    sha for 5e-bits and NOT for foundryvtt, because `cmd_build` called
+    `_latest_sha(FVTT_COMMITS)` and then threw away the value `_build_fvtt`
+    returned: a quarter of the dataset by record count had anonymous
+    provenance. #208 landed after #207 and fixed that -- it keeps the tree sha
+    and falls back to it when the commits API could not be read -- but left this
+    assertion behind, so the test began failing on every machine that has a
+    dataset built. Its own message said what to do about that, and this is it.
+
+    So this now asserts the CLOSED state, and asserts it by shape rather than by
+    value: the sha tracks an upstream branch that moves, so pinning a literal
+    would be a test that fails on someone else's commit. What must hold is that
+    every source names a commit, that the commit is a real git sha, and that
+    `fetched_at` is recorded beside it -- a sha with no timestamp says when the
+    file was last read from nothing in particular.
     """
     if not real:
         pytest.skip("real dataset absent")
@@ -628,10 +673,22 @@ def test_the_real_dataset_carries_provenance(real):
     assert provenance["built_at"]
     assert provenance["edition"] == "2014"
     assert provenance["sources"]
+
+    for name, source in sorted(provenance["sources"].items()):
+        sha = source.get("sha")
+        assert sha, f"{name} records no sha, so its records have anonymous provenance"
+        assert re.fullmatch(r"[0-9a-f]{40}", sha), (
+            f"{name} sha {sha!r} is not a git commit id")
+        assert source.get("fetched_at"), f"{name} has a sha and no time it was read"
+        assert source.get("repo"), f"{name} has a sha and no repository name"
+
+    # The specific half #208 closed, named so a regression says which source went
+    # anonymous rather than only that some source did.
     fvtt = provenance["sources"].get("foundryvtt") or {}
-    assert not fvtt.get("sha"), (
-        "the dataset records no foundryvtt sha. If a build now records one, this "
-        "assertion should become an equality check and the provenance gap closes.")
+    assert fvtt.get("sha"), (
+        "the dataset records no foundryvtt sha again. #208 fixed this by keeping the "
+        "tree sha cmd_build had already fetched; if it has regressed, the 260 features "
+        "are anonymous provenance again while the 5e-bits half names a commit.")
 
 
 # ─── the CLI ──────────────────────────────────────────────────────────────────

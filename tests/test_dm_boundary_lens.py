@@ -458,10 +458,15 @@ def m4_summary() -> str:
             f"model call; unclaimed: {'; '.join(dropped)}")
 
 #: Player lines a character sheet could answer, and whether the explore classifier
-#: (`fightq.classify`, scope="explore") claims them. The router is the whole defence
-#: between a status question and a model that may answer it by casting a spell, so the
-#: two rows marked `claimed=False` are the live form of the #251 B2 finding: nothing
-#: stops a `cast` field being set on a line that fell through.
+#: (`fightq.classify`, scope="explore") claims them. The two rows marked
+#: `claimed=False` are still the live form of the #251 B2 finding: the classifier
+#: does not claim them, so they reach the model. What changed on 2026-10-03 is
+#: what happens next. This file used to carry the comment "nothing stops a `cast`
+#: field being set on a line that fell through", and that was true when written.
+#: #251 added the `CAST_ON_A_QUESTION` guard in `scripts/localdm/play.py`, so a
+#: `cast` arriving on an unclaimed line is now refused out loud and costs
+#: nothing. The two rows stay in this table because the ROUTING RATE is the
+#: measurement: claiming them is the better fix and would change the number.
 #:
 #: The claimed half is already pinned by tests/test_localdm_fightq.py, whose responder
 #: raises if the model is called. This table exists to measure the UNCLAIMED half, which
@@ -488,14 +493,26 @@ def test_the_engine_claims_four_of_six_answerable_lines_and_lets_two_through(tmp
     assert len(claimed) == 4
 
 
-def test_an_unclaimed_status_question_can_reach_a_cast_and_spend_a_slot(tmp_path, monkeypatch):
-    """The live shape of #251's B2, on an input the 2026-09-30 report did not name.
+def test_an_unclaimed_status_question_no_longer_reaches_a_cast_and_spends_a_slot(
+        tmp_path, monkeypatch):
+    """#251's B2, closed. This assertion used to be the other way round.
 
-    A line the explore classifier does not claim reaches the model, and `_player_turn`
-    honours `r.cast` with no check that the player's line was a cast at all. So
-    "how many first-level slots do I have left" can cost one, and the player is never
-    told. Pinned as the current behaviour because it is the shape any fix has to
-    close, and because a routing change that closes it must fail this test.
+    The line does not reach the engine's router, so it reaches the model, and
+    `_player_turn` honours `r.cast`. The defect was that nothing checked whether
+    the player's line was a cast at all, so "how many first-level slots do I
+    have left" could cost a slot and the player was never told. This test pinned
+    that as the current behaviour on purpose, and said so: "a routing change
+    that closes it must fail this test."
+
+    That routing change is `CAST_ON_A_QUESTION` in `scripts/localdm/play.py`,
+    added by #251 in `25c1c50`. The tripwire fired, which is the tripwire working,
+    so the assertion is inverted rather than deleted: the defect being closed is
+    the thing worth pinning, and a deleted test would let it reopen silently.
+
+    `tests/test_spell_command_boundaries.py` covers the same guard as a class
+    (four question-shaped lines) and pins the other side, that an imperative cast
+    still spends the slot. This one stays because it is the lens file's measured
+    record of where the boundary sits, and the row above it is still `False`.
 
     GM_CAMPAIGN_ROOT is pointed at tmp so `tracker.cmd_effect` (which `_cast_spell`
     calls) resolves the sandboxed campaign and never the real one.
@@ -509,10 +526,18 @@ def test_an_unclaimed_status_question_can_reach_a_cast_and_spend_a_slot(tmp_path
     s, c = session(root, fake)
     out = s.handle("how many first-level slots do I have left")
     sheet = (s.camp_dir / "characters" / SHEET.name).read_text(encoding="utf-8")
-    assert "AC is now 15" in " ".join(out), "the cast was not resolved at all"
-    assert "| 1st | 2 | 1 |" in sheet, (
-        "a slot was spent answering a status question; this test says so rather than "
-        "pretending the gap is closed")
+    assert any(CAST_ON_A_QUESTION.format(spell="Mage Armor").split(":")[0] in o
+               or "was not cast: that was a question" in o for o in out), (
+        "the refusal was dropped rather than spoken, which is a different defect: "
+        "a dropped request the player cannot see is worse than a refused one")
+    assert "| 1st | 2 | 0 |" in sheet, (
+        "a slot was spent answering a status question. The guard is in "
+        "scripts/localdm/play.py; if this fires, the guard stopped firing.")
+    assert "AC is now 15" not in " ".join(out), (
+        "Mage Armor applied to a question, so the sheet changed on a line that asked "
+        "for nothing")
+    assert len(c.dm_calls()) == 1, (
+        "one draft, then the engine speaks: the refusal is not a re-draft")
 
 
 def test_a_sheet_question_the_router_claims_never_reaches_the_model(tmp_path):
