@@ -299,13 +299,78 @@ body.tx-min #tx-panel { max-height: none; }
    already lines up with the picture. */
 .tx-art { pointer-events: none; }
 
-/* Terrain over artwork: a translucent wash, so the terrain still reads (walls,
-   water, difficult ground) without hiding the map the GM paid for. Opaque fills
-   would make the image pointless. Keyed on data-t, which renderBoard sets. */
-.tx-terrain-over-art rect { fill-opacity: .55; }
-/* Terrain the GM must read at a glance stays solid even over art. */
+/* ── terrain over artwork ──────────────────────────────────────────────────
+   A translucent wash, so the terrain still reads (walls, water, difficult
+   ground) without hiding the map the GM paid for. Opaque fills would make the
+   image pointless. Keyed on data-t, which renderBoard sets.
+
+   WHY THE WASH IS FAINT AND THE EDGE IS STRONG
+   ============================================
+   The wash used to be .55 (and .85 for walls and voids) with nothing else, on
+   the assumption that a darker or lighter fill is what makes terrain legible
+   over a picture. Measured, that assumption is false and cannot be made true.
+
+   `fill-opacity` alpha composites the terrain colour over the artwork, so the
+   terrain's apparent colour is `alpha*terrain + (1-alpha)*art`. Sweeping every
+   terrain colour in both themes against every one of 125 adversarial backdrops
+   (the 5-cube RGB grid, which includes black, white and each terrain colour
+   itself), the WORST-CASE contrast between a washed cell and the art beneath is
+   1.00:1 at alpha = .85, .75, .65, .55, .45, .35 and .30 alike. There is a
+   backdrop for which any wash at any of those alphas is invisible, and no
+   opacity exists that is not. So raising the wash cannot buy legibility; it only
+   costs artwork, and the issue's two requirements are then in direct conflict.
+
+   The fix is to move legibility off the fill and onto the BOUNDARY, which is a
+   channel the artwork does not occupy:
+
+   - the wash drops to .38, so more of the picture survives (artwork fidelity)
+   - cells on the edge of a terrain region get a 1.5px stroke that does not scale
+     with the cell, so a region has a visible boundary whatever is under it
+   - walls and voids keep a heavier fill (.7), because those two are the terrain
+     a GM must read at a glance and they are also the two where the artwork is
+     least informative (a wall is a wall whoever drew it).
+
+   `vector-effect: non-scaling-stroke` keeps the outline at the same device
+   weight whatever the cell. Without it the stroke scales with the cell and the
+   outline is 0.5px at the phone minimum, which is the same legibility bug as
+   #300 0.2 in a different layer. */
+.tx-terrain-over-art rect { fill-opacity: .38; }
+/* Terrain the GM must read at a glance stays a heavier wash even over art. */
 .tx-terrain-over-art rect[data-t="wall"],
-.tx-terrain-over-art rect[data-t="void"] { fill-opacity: .85; }
+.tx-terrain-over-art rect[data-t="void"] { fill-opacity: .7; }
+
+/* The boundary between two DIFFERENT terrains, which is what actually has to
+   read over a picture. Not on every cell: a stroke per rect outlines uniform
+   ground as a box grid, which over artwork is worse than no outline at all, so
+   tactics.js sets data-edge on the cells that have a differently-terrained
+   neighbour and this rule keys on that.
+
+   A stroke of the ink colour at .9 opacity. An outline is a channel the artwork
+   does not occupy: it is a drawn line rather than a colour mixed with an
+   unknown one, which is the whole reason the wash opacity had to come down
+   instead of up. */
+.tx-terrain-over-art rect[data-edge] { stroke: var(--tx-ink); stroke-opacity: .9;
+                                       stroke-width: 1.5;
+                                       vector-effect: non-scaling-stroke; }
+.tx-terrain-over-art rect[data-t="wall"][data-edge],
+.tx-terrain-over-art rect[data-t="void"][data-edge] { stroke-opacity: 1; }
+
+/* The difficult-terrain chevron: a non-colour channel, and the only thing that
+   separates `difficult` (#A9B58C) from `hazard` (#D9A3A0) -- 1.00:1 in
+   grayscale in the light theme, so a player who cannot tell those hues apart
+   cannot tell those terrains apart at any opacity. Moved out of the inline style
+   in tactics.js so this stylesheet owns it and so the geometry (difficultMark,
+   in fractions of a cell) and the weight live in different files on purpose.
+
+   Its old inline form was stroke-opacity .3 at a fixed 12 user units in a 32-
+   unit cell: 3.75px of marker at the phone minimum of 10px a square, beside a
+   grid line. Over artwork the stroke is now full weight and non-scaling; on a
+   map with no artwork it stays the quiet accent it was, because there the fill
+   is opaque and the terrain reads on its own. */
+.tx-difficult-mark { fill: none; stroke: var(--tx-ink); stroke-opacity: .3;
+                    stroke-width: 1.5; }
+.tx-terrain-over-art .tx-difficult-mark { stroke-opacity: .85;
+                                         vector-effect: non-scaling-stroke; }
 .tx-nolos { fill: url(#tx-hatch); pointer-events: none; }
 .tx-hatch-line { stroke: var(--tx-ink); stroke-opacity: .45; stroke-width: 2.5; }
 .tx-cov2 { fill: var(--tx-brass); fill-opacity: .2; pointer-events: none; }
