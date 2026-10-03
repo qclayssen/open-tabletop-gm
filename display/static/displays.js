@@ -149,8 +149,11 @@
         if (!payload) return;
         let changed = false;
         if (payload.dice_request)          changed = note(payload.dice_request) || changed;
-        if (payload.dice_pending)          changed = pending(payload.dice_pending) || changed;
         if (payload.dice_results)          changed = landed(payload.dice_results) || changed;
+        // After the results, deliberately. A roll lands as `text` then
+        // `dice_pending`; reading the snapshot first would mark the request
+        // finished on a results list that has not been filled in yet.
+        if (payload.dice_pending)          changed = pending(payload.dice_pending) || changed;
         if (payload.dice_request_cancelled) changed = cancelled(payload.dice_request_cancelled) || changed;
         if (changed) render();
       },
@@ -159,7 +162,7 @@
     function card(id) {
       let c = requests.get(id);
       if (!c) {
-        c = { id, chars: [], spec: '1d20', modifier: 0, advantage: 'normal',
+        c = { id, chars: [], spec: '', modifier: 0, advantage: 'normal',
               label: '', dc: null, waiting: [], results: [], cancelled: false,
               done: false };
         requests.set(id, c);
@@ -179,21 +182,30 @@
     function note(req) {
       if (!req || !req.request_id) return false;
       const c = card(req.request_id);
-      c.chars = Array.isArray(req.characters) && req.characters.length
-        ? req.characters.map(String)
-        : [String(req.character || 'any')];
-      if (req.spec)         c.spec = String(req.spec);
-      if (req.modifier != null) c.modifier = Number(req.modifier) || 0;
-      if (req.advantage)    c.advantage = String(req.advantage);
-      if (req.label)        c.label = String(req.label);
-      if (req.dc != null)   c.dc = Number(req.dc);
+      absorb(c, req);
+      if (!c.chars.length) {
+        c.chars = [String(req.character || 'any')];
+      }
       return true;
     }
 
     /* The snapshot is the whole truth about who is still holding a die, so it
-     * replaces the waiting set rather than adding to it. A card the snapshot
-     * says nothing about is finished, which is also how a request the server
-     * has already aged out stops showing as waiting forever. */
+     * replaces the waiting set rather than adding to it.
+     *
+     * "A card the snapshot says nothing about is finished" is NOT concluded
+     * here. The two payloads arrive in the order the rolls happen — `text`,
+     * then `dice_pending` — and the text is the one carrying the result. A card
+     * marked done on the strength of an empty `pending` therefore says
+     * "Everyone has rolled" for the one frame before the result line that
+     * proves it, and on the last roll of a request it goes further: the card is
+     * finished before its own answer has been attached, so the answer draws
+     * after the claim it contradicts.
+     *
+     * So a card is only finished once it is finished *and* has something to
+     * show for it. A name that has left `pending` without a matching result is
+     * held as "rolled, result not yet read" and stays a chip rather than
+     * becoming a tick — which is also what makes the two payloads compose
+     * instead of racing. */
     function pending(snap) {
       const rows = Array.isArray(snap) ? snap : [];
       const seen = new Set();
@@ -202,21 +214,23 @@
         const c = card(row.request_id);
         seen.add(row.request_id);
         c.waiting = Array.isArray(row.pending) ? row.pending.slice() : [];
-        if (row.label) c.label = String(row.label);
-        if (row.spec)   c.spec = String(row.spec);
-        if (row.modifier != null) c.modifier = Number(row.modifier) || 0;
-        if (row.advantage) c.advantage = String(row.advantage);
-        if (row.dc != null) c.dc = Number(row.dc);
+        absorb(c, row);
         if (Array.isArray(row.results) && row.results.length > c.results.length) {
           c.results = row.results.slice();
         }
-        c.done = c.waiting.length === 0;
+        settle(c);
       });
       let changed = false;
       requests.forEach(c => {
-        if (!seen.has(c.id) && !c.done) { c.done = true; c.waiting = []; changed = true; }
+        if (!seen.has(c.id) && !c.done) { c.waiting = []; settle(c); changed = true; }
       });
       return true;
+    }
+
+    /* A card is finished when nobody is holding a die AND there is a result to
+     * show. See `pending` for why the second half is not optional. */
+    function settle(c) {
+      c.done = c.waiting.length === 0 && c.results.length > 0;
     }
 
     /* The last roll of a request. The server drops a finished request from the
@@ -228,8 +242,32 @@
       const c = card(res.request_id);
       c.results = Array.isArray(res.results) ? res.results.slice() : [];
       c.waiting = [];
-      c.done = true;
+      // The request's own description, for a window that never saw
+      // `dice_request`: a reload, or a second screen opened once the roll was
+      // already in. Without it the card shows the right rolls under the wrong
+      // heading — "1d20 +0" over a 2d6+3 Strength check, which is worse than no
+      // card at all because it looks authoritative.
+      absorb(c, res.meta);
+      settle(c);
       return true;
+    }
+
+    /* Copy the request's description onto a card. Shared by all three payloads
+     * because they all carry some subset of it and none carries all of it:
+     * `dice_request` has the chars and the DC, the snapshot has the waiting set,
+     * `dice_results` has whatever the client missed. Each field is only taken
+     * when it is actually present, so a payload cannot blank a value an earlier
+     * one supplied. */
+    function absorb(c, meta) {
+      if (!meta || typeof meta !== 'object') return;
+      if (Array.isArray(meta.characters) && meta.characters.length) {
+        c.chars = meta.characters.map(String);
+      }
+      if (meta.spec)       c.spec = String(meta.spec);
+      if (meta.modifier != null) c.modifier = Number(meta.modifier) || 0;
+      if (meta.advantage)  c.advantage = String(meta.advantage);
+      if (meta.label)      c.label = String(meta.label);
+      if (meta.dc != null) c.dc = Number(meta.dc);
     }
 
     function cancelled(id) {
@@ -263,9 +301,17 @@
       return names.length ? names.join(' · ') : 'The table';
     }
 
-    /* "1d20 +5", with a real minus sign rather than a hyphen, because this is
-     * set large on a screen somebody is reading from the far side of a table. */
+    /* "1d20 +5", with a real minus sign rather than a hyphen, because this is set
+     * large on a screen somebody is reading from the far side of a table.
+     *
+     * A card that never learned its spec says nothing rather than saying
+     * "1d20 +0". Those are different claims: the first is "I don't know", the
+     * second is "a straight d20 with no modifier", and a table reading the
+     * second one off a screen will argue about the wrong number. The rolls
+     * below it are the real answer either way, so the card is still useful
+     * while its heading is honest about being incomplete. */
     function rollText(c) {
+      if (!c.spec) return '';
       const mod = c.modifier || 0;
       const sign = mod >= 0 ? '+' : '−';
       return c.spec + ' ' + sign + Math.abs(mod);
@@ -278,10 +324,13 @@
 
       const head = el('div', 'dreq-head');
       head.append(el('span', 'dreq-who', who(c)));
-      const roll = el('span', 'dreq-roll', rollText(c));
-      if (c.advantage === 'advantage')       { roll.classList.add('adv'); roll.title = 'Advantage'; }
-      else if (c.advantage === 'disadvantage') { roll.classList.add('dis'); roll.title = 'Disadvantage'; }
-      head.append(roll);
+      const roll = rollText(c);
+      if (roll) {
+        const chip = el('span', 'dreq-roll', roll);
+        if (c.advantage === 'advantage')         { chip.classList.add('adv'); chip.title = 'Advantage'; }
+        else if (c.advantage === 'disadvantage') { chip.classList.add('dis'); chip.title = 'Disadvantage'; }
+        head.append(chip);
+      }
       if (c.label) head.append(el('span', 'dreq-label', c.label));
       if (c.dc != null) head.append(el('span', 'dreq-dc', 'DC ' + c.dc));
       card_.append(head);
@@ -291,9 +340,14 @@
       c.chars.filter(n => n && n.toLowerCase() !== 'any').forEach(name => {
         const rolled = rolledNames.size ? rolledNames.has(name.toLowerCase()) : false;
         const waiting = c.waiting.some(w => String(w).toLowerCase() === name.toLowerCase());
-        const chip = el('span', 'dchip' + (rolled ? ' rolled' : (waiting ? ' dchip-wait' : '')),
+        // The tick IS the state, in the label. It used to be a ✓ glyph in the
+        // text plus an unstyled `.dchip-mark` span saying "rolled" beside it,
+        // and that span had no rule in displays.css at all — so every rolled
+        // name read "✓ Aldric rolled" on screen and to a screen reader. One
+        // signal, in the text, where the stylesheet can reach it.
+        const chip = el('span',
+                        'dchip' + (rolled ? ' rolled' : (waiting ? ' dchip-wait' : '')),
                         (rolled ? '✓ ' : '') + name);
-        if (rolled)  chip.append(el('span', 'dchip-mark', 'rolled'));
         state.append(chip);
       });
       if (c.cancelled) state.append(el('span', 'dreq-cancelled', 'Cancelled by the DM'));

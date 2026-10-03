@@ -1330,6 +1330,7 @@ _dice_pending: dict = {}
 _dice_pending_lock = threading.Lock()
 # Finished requests keep their roll texts so --wait can print them to the GM.
 _dice_done: dict = {}           # request_id → [roll text, ...], oldest first
+_dice_done_meta: dict = {}      # request_id → the request's own {spec, modifier, ...}
 _dice_cancelled: set = set()    # ids in _dice_done that the GM cancelled
 _DICE_DONE_KEEP = 50
 #: How many finished requests a newly-connected browser is told about. The dice
@@ -1338,14 +1339,34 @@ _DICE_DONE_KEEP = 50
 _DICE_DONE_REPLAY = 5
 
 
-def _dice_finish(req_id: str, results: list, cancelled: bool = False) -> None:
-    """Keep a finished request's rolls for --wait. Caller holds _dice_pending_lock."""
+def _dice_finish(req_id: str, results: list, meta: dict = None,
+                 chars: list = None, cancelled: bool = False) -> None:
+    """Keep a finished request's rolls for --wait. Caller holds _dice_pending_lock.
+
+    The rolls and the request's own description are kept in two dictionaries
+    rather than one value, because `_dice_done[req_id]` is a *list of strings* and
+    three call sites and a test read it as exactly that. Changing the shape to
+    `{"results": [...], "meta": {...}}` would silently turn `list(_dice_done[id])`
+    from the rolls into the dict's keys, and `--wait` would print nothing while
+    reporting success. So `_dice_done` is left alone and `_dice_done_meta` is
+    retired alongside it, in the same loop, under the same cap.
+    """
     _dice_done[req_id] = results
+    if meta or chars:
+        # `characters` matters as much as the meta and costs the same to keep:
+        # without it a window opened after the request finished has no name to
+        # put on the card, and falls back to "The table" for a check addressed to
+        # two specific people. The empty `chars` set is what marks a request
+        # finished, so the names have to be copied out before it is dropped.
+        _dice_done_meta[req_id] = dict(meta or {})
+        if chars:
+            _dice_done_meta[req_id]["characters"] = sorted(chars)
     if cancelled:
         _dice_cancelled.add(req_id)
     while len(_dice_done) > _DICE_DONE_KEEP:
         oldest = next(iter(_dice_done))
         del _dice_done[oldest]
+        _dice_done_meta.pop(oldest, None)
         _dice_cancelled.discard(oldest)
 
 
@@ -1364,6 +1385,11 @@ def _dice_pending_snapshot() -> list:
             {"request_id": rid,
              "pending": sorted(e["chars"]),
              "label": e["meta"].get("label", ""),
+             # Who it was asked of, which is not the same as who is still
+             # holding a die. The dice window draws a chip per name, so without
+             # this it shows only the people still to roll and a name vanishes
+             # off the card the instant they answer.
+             "characters": sorted(e.get("asked") or e["chars"]),
              "spec": e["meta"].get("spec", "1d20"),
              "modifier": e["meta"].get("modifier", 0),
              "advantage": e["meta"].get("advantage", "normal"),
@@ -1381,8 +1407,16 @@ def _dice_results_payload(req_id: str, results: list) -> dict:
     final roll landed, taking the answer off the screen a beat after the table
     asked for it. The rolls already reach the story display as narration; this is
     the same text, addressed to the panel that is showing the request.
+
+    `meta` rides along for the same reason `dice_pending` carries it: a window
+    that connects late, or reloads, gets rolls and an id but never saw
+    `dice_request`, so without the description it renders "1d20 +0" for what was
+    a 2d6 +3 Strength check. The only place those values still exist is
+    `_dice_done_meta`, so they are read from there rather than from a request
+    that no longer exists.
     """
-    return {"request_id": req_id, "results": list(results)}
+    return {"request_id": req_id, "results": list(results),
+            "meta": dict(_dice_done_meta.get(req_id) or {})}
 
 
 
@@ -3114,8 +3148,9 @@ def player_dice():
                     entry.setdefault("results", []).append(text)
                     pending_changed = True
                     if not entry["chars"]:
+                        _dice_finish(req_id, entry["results"], entry["meta"],
+                                     entry.get("asked"))
                         _dice_pending.pop(req_id, None)
-                        _dice_finish(req_id, entry["results"])
                         finished = _dice_results_payload(req_id, entry["results"])
     if pending_changed:
         _broadcast({"dice_pending": _dice_pending_snapshot()})
@@ -3185,6 +3220,12 @@ def dice_request():
         with _dice_pending_lock:
             _dice_pending[request_id] = {
                 "chars": set(trackable),
+                # `asked` is the full addressee list, kept separately from
+                # `chars` because `chars` is drained as people roll and reaches
+                # empty — and an empty set is exactly what marks the request
+                # finished. The names have to survive it to be of any use to a
+                # display that connects after the last roll.
+                "asked": list(trackable),
                 "meta": {"spec": spec, "modifier": modifier, "advantage": adv, "label": label, "dc": dc_val},
                 "started_at": time.time(),
             }
@@ -3262,7 +3303,8 @@ def dice_request_cancel(request_id):
     with _dice_pending_lock:
         entry = _dice_pending.pop(request_id, None)
         if entry is not None:
-            _dice_finish(request_id, entry.get("results", []), cancelled=True)
+            _dice_finish(request_id, entry.get("results", []), entry.get("meta"),
+                         entry.get("asked"), cancelled=True)
     _broadcast({"dice_pending": _dice_pending_snapshot(), "dice_request_cancelled": request_id})
     return "", 204
 
