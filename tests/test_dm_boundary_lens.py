@@ -448,8 +448,8 @@ def m3_summary() -> str:
 def m4_summary() -> str:
     """The routing rate: of the lines a sheet could answer, how many the engine claims.
 
-    Denominator: ROUTABLE, six player lines. Two fall through to the model, and for
-    those the `cast` field is honoured with no check that the line was a cast at all,
+    Denominator: ROUTABLE, six player lines. Two fall through to the model, and on
+    those the `cast` field the model sets is refused in the open rather than resolved,
     which is #251's B2 in its surviving form.
     """
     claimed = sum(1 for _line, want in ROUTABLE if want)
@@ -460,8 +460,10 @@ def m4_summary() -> str:
 #: Player lines a character sheet could answer, and whether the explore classifier
 #: (`fightq.classify`, scope="explore") claims them. The router is the whole defence
 #: between a status question and a model that may answer it by casting a spell, so the
-#: two rows marked `claimed=False` are the live form of the #251 B2 finding: nothing
-#: stops a `cast` field being set on a line that fell through.
+#: two rows marked `claimed=False` are #251's B2 in its surviving form: the model does
+#: put a `cast` on a line that fell through. What the router does NOT do is spend a
+#: slot on it, which is what #251's guard in `_player_turn` closed. See
+#: `test_an_unclaimed_status_question_reaches_the_model_and_spends_no_slot`.
 #:
 #: The claimed half is already pinned by tests/test_localdm_fightq.py, whose responder
 #: raises if the model is called. This table exists to measure the UNCLAIMED half, which
@@ -488,14 +490,45 @@ def test_the_engine_claims_four_of_six_answerable_lines_and_lets_two_through(tmp
     assert len(claimed) == 4
 
 
-def test_an_unclaimed_status_question_can_reach_a_cast_and_spend_a_slot(tmp_path, monkeypatch):
-    """The live shape of #251's B2, on an input the 2026-09-30 report did not name.
+def test_an_unclaimed_status_question_reaches_the_model_and_spends_no_slot(tmp_path,
+                                                                            monkeypatch):
+    """The M4 unclaimed half, with the slot guard closed. This test was renamed, not
+    deleted; see the paragraph below, because the old name asserted the opposite.
 
-    A line the explore classifier does not claim reaches the model, and `_player_turn`
-    honours `r.cast` with no check that the player's line was a cast at all. So
-    "how many first-level slots do I have left" can cost one, and the player is never
-    told. Pinned as the current behaviour because it is the shape any fix has to
-    close, and because a routing change that closes it must fail this test.
+    A line the explore classifier does not claim still reaches the model, and the model
+    still answers a status question with a `cast`. That half has not changed: M4 is 4/6
+    and `fightq.SELF_TOPICS` still has no slots topic. What changed is what the engine
+    does with it. `Session._player_turn` now refuses a `cast` on a question-shaped line
+    in one visible line, so the unclaimed line costs no slot.
+
+    WHY THIS IS THE OPPOSITE OF WHAT IT USED TO SAY
+    ===============================================
+    #127 shipped this test named
+    `test_an_unclaimed_status_question_can_reach_a_cast_and_spend_a_slot`, and #251
+    shipped the guard that made it red. The two were merged from parallel branches
+    (#127's commit 8444317 at 20:14, #251's 25c1c50 at 20:38, neither an ancestor of
+    the other), so neither could see the collision.
+
+    The old test was not a specification of the behaviour #127 wanted. Four times, in
+    three files, #127 handed this exact behaviour to #251 and pre-announced that
+    closing it would turn its own test red:
+
+    - its docstring: "Pinned as the current behaviour because it is the shape any fix
+      has to close, and because a routing change that closes it must fail this test."
+    - the ROUTABLE table below: the two `claimed=False` rows are "the live form of the
+      #251 B2 finding: nothing stops a `cast` field being set on a line that fell
+      through."
+    - `docs/DM-BOUNDARY-BASELINE.md` finding 4: "Not fixed here. #251 owns the
+      investigation."
+    - PR #210's own body, finding 4: "'how many first-level slots do I have left' can
+      spend a slot ... Pinned as live behaviour; #251 owns the investigation."
+
+    So the test going red was the tripwire firing as designed, not a regression. It is
+    rewritten rather than deleted because its measurement job is still live: the
+    routing gap is real and still unfixed, and this test is where a cast on an
+    unclaimed line is pinned now that the guard makes it safe. Reinstating the old
+    assertion would be re-opening a deliberate guardrail decision that a merged PR
+    already made, in exchange for a slot spent on a question.
 
     GM_CAMPAIGN_ROOT is pointed at tmp so `tracker.cmd_effect` (which `_cast_spell`
     calls) resolves the sandboxed campaign and never the real one.
@@ -508,11 +541,14 @@ def test_an_unclaimed_status_question_can_reach_a_cast_and_spend_a_slot(tmp_path
 
     s, c = session(root, fake)
     out = s.handle("how many first-level slots do I have left")
+    assert c.dm_calls(), "the router claimed the line; M4 is no longer 4/6 and the " \
+                         "routing finding above is stale, not the guard"
+    said = " ".join(out)
+    assert "AC is now 15" not in said, "a cast on a status question resolved"
+    assert any("was not cast: that was a question" in o for o in out), (
+        f"the refusal must be spoken, not dropped: {out}")
     sheet = (s.camp_dir / "characters" / SHEET.name).read_text(encoding="utf-8")
-    assert "AC is now 15" in " ".join(out), "the cast was not resolved at all"
-    assert "| 1st | 2 | 1 |" in sheet, (
-        "a slot was spent answering a status question; this test says so rather than "
-        "pretending the gap is closed")
+    assert "| 1st | 2 | 0 |" in sheet, "a slot was spent answering a status question"
 
 
 def test_a_sheet_question_the_router_claims_never_reaches_the_model(tmp_path):
