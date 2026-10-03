@@ -88,17 +88,106 @@ class Models:
                    os.environ.get("GM_FAST_MODEL") or "")
 
 
+def _chain(exc: BaseException, depth: int = 4) -> list:
+    """The exception and its causes, outermost first. Bounded and cycle-guarded.
+
+    `__context__` is set implicitly by any exception raised inside an `except` block, so a
+    self-referential chain is constructible and `seen` is not paranoia.
+    """
+    out, seen = [exc], {id(exc)}
+    while depth > 0:
+        nxt = exc.__cause__ or exc.__context__
+        if nxt is None or id(nxt) in seen:
+            break
+        out.append(nxt)
+        seen.add(id(nxt))
+        exc = nxt
+        depth -= 1
+    return out
+
+
+def _root_cause(exc: BaseException, depth: int = 4) -> BaseException:
+    """The exception that actually went wrong, if it is wrapped.
+
+    `_http` converts every transport error into `LLMError` with `raise ... from e`, so by
+    the time `chat` sees the failure the type is gone and only a message remains. The
+    obvious fix -- classify on the message -- means string-matching `HTTP 504`, which is
+    precisely the coupling that makes an error report untrustworthy the moment somebody
+    rewords a string. The cause chain is typed and already there.
+    """
+    return _chain(exc, depth)[-1]
+
+
+def _classify_error(exc: BaseException) -> str:
+    """A short, non-leaking label for a failed call, for `usage.jsonl`.
+
+    Built from the *type* of the root cause and, where safe, its numeric code. Never from
+    a message: `_http` embeds up to 300 characters of upstream response body, and the
+    malformed-reply path embeds the parsed reply, so a message is a channel for prompt text
+    and model output into a file that gets archived and grepped. The two in-process
+    failures have no cause to inspect and are matched on their own wording, which is in
+    this module and therefore not a cross-file string coupling.
+
+    The categories are the ones that need different fixes, which is the test for whether a
+    label is worth having:
+
+      http-<code>   the endpoint answered and said no. 401/403 is a key, 404 a model name,
+                    429 a rate limit, 5xx upstream. Four different problems.
+      timeout       the request was made and nothing came back inside the budget.
+      unreachable   nothing was listening, or DNS failed.
+      bad-json      something answered, and it was not a chat reply.
+      unexpected-reply, empty-answer, no-answer-budget
+                    the endpoint worked and the answer was unusable.
+    """
+    cause = _root_cause(exc)
+
+    # The two failures raised inside `chat` have a cause too -- a bare `KeyError` or
+    # `IndexError` from indexing a malformed reply -- so walking to the root would lose
+    # the only thing that tells them apart. They are identified by a sentinel this module
+    # owns and writes itself, so matching it is not a cross-file string coupling, and the
+    # sentinels are checked first for exactly that reason.
+    for candidate in _chain(exc):
+        msg = str(candidate)
+        if "unexpected reply" in msg:
+            return "unexpected-reply"
+        if "unreadable reply" in msg:
+            return "bad-json"
+        if "no answer" in msg and "reasoning" in msg:
+            return "no-answer-budget"
+        if "no answer" in msg:
+            return "empty-answer"
+
+    if isinstance(cause, urllib.error.HTTPError):
+        return f"http-{cause.code}"
+    if isinstance(cause, (urllib.error.URLError, TimeoutError, ConnectionError)):
+        reason = getattr(cause, "reason", None)
+        if isinstance(cause, TimeoutError) or isinstance(reason, TimeoutError):
+            return "timeout"
+        return "unreachable"
+    if isinstance(cause, (json.JSONDecodeError, UnicodeDecodeError)):
+        return "bad-json"
+    return "other"
+
+
 def _http(url: str, body: dict, headers: dict, timeout: float) -> dict:
     req = urllib.request.Request(url, data=json.dumps(body).encode("utf-8"),
                                  headers=headers, method="POST")
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+            raw = resp.read()
     except urllib.error.HTTPError as e:
         detail = e.read().decode("utf-8", "replace")[:300]
         raise LLMError(f"HTTP {e.code} from {url}: {detail}") from e
-    except (urllib.error.URLError, TimeoutError, OSError, ValueError) as e:
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
         raise LLMError(f"cannot reach {url}: {e}") from e
+    # The decode is deliberately outside the block above. A 200 whose body is not JSON
+    # means the endpoint *was* reached, and folding it into "cannot reach" both reads
+    # false in a run report and costs the operator the distinction they need:
+    # `bad-json` needs a different fix from `unreachable`.
+    try:
+        return json.loads(raw.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError) as e:
+        raise LLMError(f"unreadable reply from {url}: {e}") from e
 
 
 # Prompt caching, OFF by default. GM_CACHE_CONTROL=1 turns it on.
@@ -167,24 +256,37 @@ class Client:
         if reasoning:
             body["reasoning_effort"] = reasoning
         start = time.monotonic()
-        data = self.transport(f"{self.base_url}/v1/chat/completions", body, headers, self.timeout)
+        # Every exit from this method is a model call that happened, and every one of them
+        # is evidence. Before this, the `_log` call sat last, after the three `raise`
+        # paths above it, so a refused request -- 504, 401, connection refused, a
+        # malformed reply, a blank answer -- left no row at all. The evidence file
+        # therefore described only the calls that worked, which is the one thing a usage
+        # log cannot be allowed to do: a run in which every call failed and a run in
+        # which every call succeeded produced the same file, and #236 had to recover the
+        # failures from stdout markers because nothing downstream had them.
         try:
-            message = data["choices"][0]["message"]
-            text = message["content"] or ""
-        except (KeyError, IndexError, TypeError) as e:
-            raise LLMError(f"unexpected reply: {str(data)[:200]}") from e
-        if not text.strip():
-            # A blank answer with reasoning behind it is a budget problem, not a
-            # model that had nothing to say. Say which, because the two need
-            # opposite fixes and "the advisor was silent" is otherwise
-            # indistinguishable from a working advisor that declined to comment.
-            spent = int((data.get("usage") or {}).get("completion_tokens") or 0)
-            thought = message.get("reasoning") or message.get("reasoning_content") or ""
-            if thought or spent >= max_tokens:
-                raise LLMError(
-                    f"no answer: {spent}/{max_tokens} completion tokens went to "
-                    f"reasoning, none to the answer. Raise max_tokens, or set "
-                    f"reasoning_effort (GM_REASONING=none).")
+            data = self.transport(f"{self.base_url}/v1/chat/completions",
+                                  body, headers, self.timeout)
+            try:
+                message = data["choices"][0]["message"]
+                text = message["content"] or ""
+            except (KeyError, IndexError, TypeError) as e:
+                raise LLMError(f"unexpected reply: {str(data)[:200]}") from e
+            if not text.strip():
+                # A blank answer with reasoning behind it is a budget problem, not a
+                # model that had nothing to say. Say which, because the two need
+                # opposite fixes and "the advisor was silent" is otherwise
+                # indistinguishable from a working advisor that declined to comment.
+                spent = int((data.get("usage") or {}).get("completion_tokens") or 0)
+                thought = message.get("reasoning") or message.get("reasoning_content") or ""
+                if thought or spent >= max_tokens:
+                    raise LLMError(
+                        f"no answer: {spent}/{max_tokens} completion tokens went to "
+                        f"reasoning, none to the answer. Raise max_tokens, or set "
+                        f"reasoning_effort (GM_REASONING=none).")
+        except Exception as exc:
+            self._log_failure(role, model, start, exc)
+            raise
         usage = data.get("usage") or {}
         try:
             finish = (data["choices"][0] or {}).get("finish_reason") or "stop"
@@ -207,10 +309,55 @@ class Client:
         """Log the requested combo name, not the upstream model, so totals group by tier."""
         if not self.usage_log:
             return
-        row = {"t": time.strftime("%Y-%m-%dT%H:%M:%S"), "role": role, "model": model,
+        row = {"t": time.strftime("%Y-%m-%dT%H:%M:%S"), "status": "ok",
+               "role": role, "model": model,
                "prompt_tokens": reply.prompt_tokens,
                "completion_tokens": reply.completion_tokens, "seconds": reply.seconds,
                "cache_read": reply.cache_read, "cache_created": reply.cache_created}
+        self._append(row)
+
+    def _log_failure(self, role: str, model: str, start: float, exc: BaseException) -> None:
+        """Record a call that failed. Best-effort: never mask the error being raised.
+
+        Two things are deliberately *not* written, and the reasoning is the whole design:
+
+          * **The exception's message.** `_http` puts up to 300 characters of the upstream
+            response body in it, and the malformed-reply path puts `str(data)[:200]` in it.
+            Both can echo prompt text or model output. An evidence file is read by run
+            reports, archived, and grepped -- a usage log that captures response bodies
+            turns all three into a copy of the conversation. `error` is a classification the
+            code builds instead, which is what an operator actually acts on: 504 and
+            connection-refused need opposite fixes, and neither needs the body to tell them
+            apart.
+          * **The key.** Never written, never derived, and there is nothing to redact
+            because there is nothing to redact.
+
+        Token counts are `null`, not `0`. Zero is a real value here -- a cache hit reports
+        zero uncached prompt tokens -- and a failed row carrying `0` would deflate the
+        totals silently. `null` says "the endpoint never told us", which is the truth and is
+        what `totals()` now skips.
+        """
+        if not self.usage_log:
+            return
+        # The root cause's type, not the wrapper's: `LLMError` says "the endpoint
+        # failed" for a 401 and a 504 alike, which is the distinction the operator needs
+        # and the one the row is supposed to carry.
+        cause = _root_cause(exc)
+        row = {"t": time.strftime("%Y-%m-%dT%H:%M:%S"), "status": "error",
+               "role": role, "model": model,
+               "error": _classify_error(exc), "error_type": type(cause).__name__,
+               "prompt_tokens": None, "completion_tokens": None,
+               "seconds": round(time.monotonic() - start, 2),
+               "cache_read": None, "cache_created": None}
+        try:
+            self._append(row)
+        except OSError:
+            # The run is already failing. Losing the evidence row is bad; turning a
+            # 504 into an unraisable OSError is worse. The original error propagates.
+            pass
+
+    def _append(self, row: dict) -> None:
+        assert self.usage_log is not None
         with self._lock:
             self.usage_log.parent.mkdir(parents=True, exist_ok=True)
             with open(self.usage_log, "a", encoding="utf-8") as f:
@@ -248,7 +395,17 @@ def reasoning_from_env(model: str | None = None) -> str | None:
 
 
 def totals(path) -> list:
-    """(role, model, calls, prompt_tokens, completion_tokens), in first-seen order."""
+    """(role, model, calls, prompt_tokens, completion_tokens), in first-seen order.
+
+    Failed calls are counted in `calls` and contribute nothing to either token total.
+    Their `prompt_tokens` and `completion_tokens` are `null`, not `0`, because the
+    endpoint never reported them -- and `0` would quietly deflate the totals. Counting the
+    call is the point: a role whose every call failed shows `3 calls, 0 in, 0 out`, which
+    is a run report saying so, where before it showed nothing at all.
+
+    The token totals are a lower bound over the calls that succeeded. That is stated here
+    rather than left for a reader to infer from a `0`.
+    """
     path = pathlib.Path(path)
     if not path.exists():
         return []
@@ -259,8 +416,34 @@ def totals(path) -> list:
         r = json.loads(line)
         k = (r["role"], r["model"])
         calls, p, c = sums.get(k, (0, 0, 0))
-        sums[k] = (calls + 1, p + r["prompt_tokens"], c + r["completion_tokens"])
+        sums[k] = (calls + 1, p + int(r["prompt_tokens"] or 0),
+                   c + int(r["completion_tokens"] or 0))
     return [(role, model, *v) for (role, model), v in sums.items()]
+
+
+def failures(path) -> list:
+    """(role, model, error) for every failed call, in first-seen order.
+
+    The companion to `totals()`, and the reason the log can be trusted as evidence: a run
+    report that shows 4 DM calls and 0 completion tokens can now find out that all four
+    were `http-504` rather than having to infer it from an absence.
+    """
+    path = pathlib.Path(path)
+    if not path.exists():
+        return []
+    counts: dict = {}
+    order: list = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        r = json.loads(line)
+        if r.get("status") != "error":
+            continue
+        k = (r["role"], r["model"], r.get("error") or "unknown")
+        if k not in counts:
+            order.append(k)
+        counts[k] = counts.get(k, 0) + 1
+    return [(*k, counts[k]) for k in order]
 
 
 def cache_totals(path) -> tuple:
@@ -287,4 +470,8 @@ def cache_totals(path) -> tuple:
         read += int(r.get("cache_read") or 0)
         created += int(r.get("cache_created") or 0)
         prompt += int(r.get("prompt_tokens") or 0)
+    # A failed row carries nulls, not zeros, and `int(None or 0)` above turns them into
+    # zero. Correct here: the endpoint never billed a cache hit it also refused to serve,
+    # so contributing nothing is right. The distinction that matters is in `totals()`,
+    # where the same nulls are `unknown` rather than `zero`.
     return (read, created, prompt)
