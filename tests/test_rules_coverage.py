@@ -616,11 +616,27 @@ def test_every_axis_is_present_with_a_computed_total(real, fixture_report):
 def test_the_real_dataset_carries_provenance(real):
     """Provenance is not optional: a coverage number without it is anonymous.
 
-    This is also where the missing piece shows. `dnd5e_srd.json` records a sha
-    for 5e-bits and NOT for foundryvtt, because `build_srd.cmd_build` calls
-    `_latest_sha(FVTT_COMMITS)` and then discards the value that `_build_fvtt`
-    returns. That is a real gap in 260 features' provenance and is named here
-    rather than printed as "?" and passed over.
+    THE MISSING PIECE THIS FILE NAMED IS CLOSED. `dnd5e_srd.json` used to record
+    a sha for 5e-bits and an empty one for foundryvtt, because `cmd_build` called
+    `_build_fvtt()` and discarded the tree sha it returned: the 260 features came
+    from `foundryvtt/dnd5e` with no commit named. `cmd_build` keeps it now. The
+    producer half is pinned hermetically, with the network stubbed out, at
+    `tests/test_srd_contracts.py::test_cmd_build_keeps_the_foundryvtt_sha_it_just_read`;
+    this is the consumer half -- a report built from a real dataset on disk.
+
+    The old assertion was a guard against the ABSENCE of provenance, so a build
+    that closed the gap made it fail on success. It is an equality now, against
+    the sha the dataset itself recorded.
+
+    The commit id is deliberately NOT pinned to a literal. The dataset is
+    rebuilt from live upstream and `foundryvtt/dnd5e@master` moves, so a pinned
+    sha would go red on every build for a reason that has nothing to do with this
+    engine -- the same mistake as pinning a count against a fetch. What has to be
+    true is that the report names the sha the build recorded, and that it is a
+    whole 40-hex commit id rather than the empty string the discarded-return bug
+    wrote. The second half is what makes this an equality rather than a presence
+    test: `""` would satisfy both `== recorded` and `.get("sha")` if the dataset
+    were the thing that lost it, and it satisfies neither here.
     """
     if not real:
         pytest.skip("real dataset absent")
@@ -628,10 +644,24 @@ def test_the_real_dataset_carries_provenance(real):
     assert provenance["built_at"]
     assert provenance["edition"] == "2014"
     assert provenance["sources"]
+
+    # Both sources fed records into this dataset, so neither may be anonymous.
+    for name, info in provenance["sources"].items():
+        assert info.get("sha"), (
+            f"{name} contributed records to this dataset and names no commit. "
+            "A coverage number computed from an unnamed source is anonymous, "
+            "which is the whole reason provenance is not optional.")
+
+    recorded = json.loads(DATA.read_text(encoding="utf-8"))["_meta"]["sources"]
     fvtt = provenance["sources"].get("foundryvtt") or {}
-    assert not fvtt.get("sha"), (
-        "the dataset records no foundryvtt sha. If a build now records one, this "
-        "assertion should become an equality check and the provenance gap closes.")
+    assert fvtt.get("sha") == recorded["foundryvtt"].get("sha"), (
+        "the report's foundryvtt sha is not the sha the dataset recorded, so one "
+        "of the two is fabricating provenance")
+    sha = fvtt["sha"]
+    assert len(sha) == 40 and all(c in "0123456789abcdef" for c in sha), (
+        f"the foundryvtt sha is not a whole commit id: {sha!r}. A short or empty "
+        "sha is the gap reopening: cmd_build must keep the value _build_fvtt "
+        "returns rather than writing an empty one.")
 
 
 # ─── the CLI ──────────────────────────────────────────────────────────────────

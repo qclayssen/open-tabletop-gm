@@ -2,7 +2,8 @@
  "_comment": "A deliberately tiny dataset for tests/test_rules_coverage.py. Every record is a real 5e-bits SRD 5.1 record taken from dnd5e_srd.json, so the instrument is exercised against the same shapes it meets in the full dataset. Chosen so that every state and every documented reason is reachable offline, and so a fresh clone -- which has NO dnd5e_srd.json at all -- can still measure something rather than only ever reporting 'unmeasured'.",
  "_covers": {
   "mechanical spell": "fire-bolt: an attack cantrip the engine casts itself",
-  "reference spell": "flame-strike: two damage types plus area_placement, so it narrates",
+  "reference spell": "flame-strike: two damage types, so the engine has to pick one and will not; damage_multi plus damage_choice_upcast, neither of which is blocking, so it falls through to no_anchor",
+  "spell blocking_flag": "wall of thorns: area_placement, a wall shaped by the caster rather than a blast. This is the only record that reaches blocking_flag, so it is the only place the reason can be read off the fixture instead of off REASONS. It is here because _covers used to claim flame-strike covered it; flame-strike is a cylinder and only a line-shaped area carries area_placement, so that claim was never true.",
   "condition mechanical": "blinded: every SRD clause the engine enforces",
   "condition reference": "petrified: applied, but 'resistance to all damage' is not",
   "condition with no table entry": "frozen: named in the dataset, absent from CONDITION_EFFECTS",
@@ -253,6 +254,56 @@
      "save_effect"
     ]
    }
+  },
+  {
+   "casting_time": "1 action",
+   "classes": [
+    "Druid"
+   ],
+   "components": [
+    "V",
+    "S",
+    "M"
+   ],
+   "concentration": true,
+   "description": "You create a wall of tough, pliable, tangled brush bristling with needle-sharp thorns. The wall appears within range on a solid surface and lasts for the duration. You choose to make the wall up to 60 feet long, 10 feet high, and 5 feet thick or a circle that has a 20-foot diameter and is up to 20 feet high and 5 feet thick. The wall blocks line of sight.\n\nWhen the wall appears, each creature within its area must make a dexterity saving throw. On a failed save, a creature takes 7d8 piercing damage, or half as much damage on a successful save.\n\nA creature can move through the wall, albeit slowly and painfully. For every 1 foot a creature moves through the wall, it must spend 4 feet of movement. Furthermore, the first time a creature enters the wall on a turn or ends its turn there, the creature must make a dexterity saving throw. It takes 7d8 slashing damage on a failed save, or half as much damage on a successful one.",
+   "duration": "Up to 10 minutes",
+   "higher_level": "When you cast this spell using a spell slot of 7th level or higher, both types of damage increase by 1d8 for each slot level above 6th.",
+   "index": "wall-of-thorns",
+   "level": 6,
+   "material": "A handful of thorns.",
+   "mechanics": {
+    "area": {
+     "shape": "line",
+     "size": 60,
+     "width": 5
+    },
+    "casting": "action",
+    "concentration": true,
+    "damage": {
+     "slot": {
+      "6": "7d8",
+      "7": "8d8",
+      "8": "9d8",
+      "9": "10d8"
+     },
+     "type": "piercing"
+    },
+    "flags": [
+     "area_placement",
+     "width_assumed"
+    ],
+    "origin": "point",
+    "range": 120,
+    "save": {
+     "ability": "dex",
+     "on_success": "half"
+    }
+   },
+   "name": "Wall of Thorns",
+   "range": "120 feet",
+   "ritual": false,
+   "school": "Conjuration"
   }
  ],
  "conditions": [
