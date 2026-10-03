@@ -10,7 +10,35 @@ This project is the LLM-agnostic, system-flexible fork of [claude-dnd-skill](htt
 
 ---
 
-## [Unreleased]
+## [0.16.0] — 2026-10-03 — Four displays on one server
+
+### Added: four displays on one server — story, map, combat, dice
+The display had grown a character sidebar, a combat panel and a party-input panel. On a table with a TV, a tablet and a second monitor, those three fight for one screen. Each now has its own window:
+
+| URL | For |
+|---|---|
+| `/?view=dm` | the story, full screen, nothing else on it |
+| `/?view=map` | the campaign overview map |
+| `/?view=combat` | the battle map, initiative and actions, full screen |
+| `/?view=dice` | what the DM asked for, and who hasn't rolled yet |
+
+Plus `/displays` — a launcher with one button per display and one that opens all four tiled across the screen — and `start-display.sh --displays`.
+
+**One server, not four.** The views are the same page at four body classes, so all four ride one SSE connection and cannot drift out of step; four servers would mean "the map is one fight behind the story". `/` is unchanged and still shows everything: the views are additions.
+
+Three decisions that are load-bearing and easy to undo by accident:
+
+- **An unrecognised `?view=` is the full display, not an error.** These windows sit in front of a table for hours; a stale bookmark or a `?view=typo` has to show the story. A view is also something a person types on a phone, where autocapitalise and a trailing space are normal, so `?view=CoMbAt ` resolves to the combat window.
+- **The map view renders the overview page** rather than `index.html` — the map has its own stylesheet and its own script, and inlining it would put two sets of custom properties in one document. It shares `_atlas_page()` with `/atlas/<slug>`, so a second caller cannot get the page without the unrevealed-pin redaction. A campaign with no overview map gets a page that says so, not a 404: this window is on a wall, and an empty frame there is indistinguishable from a dead server.
+- **A finished dice request now broadcasts `dice_results`.** A request leaves `_dice_pending` when its last roll lands, so it left the pending snapshot with it — a dice window reading only `dice_pending` empties itself the instant the answer arrives. The snapshot also carries `spec` / `modifier` / `advantage` / `dc` / `results` now: a window *about* the roll has to say which die, what modifier and what DC, and a badge-only payload makes it ask the server a question per request for something the server already had. Additive — `_updateDicePendingBadge` reads `pending` and `label` and is unaffected.
+
+The dice window reads the three dice payloads as data and reassembles them client-side rather than chaining onto display.js's `window._onDiceRequest`. That handler belongs to the phone dice pad — it locks buttons and stores a request id — so chaining onto it would give the dice window a pad it does not have and render every request twice. `display.js` gained one hook, `window.GMViews.onPayload(payload)`, which is how a second reader of the same event is meant to be added.
+
+### Fixed: the overview-map script crashed on any variant of its own page
+`atlas.js` ended with `if (spec) render(spec)`, and `render()`'s first statement dereferenced `document.getElementById('atlas-stage')`. `/?view=map` renders `atlas.html` with a sentence in place of the map when a campaign has no overview spec — so the stage, pins layer and legend are not in the document — and the script threw `Cannot read properties of null (reading 'style')` on every load. The page still *looked* right, because the throwing line is first in `render()` and everything it draws was absent anyway. Now guarded on the element existing.
+
+### Fixed: "Phone Mode" floated over all four new windows
+`display.js`'s `_initModeSwitcher()` appends `#phone-mode-btn` to `document.body` at load. The view stylesheets in `displays.css` hid the sidebar, settings column, world clock, party-input panel and combat panel — and this one button, injected by script rather than present in `index.html`, survived on every view, sitting over the combat window's empty state and the dice window's header. Now hidden on the views that are for the table.
 
 ### Fixed: four entry points asked whether a campaign *exists* instead of whether it *is* one
 `paths.find_campaign` documents its own contract at `scripts/paths.py:121-124`: on a miss it returns `campaign_dir(name)`, "a path that does not exist unless a shell is sitting there, so callers must not read its existence as a hit. Ask `_is_campaign`." Four callers did not ask.
