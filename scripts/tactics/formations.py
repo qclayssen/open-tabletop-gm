@@ -574,18 +574,20 @@ def _nearest_free(board, taken, x, y):
     seen = {(x, y)}
     queue = [(x, y)]
     for cx, cy in queue:
-        for dx in (-1, 0, 1):
-            for dy in (-1, 0, 1):
-                if dx == 0 and dy == 0:
-                    continue
-                p = (cx + dx, cy + dy)
-                if p in seen or not board.in_bounds(p):
-                    continue
-                seen.add(p)
-                if p in taken or not board.passable(p):
-                    queue.append(p)
-                    continue
-                return p
+        # Through the same seam as Grid._dijkstra. This loop was the second
+        # place in tactics/ that knew what a square's neighbours are, and a hex
+        # grid would have kept finding creatures on a square's third-best
+        # neighbour because nobody looked here. `board.neighbors` yields the same
+        # squares in the same order, so the square this picks is unchanged --
+        # pinned by tests/test_grid_golden.py's formations cases.
+        for p in board.neighbors((cx, cy)):
+            if p in seen or not board.in_bounds(p):
+                continue
+            seen.add(p)
+            if p in taken or not board.passable(p):
+                queue.append(p)
+                continue
+            return p
     return None
 
 
