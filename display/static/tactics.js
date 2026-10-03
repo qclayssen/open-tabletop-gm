@@ -387,7 +387,10 @@
   // - the map name and its shape, so a different battle never inherits a grid
   // - the rows themselves: the terrain is drawn from them, and a map edited in
   //   place keeps its name and its W and H
-  // - image, zones, labels and colors: the rest of what the map contributes to
+  // - image, and the image_px and grid_align that decide where it is *drawn*:
+  //   an alignment the GM has just saved has to rebuild this layer, or the
+  //   cached picture stays under the new grid
+  // - zones, labels and colors: the rest of what the map contributes to
   //   the static drawing, all from the same map file as the rows
   // - the fog, above
   //
@@ -399,6 +402,7 @@
   function boardKey(sp, W, H) {
     const meta = (sp && sp.meta) || {}, g = (sp && sp.grid) || {};
     return JSON.stringify([meta.name || '', W, H, g.rows || null, meta.image || '',
+                           meta.image_px || null, meta.grid_align || null,
                            meta.zones || null, meta.labels || null, meta.colors || null,
                            fogKey(sp)]);
   }
@@ -471,6 +475,171 @@
   const pinOnBoard = (p, W, H) =>
     Number.isFinite(p.x) && Number.isFinite(p.y) &&
     p.x >= 0 && p.y >= 0 && p.x < W && p.y < H;
+
+  /* Where the map's artwork goes, as the attributes of its <image>.
+
+     The map file records two facts about its picture: how big it is
+     (`meta.image_px`) and how many of its pixels one 5 ft square spans, plus
+     where the first square starts (`meta.grid_align`, all three validated in
+     scripts/tactics/maps.py). With them the art scales by `k = cell / cell_px`
+     -- the same `cell` the grid lines are drawn at -- and sits at `-offset * k`,
+     so the grid on screen IS the grid the GM lined up against the file. Uniform
+     on both axes, and that is the whole point: a picture stretched to fill the
+     board instead has its 100px squares land at a different width than height,
+     and every distance read off it is subtly wrong.
+
+     With neither, this returns null and the caller falls back to the legacy
+     stretch. That branch is not "wrong" -- a map with no recorded size draws
+     exactly as it always has, which is what every map written before the size
+     was recorded depends on -- so the check is for *usable* numbers rather than
+     for their presence. One bad number anywhere takes the whole map back to the
+     legacy draw rather than to a NaN attribute.
+
+     `cell` is a parameter rather than the module-level C for the reason
+     `pinCentre` takes one: this block is extracted and run under node by
+     tests/test_display_tactics_ui.py, where there is no C. */
+  /* Which terrain cells have a differently-terrained neighbour, and on which
+     sides. An edge, not a stroke-per-rect: outlining every cell draws a box
+     grid over uniform ground, which is worse over artwork than no outline at
+     all, and a stylesheet cannot ask a cell what its neighbours are.
+
+     Out of bounds counts as different, so a region's outer boundary is drawn
+     against the artwork beyond the board as well as against its interior
+     divisions. The comparison is by terrain NAME and not by fill: two map-
+     specific terrain types can share a colour and are still two terrains, and
+     `legend` (terrainOf's lookup) is what decides which a cell is.
+
+     Pure, and in this block, so the geometry is pinned under node like the rest
+     of the board's arithmetic. `rows` is the row-string grid and `names` the
+     per-cell terrain name grid of the same shape. */
+  const terrainEdges = (rows, names) => {
+    const H = rows.length, W = H ? rows[0].length : 0;
+    const out = [];
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const me = names[y][x];
+      const l = (x === 0 || names[y][x - 1] !== me) ? 1 : 0;
+      const r = (x === W - 1 || names[y][x + 1] !== me) ? 1 : 0;
+      const t = (y === 0 || names[y - 1][x] !== me) ? 1 : 0;
+      const b = (y === H - 1 || names[y + 1][x] !== me) ? 1 : 0;
+      if (l || r || t || b) out.push({ x, y, l, r, t, b });
+    }
+    return out;
+  };
+
+  /* A difficult-terrain marker sized in FRACTIONS of a cell, so it stays the
+     same share of a square at every cell size. The old chevron was fixed at 12
+     user units in a 32-unit cell: at the phone minimum of 10px a square that is
+     3.75px of marker, indistinguishable from the grid line beside it, and its
+     stroke-opacity was .3.
+
+     `unit` is the module's C, passed in for the reason artAttrs takes its
+     `cell`: this block is run under node with no C in scope. */
+  const difficultMark = (x, y, unit) => {
+    const s = unit * 0.5, cx = x * unit + unit / 2, cy = y * unit + unit / 2;
+    // An up-chevron about (cx, cy), with the two vertical extremes the same
+    // distance either side of cy so the box is centred on the square rather
+    // than merely inside it. The old path was a fixed offset inside the cell
+    // (`M x*32+9, y*32+23 l6,-10 l6,10`), whose box centred on (15, 18) in a
+    // cell whose centre is (16, 16): a marker hanging low and left.
+    return `M${(cx - s / 2).toFixed(2)},${(cy + s * 0.45).toFixed(2)} ` +
+           `l${(s * 0.5).toFixed(2)},${(-s * 0.9).toFixed(2)} ` +
+           `l${(s * 0.5).toFixed(2)},${(s * 0.9).toFixed(2)}`;
+  };
+
+  const artAttrs = (art, imagePx, align, W, H, cell) => {
+    const legacy = () => ({ x: 0, y: 0, width: W * cell, height: H * cell,
+                            preserveAspectRatio: 'none' });
+    if (!art || !imagePx || !align || !align.cell_px) return legacy();
+    const cellPx = align.cell_px, w = imagePx[0], h = imagePx[1];
+    const ox = align.offset_x == null ? 0 : align.offset_x;
+    const oy = align.offset_y == null ? 0 : align.offset_y;
+    // `typeof` rather than Number(), deliberately: Number("100") is 100, so a
+    // pitch that arrived as a string would quietly be accepted and drawn, while
+    // maps.py refuses exactly that value. This guard mirrors maps.grid_alignment
+    // so the two cannot disagree about what a usable number is -- a browser that
+    // is more forgiving than the compiler is how a rejected alignment comes back
+    // as a subtly wrong picture instead of a load error.
+    const num = v => typeof v === 'number' && isFinite(v);
+    if (!(cellPx > 0) || !num(cellPx) || !num(w) || !num(h) ||
+        !(w > 0) || !(h > 0) || !num(ox) || !num(oy)) return legacy();
+    const k = cell / cellPx;
+    return { x: -ox * k, y: -oy * k, width: w * k, height: h * k, cropped: true };
+  };
+
+  /* Map label fitting. A map label is drawn at a fixed type size with no width
+     bound, so the name of a one-square feature runs however many squares it
+     happens to need across whatever features lie between it and the board's
+     edge. On the shipped maps the longest is a 79-character description of the
+     great hearth in bows-end-tavern, which is a 1x1 region: unclamped it
+     covered fourteen squares.
+
+     Two numbers bound it. The region it names (maps.py now publishes the
+     feature rectangle's w alongside the label's centre anchor) and the room
+     left to the board's edges, because the text is centred and a centred box
+     that overruns the viewBox is not drawn at all -- the text simply vanishes
+     past the last column, which is worse than a long label.
+
+     A floor as well as a ceiling, and it is the floor that decides the common
+     case: 105 of the 115 labels on the shipped maps name a region two squares
+     wide or less, and a strict region budget would cut "Round table" in a
+     one-square region to "Roun". The floor lets a short name keep all of
+     itself and only clamps the ones that genuinely overrun.
+
+     Everything is in SVG user units (C per square), not pixels, so the same
+     number holds at every cell size the board is drawn at and the clamp does
+     not have to be redone when the window changes. That is why this block is
+     DOM-free and why these two functions take no `cell`. */
+  const LBL_PAD = 4;         // user units of clearance inside the region
+  const LBL_MIN_CELLS = 4;   // floor for a short name, in squares
+
+  // Is (x, y) inside the region a map label names? True when the square is one
+  // the label's rectangle covers, in squares. The label's anchor is the region
+  // centre and its size is the region's, both published by maps.py.
+  const labelCovers = (l, x, y) => {
+    const w = Number(l && l.w) || 1, h = Number(l && l.h) || 1;
+    if (!(w > 0) || !(h > 0)) return false;
+    return Math.abs(x + 0.5 - Number(l.x)) <= w / 2 &&
+           Math.abs(y + 0.5 - Number(l.y)) <= h / 2;
+  };
+
+  // The width budget for one label, in user units. `w` is the region's width in
+  // squares (1 for a square feature), `cx` its centre in user units, `W` the
+  // board width in squares and `unit` the module's C, passed in for the reason
+  // artAttrs takes its `cell`: this block is run under node with no C in scope.
+  const labelBudget = (w, cx, W, unit) => {
+    const cells = Math.max(1, Number(w) || 1);
+    const room = Math.max(LBL_PAD, Math.min(cx, W * unit - cx) - LBL_PAD);
+    const region = cells * unit - 2 * LBL_PAD;
+    const floor = LBL_MIN_CELLS * unit - 2 * LBL_PAD;
+    return Math.min(Math.max(region, floor), room * 2);
+  };
+
+  // The longest prefix of `text` that renders within `budget`, with an ellipsis
+  // when the whole thing does not fit. `measure` is given a candidate string and
+  // returns its rendered width; the caller supplies the DOM's
+  // getComputedTextLength, and this stays pure so the rule can be pinned under
+  // node.
+  //
+  // A prefix, not a suffix: these names put the identity first ("Duel Square
+  // (West) - chequered floor inside low timber rails"), so the head is the part
+  // a GM needs to recognise the feature and the tail is prose for the map file.
+  //
+  // Binary search rather than shaving a character at a time: the old
+  // unclamped text needed no measurement, and a per-character loop would ask
+  // the browser for a layout this many times for one label. log2 of the longest
+  // label on any shipped map is 7.
+  const fitLabelText = (text, budget, measure) => {
+    const full = String(text == null ? '' : text);
+    if (!full || !(budget > 0)) return '';
+    if (measure(full) <= budget) return full;
+    const ELL = '…';
+    let lo = 0, hi = full.length;                 // lo fits, hi does not
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (measure(full.slice(0, mid) + ELL) <= budget) lo = mid; else hi = mid - 1;
+    }
+    return lo > 0 ? full.slice(0, lo) + ELL : '';
+  };
   /* end pure helpers */
 
   // Nudge a text element back inside the board, horizontally and vertically.
@@ -918,6 +1087,9 @@
     // resize or a phone reflow reuses the terrain and still refits the board.
     s.setAttribute('width', W * cell);
     s.setAttribute('height', H * cell);
+    // Only for a board that was just built: fitLabels measures the DOM, and a
+    // cached board already holds the right answer (see the function).
+    if (!reuse) fitLabels();
     s.classList.toggle('tx-aiming', ui.mode === 'aim');
     clearLayers();
     drawSight();
@@ -976,15 +1148,29 @@
     const threatHatch = svg('pattern', { id: 'tx-threat-hatch', width: 7, height: 7, patternUnits: 'userSpaceOnUse',
                                          patternTransform: 'rotate(-45)' }, s.querySelector('defs'));
     svg('line', { x1: 0, y1: 0, x2: 0, y2: 7, class: 'tx-threat-line' }, threatHatch);
-    // Map artwork, when the map has it (scripts/atlas_to_map.py writes one). The
-    // map's width/height were derived from the image by dividing its pixels by the
-    // grid cell size, so the grid here already lines up with the art and the image
-    // is stretched to fill the board exactly. preserveAspectRatio=none is what
-    // makes that true for a non-square image.
+    // Map artwork, when the map has it (scripts/art_import.py and
+    // scripts/atlas_to_map.py write one). Two ways to draw it, and which one is in
+    // force is the map's decision rather than the browser's: artAttrs scales the
+    // picture by C / cell_px and offsets it by the recorded origin when the map
+    // recorded both its size and its pitch, so the grid lines drawn below sit on
+    // the squares the GM lined up against the file; without them the picture is
+    // stretched to the board, which is what every map written before the size was
+    // recorded has always done.
     const art = (snap.meta && snap.meta.image) || '';
     if (art) {
-      svg('image', { x: 0, y: 0, width: W * C, height: H * C, preserveAspectRatio: 'none',
-                     href: '/maps/' + art, class: 'tx-art' }, s);
+      const aligned = artAttrs(art, snap.meta.image_px, snap.meta.grid_align, W, H, C);
+      const img = svg('image', Object.assign({ href: '/maps/' + art, class: 'tx-art' }, aligned),
+                      s);
+      if (aligned.cropped) {
+        // Aligned art is cropped to the board, not fitted to it. A picture whose
+        // pixels do not divide by its own cell size has leftovers, and stretching
+        // them into the last square is how the grid ends up drifting at the far
+        // edge of a long map. The clip lives in this board's own defs, which are
+        // rebuilt with the board, so the id cannot outlive what references it.
+        const clip = svg('clipPath', { id: 'tx-art-clip' }, s.querySelector('defs'));
+        svg('rect', { x: 0, y: 0, width: W * C, height: H * C }, clip);
+        img.setAttribute('clip-path', 'url(#tx-art-clip)');
+      }
     }
     // tx-terrain names the group in its own right, not just as the stylesheet's
     // hook for the over-art case: it is the layer the board cache keeps, so a
@@ -995,13 +1181,42 @@
     // with no image is unchanged, which is what every existing map expects.
     const terrain = svg('g', { class: 'tx-terrain' + (art ? ' tx-terrain-over-art' : '') }, s);
     const rows = (snap.grid && snap.grid.rows) || [];
+    // The per-cell terrain names, built once: the edge pass compares neighbours
+    // by name and terrainOf is a two-step lookup, and this is W*H of them.
+    const names = [];
+    for (let y = 0; y < H; y++) {
+      const line = [];
+      for (let x = 0; x < W; x++) line.push(terrainOf(rows[y][x]));
+      names.push(line);
+    }
+    // Where two DIFFERENT terrains meet. Over artwork this is what has to read,
+    // and it is drawn only there: a stroke per cell would outline uniform ground
+    // as a box grid. The fill alone cannot do it at any opacity (see
+    // .tx-terrain-over-art in tactics.css for the measurement), so the boundary
+    // is a separate channel from the colour.
+    const edges = new Map();
+    if (art) for (const e of terrainEdges(rows, names)) edges.set(e.y * W + e.x, e);
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-      const name = terrainOf(rows[y][x]);
+      const name = names[y][x];
       // data-t is what the stylesheet keys on to keep walls and voids solid over
       // artwork; a selector on the inline style string would be brittle.
-      const cell = svg('rect', { x: x * C, y: y * C, width: C, height: C,
-                                 style: 'fill:' + fillFor(name), 'data-t': name }, terrain);
-      if (name === 'difficult') svg('path', { d: `M${x * C + 9},${y * C + 23} l6,-10 l6,10`, style: 'stroke:var(--tx-ink);stroke-opacity:.3;fill:none' }, cell.parentNode);
+      const attrs = { x: x * C, y: y * C, width: C, height: C,
+                      style: 'fill:' + fillFor(name), 'data-t': name };
+      const e = edges.get(y * W + x);
+      if (e) {
+        // The sides that face a different terrain or the board edge, so a
+        // region's outline follows its actual shape rather than every cell in
+        // it. `all` when that is all four.
+        const sides = (e.l ? 'l' : '') + (e.r ? 'r' : '') +
+                      (e.t ? 't' : '') + (e.b ? 'b' : '');
+        attrs['data-edge'] = sides.length === 4 ? 'all' : sides;
+      }
+      svg('rect', attrs, terrain);
+      // The difficult-terrain marker, drawn whether or not there is artwork: it
+      // was before this change and the artless case reads on its own opaque
+      // fill. Only its weight differs between the two, and that is CSS.
+      if (name === 'difficult')
+        svg('path', { d: difficultMark(x, y, C), class: 'tx-difficult-mark' }, terrain);
     }
     drawFog(svg('g', { 'aria-hidden': 'true' }, s), W, H);
     ui.sightLayer = svg('g', { 'aria-hidden': 'true' }, s);
@@ -1010,9 +1225,20 @@
     for (let j = 0; j <= H; j++) svg('line', { x1: 0, y1: j * C, x2: W * C, y2: j * C }, grid);
     for (const z of (snap.meta && snap.meta.zones) || [])
       svg('line', { x1: z * C, y1: 0, x2: z * C, y2: H * C, style: 'stroke:var(--tx-brass);stroke-width:3;stroke-dasharray:8 6' }, s);
+    // Map labels: one per labelled feature region, anchored at its centre and
+    // bounded to its own width (see fitLabels). The <title> is the full text for
+    // a reader who cannot read the clamped label, and the region size rides along
+    // in data-w so fitLabels does not need the map file back.
     for (const l of (snap.meta && snap.meta.labels) || []) {
-      const t = svg('text', { x: l.x * C + 5, y: l.y * C + 14, class: 'tx-cell-lbl', style: 'stroke:var(--tx-paper)' }, s);
-      t.textContent = l.text;
+      const t = svg('text', { x: l.x * C, y: l.y * C, class: 'tx-cell-lbl',
+                              style: 'stroke:var(--tx-paper)' }, s);
+      svg('title', {}, t).textContent = l.text;
+      t.appendChild(document.createTextNode(l.text));
+      if (l.w) t.setAttribute('data-w', l.w);
+      // A label arriving from a snapshot written before maps.py published the
+      // region size has no w: anchor it at the square it names rather than at a
+      // half-square past it, which is what a default of 1 would do.
+      if (!l.w) t.setAttribute('x', (l.x + 0.5) * C);
     }
     ui.overlay = svg('g', {}, s);
     // Its own layer, above the overlay and below the tokens, and that is load
@@ -1058,6 +1284,43 @@
     });
     el.board.innerHTML = ''; el.board.appendChild(s);
     return s;
+  }
+
+  // User units per character, for the case where the DOM cannot measure a label
+  // at all. 0.56 of an 11px semibold sans is the average advance for the mixed
+  // case this panel's labels are: a rough answer is better here than the
+  // unclamped label this function exists to remove, and it is only reached when
+  // there is no measurement to be had.
+  const LBL_EST_ADVANCE = 6.2;
+
+  // Shorten every map label to the width of the region it names.
+  //
+  // Runs once per BUILT board rather than per redraw. The budget is in user
+  // units, which do not change with the cell size, so a board kept by the cache
+  // keeps a prefix that is still correct after a resize; re-fitting per frame
+  // would measure every label sixty times a second for no change in the answer.
+  //
+  // After the append, never inside buildBoard: getComputedTextLength throws in
+  // Chromium for an element that is not in the render tree, so measuring during
+  // the build would take the fallback for every label on every map.
+  function fitLabels() {
+    const s = ui.svg;
+    if (!s) return;
+    const W = ui.W || 0;
+    for (const t of s.querySelectorAll('.tx-cell-lbl')) {
+      const full = (t.querySelector('title') || {}).textContent || '';
+      const node = t.lastChild;                    // the text node after <title>
+      if (!node) continue;
+      const budget = labelBudget(t.getAttribute('data-w'),
+                                 parseFloat(t.getAttribute('x')) || 0, W, C);
+      node.textContent = full;
+      let live = true;
+      try { t.getComputedTextLength(); } catch (e) { live = false; }
+      const measure = live
+        ? str => { node.textContent = str; return t.getComputedTextLength(); }
+        : str => str.length * LBL_EST_ADVANCE;
+      node.textContent = fitLabelText(full, budget, measure);
+    }
   }
 
   const isPhone = () => !!(window.matchMedia && matchMedia(`(max-width: ${PHONE_MAX_W}px)`).matches);
@@ -1567,10 +1830,27 @@
   }
 
   // Words for one square: where it is, what is there, and what the current mode says about it.
+  // The first map label whose region covers (x, y), or null. The smallest such
+  // region wins, so a label naming a table inside a named hall is the one read
+  // out rather than the hall.
+  function mapLabelAt(x, y) {
+    const ls = ((snap && snap.meta && snap.meta.labels) || [])
+      .filter(l => labelCovers(l, x, y));
+    if (!ls.length) return null;
+    return ls.reduce((a, b) =>
+      (Number(a.w) * Number(a.h)) <= (Number(b.w) * Number(b.h)) ? a : b);
+  }
+
   function describeSquare(p) {
     const sq = label(p[0], p[1]);
     const rows = (snap && snap.grid && snap.grid.rows) || [];
     const bits = [sq, terrainOf((rows[p[1]] || '')[p[0]] || '.')];
+    // The full text of the map label whose region covers this square, and the
+    // board svg is aria-hidden, so this is the only route by which a keyboard
+    // player learns what a region is called. The drawn label is shortened to the
+    // region's width (fitLabels) and a shortened name is not a name.
+    const lbl = mapLabelAt(p[0], p[1]);
+    if (lbl) bits.push(lbl.text);
     const t = (snap.tokens || []).find(x => x.x === p[0] && x.y === p[1] && !x.dead) ||
               (snap.tokens || []).find(x => x.x === p[0] && x.y === p[1]);
     // A pin is named here rather than given an aria-label, because the board svg

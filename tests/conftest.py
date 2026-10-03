@@ -84,6 +84,54 @@ SCRIPTS = pathlib.Path(__file__).resolve().parent.parent / "scripts"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
+SRD_DATASET = pathlib.Path(__file__).resolve().parent.parent / "systems" / "dnd5e" / "data" / "dnd5e_srd.json"
+
+
+def require_srd_dataset():
+    """Fail unless the generated SRD dataset is present. Return it if so.
+
+    WHY A FAILURE AND NOT A SKIP (dnd-gm#289)
+    =========================================
+    `test_monster_defenses.py` and `test_export_bestiary.py` used to carry
+    `skipUnless(DATA.exists())` / `skipif(not DATA.exists())`, which hid 47 tests
+    behind one green tick. The dataset is generated output and is gitignored, so
+    those gates were *always* closed on a fresh clone and on every CI run -- the
+    suite reported that it had checked nothing about monster defenses or about the
+    bestiary exporter, and reported it as a pass. This repo already has checks of
+    that shape: playwright absent turns 80 display tests green, and a
+    `--no-fvtt` dataset's empty `features` key reads as "0 of 0 covered".
+
+    A skip is the wrong tool for a missing *input*. It is the right tool for a
+    capability the platform does not have -- no browser, no `node`, no `mkfifo` --
+    where the honest answer really is "not checked here". The dataset is not that:
+    it is a build step this repository owns, it takes 79 seconds, and CI now runs
+    it. So an unprovisioned checkout gets a failure that names the command, which
+    is the one thing a bare skip cannot do.
+
+    `pytest.fail` rather than an assert at module scope: a module-level assert is
+    a *collection error*, and `agents/dev/verifier.md` is right that a collection
+    error is not a failed assertion.
+
+    What kind of red this produces depends on the caller, and the difference is
+    deliberate rather than incidental. Called from a `unittest.TestCase.setUp` it
+    reports FAILED, which is what `test_monster_defenses.py` does. Called from a
+    pytest fixture it reports as an ERROR at setup, because that is where pytest
+    surfaces a failed setup phase; `test_export_bestiary.py` does that. Both are
+    red, counted separately, and carry this message. The ERROR form is not ideal
+    and was kept because the alternative -- 21 copies of this call in the test
+    bodies -- is worse: it puts the precondition in 21 places instead of one, and
+    the next person adding a test to the file has a 21-in-21 chance of forgetting
+    it, which is the failure this whole change is about.
+    """
+    if not SRD_DATASET.exists():
+        pytest.fail(
+            f"{SRD_DATASET.name} is absent. It is generated output and is "
+            f"gitignored, so a fresh clone and every CI run start without it.\n"
+            f"  Provision it with:  python3 scripts/provision_srd.py\n"
+            f"  Then check it with:  python3 scripts/provision_srd.py --check",
+            pytrace=False)
+    return SRD_DATASET
+
 
 def _spells_module():
     """The `systems/dnd5e/tactics_spells.py` module object, as production holds it."""

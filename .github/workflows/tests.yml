@@ -54,6 +54,146 @@ jobs:
         run: |
           python -m pip install --upgrade pip pytest flask pyyaml playwright pytest-xdist
           python -m playwright install chromium
+      - name: Restore the SRD dataset from cache
+        # Pinned the same way the two actions above are: full commit SHA, tag in
+        # a trailing comment. Dependabot (.github/dependabot.yml) owns the bump,
+        # so nothing here re-resolves a tag that could move under a green check.
+        #
+        # WHY THIS STEP EXISTS: systems/dnd5e/data/dnd5e_srd.json is GENERATED
+        # and gitignored (.gitignore:49-51), and nothing in this workflow built
+        # it. So on a fresh checkout the dataset was simply absent and ten tests
+        # were red for reasons that had nothing to do with the PR. Measured on a
+        # clean origin/main worktree with an empty data dir: 8 failed + 2 errors,
+        # every one of them environmental. Dropping a locally-built dataset into
+        # that same worktree takes it to 4. Those 4 are real and are being fixed
+        # on their own account; this step is what stops the other 10 from being
+        # noise that buries them.
+        #
+        # WHY A CACHE AND NOT JUST A BUILD: build_srd.py pulls a couple of
+        # hundred files from raw.githubusercontent.com and api.github.com with no
+        # token, so it can be refused mid-build on rate limit. Locally that is
+        # ~4 minutes for 1527 records / 1652 KB, on every run, on every ref, for
+        # a file that is a pure function of the builder. Keying on
+        # hashFiles(build_srd.py) means runs 2..N restore rather than refetch,
+        # and the dataset under test is the one THIS builder produces instead of
+        # whatever upstream served that morning.
+        #
+        # No restore-keys, deliberately: a prefix fallback would hand back a
+        # dataset built by a different builder while reporting the same key,
+        # which is precisely the flake this cache exists to remove. Missing
+        # cache is handled by the step below, not by a looser key.
+        #
+        # The cost of a miss is worth stating: the trigger block above has no
+        # push-to-main run on purpose, so nothing ever seeds a default-branch
+        # copy of this cache, and the FIRST run on any given ref still pays the
+        # whole build.
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: systems/dnd5e/data/dnd5e_srd.json
+          key: srd-dataset-${{ runner.os }}-${{ hashFiles('systems/dnd5e/build_srd.py') }}
+      - name: Build the SRD dataset if the cache missed
+        # pyyaml is NOT a new dependency here — the install step above already
+        # has it — but it is load-bearing FOR THIS STEP in a way worth naming:
+        # without it build_srd._build_fvtt() returns early, the build exits 0
+        # having written a dataset with zero class features, and the check below
+        # is what turns that into a red step rather than a green one.
+        #
+        # The check runs before the build (so a cache hit costs one JSON parse of
+        # a 1.6 MB file) and again after it — so an entry saved by a build that
+        # was killed part-way through the write heals on the next run instead of
+        # poisoning the key forever. That is not hypothetical: build_srd.py
+        # opens the output with "w" and then dumps, so a truncated file is a
+        # thing that can actually happen, and a restored cache is trusted
+        # blindly by definition.
+        #
+        # "no empty category" rather than "total_records > 0" is the gate on
+        # purpose. build_srd.py only WARNS about a partly-empty dataset: its
+        # refusal to write covers the case where EVERY category came back empty,
+        # which leaves the likelier case open — one rate-limited repo-tree fetch
+        # and the dataset silently loses every class feature while the run stays
+        # green. Same rule, applied to the gap the builder left.
+        #
+        # Nothing in this step reads the dataset for the tests, and no test is
+        # skipped, deselected, xfailed or filtered by any of it. pytest below
+        # runs exactly as before; it just arrives to find the file its tests
+        # were always written to load.
+        #
+        # GITHUB_TOKEN is here because the first run of this step failed without
+        # it, and the log is worth keeping. api.github.com allows 60 req/hour per
+        # IP unauthenticated and the hosted runner pool shares an egress IP, so
+        # the five raw.githubusercontent.com fetches all succeeded and every
+        # api.github.com call came back 403. build_srd exited 0 with features=0
+        # and only warned. The gate below caught it -- which is the gate working
+        # as intended -- but a red build step is not the goal. Authenticated, the
+        # same endpoint allows 5000/hour, and permissions:contents:read is enough
+        # for the public metadata being read. build_srd.py reads GITHUB_TOKEN if
+        # it is set and builds unchanged when it is not.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          usable() {
+            [ -s systems/dnd5e/data/dnd5e_srd.json ] || return 1
+            python3 -c "import json,sys; c=json.load(open('systems/dnd5e/data/dnd5e_srd.json'))['_meta']['record_counts']; print('  categories:', ', '.join(f'{k}={v}' for k,v in c.items()) or 'none'); sys.exit(1 if not c or any(not v for v in c.values()) else 0)"
+          }
+          if usable; then
+            echo "  dataset present and complete — no build needed"
+          else
+            echo "  no complete dataset on disk — building (about 4 minutes)"
+            python3 systems/dnd5e/build_srd.py
+            usable || { echo "✗ build finished but the dataset is still incomplete" >&2; exit 1; }
+          fi
+      - name: Hold the dataset to its floors, and the gate itself to a test
+        # Strictly ADDITIVE to the two steps above, and weaker in nothing.
+        #
+        # `usable()` above answers "is any category empty". That catches the
+        # features=0 case this workflow was built for. It cannot catch a dataset
+        # that is merely SHORT — 180 of 260 features, 100 of 334 monsters — and
+        # neither can `build_srd.py`, which warns about a partly-empty dataset
+        # and exits 0. `scripts/provision_srd.py` is the stricter gate: recorded
+        # per-category floors, an edition check, `_meta` consistency, and the
+        # four records the suite reads by name. Same network story underneath
+        # (~330 raw.githubusercontent.com calls at 79s measured; ~4 minutes on a
+        # cold cache here), so this step costs nothing the step above did not
+        # already pay: on a cache hit or a completed build the dataset is on
+        # disk, and `--check`-equivalent verification is a JSON read.
+        #
+        # The second half of this step is the part that matters most. A gate
+        # nobody tests is a gate that gets relaxed by whoever is in a hurry, and
+        # the check that would notice is not a check. `--selftest` writes 11
+        # fixtures to a temp directory and asserts each is rejected BY ITS OWN
+        # REASON, because the first version of it only asserted *that* they were
+        # rejected — and a mutant that deleted the floor check outright left it
+        # green, since the fixture had also tripped the total_records check.
+        # Measured: 11/11 mutants caught by the selftest, and 5/5 caught again
+        # through tests/test_srd_provisioning.py, because a selftest only its
+        # author runs is a comment.
+        #
+        # The grep is not redundant with the exit code. `--selftest` can print
+        # "SELFTEST FAILED" on every fixture and still exit 0 if its own
+        # reporting is disabled — the same limit scripts/check_py_floor.py
+        # documents, defended the same way on the floor job below.
+        run: |
+          python scripts/provision_srd.py > srd-verify.log 2>&1
+          rc=$?
+          cat srd-verify.log
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::the dataset is present but does not meet its floors."
+            exit "$rc"
+          fi
+          # Not redundant with the exit code: it defends against main() being
+          # edited to return 0 without verifying, which is the change that would
+          # turn this step back into decoration.
+          if ! grep -q 'verified -- ' srd-verify.log; then
+            echo "::error::provision_srd.py exited 0 without reporting a verified dataset."
+            exit 1
+          fi
+          out=$(python scripts/provision_srd.py --selftest); status=$?
+          printf '%s\n' "$out"
+          if printf '%s\n' "$out" | grep -q 'SELFTEST FAILED'; then
+            echo "::error::the provisioning gate reported a failure and may still exit 0"
+            exit 1
+          fi
+          exit $status
       - name: pytest
         # -n 4 measured, not guessed. Serial is 603s on this tree; -n 4 is 227s.
         # Two runs of each, and the spread across -n 4 runs was 6s, so the 2.7x
@@ -144,6 +284,29 @@ jobs:
           printf '%s\n' "$out"
           if printf '%s\n' "$out" | grep -q 'SELFTEST FAILED'; then
             echo "::error::the floor checker reported a failure and may still exit 0"
+            exit 1
+          fi
+          exit $status
+
+      - name: The provisioning gate on the floor
+        # `scripts/provision_srd.py` is stdlib and is now load-bearing for the
+        # `pytest` job, so it belongs in the job that proves the floor rather than
+        # only being syntax-checked by `check_py_floor.py`. Its `--selftest` needs
+        # no network, no dataset and no pyyaml -- the edition constant is read with
+        # `ast`, not by importing the builder -- so it runs in this job's
+        # pytest-and-nothing-else venv, which is also what proves that. Measured:
+        # 11 fixtures, 0.3s, no third-party import. It passes on 3.10 in CI.
+        #
+        # The dataset itself is NOT built here. `tests/test_tactics_*.py` does not
+        # read it (measured: 288 passed on this tree before and after dnd-gm#289),
+        # this job deliberately installs no pyyaml so provisioning would refuse
+        # anyway, and a second multi-minute network build per floor run would buy
+        # no coverage.
+        run: |
+          out=$(python scripts/provision_srd.py --selftest); status=$?
+          printf '%s\n' "$out"
+          if printf '%s\n' "$out" | grep -q 'SELFTEST FAILED'; then
+            echo "::error::the provisioning gate reported a failure and may still exit 0"
             exit 1
           fi
           exit $status

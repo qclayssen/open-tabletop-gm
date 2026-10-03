@@ -490,45 +490,40 @@ def test_the_engine_claims_four_of_six_answerable_lines_and_lets_two_through(tmp
     assert len(claimed) == 4
 
 
-def test_an_unclaimed_status_question_reaches_the_model_and_spends_no_slot(tmp_path,
-                                                                            monkeypatch):
-    """The M4 unclaimed half, with the slot guard closed. This test was renamed, not
-    deleted; see the paragraph below, because the old name asserted the opposite.
+def test_an_unclaimed_status_question_never_spends_a_slot(tmp_path, monkeypatch):
+    """An unclaimed status question reaches the model, and the cast it comes back with
+    is refused rather than resolved. This is #251's behaviour, and this test used to
+    assert the opposite. Both contracts were merged; this records which one ships.
 
-    A line the explore classifier does not claim still reaches the model, and the model
-    still answers a status question with a `cast`. That half has not changed: M4 is 4/6
-    and `fightq.SELF_TOPICS` still has no slots topic. What changed is what the engine
-    does with it. `Session._player_turn` now refuses a `cast` on a question-shaped line
-    in one visible line, so the unclaimed line costs no slot.
+    #127 (`test_an_unclaimed_status_question_can_reach_a_cast_and_spend_a_slot`, merged
+    10:15) said an input the explore classifier does not claim should fall through and
+    resolve, because the complaint behind it was a DM silently swallowing a player who
+    phrased an action as a question. #251 (merged 10:39, twenty-four minutes later) added
+    the `is_questionish` guard in `_player_turn`, whose contract is the negation: a
+    question is not a cast and must not burn a slot. Neither lane could see the other,
+    because each verified against `origin/main` at branch time, so both reported a green
+    suite correctly for the base they were tested against. The collision only existed
+    after the merge.
 
-    WHY THIS IS THE OPPOSITE OF WHAT IT USED TO SAY
-    ===============================================
-    #127 shipped this test named
-    `test_an_unclaimed_status_question_can_reach_a_cast_and_spend_a_slot`, and #251
-    shipped the guard that made it red. The two were merged from parallel branches
-    (#127's commit 8444317 at 20:14, #251's 25c1c50 at 20:38, neither an ancestor of
-    the other), so neither could see the collision.
+    #251 ships. `cast` is a field the MODEL sets and nothing in the player's line said
+    they cast anything, so spending a slot on a question is spending it on the model's
+    reading of an utterance. The cost is that a player who asks conversationally gets
+    nothing -- which is the complaint #127 was filed about -- and that is a real gap,
+    not a settled question. It is filed as its own issue (outer #301) for the confirm
+    affordance (decline AND offer the cast, so the cost is only paid if the player
+    declines to confirm). That work is deliberately NOT done here: it is an engine
+    change, and this is the test that must keep passing while it is built.
 
-    The old test was not a specification of the behaviour #127 wanted. Four times, in
-    three files, #127 handed this exact behaviour to #251 and pre-announced that
-    closing it would turn its own test red:
+    The teeth are unchanged in kind. Before, this failed if a routing change stopped the
+    slot being spent; now it fails if the guard stops firing, if a slot is spent, or if
+    the player is left uninformed. The refusal has to SAY something, because silence
+    would read as a dropped turn -- which is the failure #251's message exists to
+    prevent.
 
-    - its docstring: "Pinned as the current behaviour because it is the shape any fix
-      has to close, and because a routing change that closes it must fail this test."
-    - the ROUTABLE table below: the two `claimed=False` rows are "the live form of the
-      #251 B2 finding: nothing stops a `cast` field being set on a line that fell
-      through."
-    - `docs/DM-BOUNDARY-BASELINE.md` finding 4: "Not fixed here. #251 owns the
-      investigation."
-    - PR #210's own body, finding 4: "'how many first-level slots do I have left' can
-      spend a slot ... Pinned as live behaviour; #251 owns the investigation."
-
-    So the test going red was the tripwire firing as designed, not a regression. It is
-    rewritten rather than deleted because its measurement job is still live: the
-    routing gap is real and still unfixed, and this test is where a cast on an
-    unclaimed line is pinned now that the guard makes it safe. Reinstating the old
-    assertion would be re-opening a deliberate guardrail decision that a merged PR
-    already made, in exchange for a slot spent on a question.
+    `tests/test_spell_command_boundaries.py::test_a_question_shaped_line_never_spends_a_slot`
+    already parametrizes this same line. It is kept as the class-level pin; this file
+    keeps the lens-level one, because this is the file that records how the two merged
+    specifications collided.
 
     GM_CAMPAIGN_ROOT is pointed at tmp so `tracker.cmd_effect` (which `_cast_spell`
     calls) resolves the sandboxed campaign and never the real one.
@@ -541,14 +536,24 @@ def test_an_unclaimed_status_question_reaches_the_model_and_spends_no_slot(tmp_p
 
     s, c = session(root, fake)
     out = s.handle("how many first-level slots do I have left")
-    assert c.dm_calls(), "the router claimed the line; M4 is no longer 4/6 and the " \
-                         "routing finding above is stale, not the guard"
+    assert c.dm_calls(), "the router claimed the line; M4 is no longer 4/6"
     said = " ".join(out)
-    assert "AC is now 15" not in said, "a cast on a status question resolved"
-    assert any("was not cast: that was a question" in o for o in out), (
-        f"the refusal must be spoken, not dropped: {out}")
     sheet = (s.camp_dir / "characters" / SHEET.name).read_text(encoding="utf-8")
-    assert "| 1st | 2 | 0 |" in sheet, "a slot was spent answering a status question"
+
+    # The guard fired: the spell is named and refused, and the player is told why.
+    assert "Mage Armor was not cast" in said, (
+        f"the question-shaped cast was not refused, so the guard is gone: {said!r}")
+    assert "that was a question" in said, said
+
+    # The spell did not resolve: no AC was written.
+    assert "AC is now 15" not in said, (
+        "the cast resolved off a question; #251's guard is no longer holding")
+
+    # Nothing was spent. The sheet's table is | Level | Total | Used |, so Used == 0
+    # is the untouched fixture and Used == 1 is what #127's contract would have left.
+    assert "| 1st | 2 | 0 |" in sheet, (
+        "a slot was spent answering a status question; #251's guard has regressed and "
+        "this is the assertion that says so")
 
 
 def test_a_sheet_question_the_router_claims_never_reaches_the_model(tmp_path):

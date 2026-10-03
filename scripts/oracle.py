@@ -32,6 +32,7 @@ import re
 import sys
 
 import dice
+import safeio
 
 try:
     from paths import find_campaign
@@ -188,7 +189,7 @@ def cmd_chaos(args) -> int:
             print("error: chaos set needs --value N (1-9)", file=sys.stderr)
             return 2
         new = clamp_chaos(args.value)
-        state_path.write_text(write_chaos(text, new), encoding="utf-8")
+        safeio.atomic_write_text(state_path, write_chaos(text, new))
         print(f"chaos factor: {current} -> {new}")
         return 0
     if args.chaos_action == "adjust":
@@ -196,7 +197,7 @@ def cmd_chaos(args) -> int:
             print("error: pass exactly one of --pc-won / --pc-lost", file=sys.stderr)
             return 2
         new = adjust_chaos(current, pc_proactive=args.pc_won)
-        state_path.write_text(write_chaos(text, new), encoding="utf-8")
+        safeio.atomic_write_text(state_path, write_chaos(text, new))
         verb = "PC in control" if args.pc_won else "world pushes back"
         print(f"chaos factor: {current} -> {new}  ({verb})")
         return 0

@@ -149,26 +149,34 @@ harnesses and is **not** consulted by the loop, so in play this shape is uncheck
 
 **Not fixed here**, for the same reason as #2.
 
-### 4. Two answerable lines still reach the model, and one no longer spends a slot
+### 4. Two answerable lines still reach the model, and neither can spend a slot
 
 M4: 4 of 6. Unclaimed:
 
 - "how many first-level slots do I have left" -- `fightq.SELF_TOPICS` has no slot topic.
 - "can I cast magic missile" -- no topic matches.
 
-For the first, `Session._player_turn` used to honour `r.cast` with **no check that the
-player's line was a cast at all**, so a scripted DM reply carrying `"cast": "Mage
-Armor"` on that line spent a level 1 slot and the player was told an AC changed while
-asking about slots. **That is closed.** #251 added an `is_questionish` guard ahead of
-the resolve, and a `cast` on a question-shaped line is now refused in one visible
-engine line. Pinned as
-`test_an_unclaimed_status_question_reaches_the_model_and_spends_no_slot`.
+These two still reach the model. What changed is what happens next, and this section
+was the stale record of it: it previously said `Session._player_turn` honours `r.cast`
+with **no check that the player's line was a cast at all**, so a scripted DM reply
+carrying `"cast": "Mage Armor"` on that line spent a level 1 slot and told the player
+their AC changed while asking about slots.
 
-The routing half is **not** closed and is still what M4 measures: the two lines above
-still reach the model, because `SELF_TOPICS` has no slots topic. `fightq`'s topics are
-a closed set with an answer each, and `sheet_facts` would need a slot count, so adding
-one is a product decision rather than a regex. The guard in front of it fails toward
-"no slot spent", which is why the two are safe to leave apart.
+**#251 has since landed the check that closes it.** `Session._player_turn` now tests
+`fightq.is_questionish(line)` and refuses a cast the player's line phrased as a
+question, spending nothing and saying so (`CAST_ON_A_QUESTION`). Pinned in
+`tests/test_spell_command_boundaries.py::test_a_question_shaped_line_never_spends_a_slot`
+(the class, four inputs) and in
+`tests/test_dm_boundary_lens.py::test_an_unclaimed_status_question_never_spends_a_slot`
+(this line). The second of those used to assert the opposite; the two specifications
+were merged twenty-four minutes apart without either seeing the other, and #251 is the
+one that ships.
+
+**Still open, deliberately.** The guard's cost is that a player who asks
+conversationally gets nothing -- the exact complaint #127 was filed about. The refusal
+tells them to re-ask in the imperative, but nothing offers to cast it for them. The
+confirm affordance (decline AND offer, so the cost is only paid if the player declines
+to confirm) is filed as its own issue and is not built here.
 
 ## Detector limits
 

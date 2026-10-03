@@ -914,5 +914,252 @@ class TheKeyboardMechanism(unittest.TestCase):
                       "the prompt does not offer Escape a way out")
 
 
+# ── terrain over artwork, measured (#145) ────────────────────────────────────
+
+class TerrainOverArtwork(BrowserTestCase):
+    """The wash and the boundary, as a browser computes them (#145).
+
+    The stylesheet asserts the numbers and the pure tests assert the geometry.
+    This is the part neither can reach: the values the browser actually resolves
+    for a cell on a real board, which is where a selector that matches nothing,
+    a custom property that resolves to the initial value, or a
+    `vector-effect` the engine ignores would show up. A stylesheet assertion
+    cannot tell those apart from a rule that works.
+
+    The map is a 6x3 with a wall island, pushed with artwork so the
+    `tx-terrain-over-art` class is what is being measured.
+    """
+
+    server_kind = "static"
+    ready_js = "window.__ready === true"
+
+    #: A 2x2 wall block in open floor, plus one difficult-terrain square: the
+    #: three cases the acceptance criteria name (outlines, cell-scaled markers,
+    #: and a terrain that is only a hue).
+    #: ',' is the legend character for `difficult` (tactics.js:25), not 'd'.
+    #: Two difficult squares far enough apart that each is interior, a wall block
+    #: with open floor on more than one side of it, and a border so the
+    #: board-edge case is in the fixture rather than imagined.
+    ROWS = ["..##.....",
+            ".........",
+            ".#,,#....",
+            "......#..",
+            "..#....##"]
+
+    def setUp(self):
+        self.page = self.open_page(size=(1440, 900), wait=0)
+
+    def push_art_map(self, image="frog-pond.png", fog=None):
+        snap = self.page.evaluate("() => JSON.parse(JSON.stringify(window.__SNAP))")
+        snap["grid"]["rows"] = list(self.ROWS)
+        snap["meta"] = {"name": "Art Map", "image": image}
+        if fog is not None:
+            snap["fog"] = fog
+        self.page.evaluate("(s) => { Tactics.update(s); }", snap)
+        present(self.page, "() => !!document.querySelector('#tx-board .tx-art')",
+                "the map artwork to load onto the board")
+
+    def probe(self):
+        """The resolved computed style for every terrain cell, with its grid
+        position.
+
+        The position is read back off the rendered `x`/`y` rather than kept from
+        the row order, so a cell that was drawn in the wrong place is reported in
+        the wrong place instead of passing by being compared to itself.
+        """
+        return self.page.evaluate("""() => {
+          const out = [];
+          for (const r of document.querySelectorAll('#tx-board .tx-terrain rect')) {
+            const cs = getComputedStyle(r);
+            out.push({t: r.getAttribute('data-t'), edge: r.getAttribute('data-edge'),
+                      x: Math.round(parseFloat(r.getAttribute('x')) / 32),
+                      y: Math.round(parseFloat(r.getAttribute('y')) / 32),
+                      fillOpacity: cs.fillOpacity, stroke: cs.stroke,
+                      strokeOpacity: cs.strokeOpacity,
+                      vectorEffect: cs.vectorEffect});
+          }
+          return out;
+        }""")
+
+    def test_the_artless_map_gets_no_translucent_wash_at_all(self):
+        """A map with no artwork has opaque terrain, which is what every map
+        without a picture has always had. The wash is scoped on a class the
+        script only adds when there is art, so this is the case where the scope
+        has to hold."""
+        snap = self.page.evaluate("() => JSON.parse(JSON.stringify(window.__SNAP))")
+        snap["grid"]["rows"] = list(self.ROWS)
+        snap["meta"] = {"name": "No Art"}
+        self.page.evaluate("(s) => { Tactics.update(s); }", snap)
+        present(self.page, "() => !!document.querySelector('#tx-board .tx-terrain')",
+                "the terrain to draw")
+        self.assertEqual(self.page.evaluate(
+            "() => document.querySelectorAll('#tx-board .tx-terrain-over-art').length"), 0)
+        for cell in self.probe():
+            self.assertEqual(cell["fillOpacity"], "1",
+                             f"{cell['t']} is washed on a map with no artwork")
+
+    def test_the_wash_over_artwork_is_the_lighter_one_the_browser_resolves(self):
+        """Not ".38 is in the file" but ".38 is what a cell gets". A selector
+        that matched nothing would leave the initial value, 1, and this is the
+        assertion that notices."""
+        self.push_art_map()
+        seen = set()
+        for cell in self.probe():
+            seen.add((cell["t"], cell["fillOpacity"]))
+        self.assertIn(("floor", "0.38"), seen,
+                      f"the floor wash is not .38 as resolved: {sorted(seen)}")
+        self.assertIn(("wall", "0.7"), seen,
+                      f"the wall wash is not .7 as resolved: {sorted(seen)}")
+
+    def test_the_boundary_stroke_resolves_only_where_the_script_asked_for_one(self):
+        """data-edge and the stroke rule have to agree in both directions: a cell
+        the edge pass marked gets a stroke, and a cell it did not does not."""
+        self.push_art_map()
+        for cell in self.probe():
+            if not cell["edge"]:
+                self.assertEqual(cell["stroke"], "none",
+                                 f"an unmarked {cell['t']} cell was stroked anyway, "
+                                 f"which draws a box grid over open ground")
+                continue
+            self.assertEqual(cell["vectorEffect"], "non-scaling-stroke",
+                             "the boundary stroke scales with the cell, so it "
+                             "thins to nothing on a phone")
+            # Walls and voids are at full strength and the rest at .9, so the
+            # assertion is per terrain rather than one number.
+            want = "1" if cell["t"] in ("wall", "void") else "0.9"
+            self.assertEqual(cell["strokeOpacity"], want,
+                             f"{cell['t']} at edge {cell['edge']} is not at "
+                             f"{want} stroke weight")
+
+    def test_the_wall_boundary_is_full_strength(self):
+        self.push_art_map()
+        walls = [c for c in self.probe() if c["t"] == "wall" and c["edge"]]
+        self.assertTrue(walls, "no wall cell carries a boundary")
+        for cell in walls:
+            self.assertEqual(cell["strokeOpacity"], "1")
+
+    def test_the_open_ground_around_a_wall_block_is_not_outlined(self):
+        """The regression a stroke-per-rect would cause, measured rather than
+        reasoned about: open floor two squares from the wall must have no edge."""
+        self.push_art_map()
+        by_pos = {(c["x"], c["y"]): c for c in self.probe()}
+        rows = self.ROWS
+        H, W = len(rows), len(rows[0])
+
+        def terrain_at(x, y):
+            """The legend name for a square, or None past the board edge."""
+            return ({".": "floor", "#": "wall", ",": "difficult"}[rows[y][x]]
+                    if 0 <= x < W and 0 <= y < H else None)
+
+        # Open floor that touches neither a differently-terrained square nor the board
+        # edge: exactly the squares a stroke-per-rect would have boxed in. A
+        # board edge counts as a boundary, so the four sides must all be real
+        # floor squares.
+        isolated = [
+            (x, y) for y in range(H) for x in range(W)
+            if terrain_at(x, y) == "floor"
+            and all(terrain_at(nx, ny) == "floor"
+                    for nx, ny in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)))
+        ]
+        self.assertTrue(isolated, "the fixture has no isolated open floor")
+        for pos in isolated:
+            self.assertIsNone(by_pos[pos]["edge"],
+                              f"open floor at {pos} was outlined, which draws a "
+                              f"box grid over the artwork: {by_pos[pos]}")
+        # And there are several, so the assertion above is not vacuous. Four is
+        # the number this fixture happens to have; the point is that it is more
+        # than one, not that it is a particular count.
+        self.assertGreaterEqual(len(isolated), 3, "the fixture barely tests this")
+
+    def test_the_difficult_marker_is_drawn_at_full_weight_over_artwork(self):
+        """`difficult` against `hazard` is 1.00:1 in grayscale, so this chevron is
+        the only thing telling them apart. Measured, because the rule that raises
+        its weight is scoped on the over-art class and would silently not apply
+        if that class were missing."""
+        self.push_art_map()
+        marks = self.page.evaluate("""() => {
+          const out = [];
+          for (const p of document.querySelectorAll('#tx-board .tx-difficult-mark')) {
+            const cs = getComputedStyle(p);
+            const r = p.getBBox();
+            out.push({opacity: cs.strokeOpacity, ve: cs.vectorEffect,
+                      w: Math.round(r.width), h: Math.round(r.height)});
+          }
+          return out;
+        }""")
+        # One marker per difficult square in the fixture, which is two ','s.
+        self.assertEqual(len(marks), 2, f"both difficult squares drew no marker: {marks}")
+        cell = self.page.evaluate(
+            "() => document.querySelector('#tx-board svg').viewBox.baseVal.width "
+            "/ window.__SNAP.grid.rows[0].length")
+        for m in marks:
+            self.assertEqual(m["opacity"], "0.85",
+                             "the marker is not at full weight over artwork")
+            self.assertEqual(m["ve"], "non-scaling-stroke")
+            # A real share of the cell, not a fixed size that vanishes on a phone.
+            self.assertGreaterEqual(m["w"] / cell, 0.25,
+                                    f"the marker is {m['w']}/{cell} of a cell wide")
+
+    def test_the_marker_keeps_its_old_weight_on_a_map_with_no_artwork(self):
+        """Without artwork the fill is opaque and the terrain reads on its own,
+        so the marker stays the quiet accent it was. Two weights, one class apart,
+        and this is what holds the artless half of that."""
+        snap = self.page.evaluate("() => JSON.parse(JSON.stringify(window.__SNAP))")
+        snap["grid"]["rows"] = list(self.ROWS)
+        snap["meta"] = {"name": "No Art"}
+        self.page.evaluate("(s) => { Tactics.update(s); }", snap)
+        present(self.page, "() => !!document.querySelector('#tx-board .tx-terrain')",
+                "the terrain to draw")
+        got = self.page.evaluate(
+            "() => [...document.querySelectorAll('#tx-board .tx-difficult-mark')]"
+            ".map(p => getComputedStyle(p).strokeOpacity)")
+        self.assertEqual(len(got), 2, f"the marker vanished from an artless map: {got}")
+        for opacity in got:
+            self.assertEqual(opacity, "0.3")
+
+    def test_fog_and_cover_are_untouched_over_artwork(self):
+        """The acceptance criterion "fog/cover preserved". The wash and the edge
+        touch the terrain layer only; the fog wash and the cover fills are
+        separate rules and must still resolve to what they did."""
+        self.push_art_map(fog={"runs": [[0, 0, 2]]})
+        fog = self.page.evaluate("""() => {
+          const f = document.querySelector('#tx-board .tx-fog');
+          return f ? {opacity: getComputedStyle(f).fillOpacity,
+                      fill: getComputedStyle(f).fill,
+                      inTerrain: !!f.closest('.tx-terrain')} : null;
+        }""")
+        self.assertIsNotNone(fog, "fog is gone from a map with artwork")
+        # The fog's own .55 wash, unchanged -- the number the terrain wash used
+        # to be, and the confusion this asserts against.
+        self.assertEqual(fog["opacity"], "0.55")
+        self.assertFalse(fog["inTerrain"],
+                         "fog ended up inside the terrain group, so the terrain "
+                         "wash would be composited over it")
+
+    def test_the_cell_geometry_is_unchanged_by_the_edge_pass(self):
+        """The acceptance criterion "geometry unchanged", measured. Every cell is
+        still a C x C square at (x*C, y*C) -- the edge pass set two attributes
+        and must not have touched x, y, width or height."""
+        self.push_art_map()
+        rects = self.page.evaluate("""() => {
+          const W = window.__SNAP.grid.rows[0].length;
+          const out = [];
+          for (const r of document.querySelectorAll('#tx-board .tx-terrain rect')) {
+            out.push([r.getAttribute('x'), r.getAttribute('y'),
+                      r.getAttribute('width'), r.getAttribute('height'), W]);
+          }
+          return out;
+        }""")
+        self.assertEqual(len(rects), sum(len(r) for r in self.ROWS))
+        for x, y, w, h, W in rects:
+            self.assertEqual((w, h), ("32", "32"),
+                             f"a cell is no longer 32x32: {w}x{h}")
+            xi = int(x) // 32
+            yi = int(y) // 32
+            self.assertEqual(int(x) % 32, 0, "a cell is not on a square boundary")
+            self.assertEqual(int(y) % 32, 0, "a cell is not on a square boundary")
+            self.assertLess(xi, W)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -73,6 +73,32 @@ def parse_square(text: str) -> Pos:
 
 # ─── Grid ─────────────────────────────────────────────────────────────────────
 
+# ── The geometry seams ────────────────────────────────────────────────────────
+#
+# Everything below is what a hex grid would override. There are four, and they
+# are the *whole* of what "one step away", "the middle of this square" and "the
+# edges of this square" mean:
+#
+#   neighbors(p)        which squares one step from p, and in what order
+#   centre(p)           the middle of a square, in plane coordinates
+#   _cell_polygon(p)    a square's outline, for drawing and pointer picking
+#   _corners(p)         the points a sight line is traced to and from
+#
+# Three are private because the sight rules are inside this module; `centre` and
+# `neighbors` are public because `area` and `formations` are not.
+#
+# The square implementations below are `main`'s arithmetic moved, not rewritten,
+# and `tests/test_grid_golden.py` is the gate for that claim: every shipped map's
+# rows, to_dict, distance, reachable, path, cover, area and visible_from,
+# generated on `origin/main` before this refactor.
+#
+# **Order is load-bearing in `neighbors`.** `_dijkstra` settles ties by
+# first-found-wins, and formations by first-free-wins, so changing the iteration
+# order changes which of two equal-cost routes is returned, and an equal-cost
+# route can be a different number of steps. The loop order is therefore dx-outer,
+# dy-inner, which is what both call sites did independently before.
+
+
 @dataclass
 class MoveOptions:
     """What a mover can pass through. Squares are (x, y) tuples."""
@@ -146,6 +172,60 @@ class Grid:
     def blocks_sight(self, p: Pos) -> bool:
         return self.in_bounds(p) and bool(self.terrain(p)["blocks_sight"])
 
+    # ── the geometry seams ──
+    def neighbors(self, p: Pos) -> list:
+        """Every square one step from `p`, nearest-first by iteration order.
+
+        This is the *only* place that knows what "adjacent" means, and both
+        consumers go through it: `_dijkstra` below and `formations._nearest_free`.
+
+        The order is dx-outer, dy-inner, which is what each of those did
+        independently before, and it is load-bearing rather than cosmetic.
+        `_dijkstra` keeps the first route it finds at a given cost and
+        `_nearest_free` returns the first free square it reaches, so the order
+        decides *which* of two equal-cost routes is returned. An equal-cost route
+        can be a different number of steps -- four diagonals cost the same as
+        eight straights at "5-10-5" -- so a reordering here is a behaviour change
+        in `path`, not a refactor.
+
+        Squares off the board are included. Both callers filter with `in_bounds`
+        or `passable` anyway, and deciding that here would make the hook
+        "neighbours that are legal" rather than "neighbours", which is a
+        different question: `_step_cost` needs to see an off-board square to
+        refuse it as impassable.
+        """
+        x, y = p
+        return [(x + dx, y + dy) for dx in (-1, 0, 1) for dy in (-1, 0, 1)
+                if dx or dy]
+
+    def centre(self, p: Pos) -> tuple:
+        """The middle of a square, in plane coordinates: (0.5, 1.5) for (0, 1).
+
+        Every area-of-effect test is a test against this point, because the rule
+        in the DMG is "a square is in the area when its centre is". A hex grid
+        overrides this and nothing else in `area` changes.
+
+        Public rather than `_centre`, and not because of taste: `area` is a module
+        function (`grid.area(g, ...)` at every call site) so it has to reach this
+        from outside the class. A `_centre` that callers reach into is a private
+        method that grew a public contract, and a public `_centre` beside a
+        public `centre` is two names for one fact, which is the thing this
+        refactor exists to remove.
+        """
+        return (p[0] + 0.5, p[1] + 0.5)
+
+    def _cell_polygon(self, p: Pos) -> list:
+        """A square's outline, clockwise from its top-left corner.
+
+        For drawing and for picking a square back out of a pointer position. Not
+        used by any engine rule today -- the rules speak in squares, not outlines
+        -- so this hook is the seam for P3's display geometry rather than for
+        sight or movement. Returning integers keeps it directly usable as lattice
+        points, which is why `_corners` below can be this same list.
+        """
+        x, y = p
+        return [(x, y), (x + 1, y), (x + 1, y + 1), (x, y + 1)]
+
     def distance(self, a: Pos, b: Pos) -> int:
         """Feet between two squares, ignoring terrain. Used for reach and range."""
         dx, dy = abs(a[0] - b[0]), abs(a[1] - b[1])
@@ -186,21 +266,21 @@ class Grid:
                 continue
             if goal is not None and pos == goal:
                 break
-            for dx in (-1, 0, 1):
-                for dy in (-1, 0, 1):
-                    if not dx and not dy:
-                        continue
-                    nxt = (pos[0] + dx, pos[1] + dy)
-                    step = self._step_cost(pos, nxt, par, opts)
-                    if step is None:
-                        continue
-                    nc, npar = cost + step[0], step[1]
-                    if nc > budget:
-                        continue
-                    if nc < best.get((nxt, npar), 1 << 30):
-                        best[(nxt, npar)] = nc
-                        prev[(nxt, npar)] = (pos, par)
-                        heapq.heappush(heap, (nc, nxt, npar))
+            # Through the seam, not a local 3x3 loop: this is the search that hex
+            # has to become six-directional, and a loop written here would be the
+            # one place the change missed. `neighbors` preserves the order the
+            # loop had, which is what keeps the tie-breaks identical.
+            for nxt in self.neighbors(pos):
+                step = self._step_cost(pos, nxt, par, opts)
+                if step is None:
+                    continue
+                nc, npar = cost + step[0], step[1]
+                if nc > budget:
+                    continue
+                if nc < best.get((nxt, npar), 1 << 30):
+                    best[(nxt, npar)] = nc
+                    prev[(nxt, npar)] = (pos, par)
+                    heapq.heappush(heap, (nc, nxt, npar))
         return best, prev
 
     def reachable(self, start: Pos, budget: int, opts: MoveOptions = None,
@@ -288,9 +368,21 @@ class Grid:
                 return False
         return True
 
-    @staticmethod
-    def _corners(p: Pos):
-        return [(p[0] + i, p[1] + j) for i in (0, 1) for j in (0, 1)]
+    def _corners(self, p: Pos):
+        """The points a sight line is traced from and to: a square's four corners.
+
+        A hook rather than a static method for the same reason `neighbors` is one.
+        It is the sixth decision hex has to make and it is not a free one: the
+        cover bands below count blocked corners out of `len(corners)`, so a hex
+        grid with six corners needs 1-3 half and 4-6 three-quarters rather than
+        squares' 1-2 and 3-4. That rescale is SPEC 4.2's stated extrapolation
+        and it lands here, in one place, when a hex grid exists.
+
+        The corners are lattice points (`(x, y)` through `(x+1, y+1)`), which is
+        what `_segment_hits` and `_cells_between` expect: they trace a segment
+        through *cells*, and a square grid's corners are also cell corners.
+        """
+        return self._cell_polygon(p)
 
     def line_of_sight(self, a: Pos, b: Pos) -> bool:
         """True if some line from a corner of a to a corner of b clears every wall."""
@@ -339,6 +431,16 @@ class Grid:
     def _cover(self, attacker: Pos, target: Pos, creatures: frozenset) -> dict:
         best = None
         any_los = False
+        # The DMG's bands are stated out of four, and four is `len(_corners)` for
+        # a square: 1-2 blocked is half, 3-4 is three-quarters, all 4 with no clear
+        # line is no line of sight at all. Written as a fraction of the corner
+        # count so a six-cornered grid rescales to 1-3 and 4-6 rather than being
+        # handed square's numbers, which would call a hexagon with 3 blocked
+        # corners "three-quarters" when 3 of 6 is half. The thresholds are
+        # floor/ceil of the same proportion, so a square's answer is unchanged:
+        # blocked <= 2 of 4 is <= 0.5, blocked <= 3 of 6 is <= 0.5.
+        corners = len(self._corners(target))
+        half_at = max(1, corners // 2)
         for c in self._corners(attacker):
             hard = soft = 0
             for t in self._corners(target):
@@ -349,13 +451,13 @@ class Grid:
                 if any(q in creatures or (self.in_bounds(q) and self.terrain(q)["cover"])
                        for q in cells):
                     soft += 1
-            if hard < 4:
+            if hard < corners:
                 any_los = True
             blocked = hard + soft
-            level = 0 if blocked == 0 else 2 if blocked <= 2 else 5
+            level = 0 if blocked == 0 else 2 if blocked <= half_at else 5
             if hard == 0 and level == 5:
                 level = 2                   # creatures/features alone: at most half
-            if hard < 4 and (best is None or level < best):
+            if hard < corners and (best is None or level < best):
                 best = level
         return {"los": any_los, "cover": best if best is not None else 0}
 
@@ -398,10 +500,14 @@ def area(grid: "Grid", shape: str, size: int, caster: Pos, target: Pos = None,
     if shape not in AREA_SHAPES:
         raise ValueError(f"area shape must be one of {AREA_SHAPES}")
     cells = size / SQUARE_FT
-    cx, cy = caster[0] + 0.5, caster[1] + 0.5
+    # Cell centres go through the hook rather than `pos + 0.5` written here.
+    # "A square is in the area when its centre is" is the rule, so every one of
+    # these three is the same fact asked three times, and a hex grid has to move
+    # it once rather than three times.
+    cx, cy = grid.centre(caster)
     if target is None:
         target = caster
-    tx, ty = target[0] + 0.5, target[1] + 0.5
+    tx, ty = grid.centre(target)
     if shape in ("cone", "line") and target == caster:
         raise ValueError("aim a cone or line at another square")
 
@@ -457,7 +563,7 @@ def area(grid: "Grid", shape: str, size: int, caster: Pos, target: Pos = None,
     for q in candidates:
         if not grid.in_bounds(q) or grid.blocks_sight(q):
             continue
-        centre = (q[0] + 0.5, q[1] + 0.5)
+        centre = grid.centre(q)
         if q != caster and grid._walled(origin, centre, skip={q, caster}):
             continue                                        # no line of effect
         squares.append(q)

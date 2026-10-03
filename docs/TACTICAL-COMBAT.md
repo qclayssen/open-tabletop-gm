@@ -83,7 +83,7 @@ Exit codes: `0` done; `1` not allowed (the message says why); `2` waiting for a 
 New to grid combat? Play the tutorial: [TUTORIAL.md](TUTORIAL.md).
 
 ```bash
-python3 systems/dnd5e/build_srd.py --no-fvtt     # once: SRD monsters
+python3 scripts/provision_srd.py                 # once: the SRD (network, ~80s)
 python3 scripts/tactics/play.py tutorial         # play it yourself: ten lessons, then win the fight
 python3 scripts/tactics/play.py mephit           # more fights: kobolds, frogs, mephit, or --map ...
 python3 scripts/tactics/demo.py                  # Kairos vs two giant frogs, scripted

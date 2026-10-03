@@ -1,6 +1,8 @@
 """Fakes for the localdm tests (not a test module itself)."""
 from __future__ import annotations
 
+import pytest
+
 import pathlib
 import sys
 import threading
@@ -83,3 +85,63 @@ class FakeBridge:
         self.ran.append(list(args))
         h = self.handlers.get(args[0])
         return h(args) if h else Result(1, f"(fake) {args[0]} refused")
+
+
+class FixedRoll:
+    """A stand-in for `play._CHECK_RNG` that returns a chosen d20 and counts calls.
+
+    Tests that need to know *what* a check rolled, or *how many times* one was
+    rolled, used to do it by patching the `random` module:
+
+        monkeypatch.setattr(random, "randint", lambda a, b: rolls.append((a, b)) or 14)
+
+    That worked only because `play.py` read the module-level generator. It does
+    not any more -- the check rolls off `_dice.new_rng()` so the face has a seed
+    on it (dnd-gm#306) -- so the patch became a no-op that silently stopped
+    counting. Worse than a failure: a test asserting "one roll" or "no roll"
+    stopped being able to see either.
+
+    The seam is this module's stream now, so a stub is both narrower and honest:
+    it cannot accidentally divert some other module's dice.
+    """
+
+    def __init__(self, face: int = 14, calls: list | None = None):
+        self.face = face
+        self.seed_value = face
+        self.calls = calls if calls is not None else []
+
+    def randint(self, low, high):
+        assert (low, high) == (1, 20), f"a skill check is a d20, got d{high - low + 1}"
+        self.calls.append((low, high))
+        return self.face
+
+
+def fixed_check_roll(monkeypatch, face: int = 14, calls: list | None = None) -> list:
+    """Point `play._CHECK_RNG` at a `FixedRoll`; returns the call log."""
+    from localdm import play
+    stub = FixedRoll(face, calls)
+    monkeypatch.setattr(play, "_CHECK_RNG", stub)
+    return stub.calls
+
+
+class ForbiddenRoll:
+    """A check stream that fails the test if it is ever used.
+
+    For the assertions of the form "no die was rolled", where the point is that
+    the engine refused and the table was told why. These used to patch the
+    `random` module to `pytest.fail`, which stopped being able to see anything
+    once the check moved onto `play._CHECK_RNG` -- an assertion that cannot fail
+    is not an assertion, and this one had quietly become decoration.
+    """
+
+    seed_value = None
+
+    def randint(self, low, high):
+        pytest.fail(f"a d{high - low + 1} was rolled where none should be "
+                    f"(asked for {low}..{high})")
+
+
+def forbid_check_roll(monkeypatch) -> None:
+    """Make any headless skill check in this test a failure."""
+    from localdm import play
+    monkeypatch.setattr(play, "_CHECK_RNG", ForbiddenRoll())

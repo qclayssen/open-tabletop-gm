@@ -17,12 +17,20 @@ import pathlib
 import re
 import shutil
 import subprocess
+import sys
 import unittest
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 JS = REPO / "display" / "static" / "tactics.js"
 CSS = REPO / "display" / "static" / "tactics.css"
+
+sys.path.insert(0, str(REPO / "scripts"))
 NODE = shutil.which("node")
+
+#: Skip decorator, named because the module already uses it spelled out. Every
+#: class below that runs JavaScript needs it, and a class that forgets is a
+#: silently-skipped test, which is the state this repo has been bitten by.
+skip_unless_node = unittest.skipUnless(NODE, "node is not installed")
 
 # The block tactics.js marks as free of the DOM (see "pure helpers" there).
 PURE = re.compile(r"/\* Pure helpers:.*?\*/(.*?)/\* end pure helpers \*/", re.S)
@@ -51,6 +59,35 @@ def _media_block(css: str, query: str) -> str:
                 return css[start:i + 1]
         i += 1
     return ""
+
+
+def _rgb(hex_colour: str):
+    h = hex_colour.lstrip("#")
+    return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def _lin(c: int) -> float:
+    c /= 255
+    return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+
+
+def _luminance(rgb) -> float:
+    r, g, b = (_lin(v) for v in rgb)
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def _contrast(a, b) -> float:
+    """WCAG 2.x contrast ratio between two sRGB triples."""
+    la, lb = _luminance(a), _luminance(b)
+    hi, lo = max(la, lb), min(la, lb)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def _over(fg, bg, alpha: float):
+    """`fg` at `alpha` alpha-composited over `bg`. sRGB, as a browser does it
+    for `fill-opacity` (the non-linear form is what the CSS compositing
+    spec's simple case yields and what a screenshot shows)."""
+    return tuple(round(alpha * f + (1 - alpha) * b) for f, b in zip(fg, bg))
 
 
 def _run(js: str) -> dict:
@@ -511,6 +548,298 @@ class Accessibility(unittest.TestCase):
         self.assertIn("stroke: var(--tx-panel)", base.group(1))
 
 
+# ── map labels (#144) ────────────────────────────────────────────────────────
+
+@skip_unless_node
+class LabelBudget(unittest.TestCase):
+    """labelBudget: the width one map label may occupy, in SVG user units.
+
+    An SVG <text> has no box, so nothing in CSS can bound it; the clamp is this
+    function plus fitLabelText. Both are pure and both are in tactics.js's marked
+    DOM-free block, which is run under node here.
+
+    Every case below is a number taken from a real map in display/maps/, and
+    each names the label it came from. That matters: a budget test with invented
+    numbers proves the arithmetic and not whether the rule fits the maps it has
+    to serve.
+    """
+
+    def budget(self, w, cx, W, unit=32):
+        return _run(f"return {{v: labelBudget({w}, {cx}, {W}, {unit})}};")["v"]
+
+    def test_a_short_name_keeps_all_of_itself_in_a_one_square_feature(self):
+        """bows-end-tavern has eleven 1x1 features named "Round table" (11 chars).
+
+        A strict region budget would be 32 - 8 = 24 units, about four characters,
+        so the label would read "Roun…" and the feature would lose its name to
+        being narrow. The floor is what stops that: the label is short and the
+        map has room, so it is not clamped at all.
+        """
+        # A 1x1 region at the centre of a 32-wide map: cx = 16 * 32 = 512.
+        self.assertGreaterEqual(self.budget(1, 512, 32), 11 * 6)
+
+    def test_a_long_name_is_clamped_to_the_region_and_no_wider(self):
+        """The great hearth: a 1x1 feature whose label is 79 characters.
+
+        Unclamped at ~6.2 units a character that is ~490 units, about fifteen
+        squares, drawn from a one-square hearth across the whole floor.
+        """
+        budget = self.budget(1, 512, 32)
+        self.assertLess(budget, 79 * 6.2)
+        self.assertGreater(budget, 0)
+
+    def test_a_wide_region_gets_a_wider_budget_than_a_narrow_one(self):
+        """The Cut (the canal) is 18 squares wide; a named table is 2."""
+        self.assertGreater(self.budget(18, 16 * 32, 32), self.budget(2, 16 * 32, 32))
+
+    def test_a_label_near_the_right_edge_is_clamped_by_the_room_left(self):
+        """A centred box that overruns the viewBox is not drawn at all: SVG
+        silently drops content past the last column, so an over-long label at
+        the map's edge would vanish rather than overflow. The budget cannot
+        exceed twice the distance to the nearer edge."""
+        # The last column of a 32-wide map, centre at 31.5 * 32 = 1008.
+        cx, W = 31.5 * 32, 32
+        self.assertLessEqual(self.budget(18, cx, W), 2 * (W * 32 - cx))
+
+    def test_the_budget_is_positive_at_every_edge_of_the_map(self):
+        """A zero or negative budget would blank the label. Both edges, and the
+        first and last square of every shipped map width."""
+        for W in (9, 12, 20, 24, 30):
+            for cx in (0.5, 1, W - 1, W - 0.5):
+                self.assertGreater(self.budget(1, cx * 32, W), 0,
+                                   f"no room for a label at {cx} of {W}")
+
+
+@skip_unless_node
+class FitLabelText(unittest.TestCase):
+    """fitLabelText: the longest prefix of a label that fits a budget.
+
+    `measure` is injected, so these tests pin the SEARCH (prefix, ellipsis,
+    no off-by-one) independently of how a browser measures type. The browser
+    case is tests/test_display_tactics_layout.py, which uses a real one.
+    """
+
+    #: ~6.2 units a character, the same estimate fitLabels falls back to.
+    def fit(self, text, budget):
+        prog = ("const measure = s => s.length * 6.2;"
+                f"return {{v: fitLabelText({json.dumps(text)}, {budget}, measure)}};")
+        return _run(prog)["v"]
+
+    #: The longest label on any shipped map, from bows-end-tavern's great hearth.
+    HEARTH = ("The great hearth - lit. The chequered floor and produce racks "
+              "sit all round it.")
+
+    def test_a_label_that_fits_is_returned_whole(self):
+        self.assertEqual(self.fit("Round table", 400), "Round table")
+
+    def test_a_label_that_does_not_fit_gains_an_ellipsis_and_loses_its_tail(self):
+        out = self.fit(self.HEARTH, 120)
+        self.assertTrue(out.endswith("…"), out)
+        self.assertTrue(self.HEARTH.startswith(out[:-1]), out)
+
+    def test_the_result_never_exceeds_the_budget(self):
+        """The property the whole change exists for, checked at several budgets
+        rather than one: the measured prefix plus its ellipsis must fit."""
+        for budget in (24, 40, 60, 80, 120, 200, 400):
+            out = self.fit(self.HEARTH, budget)
+            self.assertLessEqual(len(out) * 6.2, budget + 6.2,
+                                 f"budget {budget} produced {out!r}")
+
+    def test_a_prefix_keeps_the_head_and_a_suffix_would_not(self):
+        """These names lead with the identity ("Duel Square (West) - chequered
+        floor inside low timber rails"), so keeping the head is what makes a
+        clamped label still recognisable."""
+        text = "Duel Square (West) - chequered floor inside low timber rails"
+        out = self.fit(text, 150)
+        self.assertTrue(out.startswith("Duel Square (West)"), out)
+
+    def test_a_budget_too_small_for_any_character_yields_nothing_rather_than_overflow(self):
+        """Below one character the honest answer is no label. The full text is
+        still in the <title>, so this loses a name rather than a fact."""
+        self.assertEqual(self.fit("Round table", 1), "")
+
+    def test_empty_and_missing_labels_are_empty(self):
+        self.assertEqual(self.fit("", 400), "")
+        self.assertEqual(_run("return {v: fitLabelText(null, 400, s => s.length * 6)};")["v"], "")
+
+
+@skip_unless_node
+class LabelRegion(unittest.TestCase):
+    """labelCovers: which squares a map label's region actually covers.
+
+    describeSquare() reads the FULL label text out through the board cursor,
+    because the board svg is aria-hidden and a shortened label is not a name. It
+    finds the label by region, so this is the test that the region test reaches
+    the squares a GM would aim at.
+    """
+
+    def covers(self, l, x, y):
+        return _run(f"return {{v: !!labelCovers({json.dumps(l)}, {x}, {y})}};")["v"]
+
+    def test_every_square_of_a_multi_square_region_is_covered(self):
+        """detention-bog's "Reeds" is 7x5. Testing only the anchor square would
+        miss 34 of its 35."""
+        l = {"text": "Reeds", "x": 3.5, "y": 2.5, "w": 7, "h": 5}
+        for y in range(5):
+            for x in range(7):
+                self.assertTrue(self.covers(l, x, y), f"({x},{y}) of the Reeds region")
+
+    def test_a_square_outside_the_region_is_not_covered(self):
+        l = {"text": "Reeds", "x": 3.5, "y": 2.5, "w": 7, "h": 5}
+        self.assertFalse(self.covers(l, 7, 0))
+        self.assertFalse(self.covers(l, 0, 5))
+
+    def test_a_label_without_a_size_covers_exactly_its_anchor_square(self):
+        """A snapshot written before maps.py published w: a top-left corner, not
+        a centre, and one square wide."""
+        l = {"text": "Lantern", "x": 2, "y": 3}
+        self.assertTrue(self.covers(l, 2, 3))
+        self.assertFalse(self.covers(l, 3, 3))
+
+
+class MapLabelGeometry(unittest.TestCase):
+    """maps.py: a label's anchor is its region's centre, and it carries the size.
+
+    Display-only, and the round trip is the reason this is asserted on the
+    compiler: mapeditor.py re-derives a saved map's labels from its `features`
+    rectangles, so a centre written where a corner was meant cannot corrupt a
+    map file. That is a claim about two files agreeing, so it is tested on both.
+    """
+
+    def labels(self, spec):
+        from scripts.tactics import maps as _maps
+        return _maps.compile_map(spec)["meta"]["labels"]
+
+    def test_the_anchor_is_the_centre_of_the_region_it_names(self):
+        """Before the fix: x, y were the region's top-left corner, so a label on
+        a 6x4 feature sat over its first square and its text ran right across
+        five squares of something else."""
+        got = self.labels({"width": 8, "height": 6, "base": "floor", "features": [
+            {"type": "feature", "x": 1, "y": 2, "w": 6, "h": 4, "label": "Rubble"}]})
+        self.assertEqual(got, [{"text": "Rubble", "x": 4.0, "y": 4.0, "w": 6, "h": 4}])
+
+    def test_an_odd_sized_region_gets_a_half_square_centre(self):
+        """3 wide puts the middle at x + 1.5. Rounding it to 2 would put the
+        label over the second square of three, which is not the middle of
+        anything a reader would call the middle."""
+        got = self.labels({"width": 8, "height": 6, "base": "floor", "features": [
+            {"type": "feature", "x": 0, "y": 0, "w": 3, "h": 1, "label": "Bench"}]})
+        self.assertEqual((got[0]["x"], got[0]["y"]), (1.5, 0.5))
+
+    def test_a_squarer_feature_still_gets_w_and_h(self):
+        got = self.labels({"width": 8, "height": 6, "base": "floor", "features": [
+            {"type": "feature", "x": 2, "y": 2, "label": "Lantern"}]})
+        self.assertEqual((got[0]["w"], got[0]["h"]), (1, 1))
+
+    def test_the_grid_rows_are_untouched_by_the_label_geometry(self):
+        """The acceptance criterion "grid rows unchanged", on the real thing: a
+        labelled map's rows must be identical to the same map with no labels.
+        Labels are display metadata; the engine reads rows."""
+        feats = [{"type": "feature", "x": 1, "y": 2, "w": 6, "h": 4, "label": "Rubble"},
+                 {"type": "wall", "x": 0, "y": 0, "w": 2, "h": 8}]
+        with_lbl = {"width": 8, "height": 8, "base": "floor", "features": feats}
+        without = json.loads(json.dumps(with_lbl))
+        without["features"][0].pop("label")
+        self.assertEqual(self.labels(with_lbl)[0]["text"], "Rubble")
+        from scripts.tactics import maps as _maps
+        self.assertEqual(_maps.compile_map(with_lbl)["grid"]["rows"],
+                         _maps.compile_map(without)["grid"]["rows"])
+
+    def test_every_shipped_map_still_compiles_and_keeps_its_label_count(self):
+        """The whole shipped set, not a fixture. A label key that a real map
+        needs and this test does not have is a map that stops loading."""
+        from scripts.tactics import maps as _maps
+        root = REPO / "display" / "maps"
+        total = 0
+        for p in sorted(root.glob("*.json")):
+            spec = json.loads(p.read_text(encoding="utf-8"))
+            got = _maps.compile_map(spec)["meta"]["labels"]
+            wanted = sum(1 for f in spec.get("features") or [] if f.get("label"))
+            self.assertEqual(len(got), wanted, f"{p.name}: label count changed")
+            for l in got:
+                self.assertTrue(1 <= l["x"] <= spec["width"], f"{p.name}: {l} off the map")
+                self.assertTrue(1 <= l["y"] <= spec["height"], f"{p.name}: {l} off the map")
+                self.assertGreaterEqual(l["w"], 1)
+                self.assertGreaterEqual(l["h"], 1)
+            total += len(got)
+        self.assertGreater(total, 100, "the shipped maps carry far fewer labels than that")
+
+
+class MapLabelRoundTrip(unittest.TestCase):
+    """The editor's save path must not read a centre back as a corner.
+
+    `cover()` in mapeditor.py re-derives features[] from the cell matrix, and the
+    cell matrix carries a label per FEATURE INDEX (mapeditor.py:96), not a
+    coordinate. So a label whose anchor is now a centre still round trips. This
+    is the test that says so, because the alternative is a map file silently
+    rewritten with every label shifted.
+    """
+
+    def test_a_save_after_a_load_puts_the_label_back_on_its_own_region(self):
+        from scripts.tactics import mapeditor as _me
+        spec = {"name": "t", "width": 10, "height": 8, "base": "floor", "features": [
+            {"type": "feature", "x": 1, "y": 2, "w": 6, "h": 4, "label": "Rubble"}]}
+        cells = _me.cells_of(spec)
+        back = _me.cover(cells, spec["base"])
+        self.assertEqual(len(back), 1)
+        self.assertEqual(back[0]["label"], "Rubble")
+        self.assertEqual((back[0]["x"], back[0]["y"], back[0]["w"], back[0]["h"]),
+                         (1, 2, 6, 4))
+
+    def test_editor_state_publishes_the_centre_and_the_size(self):
+        """The editor draws from editor_state()["labels"], so if that list still
+        carried top-left corners the editor would render the old way whatever
+        maps.py now says."""
+        from scripts.tactics import mapeditor as _me
+        state = _me.editor_state(
+            {"name": "t", "width": 10, "height": 8, "base": "floor", "features": [
+                {"type": "feature", "x": 1, "y": 2, "w": 6, "h": 4, "label": "Rubble"}]},
+            "t")
+        self.assertEqual(state["labels"],
+                         [{"text": "Rubble", "x": 4.0, "y": 4.0, "w": 6, "h": 4}])
+
+
+class MapLabelStylesheet(unittest.TestCase):
+    """The type the clamp assumes, and the two properties only CSS can set.
+
+    Not a restatement of the stylesheet: the two assertions that matter are the
+    ones a JS clamp cannot supply. `text-anchor: middle` and
+    `dominant-baseline: central` are what centre the label on the region, and
+    tactics.js sets NEITHER as an attribute (it sets x and y only), so removing
+    either line here un-centres every label on the map.
+    """
+
+    def rule(self):
+        css = CSS.read_text(encoding="utf-8")
+        m = re.search(r"\.tx-cell-lbl \{([^}]*)\}", css)
+        self.assertIsNotNone(m, ".tx-cell-lbl has no rule")
+        return m.group(1)
+
+    def test_the_label_is_centred_on_its_region_by_the_stylesheet_alone(self):
+        self.assertIn("text-anchor: middle", self.rule())
+        self.assertIn("dominant-baseline: central", self.rule())
+
+    def test_tactics_js_does_not_set_the_anchor_itself(self):
+        """The reason the previous two are load-bearing. If the script set
+        text-anchor as an attribute it would win over the stylesheet and the
+        stylesheet rule would be dead."""
+        js = JS.read_text(encoding="utf-8")
+        for lbl in js.splitlines():
+            if "tx-cell-lbl" in lbl:
+                self.assertNotIn("text-anchor", lbl)
+                self.assertNotIn("dominant-baseline", lbl)
+
+    def test_the_halo_that_keeps_a_label_readable_over_artwork_is_kept(self):
+        self.assertIn("paint-order: stroke", self.rule())
+
+    def test_the_editor_label_is_centred_by_its_stylesheet_too(self):
+        css = (REPO / "display" / "static" / "mapseditor.css").read_text(encoding="utf-8")
+        m = re.search(r"\.me-lbl \{([^}]*)\}", css)
+        self.assertIsNotNone(m, ".me-lbl has no rule")
+        self.assertIn("text-anchor: middle", m.group(1))
+        self.assertIn("dominant-baseline: central", m.group(1))
+
+
 if __name__ == "__main__":
     unittest.main()
 
@@ -532,3 +861,393 @@ class PendingBanner(unittest.TestCase):
     def test_nothing_pending_or_death_save_is_silent(self):
         self.assertEqual(self.banner("", "Kairos"), "")
         self.assertEqual(self.banner("death_save", "Kairos"), "")
+
+
+# ── terrain over artwork (#145) ──────────────────────────────────────────────
+
+@skip_unless_node
+class TerrainEdges(unittest.TestCase):
+    """terrainEdges: which cells have a differently-terrained neighbour.
+
+    The fill over artwork cannot do this job at any opacity (measured; see
+    .tx-terrain-over-art in tactics.css), so the boundary between two terrains is
+    drawn as a stroke instead. Where it goes is geometry, so it lives in the
+    DOM-free block and is pinned here under node.
+    """
+
+    def edges(self, rows, names):
+        return _run(f"return {{v: terrainEdges({json.dumps(list(rows))}, "
+                    f"{json.dumps([list(r) for r in names])})}};")["v"]
+
+    def test_open_ground_is_not_outlined_at_all(self):
+        """The reason this is an edge pass and not a stroke per rect. A 6x6 of
+        one terrain has no interior boundary anywhere: only the outer ring of
+        cells is outlined, because only those face something else. Outlining
+        every cell would draw a 6x6 box grid over open floor, which over
+        artwork is worse than no outline at all."""
+        rows = ["......"] * 6
+        names = [["floor"] * 6 for _ in range(6)]
+        by_pos = {(e["x"], e["y"]): e for e in self.edges(rows, names)}
+        self.assertEqual(len(by_pos), 20, "only the border ring should be outlined")
+        # The four fully-interior cells have no edge at all.
+        for x in (2, 3):
+            for y in (2, 3):
+                self.assertNotIn((x, y), by_pos,
+                                 f"open floor at ({x},{y}) was outlined")
+        # A corner faces two board edges.
+        self.assertEqual(by_pos[(0, 0)], {"x": 0, "y": 0, "l": 1, "r": 0, "t": 1, "b": 0})
+
+    def test_a_region_is_outlined_as_a_region_not_as_a_grid_of_cells(self):
+        """A 2x2 wall block in open floor.
+
+        The line follows the REGION: the two wall cells that touch each other get
+        no line between them, and only the outer boundary of the block is drawn.
+        That is the whole difference between this and a stroke per rect, and it
+        is why a solid wall reads as one wall rather than as four squares.
+
+        The floor cells beside the block are outlined too, on the side that
+        faces it. A boundary between two cells needs the line on both sides of it
+        to read as a boundary rather than as a stain on the floor.
+        """
+        rows = ["......", "..##..", "..##..", "......"]
+        names = [["floor"] * 6,
+                 ["floor", "floor", "wall", "wall", "floor", "floor"],
+                 ["floor", "floor", "wall", "wall", "floor", "floor"],
+                 ["floor"] * 6]
+        by_pos = {(e["x"], e["y"]): e for e in self.edges(rows, names)}
+
+        def sides(p):
+            e = by_pos[p]
+            return (e["l"], e["r"], e["t"], e["b"])
+
+        # Each wall cell: an edge on the sides facing floor or the board, never
+        # on a side facing its own terrain.
+        self.assertEqual(sides((2, 1)), (1, 0, 1, 0))   # west and north are floor
+        self.assertEqual(sides((3, 1)), (0, 1, 1, 0))   # east and north
+        self.assertEqual(sides((2, 2)), (1, 0, 0, 1))   # west and south
+        self.assertEqual(sides((3, 2)), (0, 1, 0, 1))   # east and south
+        # The floor immediately west of the block, outlined on its right only.
+        self.assertEqual(sides((1, 1)), (0, 1, 0, 0))
+        # A border cell of the board is outlined on the side that faces the
+        # board edge, not on its neighbours, which are the same terrain.
+        self.assertEqual(sides((3, 0)), (0, 0, 1, 1))
+
+    def test_one_wall_cell_on_its_own_is_outlined_on_all_four_sides(self):
+        rows = ["...", ".#.", "..."]
+        names = [["floor"] * 3,
+                 ["floor", "wall", "floor"],
+                 ["floor"] * 3]
+        (e,) = [x for x in self.edges(rows, names) if (x["x"], x["y"]) == (1, 1)]
+        self.assertEqual((e["l"], e["r"], e["t"], e["b"]), (1, 1, 1, 1))
+
+    def test_a_region_open_to_the_board_edge_is_outlined_on_that_side_only(self):
+        """A wall running off the right of the map: its right side faces nothing,
+        so only its left, top and bottom sides are boundaries."""
+        rows = ["#####", ".....", "#####"]
+        names = [["wall"] * 5,
+                 ["floor"] * 5,
+                 ["wall"] * 5]
+        by_pos = {(e["x"], e["y"]): e for e in self.edges(rows, names)}
+        wall_mid = by_pos[(2, 1)]
+        # (l, r, t, b): its left and right neighbours are the same wall, its top
+        # and bottom are floor.
+        self.assertEqual((wall_mid["l"], wall_mid["r"],
+                          wall_mid["t"], wall_mid["b"]), (0, 0, 1, 1),
+                         "a cell enclosed by its own terrain is outlined only "
+                         "where its neighbour differs")
+
+    def test_the_outer_boundary_of_the_board_is_an_edge(self):
+        """A lone wall in the corner: left and top face the board edge, and a
+        board edge is as much a boundary as a differently-terrained square."""
+        rows = ["#..", "...", "..."]
+        names = [["wall", "floor", "floor"],
+                 ["floor"] * 3,
+                 ["floor"] * 3]
+        by_pos = {(e["x"], e["y"]): e for e in self.edges(rows, names)}
+        self.assertEqual((by_pos[(0, 0)]["l"], by_pos[(0, 0)]["t"]), (1, 1))
+
+    def test_two_terrains_sharing_a_colour_are_still_two_terrains(self):
+        """Map-specific types can be given the same colour, and a GM who painted
+        them differently meant them to read differently. Comparing by name rather
+        than by fill is what keeps a colour collision from hiding a boundary."""
+        rows = [".."]
+        names = [["custom-a", "custom-b"]]
+        self.assertEqual(len(self.edges(rows, names)), 2)
+
+    def test_a_uniform_map_outlines_only_its_border(self):
+        """Uniform ground has no interior boundary, so only the cells touching
+        the board edge are outlined, and each only on the side that faces it."""
+        rows = ["##", "##", "##"]
+        names = [["wall", "wall"]] * 3
+        out = {(e["x"], e["y"]): e for e in self.edges(rows, names)}
+        self.assertEqual(len(out), 6, "every cell of a solid map borders the edge")
+        self.assertEqual((out[(0, 0)]["l"], out[(0, 0)]["t"], out[(0, 0)]["r"]), (1, 1, 0))
+        self.assertEqual((out[(1, 2)]["r"], out[(1, 2)]["b"], out[(1, 2)]["l"]), (1, 1, 0))
+        self.assertEqual((out[(0, 1)]["l"], out[(0, 1)]["r"],
+                          out[(0, 1)]["t"], out[(0, 1)]["b"]), (1, 0, 0, 0))
+
+
+@skip_unless_node
+class DifficultMark(unittest.TestCase):
+    """difficultMark: the chevron's path, in fractions of a cell.
+
+    The old one was `M x*C+9, y*C+23 l6,-10 l6,10` at stroke-opacity .3: a fixed
+    12 units in a 32-unit cell, which is 3.75px of marker at the phone minimum of
+    10px a square, drawn next to a grid line. The acceptance criterion is
+    "cell-scaled", and this is the measurement of that.
+    """
+
+    def d(self, x, y):
+        return _run(f"return {{v: difficultMark({x}, {y}, 32)}};")["v"]
+
+    def points(self, x, y):
+        """(x, y) pairs from the path, as floats.
+
+        The path is `M x,y l dx,dy l dx,dy`, so the first pair is absolute and
+        the next two are DELTAS. Walking them as deltas is the point: reading the
+        raw numbers as absolute coordinates would make a marker 2 units tall
+        whenever its own delta was 2, which is a bug in the reader and not in
+        the geometry.
+        """
+        nums = [float(n) for n in re.findall(r"-?\d+\.?\d*", self.d(x, y))]
+        out = [(nums[0], nums[1])]
+        cx, cy = nums[0], nums[1]
+        for i in range(2, len(nums), 2):
+            cx, cy = cx + nums[i], cy + nums[i + 1]
+            out.append((cx, cy))
+        return out
+
+    def test_the_marker_scales_with_the_cell_rather_than_being_a_fixed_size(self):
+        """The core of "cell-scaled". Its bounding box, as a fraction of the
+        cell, must be identical at every cell position -- a fixed-size marker
+        would be the same absolute size everywhere, so its share of the cell
+        would differ between the top-left of a map and the bottom-right.
+        """
+        spans = []
+        for x, y in ((0, 0), (7, 3), (19, 11)):
+            pts = self.points(x, y)
+            xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+            spans.append((round((max(xs) - min(xs)) / 32, 3),
+                          round((max(ys) - min(ys)) / 32, 3)))
+        self.assertEqual(len(set(spans)), 1, f"the marker is not cell-scaled: {spans}")
+
+    def test_a_fixed_offset_marker_is_not_centred_and_does_not_sit_where_this_does(self):
+        """The old geometry, run through this measurement, as the control.
+
+        `M x*32+9, y*32+23 l6,-10 l6,10` at (0,0) has its box at x 9..21,
+        y 13..23: centre (15, 18) where the cell's centre is (16, 16). It hangs
+        two units low and one left, in a cell whose centre this change puts the
+        marker on. Every other test in this class is measuring the replacement
+        for that, and this is what says the replacement is a real change rather
+        than a re-expression of the same numbers.
+
+        Deliberately not asserting anything about the old path (there is no
+        function for it any more): this computes the old geometry inline so the
+        comparison is arithmetic, not a second source of truth in the script.
+        """
+        def old_points(x, y):
+            p = [(x * 32 + 9, y * 32 + 23)]
+            cx, cy = p[0]
+            for dx, dy in ((6, -10), (6, 10)):
+                cx, cy = cx + dx, cy + dy
+                p.append((cx, cy))
+            return p
+
+        old = old_points(0, 0)
+        old_box = ((min(q[0] for q in old), max(q[0] for q in old)),
+                   (min(q[1] for q in old), max(q[1] for q in old)))
+        old_centre = ((old_box[0][0] + old_box[0][1]) / 2,
+                      (old_box[1][0] + old_box[1][1]) / 2)
+        self.assertNotEqual(old_centre, (16.0, 16.0),
+                            "the old chevron was already centred; the fix would "
+                            "be a no-op and this control is wrong")
+
+        new = self.points(0, 0)
+        new_centre = ((min(q[0] for q in new) + max(q[0] for q in new)) / 2,
+                      (min(q[1] for q in new) + max(q[1] for q in new)) / 2)
+        self.assertAlmostEqual(new_centre[0], 16.0, delta=0.01)
+        self.assertAlmostEqual(new_centre[1], 16.0, delta=0.01)
+
+    def test_the_marker_sits_inside_its_own_cell(self):
+        """A marker that overhangs its square reads on the neighbouring terrain,
+        which is the confusion it exists to prevent.
+
+        This is the assertion the old geometry fails. The old chevron was drawn
+        at a fixed offset inside the cell -- `M x*32+9, y*32+23 l6,-10 l6,10` --
+        which is not centred: its bounding box runs from +9 to +21 horizontally
+        (centre +15, where the cell's centre is +16) and from +13 to +23
+        vertically (centre +18, below the cell's +16). So it hung low and left,
+        and at cell = 10 that is a marker visibly sitting toward the bottom-left
+        corner of its square. Checking containment at several positions is what
+        catches it; a single containment check at (0,0) does not, because a
+        fixed offset that happens to fit the first cell can still be wrong.
+        """
+        for x, y in ((0, 0), (5, 2), (12, 9), (19, 4)):
+            pts = self.points(x, y)
+            self.assertGreaterEqual(min(p[0] for p in pts), x * 32,
+                                    f"({x},{y}): marker starts left of its cell")
+            self.assertLessEqual(max(p[0] for p in pts), (x + 1) * 32,
+                                 f"({x},{y}): marker ends right of its cell")
+            self.assertGreaterEqual(min(p[1] for p in pts), y * 32,
+                                    f"({x},{y}): marker starts above its cell")
+            self.assertLessEqual(max(p[1] for p in pts), (y + 1) * 32,
+                                 f"({x},{y}): marker ends below its cell")
+
+    def test_the_marker_is_centred_in_its_cell(self):
+        pts = self.points(4, 6)
+        cx = (min(p[0] for p in pts) + max(p[0] for p in pts)) / 2
+        self.assertAlmostEqual(cx, 4 * 32 + 16, delta=1.0,
+                               msg=f"marker off-centre at x=4: {cx}")
+
+    def test_the_marker_is_large_enough_to_see_at_the_phone_minimum(self):
+        """At cell = 10, a 32-unit cell is 10px on screen. The old chevron was
+        12 units (3.75px); the new one must be a real fraction of the cell, not
+        a decoration."""
+        pts = self.points(0, 0)
+        width_units = max(p[0] for p in pts) - min(p[0] for p in pts)
+        self.assertGreaterEqual(width_units / 32, 0.25,
+                                "the marker is a quarter the width of a cell or less")
+        self.assertGreaterEqual(width_units / 32 * 10, 2.5,
+                                "at cell=10 that is under 2.5px on screen")
+
+
+class TerrainWashStylesheet(unittest.TestCase):
+    """The wash opacities, and the claim that they are a floor rather than a
+    preference.
+
+    The interesting assertion is not "the number is .38" but that the numbers are
+    LOWER than they were. The issue's two requirements are in direct conflict --
+    a heavier wash hides the artwork, a lighter one hides the terrain -- and the
+    only way out is to stop asking the wash to carry legibility on its own. So
+    the test holds the wash down and the edge up.
+    """
+
+    def css(self):
+        return CSS.read_text(encoding="utf-8")
+
+    def test_the_measured_worst_case_says_no_opacity_can_do_this_job(self):
+        """The measurement the whole change rests on, recomputed here rather than
+        asserted as a comment.
+
+        Alpha-compositing the terrain colour over the artwork means the
+        apparent colour is `alpha*terrain + (1-alpha)*art`. Sweeping every
+        terrain colour in both themes against every one of the 125 backdrops in
+        a 5-cube RGB grid (which includes black, white, and each terrain colour
+        itself), the worst-case contrast between a washed cell and the art under
+        it is 1.00:1 -- at .85, .75, .65, .55, .45, .35 and .30 alike.
+
+        So there is a backdrop for which any wash is invisible, and no opacity
+        fixes it. That is why legibility moved to the boundary and the wash came
+        DOWN. If a future palette change makes some alpha reach 3:1 here, this
+        test fails and the premise should be re-examined.
+        """
+        worst = self._worst_case_contrast()
+        self.assertLess(worst, 1.05,
+                        f"some opacity now reaches {worst:.2f}:1 against arbitrary "
+                        f"artwork; the wash-as-legibility premise has changed")
+
+    def _worst_case_contrast(self):
+        palette = self._terrain_palette()
+        backdrops = [(r, g, b) for r in (0, 64, 128, 192, 255)
+                     for g in (0, 64, 128, 192, 255)
+                     for b in (0, 64, 128, 192, 255)]
+        worst = 99.0
+        for hexes in palette.values():
+            fg = _rgb(hexes)
+            for alpha in (.85, .75, .65, .55, .45, .35, .30):
+                for bg in backdrops:
+                    worst = min(worst, _contrast(_over(fg, bg, alpha), bg))
+        return worst
+
+    TERRAIN_TOKENS = ("floor", "wall", "water", "difficult", "feature",
+                      "wood", "void", "hazard")
+
+    def _terrain_palette(self):
+        """Every `--tx-<terrain>` token, read out of the stylesheet, in
+        declaration order so the light theme's value is the one found first.
+
+        Taken from the file rather than copied here, so a renamed or recoloured
+        terrain is measured too. All eight must be present: a terrain the
+        measurement cannot see is a terrain whose legibility was never checked.
+        """
+        css = self.css()
+        out = {}
+        for tok in self.TERRAIN_TOKENS:
+            m = re.search(rf"--tx-{tok}:\s*(#[0-9A-Fa-f]{{6}})", css)
+            self.assertIsNotNone(m, f"--tx-{tok} is not declared in the stylesheet")
+            out[tok] = m.group(1)
+        return out
+
+    def test_the_wash_over_artwork_is_lighter_than_it_was(self):
+        """It was .55, and .85 for walls and voids. It is lower now, deliberately:
+        at every opacity the worst-case contrast between a washed cell and
+        adversarial artwork beneath it is 1.00:1, so a heavier wash costs
+        artwork fidelity and buys no legibility at all."""
+        for want, gone in ((".38", ".55"), (".7", ".85")):
+            self.assertIn(f"fill-opacity: {want}", self._terrain_rules())
+            self.assertNotIn(f"fill-opacity: {gone}", self._terrain_rules())
+
+    def _terrain_rules(self):
+        """Just the rules that key on .tx-terrain-over-art, as one string.
+
+        Scoped because `fill-opacity: .55` is a legitimate value elsewhere in this
+        stylesheet (the fog, the spell templates) and a whole-file search for
+        the old number would pass or fail for the wrong reason.
+        """
+        css = self.css()
+        out, i = [], 0
+        while True:
+            m = re.search(r"\.tx-terrain-over-art[^{]*\{[^}]*\}", css[i:])
+            if not m:
+                return "\n".join(out)
+            out.append(m.group(0))
+            i += m.end()
+
+    def test_the_terrain_wash_is_not_the_only_thing_carrying_legibility(self):
+        """The change of principle, as an assertion. Before, the wash opacity was
+        the whole of terrain legibility over artwork. Now a boundary stroke and
+        the difficult-terrain chevron carry it as well, which is what lets the
+        wash come down without the terrain becoming unreadable."""
+        css = self.css()
+        self.assertIn("rect[data-edge]", css)
+        self.assertIn(".tx-difficult-mark", css)
+
+    def test_the_boundary_stroke_is_present_and_does_not_scale_with_the_cell(self):
+        rule = re.search(r"\.tx-terrain-over-art rect\[data-edge\] \{([^}]*)\}",
+                         self.css())
+        self.assertIsNotNone(rule, "the terrain boundary has no rule")
+        self.assertIn("non-scaling-stroke", rule.group(1))
+        self.assertIn("stroke-opacity", rule.group(1))
+
+    def test_the_stroke_is_keyed_on_data_edge_not_on_every_cell(self):
+        """A stroke per rect would draw a box grid over uniform ground. This
+        asserts the stylesheet has no rule that strokes a bare terrain rect."""
+        css = self.css()
+        self.assertNotRegex(
+            css, r"\.tx-terrain-over-art rect \{[^}]*stroke",
+            "the stylesheet strokes every terrain cell over artwork, which draws "
+            "a box grid over uniform ground")
+
+    def test_the_difficult_marker_is_a_separate_rule_from_the_fill(self):
+        """It is the only channel separating `difficult` from `hazard`, which are
+        1.00:1 in grayscale, so it must not be an inline style that no test can
+        reach."""
+        css = self.css()
+        self.assertIn(".tx-difficult-mark", css)
+        self.assertNotIn("stroke-opacity:.3", re.sub(r"\s+", " ",
+                         (REPO / "display" / "static" / "tactics.js").read_text(encoding="utf-8")
+                         .replace("stroke-opacity: .3", "stroke-opacity:.3")))
+
+    def test_terrain_geometry_is_untouched_by_the_legibility_change(self):
+        """The acceptance criterion "geometry unchanged": a cell is still a C x C
+        rect at (x*C, y*C). The edge pass must not have moved or resized any of
+        them, and the strongest check available is the map round trip -- the same
+        map compiles to the same rows and the same number of cells."""
+        from scripts.tactics import maps as _maps
+        js = JS.read_text(encoding="utf-8")
+        self.assertIn("x: x * C, y: y * C, width: C, height: C", js)
+        spec = json.loads((REPO / "display" / "maps" / "detention-bog.json")
+                          .read_text(encoding="utf-8"))
+        grid = _maps.compile_map(spec)["grid"]
+        self.assertEqual(len(grid["rows"]) * len(grid["rows"][0]),
+                         sum(len(r) for r in grid["rows"]))

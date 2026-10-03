@@ -52,6 +52,7 @@ import inspect
 import json
 import pathlib
 import sys
+import warnings
 
 import pytest
 
@@ -659,3 +660,52 @@ def test_a_2024_budget_row_does_not_change_2014_gameplay():
 
     # And the combat rules never see it: no combat entry point takes a ruleset.
     assert "ruleset" not in inspect.signature(tr.RULES.attack).parameters
+
+
+def test_a_save_action_normalises_without_a_positional_maxsplit():
+    """The one call in the repo that passes `maxsplit` positionally, and the
+    reason it was the only one worth changing.
+
+    `re.split(pattern, string, maxsplit)` warns from Python 3.13, and
+    `_norm_monster_action` runs it once per monster action in the whole dataset.
+    Since #231 made CI build that dataset, the warning is no longer a developer's
+    terminal detail: it is one per record in the build log. An AST sweep of the
+    repo for the deprecated positional slots (`maxsplit` on `re.split`, `count`
+    on `re.sub`/`re.subn`) finds this line and nothing else, so the class has
+    exactly one member.
+
+    Mutant that must fail: putting the `1` back in the positional slot. It
+    restores one DeprecationWarning per call, and this asserts there are none.
+
+    The input is a save action, because that is the branch the call sits in. An
+    attack action never reaches it, which is why a test built from attack text
+    would pass on the broken version too, and pin nothing.
+    """
+    if sys.version_info < (3, 13):
+        pytest.skip("maxsplit was only deprecated as a positional in 3.13, so the "
+                    "floor this repo supports cannot observe the defect")
+    action = {
+        "name": "Save Test", "kind": "save",
+        "dc": {"dc_type": {"index": "dex"}, "dc_value": 12, "success_type": "half"},
+        # Real SRD phrasing (an adult red dragon's Fire Breath), with the success
+        # clause deliberately changed so the text contradicts `success_type`.
+        "desc": ("Each creature in the area must make a Dexterity saving throw, "
+                 "taking 18d6 fire damage on a failed save, or no damage on a "
+                 "successful save."),
+    }
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        out = build_srd._norm_monster_action(action)
+    assert [str(w.message) for w in caught
+            if issubclass(w.category, DeprecationWarning)] == [], (
+        "the save-action branch passes maxsplit positionally, which warns once "
+        "per monster action in the built dataset")
+
+    # The branch really ran, so the assertion above is not vacuous: this is a
+    # `save` action, so the split was reached, and `success_conflict` can only
+    # appear if the description was read and compared against `success_type`.
+    assert out["kind"] == "save", out
+    assert out["dc"]["ability"] == "dex" and out["dc"]["value"] == 12, out["dc"]
+    assert "success_conflict" in out["flags"], (
+        f"the description was not parsed, so the branch under test did not run: "
+        f"{out}")

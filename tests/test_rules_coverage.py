@@ -49,6 +49,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import pathlib
+import re
 import subprocess
 import sys
 
@@ -616,11 +617,24 @@ def test_every_axis_is_present_with_a_computed_total(real, fixture_report):
 def test_the_real_dataset_carries_provenance(real):
     """Provenance is not optional: a coverage number without it is anonymous.
 
-    This is also where the missing piece shows. `dnd5e_srd.json` records a sha
-    for 5e-bits and NOT for foundryvtt, because `build_srd.cmd_build` calls
-    `_latest_sha(FVTT_COMMITS)` and then discards the value that `_build_fvtt`
-    returns. That is a real gap in 260 features' provenance and is named here
-    rather than printed as "?" and passed over.
+    This used to be where the missing piece showed. `dnd5e_srd.json` recorded a
+    sha for 5e-bits and NOT for foundryvtt, because `build_srd.cmd_build` called
+    `_latest_sha(FVTT_COMMITS)` and then discarded the value that `_build_fvtt`
+    returned. That was a real gap in 260 features' provenance.
+
+    The gap is closed. `build_srd.cmd_build` now records the foundryvtt tree sha
+    it actually read, and its own comment says why it records `""` rather than
+    guessing when the tree cannot be read: "a wrong sha would be worse than a
+    missing one". So the assertion is no longer "there is no sha" -- that would
+    be a test for a gap the code deliberately closed -- and it is deliberately
+    NOT an equality check against one pinned sha either, because the value moves
+    every time upstream `foundryvtt/dnd5e` advances, and pinning it would make
+    this test red for a reason that has nothing to do with the engine.
+
+    What must hold is the shape: a sha is either a full 40-character lowercase
+    git object id, or empty to say "the tree could not be read". Anything else --
+    a truncated id, a branch name, a placeholder -- is provenance that looks
+    specific and is not, which is the failure this whole test exists to prevent.
     """
     if not real:
         pytest.skip("real dataset absent")
@@ -629,9 +643,15 @@ def test_the_real_dataset_carries_provenance(real):
     assert provenance["edition"] == "2014"
     assert provenance["sources"]
     fvtt = provenance["sources"].get("foundryvtt") or {}
-    assert not fvtt.get("sha"), (
-        "the dataset records no foundryvtt sha. If a build now records one, this "
-        "assertion should become an equality check and the provenance gap closes.")
+    assert fvtt.get("repo") == "foundryvtt/dnd5e"
+    assert fvtt.get("branch") == "master"
+    assert fvtt.get("fetched_at")
+    sha = fvtt.get("sha") or ""
+    assert sha == "" or re.fullmatch(r"[0-9a-f]{40}", sha), (
+        f"the foundryvtt provenance names a sha that is not a git object id: {sha!r}. "
+        f"build_srd records '' when the tree cannot be read, so this is neither a "
+        f"real commit nor the honest empty -- which is the one thing provenance "
+        f"must never be.")
 
 
 # ─── the CLI ──────────────────────────────────────────────────────────────────

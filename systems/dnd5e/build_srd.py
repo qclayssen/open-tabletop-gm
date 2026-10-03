@@ -17,9 +17,19 @@ edition is a one-line decision rather than a guess inside path matching.
 Output: systems/dnd5e/data/dnd5e_srd.json
 
 Usage:
-    python3 build_srd.py             # build/rebuild the dataset
-    python3 build_srd.py --status    # show current dataset metadata
-    python3 build_srd.py --no-fvtt   # skip FoundryVTT features (faster, spells/items only)
+    python3 scripts/provision_srd.py     # build if absent, then verify (use this)
+    python3 build_srd.py                 # build/rebuild the dataset
+    python3 build_srd.py --status        # show current dataset metadata
+    python3 build_srd.py --no-fvtt       # skip FoundryVTT features (faster,
+                                          # spells/items only)
+
+`scripts/provision_srd.py` is the entry point to use. It runs this build and then
+checks the result against recorded per-category floors and the records the test
+suite reads by name, so a build that lost a source — one refused
+`api.github.com` call, which `_fetch` turns into `None` — is a red exit rather
+than a complete-looking 1.5 MB dataset with an empty `features` list. This script
+warns about that case and exits 0; the provisioner is what refuses it, and
+`tests/test_srd_provisioning.py` is what holds the provisioner to it (dnd-gm#289).
 """
 
 import json
@@ -93,10 +103,40 @@ BITS_FILES = {
 
 # ─── HTTP helpers ─────────────────────────────────────────────────────────────
 
+def _auth_headers() -> dict:
+    """Headers for every fetch, including a bearer token when one is offered.
+
+    `api.github.com` allows 60 requests/hour per IP address for an UNAUTHENTICATED
+    caller, and the shared GitHub-hosted runner pool is exactly that case: several
+    jobs share an egress IP, so a build can be refused with HTTP 403 part-way
+    through. That is not hypothetical -- it is what happened on the first CI run
+    that built this dataset (2026-10-04): the raw.githubusercontent.com fetches for
+    spells, equipment, magic items, conditions and monsters all succeeded, every
+    api.github.com call was rate-limited, and the build still exited 0 having
+    written a dataset with ZERO class features. `cmd_build` only warns about a
+    partly-empty dataset, so that failure is silent unless something checks.
+
+    Authenticated, the same endpoint allows 5000/hour. So the token is used when
+    one is in the environment and omitted when none is: a developer running
+    `build_srd.py` locally, or `gh` supplying `GH_TOKEN` itself, keeps working
+    unchanged, and a token is never required to build.
+
+    Only `api.github.com` needs it, but sending it to `raw.githubusercontent.com`
+    as well is harmless and keeps one header set rather than a per-host branch.
+    """
+    headers = {"User-Agent": "dnd-skill-build/1.0"}
+    token = os.environ.get("SRD_BUILD_TOKEN") or os.environ.get("GITHUB_TOKEN") \
+        or os.environ.get("GH_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+        headers["X-GitHub-Api-Version"] = "2022-11-28"
+    return headers
+
+
 def _fetch(url: str, as_json: bool = False):
     """Fetch URL, return parsed JSON or raw text. Returns None on error."""
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "dnd-skill-build/1.0"})
+        req = urllib.request.Request(url, headers=_auth_headers())
         with urllib.request.urlopen(req, timeout=30) as resp:
             data = resp.read()
         return json.loads(data) if as_json else data.decode("utf-8")
@@ -938,7 +978,13 @@ def _norm_monster_action(a: dict) -> dict:
             flags.append("success_conflict")
         # What happens besides the damage: a condition on a failed save is
         # structured like an attack rider; anything else is text for the GM.
-        after = re.split(r"half as much damage on a successful one\.|damage on a failed save\.", desc, 1)
+        # `maxsplit` by keyword. Positionally it is deprecated from 3.13 and
+        # raises the DeprecationWarning on every record this build touches, which
+        # is the whole dataset. That used to be a developer's terminal noise; it
+        # is now CI log noise too, because this build runs in the workflow
+        # (dnd-gm#289, open-tabletop-gm#231).
+        after = re.split(r"half as much damage on a successful one\.|damage on a failed save\.",
+                         desc, maxsplit=1)
         tail = after[1].strip() if len(after) > 1 else ""
         if not out.get("damage") or tail:
             effects, leftover = _rider_effects(desc if not out.get("damage") else tail)

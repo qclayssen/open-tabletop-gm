@@ -88,9 +88,18 @@
     for (const z of state.zones || []) {
       svg('line', { x1: z * C, y1: 0, x2: z * C, y2: H * C, class: 'me-zone' }, s);
     }
+    // Map labels, drawn the way tactics.js draws them: anchored at the centre of
+    // the region they name (maps.py publishes that centre and the region's w),
+    // and shortened to the region's own width. Same clamp, same constants, and
+    // the same reason -- a GM editing a map is aiming at the squares the players
+    // will see, so a label that lies about where its region starts is worse in
+    // the editor than on the display.
     for (const l of state.labels || []) {
-      const t = svg('text', { x: l.x * C + 4, y: l.y * C + 13, class: 'me-lbl' }, s);
-      t.textContent = l.text;
+      const t = svg('text', { x: (l.w ? l.x : l.x + 0.5) * C, y: (l.h ? l.y : l.y + 0.5) * C,
+                              class: 'me-lbl' }, s);
+      svg('title', {}, t).textContent = l.text;
+      t.appendChild(document.createTextNode(l.text));
+      if (l.w) t.setAttribute('data-w', l.w);
     }
     svg('g', { class: 'me-preview', id: 'me-preview' }, s);
 
@@ -99,6 +108,55 @@
     s.addEventListener('pointerup', onUp);
     s.addEventListener('pointercancel', cancel);
     s.addEventListener('pointerleave', () => { if (drag) preview(drag); });
+    // After the append and after the labels exist: fitLabels measures the DOM,
+    // and getComputedTextLength throws for a detached element.
+    fitLabels(s, W);
+  }
+
+  // 0.56 of an 11px sans, the average advance. Only reached when the DOM cannot
+  // measure (no layout yet); a rough clamp beats the unclamped label.
+  const LBL_EST_ADVANCE = 6.2;
+
+  // Shorten every map label to the width of the feature region it names.
+  //
+  // This is tactics.js's fitLabels and labelBudget, kept here rather than shared.
+  // The two files have no module system and no build step, and tactics.js's
+  // helpers are inside its IIFE; a third file to export two functions would be a
+  // larger change than the duplication, and the constants that must agree
+  // (LBL_EST_ADVANCE, and the two budgets below) are asserted to be equal to
+  // tactics.js's by tests/test_mapseditor.py.
+  function fitLabels(s, W) {
+    for (const t of s.querySelectorAll('.me-lbl')) {
+      const full = (t.querySelector('title') || {}).textContent || '';
+      const node = t.lastChild;
+      if (!node) continue;
+      const cx = parseFloat(t.getAttribute('x')) || 0;
+      const cells = Math.max(1, Number(t.getAttribute('data-w')) || 1);
+      const room = Math.max(4, Math.min(cx, W * C - cx) - 4);
+      const budget = Math.min(Math.max(cells * C - 8, 4 * C - 8), room * 2);
+      node.textContent = full;
+      let live = true;
+      try { t.getComputedTextLength(); } catch (e) { live = false; }
+      const measure = live
+        ? str => { node.textContent = str; return t.getComputedTextLength(); }
+        : str => str.length * LBL_EST_ADVANCE;
+      node.textContent = fitPrefix(full, budget, measure);
+    }
+  }
+
+  // The longest prefix of `text` that fits `budget`, with an ellipsis when the
+  // whole thing does not. Binary search, because a per-character loop would ask
+  // the browser for a layout once per character per redraw, and the editor
+  // redraws on every pointermove.
+  function fitPrefix(text, budget, measure) {
+    if (!text || !(budget > 0)) return '';
+    if (measure(text) <= budget) return text;
+    let lo = 0, hi = text.length;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (measure(text.slice(0, mid) + '…') <= budget) lo = mid; else hi = mid - 1;
+    }
+    return lo > 0 ? text.slice(0, lo) + '…' : '';
   }
 
   function cellAt(ev) {

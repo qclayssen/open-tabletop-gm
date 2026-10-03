@@ -7,7 +7,8 @@ import sys
 
 import pytest
 
-from tests.localdm_fakes import FakeBridge, FakeClient
+from tests.localdm_fakes import (FakeBridge, FakeClient, fixed_check_roll,
+                                forbid_check_roll)
 from tests.tactics_fixtures import ROOT, _build, _RAW, RULES
 from localdm import context, llm
 from localdm.bridge import Result
@@ -128,7 +129,7 @@ def test_the_re_draft_is_asked_for_a_shorter_reply_and_keeps_its_directive(tmp_p
     assert "## Your task" in sent[1] and "check" in sent[1].lower(), "the task survives"
 
 
-def test_a_check_in_a_truncated_draft_is_never_rolled(tmp_path):
+def test_a_check_in_a_truncated_draft_is_never_rolled(tmp_path, monkeypatch):
     """The safety property a reviewer will look for: a retry cannot double-apply.
 
     Nothing in `_dm` applies engine state. The check is rolled afterwards, in
@@ -158,12 +159,13 @@ def test_a_check_in_a_truncated_draft_is_never_rolled(tmp_path):
 
     c = FakeClient(fake, finish_reason=["length", "stop"])
     s = Session("demo", c, MODELS, camp_dir=camp, bridge=FakeBridge())
-    orig = random.randint
-    try:
-        random.randint = lambda a, b: rolled.append((a, b)) or 14
-        out = s.handle("I try to sneak past the guard.")
-    finally:
-        random.randint = orig
+    # The check rolls off `play._CHECK_RNG`, not the `random` module -- see
+    # `tests.localdm_fakes.fixed_check_roll`. Patching `random.randint` here would
+    # leave the roll genuinely random, and a success and a failure take different
+    # numbers of DM calls, so the test would flake on the DM's reply budget rather
+    # than on the thing it is about.
+    rolled = fixed_check_roll(monkeypatch, 14)
+    out = s.handle("I try to sneak past the guard.")
     text = "\n".join(out)
     assert len(rolled) == 1, f"the check was rolled {len(rolled)} times, not once"
     assert text.count("against DC 13") == 1, "one roll reported to the player"
@@ -917,8 +919,10 @@ def test_a_check_asked_for_mid_fight_is_refused_and_never_rolled(tmp_path, monke
     the one that rolls. The check used to be rolled for real, mid-fight, and the
     model got to narrate a result the engine had never produced."""
     monkeypatch.setattr(Session, "_autopilot", lambda self, line: None)   # the model path
-    rolled = []
-    monkeypatch.setattr(random, "randint", lambda a, b: rolled.append((a, b)) or 14)
+    # Patching the module-level `random` would make this assertion vacuous: the
+    # check no longer rolls through it, so the log would stay empty whatever the
+    # code did. The seam is `play._CHECK_RNG`.
+    rolled = fixed_check_roll(monkeypatch, 14)
 
     def fake(m, msgs, role):
         return ('Kairos edges toward the reeds.\n'
@@ -941,7 +945,7 @@ def test_the_refusal_tells_the_player_what_to_do_instead(tmp_path, monkeypatch):
     uncertain, watched a fight move, and got no roll and no reason. The refusal is
     the engine speaking, like NO_FIGHT and NO_ACTION."""
     monkeypatch.setattr(Session, "_autopilot", lambda self, line: None)
-    monkeypatch.setattr(random, "randint", lambda a, b: pytest.fail("a die was rolled mid-fight"))
+    forbid_check_roll(monkeypatch)   # the engine must refuse, not roll
 
     def fake(m, msgs, role):
         return ('Kairos edges toward the reeds.\n'
@@ -964,7 +968,7 @@ def test_a_check_mid_fight_survives_no_retry_and_costs_no_second_call(tmp_path, 
     its single model call. A re-draft here would be a call spent on a directive the
     engine cannot honour, on the turn where the model is cheapest to be wrong."""
     monkeypatch.setattr(Session, "_autopilot", lambda self, line: None)
-    monkeypatch.setattr(random, "randint", lambda a, b: pytest.fail("a die was rolled mid-fight"))
+    forbid_check_roll(monkeypatch)   # the engine must refuse, not roll
 
     def fake(m, msgs, role):
         return ('Kairos edges toward the reeds.\n'
@@ -986,7 +990,7 @@ def test_a_mid_fight_check_is_refused_even_when_a_retry_puts_it_back(tmp_path, m
     JSON line, re-asked, and answered with the same check, must still be refused:
     a discarded first draft is not a licence for the second one."""
     monkeypatch.setattr(Session, "_autopilot", lambda self, line: None)
-    monkeypatch.setattr(random, "randint", lambda a, b: pytest.fail("a die was rolled mid-fight"))
+    forbid_check_roll(monkeypatch)   # the engine must refuse, not roll
     cut = ("The reeds close over the path, water to the ankles and closing. " * 4)
 
     def fake(m, msgs, role):
@@ -1010,7 +1014,7 @@ def test_a_check_on_a_fight_turn_is_refused_and_the_command_still_runs(tmp_path,
     answers with both a command and a check. The engine's action must still happen,
     and the roll must still not."""
     monkeypatch.setattr(Session, "_autopilot", lambda self, line: None)
-    monkeypatch.setattr(random, "randint", lambda a, b: pytest.fail("a die was rolled mid-fight"))
+    forbid_check_roll(monkeypatch)   # the engine must refuse, not roll
     replies = iter(['{"escalate": null, "check": "Dexterity DC 13", '
                     '"command": "attack kairos frog-1 dagger"}'])
     c = FakeClient(lambda m, msgs, role: next(replies))
@@ -1397,7 +1401,7 @@ def test_a_pending_reaction_never_shows_the_player_a_cli_instruction(tmp_path):
 def test_the_pre_roll_beat_may_not_state_the_outcome(tmp_path, monkeypatch):
     """N5: 'you find the latch' adjudicates the roll the engine is about to make, and
     the roll then contradicts the story the player was already told."""
-    monkeypatch.setattr(random, "randint", lambda a, b: b)   # a pass: not a failure draft
+    fixed_check_roll(monkeypatch, 20)   # a pass (d20 = 20): not a failure draft
     replies = iter([
         'Kairos runs a finger along the desk until he finds the hidden latch.\n'
         '{"escalate": null, "command": null, "check": "Investigation 13"}',
@@ -1416,7 +1420,7 @@ def test_the_pre_roll_beat_may_not_state_the_outcome(tmp_path, monkeypatch):
 def test_a_clean_pre_roll_beat_is_not_rewritten(tmp_path, monkeypatch):
     """The guardrail costs a call when it trips, so a beat that is already clean must
     be left alone — this is the false-positive budget the other guardrails keep."""
-    monkeypatch.setattr(random, "randint", lambda a, b: b)   # a pass: not a failure draft
+    fixed_check_roll(monkeypatch, 20)   # a pass (d20 = 20): not a failure draft
     replies = iter([
         'Kairos begins searching the desk, sliding papers aside.\n'
         '{"escalate": null, "command": null, "check": "Investigation 13"}',
@@ -1432,7 +1436,7 @@ def test_narrating_a_rolled_outcome_is_never_rewritten(tmp_path, monkeypatch):
     """The guardrail is scoped to the beat BEFORE the roll. Once the engine has
     resolved the check, naming the outcome is the whole job — a blanket check would
     rewrite the correct sentence every single time."""
-    monkeypatch.setattr(random, "randint", lambda a, b: b)   # a pass: not a failure draft
+    fixed_check_roll(monkeypatch, 20)   # a pass (d20 = 20): not a failure draft
     from localdm import reply
     replies = iter([
         'Kairos begins searching the desk.\n'
