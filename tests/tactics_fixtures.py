@@ -109,7 +109,30 @@ def srd_spell(key: str):
     return dict(r["mechanics"], name=r["name"], level=r["level"]) if r else None
 
 
-spells_rules._srd = srd_spell
+# The production `_srd`, captured at import, BEFORE anything here patches it.
+# `tests/conftest.py` restores this for a test that asks for `production_srd`,
+# and `tests/test_srd_fixture_isolation.py` asserts against it by identity --
+# which is what distinguishes "the conftest put the real one back" from "the
+# conftest put back a copy of the patch".
+PRODUCTION_SRD = spells_rules._srd
+
+# NOTE: `_srd` used to be replaced here, at import time, by a bare assignment:
+#
+#     spells_rules._srd = srd_spell
+#
+# with no teardown. The patch therefore outlived whichever module happened to
+# import this file first, and every later test in the process -- including the ones
+# that mean to exercise the production SRD lookup -- ran against the fixture
+# whether or not it asked for it. Which lookup a test got was decided by
+# collection order, which is the order-dependence `agents/dev/verifier.md` names
+# as this repo's standing defect class.
+#
+# The patch now has a test's lifetime, not the process's: the autouse
+# `fixture_srd` fixture in tests/conftest.py installs it and restores the
+# production function on teardown. A test that wants the real lookup asks for
+# `production_srd`, which is the only supported way to get it.
+#
+# `spells_rules` is still exported: tests need the module object to patch it.
 
 KAIROS_SPELLS = ["Fire Bolt", "Mind Sliver", "Minor Illusion", "Silvery Barbs", "Shield",
                  "Mage Armor", "Magic Missile", "Detect Magic"]
