@@ -1,7 +1,15 @@
 # Generated data files (gitignored — run scripts to populate)
 #
-#   dnd5e_srd.json         — run: python3 systems/dnd5e/build_srd.py
+#   dnd5e_srd.json         — run: python3 scripts/provision_srd.py
 #   dnd5e_supplemental.json — run: python3 systems/dnd5e/build_supplemental.py
 #
 # Both files are excluded from version control. They may be large and contain
 # content under separate licensing terms. Generate them locally before use.
+#
+# Use `scripts/provision_srd.py` rather than `build_srd.py` directly. It builds
+# the dataset and then checks it, because `build_srd.py` writes its output unless
+# *every* category came back empty: one refused fetch from foundryvtt/dnd5e
+# produces a complete-looking file with no class or racial features in it, and
+# exit 0. That dataset makes the test suite green by running less of itself.
+# `python3 scripts/provision_srd.py --check` verifies what is already here without
+# touching the network. See dnd-gm#289.

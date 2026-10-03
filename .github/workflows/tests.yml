@@ -142,6 +142,58 @@ jobs:
             python3 systems/dnd5e/build_srd.py
             usable || { echo "✗ build finished but the dataset is still incomplete" >&2; exit 1; }
           fi
+      - name: Hold the dataset to its floors, and the gate itself to a test
+        # Strictly ADDITIVE to the two steps above, and weaker in nothing.
+        #
+        # `usable()` above answers "is any category empty". That catches the
+        # features=0 case this workflow was built for. It cannot catch a dataset
+        # that is merely SHORT — 180 of 260 features, 100 of 334 monsters — and
+        # neither can `build_srd.py`, which warns about a partly-empty dataset
+        # and exits 0. `scripts/provision_srd.py` is the stricter gate: recorded
+        # per-category floors, an edition check, `_meta` consistency, and the
+        # four records the suite reads by name. Same network story underneath
+        # (~330 raw.githubusercontent.com calls at 79s measured; ~4 minutes on a
+        # cold cache here), so this step costs nothing the step above did not
+        # already pay: on a cache hit or a completed build the dataset is on
+        # disk, and `--check`-equivalent verification is a JSON read.
+        #
+        # The second half of this step is the part that matters most. A gate
+        # nobody tests is a gate that gets relaxed by whoever is in a hurry, and
+        # the check that would notice is not a check. `--selftest` writes 11
+        # fixtures to a temp directory and asserts each is rejected BY ITS OWN
+        # REASON, because the first version of it only asserted *that* they were
+        # rejected — and a mutant that deleted the floor check outright left it
+        # green, since the fixture had also tripped the total_records check.
+        # Measured: 11/11 mutants caught by the selftest, and 5/5 caught again
+        # through tests/test_srd_provisioning.py, because a selftest only its
+        # author runs is a comment.
+        #
+        # The grep is not redundant with the exit code. `--selftest` can print
+        # "SELFTEST FAILED" on every fixture and still exit 0 if its own
+        # reporting is disabled — the same limit scripts/check_py_floor.py
+        # documents, defended the same way on the floor job below.
+        run: |
+          python scripts/provision_srd.py > srd-verify.log 2>&1
+          rc=$?
+          cat srd-verify.log
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::the dataset is present but does not meet its floors."
+            exit "$rc"
+          fi
+          # Not redundant with the exit code: it defends against main() being
+          # edited to return 0 without verifying, which is the change that would
+          # turn this step back into decoration.
+          if ! grep -q 'verified -- ' srd-verify.log; then
+            echo "::error::provision_srd.py exited 0 without reporting a verified dataset."
+            exit 1
+          fi
+          out=$(python scripts/provision_srd.py --selftest); status=$?
+          printf '%s\n' "$out"
+          if printf '%s\n' "$out" | grep -q 'SELFTEST FAILED'; then
+            echo "::error::the provisioning gate reported a failure and may still exit 0"
+            exit 1
+          fi
+          exit $status
       - name: pytest
         # -n 4 measured, not guessed. Serial is 603s on this tree; -n 4 is 227s.
         # Two runs of each, and the spread across -n 4 runs was 6s, so the 2.7x
@@ -232,6 +284,29 @@ jobs:
           printf '%s\n' "$out"
           if printf '%s\n' "$out" | grep -q 'SELFTEST FAILED'; then
             echo "::error::the floor checker reported a failure and may still exit 0"
+            exit 1
+          fi
+          exit $status
+
+      - name: The provisioning gate on the floor
+        # `scripts/provision_srd.py` is stdlib and is now load-bearing for the
+        # `pytest` job, so it belongs in the job that proves the floor rather than
+        # only being syntax-checked by `check_py_floor.py`. Its `--selftest` needs
+        # no network, no dataset and no pyyaml -- the edition constant is read with
+        # `ast`, not by importing the builder -- so it runs in this job's
+        # pytest-and-nothing-else venv, which is also what proves that. Measured:
+        # 11 fixtures, 0.3s, no third-party import. It passes on 3.10 in CI.
+        #
+        # The dataset itself is NOT built here. `tests/test_tactics_*.py` does not
+        # read it (measured: 288 passed on this tree before and after dnd-gm#289),
+        # this job deliberately installs no pyyaml so provisioning would refuse
+        # anyway, and a second multi-minute network build per floor run would buy
+        # no coverage.
+        run: |
+          out=$(python scripts/provision_srd.py --selftest); status=$?
+          printf '%s\n' "$out"
+          if printf '%s\n' "$out" | grep -q 'SELFTEST FAILED'; then
+            echo "::error::the provisioning gate reported a failure and may still exit 0"
             exit 1
           fi
           exit $status
