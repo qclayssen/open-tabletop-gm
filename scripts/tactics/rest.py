@@ -35,8 +35,8 @@ import pathlib
 import subprocess
 import sys
 
-from . import effects, slots
-from .core import CombatError, rules_for
+from . import effects, slots, sync
+from .core import CombatError, log, rules_for
 from .roller import Roller
 from .state import Encounter, Token
 
@@ -245,10 +245,18 @@ def cmd_rest(args, enc: Encounter, roller: Roller = None) -> tuple:
     if enc.status != "active":
         raise CombatError("No combat is running. Rest between fights, or start one first.")
     token_ids = [args.token] if getattr(args, "token", None) else None
+    mark = len(roller.log) if roller else 0
     if args.type == "short":
         lines = short_rest(enc, token_ids, roller)
     else:
         lines = long_rest(enc, token_ids)
+    # A Hit Die the GM said "--for-me" to is a die the engine rolled on a player's
+    # behalf, and it went unrecorded: nothing called core.log here, so the roll was
+    # in roller.log and in no receipt and in no log entry. `mark` scopes the entry
+    # to the rest's own dice, so the log never claims the rolls of the command
+    # before it.
+    if roller:
+        log(enc, "rest", "", " ".join(lines), roller, mark)
     return "\n".join(lines), {"rest_type": args.type,
                               "targets": [t.id for t in _targets(enc, token_ids)],
                               "slots": {t.id: slots.read(t) for t in _targets(enc, token_ids)}}
