@@ -1,9 +1,10 @@
 """context.py: the messages for one DM call.
 
-The system message is the DM prompt plus a digest of state.md. It changes only
-when state.md does, so Ollama can reuse its prompt cache and paid tiers can
-use prompt caching. Everything that moves each turn goes in one user message,
-oldest recent turns trimmed first to stay under a character budget.
+The system message is the static DM prompt: it does not change turn to turn, so
+Ollama can reuse its prompt cache and paid tiers can use prompt caching.
+Everything that moves each turn goes in one user message, oldest recent turns
+trimmed first to stay under a character budget. That budget covers the dynamic
+content only; the static prompt is not charged against it (see build_messages).
 """
 from __future__ import annotations
 
@@ -376,7 +377,8 @@ def council_setting(state_md: str) -> str:
 
 def build_messages(system: str, digest: str, summary: str, recent: list, *, engine: str = "",
                    notes: str = "", player: str = "", task: str = "",
-                   canon: list = (), budget: int = 12000) -> list:
+                   canon: list = (), budget: int = 12000,
+                   report: dict | None = None) -> list:
     """Two messages: a static system head, and one ordered user message.
 
     WHY THE DIGEST IS NOT IN THE SYSTEM MESSAGE
@@ -397,6 +399,36 @@ def build_messages(system: str, digest: str, summary: str, recent: list, *, engi
 
     It is in `head`, not in `lines`, so the budget loop below trims conversation
     and never trims the campaign facts.
+
+    WHY THE STATIC PROMPT IS NOT CHARGED AGAINST THE BUDGET
+    =======================================================
+    `fixed` used to be `len(sys_msg) + ...`, so the 9030-char `prompts/dm.md`
+    came out of the same 12000-char allowance as the conversation. That left
+    ~2070 chars for the campaign digest *and* the recent turns together, while
+    the digest's own per-file caps allow 8500 (`state_digest` 3000 +
+    `sheet_digest` 3000 + `notes_digest` 2500). Measured on the harness in the
+    outer repo (`scripts/measure_turn_tokens.py`): at 4797 chars of digest the
+    `## Recent turns` section is evicted entirely, so a campaign whose files are
+    filled in got a full load of lore and **zero conversation history**.
+
+    The static prompt does not compete for context with the conversation, it
+    competes for cache, and those are different resources. So the budget covers
+    the dynamic content only. Two things are deliberately unchanged: the unit
+    is still characters (`--budget`'s help says so), because converting it to
+    tokens would silently move every existing session's effective context, and
+    the digest is still never trimmed, because `dm.md` refers to it by name.
+
+    `report`, when given, is filled in place with `system`, `dynamic`, `budget`,
+    `turns` and `offered`, so the split is observable instead of inferred. The
+    two sizes are the real message lengths. `dynamic` is NOT bounded by
+    `budget`: the loop trims canon and then turns, but never `head`, so a digest
+    larger than the budget on its own puts `dynamic` over the line with nothing
+    left to give. That is deliberate here (dm.md refers to `## Campaign` by
+    name, so a truncated digest is a broken contract rather than a smaller
+    prompt) and it is why the split is now reported: a `dynamic` figure past
+    `budget` is the operator's signal that the digest, not the conversation, is
+    what needs the cap. Bounding the combined digest is tracked in
+    `ROADMAP-ideas.md` -> `## Session/context management`.
     """
     sys_msg = system
     head = ([f"## Campaign\n{digest.strip()}"] if digest and digest.strip() else [])
@@ -416,7 +448,8 @@ def build_messages(system: str, digest: str, summary: str, recent: list, *, engi
     if task:
         tail.append(f"## Your task\n{task.strip()}")
     lines = [f"{LABEL[t['role']]}: {t['text'].strip()}" for t in recent if t["role"] in LABEL]
-    fixed = len(sys_msg) + sum(len(p) + 2 for p in head + tail) + len("## Recent turns\n")
+    offered = len(lines)
+    fixed = sum(len(p) + 2 for p in head + tail) + len("## Recent turns\n")
     header = len(canon_mod.HEADER) + 1 if can else 0   # charged only when there is canon
 
     def spent():
@@ -429,5 +462,9 @@ def build_messages(system: str, digest: str, summary: str, recent: list, *, engi
         lines.pop(0)
     body = head + ([canon_mod.HEADER + "\n" + "\n".join(can)] if can else []) \
         + (["## Recent turns\n" + "\n".join(lines)] if lines else []) + tail
+    user = "\n\n".join(body)
+    if report is not None:
+        report.update(system=len(sys_msg), dynamic=len(user), budget=budget,
+                      turns=len(lines), offered=offered)
     return [{"role": "system", "content": sys_msg},
-            {"role": "user", "content": "\n\n".join(body)}]
+            {"role": "user", "content": user}]
