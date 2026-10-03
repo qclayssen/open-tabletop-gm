@@ -545,9 +545,15 @@ def test_rest_writes_the_fight_back_and_keeps_it_playable(camp, capsys):
     assert code == 0 and "Spell slots: 1st: 1/2" in out
 
 
-def test_rest_needs_a_running_fight(camp, capsys):
+def test_a_rest_with_nobody_to_rest_is_refused(camp, capsys):
+    """#179 changed what this command needs: `rest` no longer requires a running
+    fight, it reads the party's own sheets (see tests/test_rest_out_of_combat.py).
+    The refusal that remains is the one with no party to name, and it has to be a
+    message rather than a silent success healing nobody."""
+    for sheet in (camp / "characters").glob("*.md"):
+        sheet.unlink()
     code, out = run(capsys, "rest", "long")
-    assert code == 1 and "No grid combat is running" in out
+    assert code == 1 and "No character sheets" in out
 
 
 def test_the_rest_command_is_documented_in_the_help():

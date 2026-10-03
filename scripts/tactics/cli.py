@@ -269,6 +269,19 @@ def _load(camp_dir) -> Encounter:
     return state.load(path)
 
 
+def _combat_running(camp_dir) -> bool:
+    """Is there a live fight for a command that can do without one?
+
+    `end` leaves encounter.json on disk with status 'ended', and 'no file' is
+    the ordinary state of a campaign between fights, so "the file exists" is not
+    the test and neither is "it loads". A rest has to answer for both, because a
+    party rests between fights and `rest` refusing there told the GM to rest
+    between fights.
+    """
+    path = state.encounter_path(camp_dir)
+    return path.exists() and state.load(path).status == "active"
+
+
 def _reactions(enc, args) -> dict:
     """{decision key: bool}. Answers map, in order, onto the decisions this
     command has asked so far (pending.json). With nothing pending, the first
@@ -827,6 +840,19 @@ def run(args) -> int:
         text, data = (cmd_scene if args.cmd == "scene" else cmd_here)(args, camp_dir)
         if args.json:
             print(json.dumps(data, indent=1))
+        else:
+            print(text)
+        return 0
+    elif args.cmd == "rest" and not _combat_running(camp_dir):
+        # A rest between fights. There is no encounter to hold the party, so the
+        # rest builds one from the campaign's own character sheets and commits
+        # the sheets, tracker and clock together (rest.cmd_rest_campaign). Same
+        # branch shape as `formation`/`scene`: this is campaign state, not
+        # combat state, and it has to work in exactly the situation where no
+        # fight is running.
+        text, data = rest.cmd_rest_campaign(args, camp_dir, _campaign(args), roller)
+        if args.json:
+            print(json.dumps({"text": text, "result": data}, default=str, indent=1))
         else:
             print(text)
         return 0
