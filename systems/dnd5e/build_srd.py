@@ -68,6 +68,20 @@ FVTT_CLASS_PACK     = "classes"          # one YAML per class, flat
 FVTT_CLASS_FEATURES = "classfeatures"    # <class>/<class>-features/<feature>.yml
 FVTT_RACES          = "races"            # <race>/<race>-features/<feature>.yml
 
+# The edition this build produces, written into `_meta` so the dataset says what
+# it is instead of the reader having to infer it.
+#
+# It used to say nothing. `RAW_5EBITS` points at `/src/2014/en/` and the three
+# packs above are the 2014 ones, but a consumer reading `dnd5e_srd.json` had no
+# way to check any of that: `tests/test_srd_sources.py` proves the constants are
+# right at the SOURCE, and a 2024 record served from a 2014 path would still
+# pass every test in it. A dataset that does not record its edition cannot be
+# refused for carrying the wrong one, which is the failure this constant exists
+# to prevent.
+#
+# One value, named once, and asserted rather than re-derived at each use site.
+EDITION = "2014"
+
 BITS_FILES = {
     "spells":      "5e-SRD-Spells.json",
     "equipment":   "5e-SRD-Equipment.json",
@@ -1232,6 +1246,10 @@ def cmd_status() -> None:
     sources = meta.get("sources", {})
     print(f"Dataset:    {OUT_FILE}")
     print(f"Built at:   {meta.get('built_at','?')}")
+    # Printed because the edition is the one field that decides whether the rest
+    # of the file is usable at all: a 2024 dataset read by a 2014 engine answers
+    # 2014 questions with 2024 text.
+    print(f"Edition:    {meta.get('edition', 'NOT RECORDED (pre-' + EDITION + ' build)')}")
     print()
     for cat, n in counts.items():
         print(f"  {cat:<12}  {n} records")
@@ -1255,7 +1273,22 @@ def cmd_build(skip_fvtt: bool = False) -> None:
         print("  skipped (--no-fvtt)")
         features = []
     else:
-        features, _ = _build_fvtt()
+        # `_build_fvtt` returns the tree sha it read. It used to be discarded
+        # here and the fetched_at/sha pair below carried an empty sha instead,
+        # so the 260 features that come from this source had anonymous
+        # provenance while the 5e-bits half named a commit. Recorded, and
+        # recorded as "" when the tree could not be read, because a wrong sha
+        # would be worse than a missing one.
+        features, tree_sha = _build_fvtt()
+        if tree_sha and not fvtt_sha:
+            fvtt_sha = tree_sha
+        elif tree_sha and fvtt_sha and tree_sha != fvtt_sha:
+            # Not fatal: the commits API and the tree API can legitimately differ
+            # by a commit or two of lag. Said out loud rather than silently kept,
+            # because two shas for one source is the sort of thing nobody reads
+            # until it matters.
+            print(f"  ! foundryvtt tree sha {tree_sha[:12]} differs from commits "
+                  f"sha {fvtt_sha[:12]}", file=sys.stderr)
     categories["features"] = features
 
     counts = {k: len(v) for k, v in categories.items()}
@@ -1264,6 +1297,7 @@ def cmd_build(skip_fvtt: bool = False) -> None:
     dataset = {
         "_meta": {
             "built_at":      now,
+            "edition":       EDITION,
             "total_records": total,
             "record_counts": counts,
             "sources": {
