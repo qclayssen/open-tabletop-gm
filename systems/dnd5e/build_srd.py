@@ -93,10 +93,40 @@ BITS_FILES = {
 
 # ─── HTTP helpers ─────────────────────────────────────────────────────────────
 
+def _auth_headers() -> dict:
+    """Headers for every fetch, including a bearer token when one is offered.
+
+    `api.github.com` allows 60 requests/hour per IP address for an UNAUTHENTICATED
+    caller, and the shared GitHub-hosted runner pool is exactly that case: several
+    jobs share an egress IP, so a build can be refused with HTTP 403 part-way
+    through. That is not hypothetical -- it is what happened on the first CI run
+    that built this dataset (2026-10-04): the raw.githubusercontent.com fetches for
+    spells, equipment, magic items, conditions and monsters all succeeded, every
+    api.github.com call was rate-limited, and the build still exited 0 having
+    written a dataset with ZERO class features. `cmd_build` only warns about a
+    partly-empty dataset, so that failure is silent unless something checks.
+
+    Authenticated, the same endpoint allows 5000/hour. So the token is used when
+    one is in the environment and omitted when none is: a developer running
+    `build_srd.py` locally, or `gh` supplying `GH_TOKEN` itself, keeps working
+    unchanged, and a token is never required to build.
+
+    Only `api.github.com` needs it, but sending it to `raw.githubusercontent.com`
+    as well is harmless and keeps one header set rather than a per-host branch.
+    """
+    headers = {"User-Agent": "dnd-skill-build/1.0"}
+    token = os.environ.get("SRD_BUILD_TOKEN") or os.environ.get("GITHUB_TOKEN") \
+        or os.environ.get("GH_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+        headers["X-GitHub-Api-Version"] = "2022-11-28"
+    return headers
+
+
 def _fetch(url: str, as_json: bool = False):
     """Fetch URL, return parsed JSON or raw text. Returns None on error."""
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "dnd-skill-build/1.0"})
+        req = urllib.request.Request(url, headers=_auth_headers())
         with urllib.request.urlopen(req, timeout=30) as resp:
             data = resp.read()
         return json.loads(data) if as_json else data.decode("utf-8")

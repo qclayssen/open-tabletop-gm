@@ -117,6 +117,19 @@ jobs:
         # skipped, deselected, xfailed or filtered by any of it. pytest below
         # runs exactly as before; it just arrives to find the file its tests
         # were always written to load.
+        #
+        # GITHUB_TOKEN is here because the first run of this step failed without
+        # it, and the log is worth keeping. api.github.com allows 60 req/hour per
+        # IP unauthenticated and the hosted runner pool shares an egress IP, so
+        # the five raw.githubusercontent.com fetches all succeeded and every
+        # api.github.com call came back 403. build_srd exited 0 with features=0
+        # and only warned. The gate below caught it -- which is the gate working
+        # as intended -- but a red build step is not the goal. Authenticated, the
+        # same endpoint allows 5000/hour, and permissions:contents:read is enough
+        # for the public metadata being read. build_srd.py reads GITHUB_TOKEN if
+        # it is set and builds unchanged when it is not.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           usable() {
             [ -s systems/dnd5e/data/dnd5e_srd.json ] || return 1
