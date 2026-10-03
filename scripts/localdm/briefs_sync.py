@@ -341,10 +341,25 @@ def main(argv: list[str] | None = None) -> int:
         print(f"synced {len(written)} brief(s) into the outer agents/: "
               f"{', '.join(written) if written else 'already identical'}")
 
+    # A directory the caller *named* is a promise to check that live copy, so a
+    # name that does not resolve to a directory is refused rather than degraded.
+    # Both ways of naming one count: the flag, and the env var, which is set
+    # deliberately and is how the two-repo verification runs reach a sibling
+    # checkout from inside a worktree.
+    #
+    # Discovery finding nothing stays a manifest-only check, because that is a
+    # different fact. A plain clone of this repo has no outer checkout at all and
+    # the manifest is the authority there (see this module's docstring); the note
+    # below says so on the way out.
+    agents_dir = outer_agents_dir(args.agents_dir)
+    named = args.agents_dir if args.agents_dir is not None else os.environ.get(ENV_AGENTS_DIR)
+    if args.check and named is not None and agents_dir is None:
+        print(f"error: not an agents directory: {named}")
+        return 1
+
     # Recomputed after the sync, so a successful run reports on the state it
     # left rather than the state it found.
     problems = council_problems() + check_manifest()
-    agents_dir = outer_agents_dir(args.agents_dir)
     if agents_dir is None:
         if args.check:
             print("note: no outer agents/ directory found, so the live copies were not "
