@@ -8,8 +8,17 @@ You need Python 3.10 or newer.
 
 ```bash
 pip3 install -r display/requirements.txt
-python3 systems/dnd5e/build_srd.py --no-fvtt     # SRD data for grid combat (network)
+python3 scripts/provision_srd.py            # SRD data for grid combat (network)
 ```
+
+`provision_srd.py` builds `systems/dnd5e/data/dnd5e_srd.json` and then checks it,
+because `build_srd.py` will happily write a half-built dataset if one of its two
+upstream sources stops answering — it takes about 80 seconds and needs `pyyaml`
+(`pip3 install pyyaml`). It is the same command CI runs before the test suite
+(dnd-gm#289). If you only want grid combat's monsters and spells and do not care
+about class and racial features, `python3 systems/dnd5e/build_srd.py --no-fvtt`
+still works — but it produces a dataset that `provision_srd.py --check` refuses,
+because it has no `features` at all.
 
 Flask is the only thing the display needs. If you want the Sound Effects toggle to
 make a noise, install the optional pair as well:
