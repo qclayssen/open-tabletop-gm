@@ -67,6 +67,11 @@ class AttackContext:
                                   # can currently be seen by the other
     react: object = None          # engine hook for reactions to a hit (Shield, Silvery Barbs):
                                   # react(natural, total, ac) -> {"natural", "total", "ac", "lines"}
+                                  # Opt-in from this side: a ruleset with no reaction to a
+                                  # hit simply never calls it, and the engine's reaction
+                                  # code never runs. `tests/fake_rules.py` fights run
+                                  # without reaching it once, while a 5e hit reaches it every
+                                  # time. Those two spell names are 5e's, the hook is not.
 
 
 class Rules:
@@ -142,7 +147,15 @@ class Rules:
     def attack(self, attacker, target, attack: dict, ctx: AttackContext, roller,
                player: bool, explicit: str = "normal") -> dict:
         """`explicit` is "advantage" or "disadvantage" when the GM ruled one for
-        this attack. It outranks every condition, in both directions."""
+        this attack. It outranks every condition, in both directions.
+
+        APPLY THE DAMAGE HERE, with your own `damage`, and return that result dict under
+        `damage` (None on a miss). The engine does not apply it: `_resolve_attack` hands
+        `res["damage"]` straight to `effects.after_damage`, which reads `concentration_dc`
+        off it, so the rolled parts are not what it wants back. `tests/fake_rules.py` is a
+        second system written the other way round, on the strength of an older version of
+        this docstring, and its fights dealt no damage at all.
+        """
         raise NotImplementedError
 
     def hit_chance(self, attacker, target, attack: dict, ctx: AttackContext,
@@ -192,7 +205,17 @@ class Rules:
         raise NotImplementedError
 
     def damage(self, target, parts: list, crit: bool = False, ctx: AttackContext = None) -> dict:
-        """parts: [{"amount": int, "type": str}], already rolled."""
+        """parts: [{"amount": int, "type": str}], already rolled. Applies them, and
+        returns what happened: the new hit points, the change, and a `text` for the log.
+
+        Two things the engine relies on and this docstring used to leave out. The change
+        is never negative and the target never goes below 0, because the engine prints
+        hit points to a player without checking the arithmetic first. And a target at 0
+        is left `dead`: `end_turn` decides a fight is over by asking whether any hostile
+        is still `active`, and `Token.active` is `not dead`. A system with no death saves
+        still has to set it; "stable" is 5e's word for 5e's ritual and means nothing to
+        the board.
+        """
         raise NotImplementedError
 
     def heal(self, token, amount: int) -> dict:
