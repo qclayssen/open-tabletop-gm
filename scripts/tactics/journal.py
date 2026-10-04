@@ -37,17 +37,30 @@ The shape of one line:
                the same `cmd` and are visibly one attempt.
     argv       the argv as it was actually invoked, answers and all. This is what
                can be re-run.
-    seed       the integer the dice were built from, one per invocation, or null
-               when this invocation rolled nothing. Never the integer merely
+    seed       the integer the dice were BUILT from, one per invocation, or null
+               when this invocation built no dice at all (a read-only command,
+               which never reaches `_roller`). Never the integer merely
                resolved: `_roller` builds from `--seed` when there is one, so
                `args._seed` on such a run is an integer that was never used, and
                recording it would put a number here that reproduces nothing.
+               "BUILT from", not "rolled on", and the difference is load-bearing
+               rather than pedantic: `run()` constructs the `Roller` before it
+               dispatches, so a command refused or paused before it reached a
+               die still carries a seed here and rolled nothing with it. This file
+               cannot know which, because the answer lives in every roll site and
+               instrumenting them to find out would put the journal in the path of
+               the dice. It does not need to: `combat/rolls.jsonl` records what
+               rolled and on which seed, so a reader lines the two files up by
+               `encounter.after` and gets both facts. Read a seed here as "this
+               is the stream any roll in this invocation came from", never as
+               "a roll happened".
     seed_from  where that integer came from, which is the question the seed alone
                cannot answer:
                    "flag"    --seed N on the command line
                    "pending" read out of combat/pending.json, i.e. a replay
                    "fresh"   resolved from the canonical policy for this run
-                   "none"    the invocation rolled nothing, so there is no seed
+                   "none"    no dice were built for this invocation, so there is
+                             no seed: a read-only command rolls nothing by design
     outcome    what happened to the invocation:
                    "committed" it ran and its effects were saved
                    "read"      a read-only command, nothing could change
@@ -430,7 +443,7 @@ def _detail(rec: dict) -> list:
     if rec.get("reason"):
         out.append(f"  reason    {rec['reason']}")
     out.append(f"  seed      {seed} from {rec.get('seed_from')}" if isinstance(seed, int)
-               else "  seed      none: this invocation rolled no dice")
+               else "  seed      none: this invocation built no dice")
     out.append(f"  canonical {' '.join(str(a) for a in rec.get('cmd') or []) or '(none)'}")
     out.append(f"  invoked   {' '.join(str(a) for a in rec.get('argv') or []) or '(none)'}")
     if isinstance(rec.get("resumes"), int):

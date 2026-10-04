@@ -246,12 +246,12 @@ def test_a_read_only_command_is_recorded_as_read_and_never_fingerprints(camp, ca
     st = [r for r in records(camp) if r["cmd"][2] == "status"][0]
     assert st["outcome"] == "read" and st["code"] == 0
     assert st["encounter"] == {"before": None, "after": None, "map": None}
-    # and no seed, because a read rolled nothing. `args._seed` was resolved for it
-    # -- the pending path runs before the READ_ONLY check, for every command --
-    # but no dice were ever built from it, so a number here would point at a roll
-    # that did not happen. Same rule as an explicit `--seed` on a committed run:
-    # the journal records the seed that went on the dice, not one that was merely
-    # resolved.
+    # and no seed, because a read never reaches `_roller`. `args._seed` was
+    # resolved for it -- the pending path runs before the READ_ONLY check, for
+    # every command -- but no dice were ever built from it, so a number here
+    # would point at a roll that could not have happened. Same rule as an
+    # explicit `--seed` on a committed run: the journal records the seed that went
+    # on the dice, not one that was merely resolved.
     assert st["seed"] is None and st["seed_from"] == "none"
     assert not [r for r in records(camp) if r["outcome"] == "committed"
                 and r["cmd"][2] == "status"]
