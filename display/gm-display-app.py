@@ -43,6 +43,11 @@ SCRIPTS_DIR   = os.path.join(_SKILL_DIR, "scripts")
 # display that connects afterwards.
 LOG_FILE      = os.environ.get("GM_TEXT_LOG_FILE") or os.path.join(_DISPLAY_DIR, "text_log.json")
 _LOG_FALLBACK = LOG_FILE
+# Whether GM_TEXT_LOG_FILE was set at all, which is what makes it an override
+# rather than a default. See _get_log_file for what that buys. Read here beside
+# LOG_FILE because both are read once at import: a display does not re-read its
+# environment mid-session, so a variable that changed later would be a lie.
+_LOG_OVERRIDE = os.environ.get("GM_TEXT_LOG_FILE") or ""
 
 # SRD lookup module — degrades silently if dataset not built
 if SCRIPTS_DIR not in sys.path:
@@ -1198,7 +1203,19 @@ _text_log_lock = threading.Lock()
 
 
 def _get_log_file() -> str:
-    """Return the campaign-specific log path, or the fallback display-dir path."""
+    """Return where the narration log is written.
+
+    GM_TEXT_LOG_FILE wins outright when it is set. It is an override, not a
+    default: the whole reason it exists is that a display told to use a
+    particular file writes there whatever display/.campaign says, and a
+    campaign consulted first quietly reversed that. The registered campaign was
+    only ever the fallback for a display that was never told otherwise.
+
+    Order: the override, then the registered campaign's own log, then the
+    display directory.
+    """
+    if _LOG_OVERRIDE:
+        return _LOG_OVERRIDE
     try:
         camp = open(CAMP_FILE, encoding="utf-8").read().strip()
         if camp:
