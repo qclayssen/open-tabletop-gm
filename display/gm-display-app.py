@@ -65,6 +65,7 @@ from paths import (
     find_campaign as _find_campaign,
     campaign_system as _campaign_system,
     characters_dir as _characters_dir,
+    _is_campaign,
 )
 
 
@@ -81,6 +82,23 @@ def _find_display_campaign(name: str):
     """Resolve a validated campaign name using the shared campaign lookup."""
     _campaign_dir_for_name(name)
     return _find_campaign(name)
+
+
+def _campaign_exists(name: str) -> bool:
+    """True when `name` resolves to a real campaign, False for anything else.
+
+    paths.campaign_path is deliberately not the answer to this question, and
+    says so: the path it returns "is not required to exist", because it answers
+    whether a path is readable, not whether a campaign is there. Asking _is_campaign
+    is the separate question, and a lookup that cannot answer it is a miss rather
+    than an exception, so a caller can report the miss instead of crashing on it.
+    """
+    if not name:
+        return False
+    try:
+        return bool(_is_campaign(_find_display_campaign(name)))
+    except (TypeError, ValueError, OSError):
+        return False
 
 # The map editor's terrain merge. The engine owns the rules; this only decides
 # what a map file looks like, and it lives in scripts/ so the CLI and the tests
@@ -2242,6 +2260,10 @@ def chunk():
     # Campaign registration — write .campaign file and reload log + tail for correct
     # per-campaign replay. Sent by send.py --set-campaign at /gm load. May arrive with
     # or without text.
+    #
+    # campaign_warning carries what the caller has to be told, if anything: see
+    # _chunk_response below.
+    campaign_warning: dict = {}
     if "campaign" in data:
         raw_camp = data["campaign"]
         if not isinstance(raw_camp, str):
@@ -2251,6 +2273,24 @@ def chunk():
             _campaign_dir_for_name(new_camp)
         except (TypeError, ValueError, OSError):
             return "Invalid campaign name", 400
+        # A name that matches no campaign is not refused: registering one created
+        # after the display started, or one on a root this display cannot see, is
+        # a reasonable thing to want. But it is not a success either, because from
+        # here on every log and tail write aims at a directory that is not there,
+        # and the write fails in silence. So the registration still happens and the
+        # response carries the path it will be persisting into.
+        if new_camp and not _campaign_exists(new_camp):
+            aim_at = _campaign_dir_for_name(new_camp) / "text_log.json"
+            campaign_warning = {
+                "campaign": new_camp,
+                "resolved": False,
+                "path": str(aim_at),
+                "warning": (
+                    f"campaign {new_camp!r} resolves to no campaign under "
+                    f"{_campaigns_dir()}; narration will be persisted into "
+                    f"{aim_at} and go nowhere until that campaign exists"),
+            }
+            print(f"[display] {campaign_warning['warning']}", file=sys.stderr)
         try:
             prev_camp = open(CAMP_FILE, encoding="utf-8").read().strip()
         except Exception:
@@ -2282,6 +2322,19 @@ def chunk():
         except Exception:
             pass
 
+    def _chunk_response() -> tuple:
+        """The response for a /chunk request.
+
+        204 means stored, nothing to add. A request that registered a campaign
+        resolving to nothing has something to add, so it does not get to say it
+        with a 204: it answers 200 carrying the warning and the path the display
+        will now be persisting into. Text in the same request is still stored and
+        still broadcast; only the acknowledgement changes.
+        """
+        if campaign_warning:
+            return jsonify(campaign_warning), 200
+        return "", 204
+
     # Milestone award/spend — system-agnostic event for "the GM rewarded great play".
     # Renders as a gold-glow block in the feed. The system module supplies the label
     # (Inspiration / Bennie / Hero Point / Fate Point / etc.); default is "Milestone".
@@ -2311,7 +2364,7 @@ def chunk():
         _stamp_log_entry(log_entry, _broadcast(payload))
         _persist_log()
         _persist_tail()
-        return "", 204
+        return _chunk_response()
 
     author = _clean_author(data.get("author"))
     gm_log = str(data.get("gm_log") or "").strip()[:2000]
@@ -2320,7 +2373,7 @@ def chunk():
     if not raw:
         if gm_log:
             _write_gm_log({"at": _time.time(), "author": author, "gm_log": gm_log})
-        return "", 204
+        return _chunk_response()
 
     violation = _author_check(author, str(raw))
     if violation and violation["kind"] == "wrong_author":
@@ -2337,7 +2390,7 @@ def chunk():
     # DM narration may come from wrapper.py — full clean.
     cleaned = raw.strip() if (is_action or is_player or is_npc or is_dice or is_tutor) else _clean(raw)
     if not cleaned.strip():
-        return "", 204
+        return _chunk_response()
 
     # GM adjudication never reaches the player-facing transcript.
     if is_dice:
@@ -2348,7 +2401,7 @@ def chunk():
         _write_gm_log({"at": _time.time(), "author": author, "gm_log": gm_log,
                        "shown": cleaned})
     if not cleaned.strip():
-        return "", 204
+        return _chunk_response()
 
     payload: dict = {"text": cleaned}
 
@@ -2412,7 +2465,7 @@ def chunk():
     _stamp_log_entry(log_entry, _broadcast(payload))
     _persist_log()
     _persist_tail()
-    return "", 204
+    return _chunk_response()
 
 
 @app.route("/stats", methods=["POST"])

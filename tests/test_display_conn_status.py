@@ -934,6 +934,40 @@ class LogDestination(unittest.TestCase):
         self.assertLess(r.status_code, 400, r.data)
         self.assertEqual(self.logged_text(), ["Kept."])
 
+    def test_registering_a_campaign_that_resolves_to_nothing_is_not_a_bare_204(self):
+        """204 says stored, nothing to add. This request has something to add.
+
+        Not a rejection either: the name is registered, because a campaign
+        created after the display started is a legitimate registration. What it
+        is not is a success with no acknowledgement, so the response carries the
+        path the display will now be persisting into.
+        """
+        gone = "a-campaign-that-does-not-exist"
+        mod = self.display_for(gone)
+        r = mod.app.test_client().post("/chunk", json={"campaign": gone})
+        self.assertEqual(r.status_code, 200, r.data)
+        body = r.get_json()
+        self.assertEqual(body["campaign"], gone)
+        self.assertFalse(body["resolved"])
+        # The path is the one the display will actually write to, so it is
+        # asserted resolved: paths resolves the root, and on macOS tempfile
+        # hands back /var/folders where the resolver answers /private/var/folders.
+        self.assertEqual(body["path"],
+                         str((self.root / "campaigns" / gone / "text_log.json").resolve()))
+
+    def test_a_campaign_that_resolves_is_still_a_plain_204(self):
+        """The other half of the contract: a good registration says nothing."""
+        mod = self.display_for("demo")
+        r = mod.app.test_client().post("/chunk", json={"campaign": "demo"})
+        self.assertEqual(r.status_code, 204, r.data)
+
+    def test_a_chunk_with_no_campaign_is_still_a_plain_204(self):
+        """No campaign in the payload, no warning to carry."""
+        mod = self.display_for("demo")
+        r = mod.app.test_client().post("/chunk", json={"text": "No campaign here."})
+        self.assertEqual(r.status_code, 204, r.data)
+
+
 class PanelWithoutAStream(BrowserTestCase):
     """The panel runs with no stream at all, and must still be usable.
 
