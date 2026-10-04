@@ -100,6 +100,57 @@ BITS_FILES = {
     "monsters":    "5e-SRD-Monsters.json",
 }
 
+# What the CONTENT of the generated dataset is used under, and who has to be
+# credited for it. Written into `_meta` so a consumer holding nothing but the
+# JSON can find out, because `sources` cannot tell them: a commit sha says
+# which upstream a record came from and says nothing at all about what they may
+# do with it (dnd-gm#139).
+#
+# CC-BY-4.0 and not MIT, and that is the whole point of these constants. Both
+# upstreams LICENSE their own repositories as MIT, which covers their packaging
+# and not the SRD text inside them. The text is the SRD's, and the SRD's terms
+# are CC-BY-4.0. A dataset reporting only "MIT" would tell a redistributor they
+# owed no attribution, which is the wrong answer to give them.
+#
+# This is the license the code RELIES ON, which is not the same claim as "the
+# license of everything upstream". `systems/dnd5e/NOTICE` carries the full
+# attribution; these are the pointers to it, not a replacement for it.
+DATASET_LICENSE = {
+    "identifier": "CC-BY-4.0",
+    "name":       "Creative Commons Attribution 4.0 International",
+    "url":        "https://creativecommons.org/licenses/by/4.0/legalcode",
+    "covers":     "the SRD-derived game text in this file",
+    "notice":     "systems/dnd5e/NOTICE",
+}
+
+# The credit the CC-BY-4.0 grant actually requires, named inside the file rather
+# than left to NOTICE in the repository: attribution travels with the work, and
+# a redistributed dataset is no longer in the repository.
+DATASET_ATTRIBUTION = {
+    "system_reference_document":
+        "System Reference Document 5.1, Wizards of the Coast LLC, "
+        "https://dnd.wizards.com/resources/systems-reference-document",
+    "modifications":
+        "upstream records are reformatted and normalised into this one JSON "
+        "file by build_srd.py; game text is otherwise not altered",
+    "notice": "systems/dnd5e/NOTICE",
+}
+
+# Each upstream repository's own license, recorded SEPARATELY from the content
+# license above because the two disagree. A reader shown only one of them would
+# be misled by whichever they happened to see, which is why neither is dropped.
+SOURCE_LICENSES = {
+    "5e-bits": {
+        "license":     "MIT",
+        "license_url": "https://github.com/5e-bits/5e-srd-api/blob/main/"
+                       "packages/5e-database/LICENSE.md",
+    },
+    "foundryvtt": {
+        "license":     "MIT",
+        "license_url": "https://github.com/foundryvtt/dnd5e/blob/master/LICENSE",
+    },
+}
+
 
 # ─── HTTP helpers ─────────────────────────────────────────────────────────────
 
@@ -1344,6 +1395,8 @@ def cmd_build(skip_fvtt: bool = False) -> None:
         "_meta": {
             "built_at":      now,
             "edition":       EDITION,
+            "license":       DATASET_LICENSE,
+            "attribution":   DATASET_ATTRIBUTION,
             "total_records": total,
             "record_counts": counts,
             "sources": {
@@ -1353,12 +1406,20 @@ def cmd_build(skip_fvtt: bool = False) -> None:
                     "branch":     "main",
                     "sha":        bits_sha,
                     "fetched_at": now,
+                    **SOURCE_LICENSES["5e-bits"],
                 },
                 "foundryvtt": {
                     "repo":       "foundryvtt/dnd5e",
+                    # The directory every fetched feature path hangs off
+                    # (`_partition_fvtt_tree`). Recorded because the 5e-bits
+                    # half names its path and this one did not, and two sources
+                    # answering the same question two ways is a reader's
+                    # question to answer rather than a fact anyone should infer.
+                    "path":       "packs/_source",
                     "branch":     "master",
                     "sha":        fvtt_sha,
                     "fetched_at": now,
+                    **SOURCE_LICENSES["foundryvtt"],
                 },
             },
         },
