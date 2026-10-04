@@ -336,10 +336,11 @@ def _journal(camp_dir, args, argv, canon, outcome, code, reason="", pending=None
     """
     was_paused = bool(pending)
     if args.cmd in READ_ONLY:
-        # A read rolled nothing, so there is no seed to quote. `args._seed` was
-        # resolved for it (the pending path runs before the READ_ONLY check, for
-        # every command) but no dice were ever built from it, and a number here
-        # would point at a roll that did not happen.
+        # A read never reaches `_roller`, so no dice were built at all and there
+        # is no seed to quote. `args._seed` was resolved for it (the pending path
+        # runs before the READ_ONLY check, for every command) but nothing was
+        # ever built from it, and a number here would point at a roll that could
+        # not have happened.
         seed, seed_from = None, "none"
     else:
         seed_from = "flag" if args.seed is not None else ("pending" if was_paused
