@@ -319,3 +319,218 @@ jobs:
         # so a 3.11+ name, keyword argument or stdlib member is an error rather
         # than something no check ever looks at.
         run: python -m pytest tests/test_tactics_*.py -q
+  eslint:
+    # The JavaScript floor, and the first thing in this file that has ever looked at a
+    # .js file.
+    #
+    # WHY IT EXISTS (#219): the pytest job runs one command and cannot read JavaScript, so
+    # display/static/display.js (5111 lines, and the entire display) plus atlas.js,
+    # tactics.js and mapseditor.js were checked by nothing at all. That is how a
+    # ReferenceError for an identifier read out of a scope that does not contain it reached
+    # main inside a new 328-line file, twice in one file, with the check reporting green.
+    # `no-undef` is a lint-level rule, so that class of defect is a lint-level defect and
+    # the class fix is a linter.
+    #
+    # It is also the cheapest thing in this workflow, measured rather than assumed: the
+    # repo's five JavaScript files are 396KB (`git ls-files '*.js' '*.mjs' | xargs wc -c`,
+    # which includes the 7KB config itself, so 396KB of code plus config) and one
+    # `npx eslint .` pass over all of it is 0.64s-0.95s over three runs. It needs no
+    # Python, no Playwright and no browser download.
+    #
+    # WHY IT CANNOT BLOCK ANYTHING. `continue-on-error` on the job, and a lint step that
+    # does not propagate its exit status either. main has no branch protection, no
+    # rulesets and no branch rules (checked: the API answers 404 for protection and [] for
+    # both of the others), so no check in this file is a required status check, and this
+    # job is written so that adding it cannot change that. Lint arrives with three
+    # pre-existing findings in files this change does not own; making a first-ever run a
+    # gate would red every open PR over dead code in display.js. Report the findings, do
+    # not gate merges on them.
+    #
+    # That is a claim about repo configuration today, not a property of this file, so it
+    # is stated where the next person will read it rather than assumed to hold. The moment
+    # anyone adds `eslint (advisory)` to a required-checks list, the job becomes a gate
+    # and the comment above becomes a lie, and nothing in this repo would notice.
+    #
+    # A report nobody reads is the thing #219 is actually about, so the step that cannot
+    # fail is the one carrying the news: every finding becomes an ::error:: annotation on
+    # the PR's changed files, and the per-file counts are appended to this run's job
+    # summary instead of only scrolling past in a log. The step after it exists so that
+    # this arrangement cannot rot into silence unnoticed.
+    #
+    # ubuntu-latest, for the reason the floor-310 job gives: 3x the runners on this plan,
+    # and it runs beside the pytest job rather than in front of it.
+    name: eslint (advisory)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          # 24 is the current Node LTS and clears the floor eslint.config.js records as
+          # this repo's, so there is one statement of it rather than two that can drift.
+          # The eslint version is pinned in package.json too, so a local `npm install`
+          # gets the same linter this job runs.
+          node-version: '24'
+      - name: Install eslint
+        # `--no-save`, because package-lock.json is gitignored (.gitignore:89): there is no
+        # lockfile to install from and `npm ci` cannot be used in this repo at all. Two
+        # consequences worth stating rather than rediscovering. First, the two versions
+        # are written out here as well as in package.json and nothing keeps the copies
+        # equal: `.github/dependabot.yml` has no `npm` ecosystem entry, so no PR will ever
+        # propose a bump and no bot will notice them disagreeing. Second, with no
+        # lockfile the transitive tree floats, so a transitive release can break this job
+        # with no change to this repo. That is the price of a repo that gitignores its
+        # lockfile, paid knowingly rather than by accident.
+        #
+        # npm resolves the whole manifest even with --no-save, so the two @chartdown
+        # dependencies come along too (measured: 80 packages, @chartdown/core and
+        # @chartdown/render-svg included). Nothing in this job imports them; they are
+        # here because npm installs the tree it is pointed at, not the two packages named
+        # on the command line.
+        run: npm install --no-save --no-package-lock --no-audit --no-fund eslint@10.12.0 globals@17.13.0
+      - name: Lint the display's JavaScript, and report it
+        # The report and the log go to RUNNER_TEMP (a mktemp -d when that variable is
+        # absent, so the same block runs on a laptop), not into the working tree. Four
+        # artefact names in the source tree is four chances for a stray one to be
+        # committed by `git add -A`, which .gitignore:9-12 already records as this repo's
+        # own version of that mistake. The one file that must be in the tree is the
+        # selftest fixture in the step below, because it has to be linted by the real
+        # config through the real file glob.
+        #
+        # Two runs, not one, because ESLint takes one formatter per run: the first is for
+        # a human reading the log, the second is JSON for the counts. Two formatter
+        # passes over 396KB is still well under two seconds.
+        #
+        # Both exit statuses are captured rather than propagated, and `|| status=$?` is how
+        # a status is captured under this workflow's `bash -e` default: a bare
+        # `cmd; status=$?` would exit on the failure and never reach the assignment. The
+        # job is already continue-on-error, so propagating them would change nothing about
+        # whether a merge is blocked; what it would change is whether the log can say
+        # which step found something. The one step in this job that exits non-zero on
+        # purpose is the next one, and only when the linter has stopped working.
+        run: |
+          out_dir="${RUNNER_TEMP:-$(mktemp -d)}"
+          lint_status=0
+          json_status=0
+          npm run --silent lint -- --format stylish > "$out_dir/eslint-stylish.log" 2>&1 || lint_status=$?
+          cat "$out_dir/eslint-stylish.log"
+          echo "eslint --format stylish exited ${lint_status}"
+          npm run --silent lint -- --format json --output-file "$out_dir/eslint-report.json" || json_status=$?
+          echo "eslint --format json exited ${json_status}"
+          ESLINT_REPORT="$out_dir/eslint-report.json" node --input-type=module <<'JS'
+          import { appendFileSync, existsSync, readFileSync } from 'node:fs';
+          import { relative } from 'node:path';
+
+          // Everything the reader needs goes to BOTH the log and the job summary, because
+          // a job summary is what a reviewer sees without opening anything. Annotations
+          // are log-only: they are already rendered on the PR's changed files.
+          const summary = process.env.GITHUB_STEP_SUMMARY;
+          const note = (line = '') => {
+            console.log(line);
+            if (summary) appendFileSync(summary, `${line}\n`, 'utf8');
+          };
+          const annotate = (line) => console.log(line);
+
+          // A missing report means ESLint died rather than found nothing. Those are
+          // opposite results that look identical in a log, so say which one this is
+          // instead of printing an empty table.
+          const report = process.env.ESLINT_REPORT;
+          if (!existsSync(report)) {
+            note('### eslint (advisory): no report file');
+            annotate('::error::eslint wrote no report file, so nothing is known about display/static/*.js');
+            note('');
+            note('ESLint exited without writing its report. Nothing was checked.');
+            process.exit(0);
+          }
+
+          const results = JSON.parse(readFileSync(report, 'utf8'));
+          const rows = [];
+          let total = 0;
+          for (const file of results) {
+            if (file.messages.length === 0) continue;
+            const rel = relative(process.cwd(), file.filePath);
+            total += file.messages.length;
+            const byRule = {};
+            for (const m of file.messages) {
+              const rule = m.ruleId ?? 'parse error';
+              byRule[rule] = (byRule[rule] ?? 0) + 1;
+              annotate(`::error file=${rel},line=${m.line}::${rule}: ${m.message}`);
+            }
+            const rules = Object.entries(byRule).map(([k, v]) => `${k} x${v}`).join(', ');
+            rows.push(`| \`${rel}\` | ${rules} | ${file.messages.length} |`);
+          }
+
+          note("### eslint (advisory): the repository's JavaScript");
+          note('');
+          note(`${results.length} JavaScript file(s) checked.`);
+          note('');
+          if (results.length === 0) {
+            // Zero files checked is not a clean result, it is a linter that looked at
+            // nothing, and "no findings" would then be an all-clear about no file at all.
+            // The count is printed on every run so this case is visible either way.
+            note('Nothing was checked. Every "no findings" in this summary would be a report about no file, so read this as a failure of the job, not of the code.');
+            annotate('::error::eslint checked 0 JavaScript files, so no line of this summary is a report about any file');
+          } else if (rows.length === 0) {
+            note('No findings in any of them.');
+          } else {
+            note('| file | rules | findings |');
+            note('| --- | --- | --- |');
+            for (const row of rows) note(row);
+            note('');
+            note(`**${total} finding(s).** \`no-undef\` is the rule that matters; it is the one that catches an identifier read out of a scope that does not contain it, which is a ReferenceError at the moment that line runs.`);
+            note('');
+            note("This job is advisory and cannot block a merge. A finding in a file owned by another change is that change's to fix, not this job's.");
+          }
+          JS
+      - name: Prove the lint step can fail
+        # The defence the two Python jobs use for their own selftests, for the same
+        # reason: a check that cannot fail is decoration, and decoration is the thing
+        # #219 is about. The fixture is a real file inside the linted tree, so it goes
+        # through the real config and the real `npx eslint` invocation that the step above
+        # also uses. The trap removes it in this step and it is never committed.
+        #
+        # `no-undef` specifically, because that is the rule the fixture has to trip: an
+        # identifier in no scope is exactly what reached main in #216, and a linter that
+        # has quietly lost the rule is indistinguishable from a linter that passes.
+        #
+        # `npx eslint "$fixture"` rather than `npm run lint -- "$fixture"`, and that is
+        # load-bearing rather than a preference. The lint script is `eslint .`, so npm
+        # appends the path instead of replacing it and the command becomes
+        # `eslint . <fixture>`: the report then covers all seven files in the tree and
+        # this grep would pass if ANY of them reported no-undef, including on a day when
+        # the fixture itself reported nothing. Scoping it to the fixture is what makes the
+        # count below mean what the step says it means. (Measured: `npm run lint --
+        # display/static/atlas.js` reports 6 files, not 1.)
+        #
+        # The assertion is on a count that is printed first, not on a grep whose result is
+        # only used to decide whether to exit. If someone deletes the `if` below, the log
+        # still prints `0` and the log is still true; the alternative prints "no-undef
+        # reported the fixture" unconditionally, which is decoration that announces it is
+        # not decoration.
+        run: |
+          fixture=display/static/eslint-selftest.js
+          out_dir="${RUNNER_TEMP:-$(mktemp -d)}"
+          report="$out_dir/eslint-selftest-report.json"
+          trap 'rm -f "$fixture" "$report"' EXIT
+          cat > "$fixture" <<'FIXTURE'
+          'use strict';
+          // This name is in no scope, which is the shape of the #216 bug. If no-undef
+          // does not report it, the linter is off and this job is decoration.
+          const el = document.getElementById('eslint-selftest');
+          el.textContent = eslintSelftestUndefined;
+          FIXTURE
+          npx eslint "$fixture" --format json --output-file "$report" || true
+          # No bare `cat` here: if the config itself is broken, ESLint exits 2 and writes
+          # no report, and under `bash -e` the step would die on cat's "No such file" with
+          # no diagnosis. Name the cause instead.
+          if [ ! -s "$report" ]; then
+            echo "::error::eslint wrote no report for the fixture, so no-undef was not exercised: the config or the linter itself is broken"
+            exit 1
+          fi
+          cat "$report"
+          reported=$(grep -c 'no-undef' "$report" || true)
+          echo "selftest: the fixture's report names no-undef ${reported} time(s), and contains 1 file"
+          if [ "$reported" -lt 1 ]; then
+            echo "::error::eslint did not report the undefined identifier in a fixture written to trip no-undef, so the rule is not armed"
+            exit 1
+          fi
