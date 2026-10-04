@@ -775,14 +775,15 @@
     el.toast.textContent = text; el.toast.hidden = false;
     el.toast.className = 'tx-toast' + (kind === 'error' ? ' tx-error' : '');
     clearTimeout(ui.toastTimer);
-    // Always transient, refusals included. A toast is a duplicate of the banner
-    // for a refusal and of the log for a roll, and a duplicate that outlives its
-    // twin is the thing that made a stale error look current.
+    // Always transient. A toast is news, and news goes: what is still true in
+    // a minute is the banner or the log, and a surface that outlives its twin is
+    // the thing that made a stale error look current. A refusal is the banner's
+    // alone (see refuse), so nothing here has to survive.
     ui.toastTimer = setTimeout(() => { el.toast.hidden = true; },
                                kind === 'error' ? 6000 : 4500);
   }
 
-  // A refusal, in the one place that is always visible.
+  // A refusal, in the one place that is always visible, and the ONLY place.
   //
   // The toast sits at the bottom of the panel, which is where the combat log
   // and the action bar are: it covered the log line that says the same thing
@@ -790,6 +791,12 @@
   // is above the map with nothing under it, so that is where a refusal goes,
   // and it is announced: it arrives without a page load and it is the answer to
   // a click the player just made.
+  //
+  // One surface, not two. act() used to call this and then toast() the same
+  // string, so one refusal was one message on two surfaces with two different
+  // lifetimes: the toast's 6s and the banner's until the next real push. The
+  // player watched the copy disappear and could not tell whether it had been
+  // answered (#300 item 0.4).
   function refuse(message) {
     el.banner.textContent = message;
     el.banner.classList.add('tx-refusal');
@@ -2761,7 +2768,7 @@
         else extra.rolls.push(answer.roll);
         continue;
       }
-      if (res.error) { refuse(res.error); toast(res.error, 'error'); }
+      if (res.error) refuse(res.error);
       else {                                      // GM hints ("Next: options frog-1") are not for players
         const text = res.text.split('\n').filter(l => !/^(Next:|Then:|Waiting for)/.test(l))
           .map(l => l.replace(/\s*The GM runs: .*$/, '')).join(' ');
