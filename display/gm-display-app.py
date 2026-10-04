@@ -2970,10 +2970,12 @@ def _parse_offers(raw) -> tuple[list, str]:
                                 f'{n} — the pad works in -100..100')
                 effect["modifier"] = n
             elif _OFFER_DIE_RE.match(term):
-                return [], (f'offer {label!r} carries a bonus die ({term}), which '
-                            f'lands with the bonus-die slice. Until then it is '
-                            f'refused rather than shown as a button that does '
-                            f'nothing.')
+                die_m = _OFFER_DIE_RE.match(term)
+                die_n, die_sides = int(die_m.group(1)), int(die_m.group(2))
+                if not (1 <= die_n <= 20 and 2 <= die_sides <= 100):
+                    return [], (f'offer {label!r} has an out-of-range bonus die '
+                                f'({term}) — the pad works in 1..20 dice of 2..100')
+                effect["bonus"] = term
             else:
                 return [], (f'offer {label!r} has an unknown effect {term!r} — '
                             f'use advantage, disadvantage, a flat +/-N, or NdM')
@@ -3022,6 +3024,7 @@ def player_dice():
     label     = re.sub(r"[`\\$]", "", str(data.get("label", ""))[:60]).strip()
     req_id    = str(data.get("request_id", "")).strip()[:24]
     spend_key = str(data.get("spend", "") or "").strip()[:40]
+    bonus_in  = str(data.get("bonus", "") or "").strip().lower()
 
     # ── The spend checks, in order. 1, 2, 4. ────────────────────────────────
     # Read the pending entry once; the correlation block further down re-reads
@@ -3051,8 +3054,40 @@ def player_dice():
         return jsonify({"error": "out of range"}), 400
     modifier = max(-100, min(100, modifier))
 
-    def _roll_once() -> list[int]:
-        return [secrets.randbelow(n_sides) + 1 for _ in range(n_dice)]
+    # A bonus die is its own NdM, parsed with the same regex and the same bounds
+    # as the base die. It is a SEPARATE roll and it is not optional to parse
+    # here: folding it into `modifier` would render the pad as 1d20+4, which
+    # claims a flat 4 rather than a die that can come up 1. The table reads the
+    # pad, not the JSON, so that error would be displayed, not hidden.
+    # A bonus die sent by the PHONE is not trusted. `bonus` is the server's
+    # answer to what the spent offer carried; if the phone names one itself it
+    # is asking the display to add a die the GM never offered, which is the
+    # same forgery as naming a feature. Refused rather than ignored, so the
+    # player is told rather than quietly given a straight roll.
+    offered_bonus = str(offer["effect"].get("bonus", "") if offer else "").strip().lower()
+    if bonus_in and bonus_in != offered_bonus:
+        # Either there is no bonus die on the table at all, or the phone is
+        # asking for a different one than the GM offered. Both are refused
+        # rather than silently corrected: a player who sees the roll they asked
+        # for replaced by a different one has learned to distrust the pad.
+        return jsonify({"error": (
+            "this roll has no bonus die to spend" if not offered_bonus
+            else f"the GM offered a {offered_bonus} bonus die, not {bonus_in}"
+        ) + " — nothing was spent"}), 400
+
+    bonus_spec = offered_bonus
+    if bonus_spec:
+        bm = re.fullmatch(r"(\d{1,2})d(\d{1,3})", bonus_spec)
+        if not bm:
+            return jsonify({"error": "bad bonus spec"}), 400
+        b_dice, b_sides = int(bm.group(1)), int(bm.group(2))
+        if not (1 <= b_dice <= 20 and 2 <= b_sides <= 100):
+            return jsonify({"error": "bonus out of range"}), 400
+    else:
+        bonus_spec, b_dice, b_sides = "", 0, 0
+
+    def _roll_once(n=None, sides=None) -> list[int]:
+        return [secrets.randbelow(sides or n_sides) + 1 for _ in range(n or n_dice)]
 
     # 4. The effect does not double-count. Spending an advantage offer on a roll
     #    the GM already made advantageous spends a per-rest resource for nothing,
@@ -3077,19 +3112,34 @@ def player_dice():
         kept  = rolls
         both  = None
 
+    # The bonus die is rolled AFTER advantage has resolved, and is added to the
+    # kept face — never to the second d20. 2014 SRD, Bardic Inspiration: "The
+    # creature can wait until after it rolls the d20 before deciding to use the
+    # Bardic Inspiration die". A d4 that could change which d20 is kept would not
+    # be a bonus die, it would be a third d20 with no rules behind it.
+    bonus_faces = _roll_once(b_dice, b_sides) if bonus_spec else []
+
     subtotal = sum(kept)
-    total    = subtotal + modifier
+    total    = subtotal + sum(bonus_faces) + modifier
     mod_str  = (f"+{modifier}" if modifier > 0 else (str(modifier) if modifier < 0 else ""))
     breakdown = f"[{', '.join(str(r) for r in (both or rolls))}]"
     if both is not None:
         breakdown += f" → keep {kept[0]} ({adv})"
+    # `+ 1d4 [3]`, never `+3`. A die that can come up 1 must be shown as a die,
+    # in the table's own notation, or the display is claiming a flat number it
+    # did not roll.
+    if bonus_faces:
+        breakdown += f" + {bonus_spec} [{', '.join(str(f) for f in bonus_faces)}]"
     if modifier:
         breakdown += f" {mod_str}"
+    # The header names the base die and the flat modifier only. The bonus die is
+    # a separate roll and is named in the breakdown, where its faces are shown.
+    head_spec = f"{spec}{bonus_spec}" if bonus_spec else spec
     # The spend is named in the transcript, which is what makes the claim
     # auditable while the counter is not yet authoritative. It is named in
     # parentheses after the check, never folded into the math: the table reads
     # the pad, and "1d20+6: [17] = 23 — Stealth (Kenku Recall)" claims one thing
-    # while the bonus-die shape (RS1.2) will claim another.
+    # while the bonus-die shape claims another.
     spend_label = offer["label"] if offer else ""
     if label and spend_label:
         suffix = f" — {label} ({spend_label})"
@@ -3099,7 +3149,7 @@ def player_dice():
         suffix = f" ({spend_label})"
     else:
         suffix = ""
-    text   = f"{character} rolls {spec}{mod_str}: {breakdown} = {total}{suffix}"
+    text   = f"{character} rolls {head_spec}{mod_str}: {breakdown} = {total}{suffix}"
 
     payload   = {"text": text, "dice": True}
     log_entry = {"text": text, "dice": True}
@@ -3146,6 +3196,11 @@ def player_dice():
         "rolls": rolls,
         "kept": kept,
         "both": both,
+        # The pad reads `kept` and locks the reel to it. With a bonus die the
+        # kept face alone does not explain the total, so the bonus spec and its
+        # faces travel with it and the pad renders the same math the server did.
+        "bonus": bonus_spec or None,
+        "bonus_faces": bonus_faces,
         "subtotal": subtotal,
         "total": total,
         "text": text,

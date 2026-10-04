@@ -488,13 +488,16 @@ def main() -> None:
         help='Optional DC; displayed informationally on the phone.')
     parser.add_argument("--offer", action="append", metavar="LABEL:EFFECT",
         help='Name a feature the player may spend on this roll, e.g. '
-             '"Kenku Recall:advantage", "Bless:+2". Repeatable. The phone shows '
-             'one button per offer and the player picks one or none; the effect '
-             'is applied server-side and named in the roll line. Use for a '
-             'racial feature or class resource that changes THIS check. '
-             'advantage | disadvantage | a flat +/-N. A bonus die (NdM) is '
-             'refused by the display until the bonus-die slice ships, so a '
-             'malformed offer cannot become a button that does nothing.')
+             '"Kenku Recall:advantage", "Bardic Inspiration:1d6". Repeatable. '
+             'The phone shows one button per offer and the player picks one or '
+             'none; the effect is applied server-side and named in the roll '
+             'line. Use for a racial feature or class resource that changes THIS '
+             'check. EFFECT is advantage | disadvantage | a flat +/-N | a bonus '
+             'die NdM. A bonus die is a SEPARATE roll added after advantage '
+             'resolves (2014 Bardic Inspiration: the creature decides after it '
+             'rolls the d20), and is shown as "+ 1d6 [4]" — never folded into '
+             'the modifier, which would claim a flat number the die did not '
+             'roll. A 2014 Bard\'s die is d6/d8/d10/d12 at levels 1/5/10/15.')
     parser.add_argument("--wait", action="store_true",
         help='With --dice-request: block until every prescribed character has rolled, then print each roll on stdout '
              '(polls /dice-request/<id>). Exits 2 on timeout or when the request is cancelled.')
