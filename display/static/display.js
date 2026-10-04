@@ -1865,6 +1865,7 @@ const DEFAULT_UI_MANIFEST = {
     { type: 'tag_single', bind: 'concentration', prefix: '◈ ' },
     { type: 'effects', bind: 'effects' },
     { type: 'badge_set', bind: 'milestones' },
+    { type: 'resource_count', bind: 'resources' },
     { type: 'pip_levels', bind: 'spell_slots' },
     { type: 'feature_flags', flags: [ { label: '2nd Wind', bind: 'second_wind' } ] },
     { type: 'badge', bind: 'inspiration', label: '✦ Inspiration' },
@@ -2015,6 +2016,38 @@ function _wBadgeSet(card, p, w) {
   if (el.children.length) card.appendChild(el);
 }
 
+// A per-rest feature's counter. Uses `badge_set`'s own classes so it inherits
+// the styling and the light-theme rules rather than introducing a parallel set,
+// and differs from it in exactly one respect: it does NOT filter zero.
+//
+// `badge_set` filters `count > 0`, which is right for a milestone — a reward the
+// player no longer holds should not leave a row on the sidebar. It is wrong for
+// a per-rest feature: a player who just failed a check they had a resource for
+// needs to see that the feature exists and is spent, not have it vanish. So
+// 0/2 renders here and the difference is asserted on both widgets in
+// tests/test_resources_counter.py, so it stays deliberate instead of drifting
+// into an accident.
+function _wResourceCount(card, p, w) {
+  const res = _bind(p, w.bind);
+  if (!res || !Object.keys(res).length) return;
+  const el = document.createElement('div');
+  el.className = 'sb-milestones';
+  el.dataset.role = w.role || 'resources';
+  Object.entries(res)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .forEach(([label, r]) => {
+      const mx = (r && r.max) || 0;
+      const used = (r && r.used) || 0;
+      const row = document.createElement('div'); row.className = 'sb-milestone-row';
+      const lbl = document.createElement('span'); lbl.className = 'sb-milestone-label';
+      lbl.textContent = label;
+      const pill = document.createElement('span'); pill.className = 'sb-milestone-count';
+      pill.textContent = `${used}/${mx}`;
+      row.appendChild(lbl); row.appendChild(pill); el.appendChild(row);
+    });
+  if (el.children.length) card.appendChild(el);
+}
+
 function _wPipLevels(card, p, w) {
   const slots = _bind(p, w.bind);
   if (!slots || !Object.keys(slots).length) return;
@@ -2068,7 +2101,7 @@ function _wBadge(card, p, w) {
 const _SIDEBAR_WIDGETS = {
   bar: _wBar, stat_lines: _wStatLines, tag_list: _wTagList, tag_single: _wTagSingle,
   effects: _wEffects, badge_set: _wBadgeSet, pip_levels: _wPipLevels,
-  feature_flags: _wFeatureFlags, badge: _wBadge,
+  feature_flags: _wFeatureFlags, badge: _wBadge, resource_count: _wResourceCount,
 };
 
 function _renderSidebarWidget(card, p, w) {

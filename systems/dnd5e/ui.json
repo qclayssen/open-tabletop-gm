@@ -72,6 +72,10 @@
       "bind": "milestones"
     },
     {
+      "type": "resource_count",
+      "bind": "resources"
+    },
+    {
       "type": "pip_levels",
       "bind": "spell_slots"
     },
