@@ -221,6 +221,27 @@ $T here detentionbog --hide        # keep the marker off every browser
 - `$T fog hide|dim|off`: fog of war on the display. `hide` (default) dims squares no PC sees and leaves out the creatures there; `dim` only dims; `off` shows everything. It never changes a rule or what you read here.
 - Rolls follow `roll_mode` in state.md: `players` (default) asks the player for their dice; `auto` rolls everything. Enemy dice are always rolled by the engine.
 
+## What ran: the invocation journal
+
+Every command the engine accepts appends one line to `<campaign>/combat/invocations.jsonl`: the canonical command, the argv as you gave it, the seed the dice were built from, the encounter it ran against, and what came of it. One JSON object per line, numbered from 1 in the order the commands ran, and the engine only ever appends, so a line already on disk is never rewritten. It is `invocations.jsonl` and not the `commands.jsonl` that reading it command by command would suggest, and a test pins the name: a pause and the re-run that answers it are one attempt, not two commands.
+
+```bash
+$T invocations            # the whole log, one line per command
+$T invocations 7          # one in full, plus the command line that re-runs it
+```
+
+- **There is no journal until there has been a fight.** `combat/` is created by the encounter save and by nothing else, so an invocation made before any fight exists is not recorded, and **a session that never reaches `start` leaves no journal.** That is the trade, taken on purpose: read-only means nothing is written, nothing is rolled and no pending command is cleared, and a design tool like `budget` quietly leaving a `combat/` folder behind would be a worse surprise than a missing line. If you are looking for a record and there is none, this is why.
+- Four outcomes, and **only one of them executed anything**: `committed` (it ran and was saved), `read` (a read-only command, so nothing could change), `paused` (it stopped for a roll, a reaction or a bad face: nothing executed and `pending.json` was rewritten) and `refused` (it was rejected: nothing executed and `pending.json` was left exactly as it was found).
+- **"Did that run twice?" is a count over `committed` and nothing else,** because only `committed` ran anything. A pause and the two re-runs that answered it are three records and one execution. Count any other outcome for that question and you will call one attack three times.
+- A pause and the re-run that answers it carry the same canonical command and are linked, and the re-run's line ends `<- #2`, naming the pause it continued. Only `committed` and `paused` may carry that link, because those are the two outcomes that consume `pending.json`, one by clearing it and one by rewriting it. A refusal leaves `pending.json` alone, so the pause it was aimed at is still open and still answerable, and a log calling that attempt finished would be lying. The link is decided by whether `pending.json` matched, which the engine already knows, and **never** by scanning the log afterwards for a matching command line: after the first `attack kairos frog-1` the second is a different fight, and matching on the text would fuse them.
+- A pause nothing ever resumed is called out at the end of `$T invocations` as *paused and never resumed*, with the command that finishes it. It is left open rather than resolved by guesswork.
+- A `read` line says `no seed`, and a paused or refused line may still show one: that is the stream any roll in the invocation would have come from, not proof a die was rolled. `combat/rolls.jsonl` is the record of what actually rolled.
+- `combat/encounter.json` is overwritten on every save, so it cannot answer "what was I doing in round 3". This can. The before and after hashes are the same fingerprint the roll receipts carry, so line the two files up and you have the roll and the command that made it. They are equal when nothing moved, which is how a pause or a refusal shows that nothing did.
+- Reading is read-only. `$T invocations` writes nothing, rolls nothing and clears no pending command, so it is safe to run while a player is waiting on a die. The only line it adds is its own.
+- A torn line costs one record, not the file, and the reader says how many it skipped. This log is **not** hash-chained the way `rolls.jsonl` is: it says what ran, not that nothing was edited afterwards. For that question it points at the chain, and `$T receipts` is the command.
+
+To reconstruct one invocation, read it back with `$T invocations 7`. You get the outcome and, for a pause or a refusal, the reason and the line **`executed nothing: this invocation never ran.`** Then the seed and whether it came from `--seed`, from the pause being answered or fresh, the canonical command against the argv as invoked, the resume link, and the map with both hashes. Last comes the command that re-runs it: the recorded argv as it stands, with the seed added to it, so the line pastes into a terminal and lands the same dice. An invocation that is not on file is an error (exit code 1), not an empty success.
+
 ## Mage Tower (`mage-tower`)
 
 A match, not a fight to the death. Read the map's own rules before the first roll. They are in the map file, not here:
