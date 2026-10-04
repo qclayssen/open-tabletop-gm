@@ -257,6 +257,66 @@ def test_a_read_only_command_is_recorded_as_read_and_never_fingerprints(camp, ca
                 and r["cmd"][2] == "status"]
 
 
+def test_a_read_only_command_creates_no_combat_directory(camp, capsys):
+    """`append` never creates `combat/`. The directory belongs to the engine and
+    is created by the encounter save, so a campaign nobody has fought in has
+    none, and bookkeeping must not be the thing that gives it one.
+
+    This is the guard that `cli.READ_ONLY` implies and
+    `tests/test_phase5_encounter_design.py::test_budget_and_rate_need_no_encounter_and_write_nothing`
+    enforces from the engine's side: that test runs `budget` and `rate` and
+    asserts the directory is still absent, and it went red against an `append`
+    that carried `path.parent.mkdir(parents=True, exist_ok=True)`. Pinned here as
+    well so the rule is owned by both files rather than one, because the cost is
+    real and stated: nothing run before the first fight is on file.
+
+    Three separate claims, because each fails differently. The directory is not
+    made. Nothing is written where there is no directory to write in. And the
+    `seq` counter has not moved, which is the one that bites later: a declined
+    append that had already taken a `seq` would leave a permanent gap in the
+    numbering the first fight then starts from."""
+    assert not (camp / "combat").exists()
+    # a design tool, a read, and a refusal: every path through main()
+    assert run(capsys, "budget")[0] == 0
+    assert run(capsys, "status")[0] != 0
+    assert run(capsys, "move", "kairos", "C7")[0] != 0
+    assert not (camp / "combat").exists()
+    assert not log_path(camp).exists()
+
+    # and once a fight has been saved, the same campaign numbers from 1
+    begin(capsys)
+    first = records(camp)
+    assert [r["seq"] for r in first] == [1], first
+    assert first[0]["outcome"] == "committed"
+
+
+def test_a_declined_append_says_so_instead_of_claiming_a_record(camp):
+    """`append` reports whether the record is on disk, and a decline is a `False`.
+
+    Without this the guard is silent in the direction that matters: `record`
+    returns the record `if append(...) else None`, so an `append` that declined
+    the write and returned a truthy value would hand `cli._journal` a record it
+    never wrote, and the journal would report an invocation it does not have. A
+    mutation that changed `return False` to `return True` left the whole suite
+    green, which is the proof that this was untested rather than safe.
+
+    Both directions are asserted, because a guard that always said `False` would
+    be just as silent and just as wrong."""
+    assert not (camp / "combat").exists()
+    built = journal.build(camp, ["p"], ["p"], 1, "fresh", "committed", 0)
+    assert journal.append(camp, built) is False
+    assert journal.record(camp, ["p"], ["p"], 1, "fresh", "committed", 0) is None
+    assert journal.read(camp) == ([], [])
+    assert not (camp / "combat").exists()
+
+    # and the same calls report success the moment there is a directory to hold it
+    journal.log_path(camp).parent.mkdir(parents=True)
+    written = journal.record(camp, ["p"], ["p"], 1, "fresh", "committed", 0)
+    assert written is not None
+    assert written["seq"] == 1
+    assert [r["seq"] for r in journal.read(camp)[0]] == [1]
+
+
 def test_a_refused_command_is_recorded_as_refused_with_the_reason_it_gave(camp, capsys):
     """A refusal is the case a journal is for and the shell is not: the message
     scrolled away, and the fight did not change. The refusal's own words are
@@ -274,12 +334,48 @@ def test_a_refused_command_is_recorded_as_refused_with_the_reason_it_gave(camp, 
 
 def test_a_refusal_before_the_fight_exists_records_no_encounter(camp, capsys):
     """`Stop` with nothing running: there is no board to fingerprint, and saying
-    so is the truth rather than an omission."""
+    so is the truth rather than an omission.
+
+    "Nothing running" and "this campaign has never had a fight" are two different
+    states and the test used to run on the second while asserting about the
+    first. The `camp` fixture has no `combat/` directory, so with `append`
+    refusing to create one (see `test_a_read_only_command_creates_no_combat_directory`)
+    the refusal was not recorded at all and the assertion below could not be
+    reached. They are separated here: a fight is started and `encounter.json` is
+    then removed, which is exactly "the directory exists, there is no board in
+    it". The assertion gets stronger for it, because the refusal now has to be
+    recorded into a journal that already holds a committed `start`, so it also
+    proves the null hashes are a measurement about the missing board and not the
+    absence of any history.
+
+    Two commands, because `cli._encounter_fingerprint` has two different ways of
+    having no board and driving only one of them left the other unpinned:
+    `status` is in READ_ONLY and returns nulls before it ever reaches
+    `state.load`, while `move` is not, so it has to get past `_camp_dir` and then
+    survive the load raising. A mutant that gave the load-failure path a
+    fabricated hash or a map name left this file green until `move` was added
+    here, which is the honest reason it is here rather than decoration."""
+    begin(capsys)
+    (camp / "combat" / "encounter.json").unlink()
+
+    # the READ_ONLY short circuit: `status` never reaches state.load
     code, out = run(capsys, "status")
     assert code != 0 and "No grid combat is running" in out
-    refused = [r for r in records(camp) if r["outcome"] == "refused"][0]
-    assert refused["encounter"] == {"before": None, "after": None, "map": None}
-    assert refused["reason"] == out
+    # and the load-failure path: `move` is not read-only
+    move_code, move_out = run(capsys, "move", "kairos", "C7")
+    assert move_code != 0 and "No grid combat is running" in move_out
+
+    found = records(camp)
+    assert [r["outcome"] for r in found] == ["committed", "refused", "refused"], found
+    assert [r["cmd"][2] for r in found] == ["start", "status", "move"]
+    # no board means no fingerprint and no map name on EITHER path: all three
+    # nulls together is the claim the record makes about the fight.
+    for refused in found[1:]:
+        assert refused["encounter"] == {"before": None, "after": None, "map": None}
+    assert found[1]["reason"] == out
+    assert found[2]["reason"] == move_out
+    # and nothing re-created the board behind our back
+    assert not (camp / "combat" / "encounter.json").exists()
 
 
 def test_a_refusal_against_a_running_fight_keeps_its_encounter_and_moves_nothing(camp, capsys):
@@ -1002,11 +1098,41 @@ def test_seq_survives_a_torn_line_and_is_never_reused(camp, capsys):
 def test_an_empty_journal_says_so_rather_than_looking_like_a_lost_file(camp, capsys):
     """A campaign nobody has fought in has no journal, and that is not an error.
     The reader has to say it, not print an empty list that reads like a
-    corrupted file."""
+    corrupted file.
+
+    The two things this used to assert in one breath are now separate, because
+    only one of them is true of a campaign with no `combat/` directory. The
+    reader saying "Nothing yet" is true and is the subject. The read recording
+    itself is also true of the journal in general, but not here: `append` refuses
+    to create `combat/`, because a read-only command writing nothing at all is
+    the contract `cli.READ_ONLY` states and
+    `test_budget_and_rate_need_no_encounter_and_write_nothing` enforces from the
+    other side of the repo. Bundling the two hid that, and it is the bundling
+    that had to go, not the guarantee. The reader-records-itself half is
+    `test_the_reader_records_its_own_read_once_there_is_a_campaign_to_record_it_in`."""
     code, out = run(capsys, "invocations")
     assert code == 0 and "Nothing yet" in out
-    assert log_path(camp).exists()                      # its own read was recorded
-    assert [r["outcome"] for r in records(camp)] == ["read"]
+    # and the read wrote nothing at all: not the log, and not the directory
+    assert not log_path(camp).exists()
+    assert not (camp / "combat").exists()
+
+
+def test_the_reader_records_its_own_read_once_there_is_a_campaign_to_record_it_in(
+        camp, capsys):
+    """The other half, on a campaign that has a `combat/` directory to record into.
+
+    The journal records itself, because an accepted invocation is one and
+    pretending otherwise puts a hole in the log; that is pinned a second time in
+    `test_the_reader_writes_nothing_but_its_own_record`, which is about what else
+    the reader leaves alone. This one is about the boundary itself: the reader
+    writes nothing before a fight exists, and one line after one does."""
+    begin(capsys)
+    code, out = run(capsys, "invocations")
+    assert code == 0 and "Nothing yet" not in out
+    found = records(camp)
+    assert [r["outcome"] for r in found] == ["committed", "read"], found
+    assert found[-1]["cmd"][2] == "invocations"
+    assert found[-1]["seed"] is None and found[-1]["seed_from"] == "none"
 
 
 # ─── the guards that keep it true ────────────────────────────────────────────
@@ -1103,7 +1229,17 @@ def test_the_log_is_not_hash_chained_and_says_so(camp, capsys):
 def test_a_re_used_lock_keeps_two_processes_gapless(camp, tmp_path):
     """The cross-process lock is `receipts._locked`, reused rather than
     reinvented. Proven the way receipts.py proves its own: two processes
-    appending at once must not interleave a payload or reuse a seq."""
+    appending at once must not interleave a payload or reuse a seq.
+
+    The `combat/` directory is made here by hand, and that is the point of the
+    comment rather than an accident: this test calls `append` directly from two
+    subprocesses, so it never goes through `cli.main` and nothing else would have
+    created the directory. In production the encounter save creates it, and
+    `append` deliberately will not (`test_a_read_only_command_creates_no_combat_directory`),
+    so without this line all twelve appends are declined, `read` finds nothing,
+    and the assertion below fails as `assert 0 == 12` -- which reads like a
+    sequencing bug and is not one. The sequence assertions are unchanged."""
+    journal.log_path(camp).parent.mkdir(parents=True)
     import subprocess
     import textwrap
 
