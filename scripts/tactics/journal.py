@@ -355,10 +355,38 @@ def append(campaign_dir, record: dict) -> bool:
     the tail. If the file does not end in a newline, a previous write was cut off
     and the fragment would otherwise fuse onto this record and take it down too;
     one newline is written first so the fragment stays a line of its own.
+
+    Returns False, without creating anything, when `<campaign>/combat/` does not
+    exist yet. That directory is created by the encounter save and by nothing
+    else, so its absence means no fight has ever been saved in this campaign, and
+    a read-only command run in a fresh campaign must write NOTHING:
+    `cli.READ_ONLY` says so ("Read-only means: nothing is written, nothing is
+    rolled, no pending command is cleared"), and
+    `test_budget_and_rate_need_no_encounter_and_write_nothing` pins it against a
+    real campaign by asserting the directory is still absent afterwards.
+
+    This was found by that test going red, not by reasoning: an earlier version
+    did `path.parent.mkdir(parents=True, exist_ok=True)` here, copied from
+    receipts.py's `_locked`, and that single line created `combat/` for `budget`
+    and `rate`. Two things follow from refusing instead. The good one: an
+    invocation is journalled from the first fight onwards, which is when there is
+    anything to diagnose. The cost, stated rather than discovered: an invocation
+    made before any fight exists is not on file, so a session that never reached
+    `start` leaves no journal. That is the trade the READ_ONLY contract already
+    makes for every other file, and it is the right way round: a design tool that
+    silently leaves a directory behind is a worse surprise than a missing line.
+
+    The same guard also keeps this file out of the way of
+    `tests/test_display_retest_findings.py`, which stubs `cli._camp_dir` to return
+    the repository root so `main()` can reach a pause. With the mkdir, a full
+    suite run dropped an untracked `combat/invocations.jsonl` in the worktree; that
+    test predates the journal and cannot stub it, and with this guard it does not
+    need to.
     """
     path = log_path(campaign_dir)
+    if not path.parent.exists():
+        return False
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
         with receipts._locked(campaign_dir):
             record["seq"] = _next_seq(read(campaign_dir)[0])
             payload = json.dumps(record, ensure_ascii=False) + "\n"
