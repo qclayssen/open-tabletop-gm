@@ -2244,6 +2244,7 @@
   #dice-pad .dp-die,
   #dice-pad .dp-adv,
   #dice-pad .dp-mod,
+  #dice-pad .dp-offer,
   #dice-pad #dp-roll {
     background: rgba(20,16,8,0.7);
     color: #d8c694;
@@ -2266,13 +2267,15 @@
   #dice-pad .dp-die:active,
   #dice-pad .dp-adv:active,
   #dice-pad .dp-mod:active,
+  #dice-pad .dp-offer:active,
   #dice-pad #dp-roll:active {
     transform: scale(0.94);
     background: rgba(180,140,60,0.32);
   }
   #dice-pad .dp-die[disabled],
   #dice-pad .dp-adv[disabled],
-  #dice-pad .dp-mod[disabled] {
+  #dice-pad .dp-mod[disabled],
+  #dice-pad .dp-offer[disabled] {
     opacity: 0.25;
     pointer-events: none;
   }
@@ -2287,6 +2290,19 @@
   }
   #dice-pad .dp-die.active,
   #dice-pad .dp-adv.active {
+    background: rgba(180,140,60,0.25);
+    border-color: rgba(220,180,90,0.8);
+    color: #f4e2a8;
+  }
+  /* Offers. Marked (the pending spend) reads like .active on the die row — the
+     pad has one idiom for "this is chosen", and a second one here would be a
+     parallel set of rules for the same claim. */
+  #dice-pad .dp-offer {
+    flex: 1 1 100%;
+    font-size: 14px;
+    padding: 10px 12px;
+  }
+  #dice-pad .dp-offer.active {
     background: rgba(180,140,60,0.25);
     border-color: rgba(220,180,90,0.8);
     color: #f4e2a8;

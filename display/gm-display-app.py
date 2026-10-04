@@ -1348,7 +1348,13 @@ def _dice_finish(req_id: str, results: list, cancelled: bool = False) -> None:
 def _dice_pending_snapshot() -> list:
     with _dice_pending_lock:
         return [
-            {"request_id": rid, "pending": sorted(e["chars"]), "label": e["meta"].get("label", "")}
+            {"request_id": rid, "pending": sorted(e["chars"]),
+             "label": e["meta"].get("label", ""),
+             # Offers ride the snapshot so a reload or a second window can see
+             # what was on the table. They are the server's own copy, not
+             # anything a client asserts, so this cannot widen what a phone may
+             # spend — the spend is still checked against this list.
+             "offers": e["meta"].get("offers") or []}
             for rid, e in _dice_pending.items() if e["chars"]
         ]
 
@@ -2882,17 +2888,128 @@ def player_input():
     return "", 204
 
 
+# ── Spendable-feature offers (RS1) ───────────────────────────────────────────
+# A "prescribed roll" arrives fully decided, so a player holding something that
+# would improve it has nothing to press. An offer is the DM naming what is on
+# the table for THIS roll: `--offer "Kenku Recall:advantage"`. The phone renders
+# one button per offer and the player picks one or none.
+#
+# The engine owns the rules, so an offer carries no feature-specific logic: it is
+# a shape the GM describes with (advantage / disadvantage / a flat modifier), and
+# the server refuses anything it cannot honestly apply. An offer whose effect
+# does nothing is worse than no offer — it spends a resource for nothing — so an
+# unparseable, empty or duplicated offer is a 400 with a sentence the GM reads,
+# and no request is registered.
+#
+# The spec claimed `_dice_pending_snapshot` already shipped the whole `meta` and
+# that a `_dice_done_meta` ring kept it for late joiners. Neither is true on this
+# tree: the snapshot carries request_id/pending/label only, and there is no
+# `_dice_done_meta` at all. Offers are added to the snapshot here rather than
+# riding a meta that was never being shipped.
+_OFFER_SLUG_STRIP = re.compile(r"[^a-z0-9]+")
+_OFFER_INT_RE = re.compile(r"^[+-]?\d+$")
+_OFFER_DIE_RE = re.compile(r"^(\d{1,2})d(\d{1,3})$")
+
+
+def _offer_slug(label: str) -> str:
+    """The spend-request key for a label: 'Kenku Recall' → 'kenku_recall'.
+
+    Derived, not declared, so a phone cannot name a feature the GM did not put
+    on the table by guessing a key — the offer list is the only authority, and
+    the slug is just how the phone refers to an entry in it.
+    """
+    return _OFFER_SLUG_STRIP.sub("_", label.lower()).strip("_")[:40]
+
+
+def _parse_offers(raw) -> tuple[list, str]:
+    """Normalise raw offer strings into the request's meta["offers"].
+
+    Returns ``(offers, "")`` or ``([], "<a sentence the GM reads>")``. Every
+    refusal carries a sentence: a silent 400 here would be indistinguishable
+    from a network blip, which is exactly the failure the four checks in
+    player_dice exist to avoid.
+    """
+    if raw is None:
+        return [], ""
+    if not isinstance(raw, list):
+        return [], 'offers must be a list, e.g. ["Kenku Recall:advantage"]'
+    offers: list = []
+    seen: set = set()
+    for entry in raw:
+        if not isinstance(entry, str):
+            return [], f"offer {entry!r} is not text"
+        if ":" not in entry:
+            return [], (f'offer {entry!r} has no effect — write it '
+                        f'"Label:advantage", "Label:+2" or "Label:1d6"')
+        label, _, effect_str = entry.partition(":")
+        label = label.strip()
+        effect_str = effect_str.strip()
+        if not label:
+            return [], f"offer {entry!r} has no label"
+        if len(label) > 60:
+            return [], f"offer label {label!r} is longer than 60 characters"
+        effect: dict = {}
+        terms = [t.strip() for t in effect_str.split(",")]
+        if not any(terms):
+            return [], (f'offer {label!r} has an empty effect — an offer that '
+                        f'does nothing spends a resource for nothing')
+        for term in terms:
+            if not term:
+                return [], (f'offer {label!r} has an empty effect term in '
+                            f'{effect_str!r}')
+            if term in ("advantage", "disadvantage"):
+                value = term == "advantage"
+                if "advantage" in effect and effect["advantage"] is not value:
+                    return [], (f'offer {label!r} says both advantage and '
+                                f'disadvantage')
+                effect["advantage"] = value
+            elif _OFFER_INT_RE.match(term):
+                n = int(term)
+                if abs(n) > 100:
+                    return [], (f'offer {label!r} has an out-of-range modifier '
+                                f'{n} — the pad works in -100..100')
+                effect["modifier"] = n
+            elif _OFFER_DIE_RE.match(term):
+                return [], (f'offer {label!r} carries a bonus die ({term}), which '
+                            f'lands with the bonus-die slice. Until then it is '
+                            f'refused rather than shown as a button that does '
+                            f'nothing.')
+            else:
+                return [], (f'offer {label!r} has an unknown effect {term!r} — '
+                            f'use advantage, disadvantage, a flat +/-N, or NdM')
+        if not effect:
+            return [], (f'offer {label!r} has an empty effect — an offer that '
+                        f'does nothing spends a resource for nothing')
+        key = _offer_slug(label)
+        if not key:
+            return [], (f'offer {label!r} has no letters or digits to name it by')
+        if key in seen:
+            return [], (f'two offers share the key {key!r} — the phone refers to '
+                        f'an offer by that key, so they must be distinguishable')
+        seen.add(key)
+        offers.append({"key": key, "label": label, "effect": effect})
+    return offers, ""
+
+
 @app.route("/player-input/dice", methods=["POST"])
 def player_dice():
     """Server-side dice roll submitted from a player's phone.
 
     Body: {"character": "Piper", "spec": "1d20", "modifier": 5,
            "advantage": "normal" | "advantage" | "disadvantage",
-           "label": "Stealth check"  (optional)}
+           "label": "Stealth check"  (optional),
+           "spend": "kenku_recall"  (optional — an offer's key, see /dice-request)}
 
     Rolls server-side (secrets.randbelow → uniform, non-spoofable), broadcasts
     a dice-typed entry on the feed, and returns the result so the phone can
     finish its slot-machine animation on the real value.
+
+    `spend` names one of the offers the GM put on this roll. It is checked
+    against the server's own copy of that list and never against anything the
+    phone asserts, so a phone cannot spend a feature the GM never offered and
+    cannot make the roll line name one. Checks 1 (a real pending request), 2
+    (the key is one of its offers) and 4 (the effect does not double-count)
+    live here; check 3 — the counter must be > 0 — arrives with the counter.
     """
     if not _token_ok():
         return "Forbidden", 403
@@ -2904,6 +3021,27 @@ def player_dice():
     adv       = str(data.get("advantage", "normal")).strip().lower()
     label     = re.sub(r"[`\\$]", "", str(data.get("label", ""))[:60]).strip()
     req_id    = str(data.get("request_id", "")).strip()[:24]
+    spend_key = str(data.get("spend", "") or "").strip()[:40]
+
+    # ── The spend checks, in order. 1, 2, 4. ────────────────────────────────
+    # Read the pending entry once; the correlation block further down re-reads
+    # it under the lock to drop the character from its expected-rollers set.
+    offer = None
+    if spend_key:
+        entry = None
+        if not req_id:
+            return jsonify({"error": "a spend needs a prescribed roll — the GM "
+                                     "did not ask for one on this character"}), 400
+        with _dice_pending_lock:
+            entry = _dice_pending.get(req_id)
+        if entry is None:
+            return jsonify({"error": "that dice request is no longer pending — "
+                                     "nothing was spent"}), 400
+        offer = next((o for o in (entry["meta"].get("offers") or [])
+                      if o["key"] == spend_key), None)
+        if offer is None:
+            return jsonify({"error": f"the GM did not offer {spend_key!r} on "
+                                     f"this roll — nothing was spent"}), 400
 
     m = re.fullmatch(r"(\d{1,2})d(\d{1,3})", spec)
     if not m:
@@ -2915,6 +3053,18 @@ def player_dice():
 
     def _roll_once() -> list[int]:
         return [secrets.randbelow(n_sides) + 1 for _ in range(n_dice)]
+
+    # 4. The effect does not double-count. Spending an advantage offer on a roll
+    #    the GM already made advantageous spends a per-rest resource for nothing,
+    #    and the roll line would name a feature that did not decide the roll.
+    #    Refused, not clamped: "these do not stack" is a table ruling.
+    if offer is not None and offer["effect"].get("advantage") is not None:
+        if adv != "normal":
+            return jsonify({"error": f"{offer['label']} would double-count — this "
+                                     f"roll is already {adv}"}), 400
+        adv = "advantage" if offer["effect"]["advantage"] else "disadvantage"
+    if offer is not None and offer["effect"].get("modifier"):
+        modifier = max(-100, min(100, modifier + int(offer["effect"]["modifier"])))
 
     if adv in ("advantage", "disadvantage") and spec == "1d20":
         r1, r2 = _roll_once(), _roll_once()
@@ -2935,7 +3085,20 @@ def player_dice():
         breakdown += f" → keep {kept[0]} ({adv})"
     if modifier:
         breakdown += f" {mod_str}"
-    suffix = f" — {label}" if label else ""
+    # The spend is named in the transcript, which is what makes the claim
+    # auditable while the counter is not yet authoritative. It is named in
+    # parentheses after the check, never folded into the math: the table reads
+    # the pad, and "1d20+6: [17] = 23 — Stealth (Kenku Recall)" claims one thing
+    # while the bonus-die shape (RS1.2) will claim another.
+    spend_label = offer["label"] if offer else ""
+    if label and spend_label:
+        suffix = f" — {label} ({spend_label})"
+    elif label:
+        suffix = f" — {label}"
+    elif spend_label:
+        suffix = f" ({spend_label})"
+    else:
+        suffix = ""
     text   = f"{character} rolls {spec}{mod_str}: {breakdown} = {total}{suffix}"
 
     payload   = {"text": text, "dice": True}
@@ -2987,6 +3150,8 @@ def player_dice():
         "total": total,
         "text": text,
         "request_id": req_id or None,
+        "spend": spend_key or None,
+        "spend_label": spend_label or None,
     }), 200
 
 
@@ -2998,7 +3163,8 @@ def dice_request():
            "spec": "1d20", "modifier": 5,
            "advantage": "normal" | "advantage" | "disadvantage",
            "label": "Stealth check"  (optional),
-           "dc": 15  (optional, informational)}
+           "dc": 15  (optional, informational),
+           "offers": ["Kenku Recall:advantage"]  (optional, repeatable)}
 
     Phones bound to ?character=<name> match case-insensitively. "any" / ""
     targets every phone. No state stored — late-joining phones will not see
@@ -3030,6 +3196,13 @@ def dice_request():
     modifier = max(-100, min(100, modifier))
     dc_val   = int(dc) if isinstance(dc, (int, float)) else None
 
+    # Offers are parsed and validated BEFORE the request id is minted, so a
+    # malformed offer registers nothing at all — there is no half-issued request
+    # for a phone to render buttons against.
+    offers, offer_error = _parse_offers(data.get("offers"))
+    if offer_error:
+        return jsonify({"error": offer_error}), 400
+
     request_id = secrets.token_hex(6)
 
     # Only register pending entries for explicit named targets. "any" is fire-and-forget.
@@ -3038,7 +3211,8 @@ def dice_request():
         with _dice_pending_lock:
             _dice_pending[request_id] = {
                 "chars": set(trackable),
-                "meta": {"spec": spec, "modifier": modifier, "advantage": adv, "label": label, "dc": dc_val},
+                "meta": {"spec": spec, "modifier": modifier, "advantage": adv,
+                         "label": label, "dc": dc_val, "offers": offers},
                 "started_at": time.time(),
             }
         _broadcast({"dice_pending": _dice_pending_snapshot()})
@@ -3056,6 +3230,7 @@ def dice_request():
             "advantage": adv,
             "label": label,
             "dc": dc_val,
+            "offers": offers,
         }
     }
     _broadcast(payload)
