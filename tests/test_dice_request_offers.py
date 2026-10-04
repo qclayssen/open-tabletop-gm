@@ -160,12 +160,39 @@ class OfferDoor(unittest.TestCase):
         self.assertEqual(self.ask([]).status_code, 200)
 
 
-class SpendChecks(unittest.TestCase):
-    """`POST /player-input/dice` — checks 1, 2 and 4 of the four.
+def _set_resources(mod, features, character="Kairos"):
+    """Declare how many uses are left for each named feature."""
+    mod.app.test_client().post("/stats", data=json.dumps(
+        {"players": [{"name": character, "_resource_set": features}]}),
+        content_type="application/json")
 
-    Check 3 (the counter must be > 0) cannot land before the counter does, and
-    is refused here rather than shipped late: nothing here decrements anything
-    yet, so this PR is NOT table-safe on its own. See the note in SKILL.md.
+
+class _SpendsNeedCounters:
+    """Mixin: since RS2.2 an offer alone is no longer spendable.
+
+    A spend is REFUSED without a counter (check 3), so every test that spends has
+    to declare how many uses are left. That is the point of the counter, so this
+    is not incidental setup — it is what makes an offer usable at all.
+
+    Seeded automatically from the offer list so a new test cannot forget it and
+    fail for the wrong reason. `set_resources` is the explicit form for a test
+    that wants a specific count.
+    """
+
+    def _seed_counters_for(self, offers):
+        labels = [o.split(":", 1)[0].strip() for o in (offers or [])]
+        if labels:
+            self.set_resources({f: {"used": 0, "max": 2} for f in labels})
+
+    def set_resources(self, features, character="Kairos"):
+        _set_resources(self.mod, features, character)
+
+
+class SpendChecks(_SpendsNeedCounters, unittest.TestCase):
+    """`POST /player-input/dice` — checks 1, 2, 3 and 4.
+
+    Check 3 arrived with the counter (RS2.2). Every test here seeds a counter
+    for the feature it spends, because a spend without one is refused.
     """
 
     @classmethod
@@ -185,12 +212,14 @@ class SpendChecks(unittest.TestCase):
         with self.mod._dice_pending_lock:
             self.mod._dice_pending.clear()
 
+
     def request(self, offers=None, **extra):
         body = {"characters": ["Kairos"], "spec": "1d20", "modifier": 0,
                 "label": "Stealth"}
         body.update(extra)
         if offers is not None:
             body["offers"] = offers
+            self._seed_counters_for(offers)
         return self.client.post("/dice-request", data=json.dumps(body),
                                 content_type="application/json").get_json()["request_id"]
 
@@ -278,7 +307,7 @@ class SpendChecks(unittest.TestCase):
         self.assertEqual(r.get_json()["modifier"], 2)
 
 
-class RollLineNamesTheSpend(unittest.TestCase):
+class RollLineNamesTheSpend(_SpendsNeedCounters, unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.mod = _import_app()
@@ -302,6 +331,7 @@ class RollLineNamesTheSpend(unittest.TestCase):
         body.update(extra)
         if offers is not None:
             body["offers"] = offers
+            self._seed_counters_for(offers)
         return self.client.post("/dice-request", data=json.dumps(body),
                                 content_type="application/json").get_json()["request_id"]
 
@@ -356,7 +386,18 @@ class RollLineNamesTheSpend(unittest.TestCase):
     def test_the_effect_comes_from_the_offer_not_from_the_phone(self):
         """The offer's amount is read from the server's own offer list. A phone
         cannot inflate it by asking twice or by claiming a bigger modifier: the
-        same +2 lands on each of two rolls against the same request."""
+        same +2 lands on each of two rolls against the same request.
+
+        Both players need their own counter: the counter is per-character, and a
+        second character with none is refused by check 3 rather than spending
+        the first player's uses."""
+        # Mira has to exist before she can hold a counter: `_resource_set` is a
+        # mutation, not a player upsert.
+        self.mod.app.test_client().post("/stats", data=json.dumps({"players": [
+            {"name": "Mira", "hp": {"current": 14, "max": 14}}]}),
+            content_type="application/json")
+        self.set_resources({"Bless": {"used": 0, "max": 2}}, "Kairos")
+        self.set_resources({"Bless": {"used": 0, "max": 2}}, "Mira")
         rid = self.request(["Bless:+2"], characters=["Kairos", "Mira"])
         first = self.roll(rid, character="Kairos", spend="bless").get_json()
         second = self.roll(rid, character="Mira", spend="bless").get_json()
