@@ -26,6 +26,11 @@
   let strokes = [];
   let type = null;
   let drag = null;
+  // The alignment the GM is testing, or null when the board is showing what is
+  // saved. Held apart from `state.alignment` on purpose: typing in the box must
+  // not look like a save, and `adopt()` replaces the saved one wholesale after
+  // the server answers.
+  let trial = null;
 
   const el = {
     board: document.getElementById('me-board'),
@@ -35,6 +40,11 @@
     undo: document.getElementById('me-undo'),
     clear: document.getElementById('me-clear'),
     save: document.getElementById('me-save'),
+    cellPx: document.getElementById('me-cell-px'),
+    offsetX: document.getElementById('me-offset-x'),
+    offsetY: document.getElementById('me-offset-y'),
+    alignRead: document.getElementById('me-align-read'),
+    alignSave: document.getElementById('me-align-save'),
   };
 
   function svg(tag, attrs, parent) {
@@ -56,6 +66,29 @@
     return 'var(--tx-' + ((hit && hit.color) || 'floor') + ')';
   }
 
+  // Where the map's artwork goes. A deliberate mirror of tactics.js `artAttrs`,
+  // not a copy of the idea: k = cell / cell_px on both axes, positioned at
+  // -offset * k, cropped to the board by the caller's viewBox. Both files need
+  // it and neither can import the other, so the pair is pinned by
+  // tests/test_mapseditor_alignment.py, which checks this file's arithmetic
+  // against the server's own `maps.art_geometry` on the same inputs -- so the two
+  // cannot drift into agreeing on the wrong pitch.
+  //
+  // `align` overrides what is drawn, so the same function draws the *saved*
+  // alignment while a GM is testing another one. That is the whole live overlay:
+  // one function, two inputs, so the preview and the saved picture are drawn by
+  // the same line of code.
+  function artAttrs(st, W, H, cell, align) {
+    const legacy = { x: 0, y: 0, width: W * cell, height: H * cell,
+                     preserveAspectRatio: 'none' };
+    const a = align || st.alignment || {};
+    const size = a.image_px;
+    if (!st.image || !size || size.length !== 2 || !(a.cell_px > 0)) return legacy;
+    const k = cell / a.cell_px;
+    return { x: -(a.offset_x || 0) * k, y: -(a.offset_y || 0) * k,
+             width: size[0] * k, height: size[1] * k };
+  }
+
   // ── the board ──
   function draw() {
     const W = state.width, H = state.height;
@@ -73,9 +106,17 @@
 
     // Artwork under the terrain, the same layer order renderBoard() uses, so
     // the GM is aiming at what the players will actually see.
+    //
+    // Drawn through the same arithmetic as tactics.js `artAttrs`: when the map
+    // records a picture size, the art scales by C / cell_px on both axes and sits
+    // at -offset * k, clipped to the board. Before #143 the editor always
+    // stretched, which meant a GM lining a map up in this page was lining it up
+    // against a different picture than the one the players would see -- so the
+    // alignment could be saved here and land wrong there.
     if (state.image) {
-      svg('image', { x: 0, y: 0, width: W * C, height: H * C, preserveAspectRatio: 'none',
-                     href: '/maps/' + state.image, class: 'me-art' }, s);
+      svg('image', Object.assign(
+        { href: '/maps/' + state.image, class: 'me-art' },
+        artAttrs(state, W, H, C, trial)), s);
     }
     const terrain = svg('g', { class: 'me-terrain' }, s);
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
@@ -323,6 +364,115 @@
     return m ? m.content : '';
   }
 
+  // ── grid alignment ──
+  //
+  // Three numbers, and the only reason this box exists: a map's artwork and its
+  // 5 ft squares have to agree, and nothing else here can work that out. The
+  // picture is a JPEG; the browser is not going to find its pitch in it.
+  //
+  // The overlay is *local arithmetic only*, never a save. It draws the artwork at
+  // the number being typed so a GM can see the grid sit on the squares; nothing
+  // reaches the file until Save, which goes to the server's route and comes back
+  // with the map's own answer. Same contract as the terrain painting above: the
+  // preview is this page's guess and the file is the server's.
+  function readAlignment() {
+    return { cell_px: Number(el.cellPx.value), offset_x: Number(el.offsetX.value),
+             offset_y: Number(el.offsetY.value), image_px: (state.alignment || {}).image_px || [] };
+  }
+
+  function showAlignment() {
+    const a = readAlignment();
+    // Cleared first, so a refusal cannot leave a stale red on a sentence that has
+    // since become an acceptance.
+    el.alignRead.removeAttribute('data-bad');
+    const size = (state.alignment || {}).image_px;
+    if (!size || size.length !== 2) {
+      el.alignRead.textContent = state.image
+        ? 'This map has artwork but no recorded picture size, so there is nothing to line up yet. Use scripts/art_attach.py.'
+        : 'This map has no artwork yet. The numbers are kept for when it has some.';
+      el.alignSave.disabled = false;
+      return;
+    }
+    if (!(a.cell_px > 0)) {
+      el.alignRead.textContent = 'Pixels per square must be greater than zero.';
+      el.alignRead.setAttribute('data-bad', '1');
+      el.alignSave.disabled = true;
+      return;
+    }
+    // The same arithmetic the server will do, so the readout and the refusal
+    // cannot disagree. scripts/art_attach.py's check_fit is the authority and
+    // will have the last word on save.
+    const ox = a.offset_x || 0, oy = a.offset_y || 0;
+    const cellsW = Math.floor((size[0] - ox) / a.cell_px);
+    const cellsH = Math.floor((size[1] - oy) / a.cell_px);
+    const leftX = (size[0] - ox) - cellsW * a.cell_px;
+    const leftY = (size[1] - oy) - cellsH * a.cell_px;
+    const exact = leftX === 0 && leftY === 0;
+    const parts = [`${cellsW}x${cellsH} squares from ${size[0]}x${size[1]}px`];
+    parts.push(exact
+      ? 'exactly, nothing cropped'
+      : `${leftX}px cropped right, ${leftY}px cropped down`);
+    if (!exact) el.alignRead.setAttribute('data-bad', '1');
+    const matches = exact && cellsW === state.width && cellsH === state.height;
+    parts.push(matches
+      ? '\u2014 matches this board'
+      : `\u2014 this board is ${state.width}x${state.height}, so the save will be refused`);
+    el.alignRead.textContent = parts.join(' ');
+    if (!matches) el.alignRead.setAttribute('data-bad', '1');
+    // Save is offered only when it will be accepted. Refusing here as well as on
+    // the server is not distrust of the server; it is not making the GM learn a
+    // failure by pressing a button.
+    el.alignSave.disabled = !matches;
+  }
+
+  function nudge(field, delta) {
+    const input = el[field];
+    const now = Number(input.value) || 0;
+    input.value = String(now + delta);
+    showAlignment();
+    draw();
+  }
+
+  async function saveAlignment() {
+    el.alignSave.disabled = true;
+    say('Saving alignment…', null);
+    let res;
+    try {
+      res = await fetch(`/maps/${encodeURIComponent(state.slug)}/grid`, {
+        method: 'POST',
+        headers: Object.assign({ 'Content-Type': 'application/json' },
+                               token() ? { 'X-DND-Token': token() } : {}),
+        body: JSON.stringify(readAlignment()),
+      });
+    } catch (e) {
+      say('The display app did not answer. Is it still running?', 'bad');
+      showAlignment();
+      return;
+    }
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      say(out.error || `Save failed (HTTP ${res.status}).`, 'bad');
+      showAlignment();
+      return;
+    }
+    // Adopt the server's answer wholesale, for the reason `adopt` below gives:
+    // this page can then never disagree with the file about what is recorded.
+    state.alignment = out.alignment;
+    trial = null;
+    fillAlignment();
+    draw();
+    showAlignment();
+    say(`Saved alignment${out.backup ? `, original kept as ${out.backup}` : ''}. ` +
+        'Terrain untouched.', 'good');
+  }
+
+  function fillAlignment() {
+    const a = state.alignment || {};
+    el.cellPx.value = a.cell_px || '';
+    el.offsetX.value = a.offset_x || 0;
+    el.offsetY.value = a.offset_y || 0;
+  }
+
   // ── wiring ──
   el.name.textContent = `${state.name}, ${state.width}×${state.height}` +
     (state.image ? ' (with artwork)' : '');
@@ -341,11 +491,43 @@
     say('Strokes cleared. The file is untouched.', null);
   });
   el.save.addEventListener('click', () => save(false));
+
+  // Live preview: typing redraws the board at the number being tried, and typing
+  // is not a save. `draw()` reads `trial`, so this *is* the overlay.
+  for (const field of ['cellPx', 'offsetX', 'offsetY']) {
+    el[field].addEventListener('input', () => {
+      trial = readAlignment();
+      showAlignment();
+      draw();
+    });
+  }
+
+  // Arrow-key nudge, which is how a GM actually aligns a picture: by eye, a pixel
+  // at a time, watching the grid settle onto the art. Shift is ten.
+  //
+  // Bound on the three inputs rather than the document, so an arrow key nudges
+  // the field it is in and Esc still cancels a terrain stroke. Ctrl/Cmd is
+  // deliberately not a modifier: the browser's own undo belongs there.
+  const NUDGE = { ArrowLeft: ['offsetX', -1], ArrowRight: ['offsetX', 1],
+                  ArrowUp: ['offsetY', -1], ArrowDown: ['offsetY', 1] };
+  for (const field of ['cellPx', 'offsetX', 'offsetY']) {
+    el[field].addEventListener('keydown', (e) => {
+      const step = NUDGE[e.key];
+      if (!step) return;
+      e.preventDefault();                 // do not also move the caret
+      const [, delta] = step;
+      nudge(field, e.shiftKey ? delta * 10 : delta);
+    });
+  }
+  el.alignSave.addEventListener('click', saveAlignment);
+
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') cancel(); });
   window.addEventListener('resize', draw);
 
   buildPalette();
+  fillAlignment();
   draw();
+  showAlignment();
   refreshButtons();
   if (state.has_features) {
     say('This map already has terrain. Saving merges your strokes into it; ' +

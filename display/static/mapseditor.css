@@ -65,6 +65,31 @@ button.me-primary:not(:disabled) { background: var(--tx-accent); border-color: v
 .me-h2 { margin: 0 0 6px; font-size: 13px; letter-spacing: .04em; text-transform: uppercase; }
 .me-hint { margin: 0 0 10px; color: var(--tx-muted); font-size: 12px; }
 
+/* The grid alignment box. Three number inputs stacked, because a GM nudges them
+   one pixel at a time and a three-across row on a 240px rail is a tap target of
+   about 70px, which is the smallest thing a thumb should have to hit. */
+.me-align { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.me-field { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.me-field span { color: var(--tx-muted); font-size: 12px; }
+.me-field input {
+  width: 5.5em; padding: 4px 6px; text-align: right;
+  font: inherit; font-variant-numeric: tabular-nums;
+  color: var(--tx-ink); background: var(--tx-panel);
+  border: 1px solid var(--tx-line); border-radius: 4px;
+}
+/* Focus is the only cue that a key press was received, so it has to be visible:
+   the arrow-key nudge is the primary way this box is used and a GM holding arrow
+   down needs to see which field is moving. */
+.me-field input:focus-visible { outline: 2px solid var(--tx-accent); outline-offset: 1px; }
+/* Tabular figures so nudging by one does not shift the digits sideways and make
+   the caret jump; this is the same reason a counter uses them. */
+.me-align-read { margin: 0 0 10px; font-size: 12px; color: var(--tx-muted); }
+/* Set by the script when the numbers being typed would be refused on save. Not
+   colour alone: the sentence says "the save will be refused" in words, because a
+   GM reading this in a bright room at the table should not have to tell red from
+   grey to know whether a button is live. */
+.me-align-read[data-bad="1"] { color: var(--tx-danger); }
+
 .me-palette { display: flex; flex-direction: column; gap: 4px; }
 .me-swatch {
   display: flex; align-items: center; gap: 8px; text-align: left;
