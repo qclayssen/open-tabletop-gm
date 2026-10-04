@@ -1220,7 +1220,13 @@
     }
     drawFog(svg('g', { 'aria-hidden': 'true' }, s), W, H);
     ui.sightLayer = svg('g', { 'aria-hidden': 'true' }, s);
-    const grid = svg('g', { style: 'stroke:var(--tx-grid)' }, s);
+    // The grid is a rule, not artwork. boardCell() hands back whole pixels per
+    // square, but the board is still scaled into the box it is drawn into, so a
+    // line can land between two device pixels and antialias into a grey smear
+    // instead of a line. `.tx-grid` asks for crispEdges in tactics.css; the
+    // class is here because the stroke itself is an inline style and a
+    // rendering hint is not a stroke property.
+    const grid = svg('g', { class: 'tx-grid', style: 'stroke:var(--tx-grid)' }, s);
     for (let i = 0; i <= W; i++) svg('line', { x1: i * C, y1: 0, x2: i * C, y2: H * C }, grid);
     for (let j = 0; j <= H; j++) svg('line', { x1: 0, y1: j * C, x2: W * C, y2: j * C }, grid);
     for (const z of (snap.meta && snap.meta.zones) || [])

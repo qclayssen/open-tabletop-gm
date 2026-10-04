@@ -235,6 +235,14 @@ body.tx-min #tx-panel { max-height: none; }
 .tx-log .tx-odds { display: block; font-size: 12px; color: var(--tx-muted); }
 
 /* ── board ── */
+/* The grid, crisp. Every other line on this board is artwork or a shape and is
+   left to antialias; a grid line is a rule, and a rule that lands between two
+   device pixels is a grey smear rather than a line. Fractional cells are the
+   normal case rather than an edge case: boardCell() floors the square to whole
+   pixels and the svg is then scaled into the box it was measured against, so
+   the line can still land off a pixel boundary (#300 item 0.3). */
+.tx-grid { shape-rendering: crispEdges; }
+
 /* Map labels. Anchored centrally, because the anchor is the centre of the
    feature region the label names (maps.py), and a left-anchored label in the
    middle of a 6x5 region reads as though it belongs to whatever is under its
