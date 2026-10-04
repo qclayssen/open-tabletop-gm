@@ -425,6 +425,70 @@ def _resource_entry(player: dict, label: str) -> dict:
     return entry
 
 
+def _resource_uses_left(resources: dict, label: str):
+    """Uses remaining for `label`, or None when no counter names it.
+
+    None and 0 are different and must stay different. 0 means the GM set the
+    cap and it is spent; None means the GM never ran --resource-set, which is
+    an unconfigured display rather than an exhausted character. The pad greys
+    out a button only for 0 — greying it out for None would disable every offer
+    on a display that simply has no counters, and a player would read that as a
+    broken phone.
+    """
+    entry = next((e for lbl, e in (resources or {}).items()
+                  if str(lbl).lower() == str(label).lower()), None)
+    if not isinstance(entry, dict):
+        return None
+    try:
+        return int(entry.get("max", 0)) - int(entry.get("used", 0))
+    except (TypeError, ValueError):
+        return None
+
+
+def _annotate_offers(offers: list, characters: list) -> list:
+    """Attach each offer's remaining uses, for the pads of `characters`.
+
+    The count is taken server-side at request time, per target character, so the
+    pad renders "<label> · 2" without keeping a copy of the counter — the pad has
+    no business holding state the engine owns. It is a convenience, not the
+    authority: player_dice re-checks the counter on the press and refuses if the
+    player spent the last use between the request and the roll.
+
+    An offer is annotated `None` when any named target has no counter for it,
+    rather than being annotated for one player and not another: a roll addressed
+    to two players cannot show one of them "· 0" and the other nothing without
+    implying the other has uses.
+    """
+    out = []
+    with _stats_lock:
+        players = _current_stats.get("players", [])
+        targets = []
+        for name in characters:
+            if name.lower() == "any":
+                targets = list(players)
+                break
+            match = next((p for p in players
+                          if str(p.get("name", "")).lower() == name.lower()), None)
+            if match is not None:
+                targets.append(match)
+        # A named target with no player at all: we cannot count, so we say so.
+        unknown = any(name.lower() != "any"
+                      and not any(str(p.get("name", "")).lower() == name.lower()
+                                  for p in players)
+                      for name in characters)
+    for offer in offers:
+        counts = [_resource_uses_left(p.get("resources"), offer["label"])
+                  for p in targets] if targets else []
+        uses = None
+        if counts and not unknown:
+            # Mixed availability (one target has a counter, another does not)
+            # reports None: a number would be a claim about someone we cannot
+            # speak for.
+            uses = counts[0] if all(c == counts[0] for c in counts) else None
+        out.append({**offer, "uses": uses})
+    return out
+
+
 def _set_resource(player: dict, label: str, spec) -> dict:
     """Full replace for one feature: {"used": N, "max": M} or a bare int cap.
 
@@ -1398,6 +1462,18 @@ _input_lock = threading.Lock()
 # send.py --wait polls GET /dice-request/<id> to know when the GM can move on.
 _dice_pending: dict = {}
 _dice_pending_lock = threading.Lock()
+# Guards a spend across BOTH _dice_pending_lock and _stats_lock: player_dice
+# reads the pending request and reads+writes the counter, and taking the two
+# module locks separately in either order would leave a window between "the
+# counter is > 0" and "the counter is decremented". A second client spending the
+# same offer walks through exactly that window, so the whole of checks 1-4 plus
+# the decrement run inside this one lock.
+#
+# Lock order, if it ever nests: _spend_lock → _stats_lock, and nothing takes
+# _stats_lock then _spend_lock. The two existing locks are never taken together
+# anywhere else on this tree, which is what makes a single new lock the cheapest
+# correct answer rather than a deadlock waiting to be found.
+_spend_lock = threading.Lock()
 # Finished requests keep their roll texts so --wait can print them to the GM.
 _dice_done: dict = {}           # request_id → [roll text, ...], oldest first
 _dice_cancelled: set = set()    # ids in _dice_done that the GM cancelled
@@ -3116,25 +3192,162 @@ def player_dice():
     spend_key = str(data.get("spend", "") or "").strip()[:40]
     bonus_in  = str(data.get("bonus", "") or "").strip().lower()
 
-    # ── The spend checks, in order. 1, 2, 4. ────────────────────────────────
-    # Read the pending entry once; the correlation block further down re-reads
-    # it under the lock to drop the character from its expected-rollers set.
+    # A bonus die the PHONE names is never rolled. `bonus` is the server's answer
+    # to what a spent offer carried; a phone sending one is asking the display to
+    # add something the GM never offered — the same forgery as naming a feature.
+    # Checked here, OUTSIDE the spend block, so a phone cannot smuggle a die in
+    # by sending `bonus` with no `spend` at all.
+    if bonus_in and not spend_key:
+        return jsonify({"error": "this roll has no bonus die to spend — "
+                                 "nothing was rolled"}), 400
+
+    # The BASE die is validated before anything is spent. A malformed spec must
+    # not be able to decrement a counter on its way to being refused: the use
+    # would be gone and the player would have no roll to show for it. So the
+    # order is "validate what we can validate, then check the spend, then commit"
+    # rather than "spend, then discover the request was nonsense".
+    m = re.fullmatch(r"(\d{1,2})d(\d{1,3})", spec)
+    if not m:
+        return jsonify({"error": "bad spec"}), 400
+    n_dice, n_sides = int(m.group(1)), int(m.group(2))
+    if not (1 <= n_dice <= 20 and 2 <= n_sides <= 100):
+        return jsonify({"error": "out of range"}), 400
+    modifier = max(-100, min(100, modifier))
+
+    # ── The four checks, in order. The order IS the design. ─────────────
+    #   1. the request is a real pending request with that id
+    #   2. `spend` names an offer in THAT request's meta["offers"]
+    #   3. the player's counter for that key is > 0
+    #   4. the effect does not double-count
+    #
+    # Nothing is decremented until all four pass. A key the GM never offered is
+    # a 400 rather than a silent no-op, because a no-op leaves the player
+    # believing they spent something. Zero is a 400 with a message the pad
+    # renders, not a clamp: a clamp spends nothing and says nothing, which on a
+    # phone that just cost a use is indistinguishable from a network blip.
+    #
+    # Checks 1, 2 and 4 landed with the offer (RS1.1). Check 3 could not: it
+    # needs the counter, which arrived with RS2.1.
+    #
+    # The four run and the decrement commits inside ONE critical section, so
+    # the use and the roll commit together. Two phones spending the same offer
+    # at once is the case that matters: the second reads the decremented value
+    # and is refused by check 3. No lock, no token, no coordination -- the
+    # authority is the counter rather than anything a client holds.
     offer = None
+    bonus_spec = ""
+    spent_from = None
     if spend_key:
-        entry = None
         if not req_id:
             return jsonify({"error": "a spend needs a prescribed roll — the GM "
                                      "did not ask for one on this character"}), 400
-        with _dice_pending_lock:
+        # `_spend_lock`, not `_dice_pending_lock`: it nests BOTH this module's
+        # locks (pending requests and stats), so taking the two separately in
+        # either order would leave a window between "the counter is > 0" and
+        # "the counter is decremented" — which is exactly the window a second
+        # client would walk through. One lock, both checks, one decrement.
+        with _spend_lock:
+            # 1.
             entry = _dice_pending.get(req_id)
-        if entry is None:
-            return jsonify({"error": "that dice request is no longer pending — "
-                                     "nothing was spent"}), 400
-        offer = next((o for o in (entry["meta"].get("offers") or [])
-                      if o["key"] == spend_key), None)
-        if offer is None:
-            return jsonify({"error": f"the GM did not offer {spend_key!r} on "
-                                     f"this roll — nothing was spent"}), 400
+            if entry is None:
+                return jsonify({"error": "that dice request is no longer pending — "
+                                         "nothing was spent"}), 400
+            # 2.
+            offer = next((o for o in (entry["meta"].get("offers") or [])
+                          if o["key"] == spend_key), None)
+            if offer is None:
+                return jsonify({"error": f"the GM did not offer {spend_key!r} on "
+                                         f"this roll — nothing was spent"}), 400
+
+            # 3. The counter, matched on the offer's LABEL. The GM names the
+            # same string on both sides — `push_stats --resource-set "Kenku
+            # Recall:2"` keys by label, and `--offer "Kenku Recall:advantage"`
+            # carries it — so the label is the join. Case-insensitive, because a
+            # GM types it twice by hand and a silent mismatch would read 0/0 and
+            # be refused with a message that says exactly what was looked for.
+            resource_label = offer["label"]
+            with _stats_lock:
+                player = next((p for p in _current_stats.get("players", [])
+                               if str(p.get("name", "")).lower()
+                               == character.lower()), None)
+                counter = next(
+                    (e for lbl, e in (player.get("resources") or {}).items()
+                     if str(lbl).lower() == resource_label.lower()),
+                    None) if player else None
+            if counter is None:
+                return jsonify({"error": (
+                    f"no counter is set for {resource_label!r} — run "
+                    f"push_stats --resource-set \"{resource_label}:N\" first, so "
+                    f"the display knows how many uses are left")}), 400
+            try:
+                used_now = int(counter.get("used", 0))
+                cap_now = int(counter.get("max", 0))
+            except (TypeError, ValueError):
+                used_now, cap_now = cap_now = 0
+            if cap_now - used_now <= 0:
+                return jsonify({"error": (
+                    f"{resource_label} is spent — {used_now}/{cap_now} used, "
+                    f"nothing was spent")}), 400
+
+            # Stacking. Two offers cannot both contribute a modifier to one roll
+            # without the GM saying so. Refused rather than resolved by
+            # arithmetic: "these two do not stack" is a table ruling, and the
+            # display is not where it gets made. Checked against what the SPEND
+            # would add, not against what was prescribed -- a prescribed +6 and
+            # an offered +2 are the GM's own two numbers and are the GM's call.
+            if offer["effect"].get("modifier"):
+                rivals = [o for o in (entry["meta"].get("offers") or [])
+                          if o["key"] != offer["key"]
+                          and o["effect"].get("modifier")]
+                if rivals:
+                    names = ", ".join(sorted(o["label"] for o in rivals))
+                    return jsonify({"error": (
+                        f"{resource_label} and {names} both add a flat modifier "
+                        f"to this roll, and the GM did not say they stack")}), 400
+
+            # 4. The effect does not double-count.
+            if offer["effect"].get("advantage") is not None:
+                if adv != "normal":
+                    return jsonify({"error": (
+                        f"{resource_label} would double-count — this roll is "
+                        f"already {adv}")}), 400
+                adv = ("advantage" if offer["effect"]["advantage"]
+                       else "disadvantage")
+            if offer["effect"].get("modifier"):
+                modifier = max(-100, min(100,
+                                         modifier + int(offer["effect"]["modifier"])))
+
+            # The bonus die is resolved and PARSED here, before the decrement.
+            # The door validated it at offer time, so a malformed one should be
+            # unreachable — but "should be" is not "cannot be", and a 400 raised
+            # after the commit would leave the use spent and the roll lost. The
+            # same rule as the base die, for the same reason.
+            bonus_spec = str(offer["effect"].get("bonus", "")).strip().lower()
+            if bonus_in and bonus_in != bonus_spec:
+                # A phone naming its own die is asking the display to add
+                # something the GM never offered — the same forgery as naming a
+                # feature. Refused, not silently corrected.
+                return jsonify({"error": (
+                    "this roll has no bonus die to spend" if not bonus_spec
+                    else f"the GM offered a {bonus_spec} bonus die, not "
+                         f"{bonus_in}") + " — nothing was spent"}), 400
+            b_dice = b_sides = 0
+            if bonus_spec:
+                bm = re.fullmatch(r"(\d{1,2})d(\d{1,3})", bonus_spec)
+                if not bm:
+                    return jsonify({"error": "bad bonus spec"}), 400
+                b_dice, b_sides = int(bm.group(1)), int(bm.group(2))
+                if not (1 <= b_dice <= 20 and 2 <= b_sides <= 100):
+                    return jsonify({"error": "bonus out of range"}), 400
+
+            # All four passed and every effect is parseable. The decrement
+            # commits here, inside the same critical section as check 3, so a
+            # concurrent second client sees it. This is the entire double-spend
+            # guard; there is nothing else.
+            with _stats_lock:
+                counter["used"] = min(used_now + 1, cap_now)
+                spent_from = {"used": used_now, "max": cap_now}
+            _persist_stats()
 
     m = re.fullmatch(r"(\d{1,2})d(\d{1,3})", spec)
     if not m:
@@ -3149,47 +3362,8 @@ def player_dice():
     # here: folding it into `modifier` would render the pad as 1d20+4, which
     # claims a flat 4 rather than a die that can come up 1. The table reads the
     # pad, not the JSON, so that error would be displayed, not hidden.
-    # A bonus die sent by the PHONE is not trusted. `bonus` is the server's
-    # answer to what the spent offer carried; if the phone names one itself it
-    # is asking the display to add a die the GM never offered, which is the
-    # same forgery as naming a feature. Refused rather than ignored, so the
-    # player is told rather than quietly given a straight roll.
-    offered_bonus = str(offer["effect"].get("bonus", "") if offer else "").strip().lower()
-    if bonus_in and bonus_in != offered_bonus:
-        # Either there is no bonus die on the table at all, or the phone is
-        # asking for a different one than the GM offered. Both are refused
-        # rather than silently corrected: a player who sees the roll they asked
-        # for replaced by a different one has learned to distrust the pad.
-        return jsonify({"error": (
-            "this roll has no bonus die to spend" if not offered_bonus
-            else f"the GM offered a {offered_bonus} bonus die, not {bonus_in}"
-        ) + " — nothing was spent"}), 400
-
-    bonus_spec = offered_bonus
-    if bonus_spec:
-        bm = re.fullmatch(r"(\d{1,2})d(\d{1,3})", bonus_spec)
-        if not bm:
-            return jsonify({"error": "bad bonus spec"}), 400
-        b_dice, b_sides = int(bm.group(1)), int(bm.group(2))
-        if not (1 <= b_dice <= 20 and 2 <= b_sides <= 100):
-            return jsonify({"error": "bonus out of range"}), 400
-    else:
-        bonus_spec, b_dice, b_sides = "", 0, 0
-
     def _roll_once(n=None, sides=None) -> list[int]:
         return [secrets.randbelow(sides or n_sides) + 1 for _ in range(n or n_dice)]
-
-    # 4. The effect does not double-count. Spending an advantage offer on a roll
-    #    the GM already made advantageous spends a per-rest resource for nothing,
-    #    and the roll line would name a feature that did not decide the roll.
-    #    Refused, not clamped: "these do not stack" is a table ruling.
-    if offer is not None and offer["effect"].get("advantage") is not None:
-        if adv != "normal":
-            return jsonify({"error": f"{offer['label']} would double-count — this "
-                                     f"roll is already {adv}"}), 400
-        adv = "advantage" if offer["effect"]["advantage"] else "disadvantage"
-    if offer is not None and offer["effect"].get("modifier"):
-        modifier = max(-100, min(100, modifier + int(offer["effect"]["modifier"])))
 
     if adv in ("advantage", "disadvantage") and spec == "1d20":
         r1, r2 = _roll_once(), _roll_once()
@@ -3297,6 +3471,10 @@ def player_dice():
         "request_id": req_id or None,
         "spend": spend_key or None,
         "spend_label": spend_label or None,
+        # What the counter read as the decrement committed, so the pad can show
+        # "1/2 left" from the roll itself rather than waiting for the next stats
+        # push. `None` when nothing was spent.
+        "resource": spent_from,
     }), 200
 
 
@@ -3350,6 +3528,10 @@ def dice_request():
 
     request_id = secrets.token_hex(6)
 
+    # How many uses each target has left, read once here so every pad for this
+    # request renders the same count. Cosmetic: player_dice re-checks on the press.
+    wire_offers = _annotate_offers(offers, chars)
+
     # Only register pending entries for explicit named targets. "any" is fire-and-forget.
     trackable = [c for c in chars if c.lower() != "any"]
     if trackable:
@@ -3375,7 +3557,10 @@ def dice_request():
             "advantage": adv,
             "label": label,
             "dc": dc_val,
-            "offers": offers,
+            # The wire form carries `uses`; the pending entry keeps the parsed
+            # form, because the spend path reads `effect` and a client must not
+            # be able to influence what it finds there.
+            "offers": wire_offers,
         }
     }
     _broadcast(payload)

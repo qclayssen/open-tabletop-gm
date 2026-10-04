@@ -78,12 +78,27 @@ class BonusDie(unittest.TestCase):
         with self.mod._dice_pending_lock:
             self.mod._dice_pending.clear()
 
+    def set_resources(self, features, character="Kairos"):
+        """Declare how many uses are left.
+
+        Since RS2.2 a spend is refused without a counter (check 3), so every
+        test that spends a bonus die has to declare the uses first. Seeded from
+        the offer list automatically so a new test cannot forget it."""
+        self.mod.app.test_client().post("/stats", data=json.dumps(
+            {"players": [{"name": character, "_resource_set": features}]}),
+            content_type="application/json")
+
     def request(self, offers=None, **extra):
         body = {"characters": ["Kairos"], "spec": "1d20", "modifier": 0,
                 "label": "Persuasion"}
         body.update(extra)
         if offers is not None:
             body["offers"] = offers
+            labels = [o.split(":", 1)[0].strip() for o in offers]
+            # The counter is per-character, and a two-character request spends
+            # from each in turn, so seed everyone the request names.
+            for name in body["characters"]:
+                self.set_resources({f: {"used": 0, "max": 2} for f in labels}, name)
         return self.client.post("/dice-request", data=json.dumps(body),
                                 content_type="application/json").get_json()["request_id"]
 
@@ -287,6 +302,10 @@ class BonusOnANonD20(unittest.TestCase):
             self.mod._dice_pending.clear()
 
     def test_a_bonus_die_works_on_a_2d6(self):
+        self.client.post("/stats", data=json.dumps({"players": [{
+            "name": "Kairos", "hp": {"current": 20, "max": 20},
+            "_resource_set": {"Bless": {"used": 0, "max": 2}}}]}),
+            content_type="application/json")
         rid = self.client.post("/dice-request", data=json.dumps(
             {"characters": ["Kairos"], "spec": "2d6", "modifier": 1,
              "offers": ["Bless:1d4"]}), content_type="application/json"

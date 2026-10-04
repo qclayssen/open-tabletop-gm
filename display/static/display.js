@@ -4773,7 +4773,19 @@ function _initDicePad() {
       btn.className = 'dp-offer';
       btn.dataset.offer = o.key;
       // textContent, not innerHTML: the label is whatever the GM typed.
-      btn.textContent = o.label;
+      //
+      // `uses` is what the SERVER counted when it issued the request, not
+      // something the pad derives: the counter is the engine's and the pad has
+      // no business keeping its own copy. null means the display was never told
+      // how many uses there are (no --resource-set), which is different from
+      // zero, so the button stays live — a configured-but-empty counter would
+      // grey out every offer on a display that was simply never set up, and
+      // that reads as a broken phone rather than an unconfigured one.
+      btn.textContent = (o.uses == null) ? o.label : `${o.label} · ${o.uses}`;
+      if (o.uses === 0) {
+        btn.setAttribute('disabled', '');
+        btn.title = 'no uses left';
+      }
       btn.addEventListener('click', () => {
         _pendingSpend = (_pendingSpend === o.key) ? '' : o.key;
         document.querySelectorAll('.dp-offer').forEach(b => {
