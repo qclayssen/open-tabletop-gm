@@ -5,6 +5,22 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="dnd-token" content="{{ lan_token }}">
 <title>Map editor: battle map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- mapseditor.css names a family in exactly two rules and both name Figtree,
+     and this template asked Google Fonts for nothing at all, so every element
+     on the page resolved to the system-ui those declarations fall back to.
+     #300 item 0.1 fixed the same defect on index.html, which had asked for two
+     other families but not for the one its own rules use.
+
+     Three weights, because these are the three this stylesheet's own cascade
+     produces: 400 from the `font:` shorthand on body, 600 from
+     .me-swatch .me-name and .me-status.me-bad, and 700 from the h1 and h2 the
+     bar and the palette are built out of. Not 800, which the combat panel asks
+     for: nothing on this page sets it, and a weight with no rule on it is a
+     download nobody reads. Both Figtree declarations keep system-ui as their
+     fallback, so an editor with no network renders exactly as it does today. -->
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/mapseditor.css">
 <script>window.MAP_EDITOR = {{ state|safe }};</script>
 </head>
