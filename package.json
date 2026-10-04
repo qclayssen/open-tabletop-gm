@@ -2,12 +2,17 @@
   "name": "open-tabletop-gm-chartdown",
   "private": true,
   "type": "module",
-  "description": "Chartdown tooling for open-tabletop-gm. Only scripts/chartdown_to_atlas.mjs needs these; the Python engine does not.",
+  "description": "Chartdown tooling for open-tabletop-gm. Only scripts/chartdown_to_atlas.mjs needs these; the Python engine does not. The eslint devDependency is the linter, configured by eslint.config.js; it is never shipped, because the display is served by Flask and not by node.",
   "scripts": {
-    "chartdown": "node scripts/chartdown_to_atlas.mjs"
+    "chartdown": "node scripts/chartdown_to_atlas.mjs",
+    "lint": "eslint ."
   },
   "dependencies": {
     "@chartdown/core": "0.8.0",
     "@chartdown/render-svg": "0.8.0"
+  },
+  "devDependencies": {
+    "eslint": "10.12.0",
+    "globals": "17.13.0"
   }
 }
