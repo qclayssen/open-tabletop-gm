@@ -285,6 +285,15 @@ class Browser(BrowserTestCase):
         self.assertIn(SENTENCE, story(page),
                       "the idle timer that closed the block deleted its last paragraph")
 
+    def test_the_idle_timer_closes_a_block_whose_reveal_outlasts_it(self):
+        """A reveal longer than IDLE_GAP*2 must not lose its one-shot flush."""
+        page = self.page_in_story()
+        page.evaluate("() => { charDelay = 80; }")
+        page.evaluate("t => handleIncomingText(t)", SENTENCE)
+        drained(page)
+        flushed(page)
+        self.assertIn(SENTENCE, story(page))
+
     # 3. the other callers ----------------------------------------------------
     def test_a_reconnect_replay_keeps_in_progress_narration(self):
         """`renderReplayBatch()` flushes before it draws, on every reconnect.

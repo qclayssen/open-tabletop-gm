@@ -1743,11 +1743,16 @@ function handleIncomingText(text) {
   }
   lastChunkTime = now;
 
-  // Reset idle timer
+  // Reset idle timer. Keep waiting if the typewriter outlasts the quiet period.
   clearTimeout(idleTimer);
-  idleTimer = setTimeout(() => {
-    if (!isTyping && charQueue.length === 0) flushNewBlock();
-  }, IDLE_GAP * 2);
+  const closeWhenDrained = () => {
+    if (isTyping || charQueue.length > 0) {
+      idleTimer = setTimeout(closeWhenDrained, IDLE_GAP * 2);
+      return;
+    }
+    flushNewBlock();
+  };
+  idleTimer = setTimeout(closeWhenDrained, IDLE_GAP * 2);
 
   // Enqueue — preprocess markdown to typed segment items
   const cleaned = text
