@@ -386,17 +386,20 @@
     // since become an acceptance.
     el.alignRead.removeAttribute('data-bad');
     const size = (state.alignment || {}).image_px;
-    if (!size || size.length !== 2) {
-      el.alignRead.textContent = state.image
-        ? 'This map has artwork but no recorded picture size, so there is nothing to line up yet. Use scripts/art_attach.py.'
-        : 'This map has no artwork yet. The numbers are kept for when it has some.';
-      el.alignSave.disabled = false;
-      return;
-    }
     if (!(a.cell_px > 0)) {
       el.alignRead.textContent = 'Pixels per square must be greater than zero.';
       el.alignRead.setAttribute('data-bad', '1');
       el.alignSave.disabled = true;
+      return;
+    }
+    if (!state.image) {
+      el.alignRead.textContent = 'This map has no artwork yet. The numbers are kept for when it has some.';
+      el.alignSave.disabled = false;
+      return;
+    }
+    if (!size || size.length !== 2) {
+      el.alignRead.textContent = 'This map has artwork but no recorded picture size, so there is nothing to line up yet. Use scripts/art_attach.py.';
+      el.alignSave.disabled = false;
       return;
     }
     // The same arithmetic the server will do, so the readout and the refusal
@@ -429,6 +432,7 @@
     const input = el[field];
     const now = Number(input.value) || 0;
     input.value = String(now + delta);
+    trial = readAlignment();
     showAlignment();
     draw();
   }
@@ -515,8 +519,8 @@
       const step = NUDGE[e.key];
       if (!step) return;
       e.preventDefault();                 // do not also move the caret
-      const [, delta] = step;
-      nudge(field, e.shiftKey ? delta * 10 : delta);
+      const [target, delta] = step;
+      nudge(target, e.shiftKey ? delta * 10 : delta);
     });
   }
   el.alignSave.addEventListener('click', saveAlignment);

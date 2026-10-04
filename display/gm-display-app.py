@@ -1873,6 +1873,49 @@ def map_features(name):
     })
 
 
+@app.route("/maps/<name>/grid", methods=["POST"])
+def map_grid(name):
+    """Save artwork alignment after verifying its grid fits the image."""
+    if not _token_ok():
+        return "Forbidden", 403
+    path = _mapeditor.find(name)
+    if path is None:
+        return _map_not_found(name)
+    try:
+        spec = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        return jsonify({"error": f"{path.name} could not be read: {e}"}), 400
+    if not isinstance(spec, dict):
+        return jsonify({"error": f"{path.name} could not be read: not a map object"}), 400
+
+    body = request.get_json(silent=True) or {}
+    try:
+        merged = _mapeditor.apply_alignment(spec, body)
+        if spec.get("image") and spec.get("image_px"):
+            geometry = _mapeditor.alignment_fits(spec, body)
+            if not geometry["exact"]:
+                raise ValueError("the aligned grid must fit the artwork exactly")
+            width, height = int(spec["width"]), int(spec["height"])
+            if geometry["cells"] != [width, height]:
+                raise ValueError(
+                    f"the aligned grid is {geometry['cells'][0]}x{geometry['cells'][1]} squares; "
+                    f"this board is {width}x{height}"
+                )
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    try:
+        bak = _mapeditor.write(path, merged)
+    except OSError as e:
+        return jsonify({"error": f"{path.name} could not be written: {e}"}), 500
+    compiled = json.loads(path.read_text(encoding="utf-8"))
+    return jsonify({
+        "ok": True,
+        "slug": path.stem,
+        "alignment": _mapeditor.alignment(compiled),
+        "backup": bak.name if bak != path else "",
+    })
+
+
 # ─── Note pins ───────────────────────────────────────────────────────────────
 #
 # A pin is a marker on a map that opens a campaign note (or another map). Pins
