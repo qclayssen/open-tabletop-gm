@@ -156,6 +156,17 @@ def main() -> None:
                         help="Spell being concentrated on (requires --player); empty string clears")
     parser.add_argument("--spell-slots", metavar="JSON",
                         help='Spell slots per level, full replace: {"1":{"used":1,"max":4},...} (requires --player)')
+    parser.add_argument("--resource-set", action="append", metavar="LABEL:CAP",
+                        help="Set a per-rest feature's full count: LABEL:CAP, e.g. "
+                             "\"Kenku Recall:2\" (can repeat). Full replace — this is "
+                             "the one command that overwrites both the cap and how "
+                             "many are left, so use it after a long rest. "
+                             "Requires --player. Also accepts JSON for an explicit "
+                             "count: '\"Kenku Recall\":{\"used\":1,\"max\":2}'.")
+    parser.add_argument("--resource-restore", action="append", metavar="LABEL",
+                        help="Restore one use of a per-rest feature (can repeat). "
+                             "Stops at the cap. Requires --player. Long rest is "
+                             "therefore one command per feature, and you decide when.")
     parser.add_argument("--slot-use", metavar="LEVEL", type=int,
                         help="Expend one slot at the given level (requires --player)")
     parser.add_argument("--slot-restore", metavar="LEVEL", type=int,
@@ -214,6 +225,7 @@ def main() -> None:
         or args.conditions is not None or args.conditions_add or args.conditions_remove
         or args.concentrate is not None
         or args.spell_slots is not None or args.slot_use or args.slot_restore
+        or args.resource_set or args.resource_restore
         or args.hit_dice_use or args.hit_dice_restore
         or args.sheet is not None or args.inventory_add or args.inventory_remove
     )
@@ -252,6 +264,47 @@ def main() -> None:
             player_update["_slot_use"] = args.slot_use
         if args.slot_restore:
             player_update["_slot_restore"] = args.slot_restore
+        # "Kenku Recall:2" → {"Kenku Recall": 2}.
+        #
+        # Where to split depends on whether the tail is JSON, because a JSON
+        # tail has colons of its own: 'Kenku Recall:{"used":1,"max":2}' must
+        # split at the FIRST colon, and splitting from the right at the last one
+        # yields the cap `2}` with a mangled label. Without a JSON tail the split
+        # is from the RIGHT, so a label containing a colon ("Font of
+        # Inspiration:3") keeps it.
+        resources: dict = {}
+        for spec in (args.resource_set or []):
+            spec = str(spec)
+            if "{" in spec:
+                label, sep, cap = spec.partition(":")
+            else:
+                label, sep, cap = spec.rpartition(":")
+            label, cap = label.strip(), cap.strip()
+            if not sep or not label:
+                print(f"Invalid --resource-set {spec!r}: expected LABEL:CAP",
+                      file=sys.stderr)
+                sys.exit(1)
+            if cap.startswith("{"):
+                try:
+                    resources[label] = json.loads(cap)
+                except json.JSONDecodeError as e:
+                    print(f"Invalid --resource-set JSON for {label!r}: {e}",
+                          file=sys.stderr)
+                    sys.exit(1)
+            else:
+                try:
+                    resources[label] = int(cap)
+                except ValueError:
+                    print(f"Invalid --resource-set {spec!r}: cap must be a number",
+                          file=sys.stderr)
+                    sys.exit(1)
+        if resources:
+            player_update["_resource_set"] = resources
+        if args.resource_restore:
+            # A list even for one feature: the server's branch takes the whole
+            # value as one label, so sending a bare string would restore a
+            # feature whose name is "['Kenku Recall']".
+            player_update["_resource_restore"] = list(args.resource_restore)
         if args.sheet is not None:
             try:
                 player_update["sheet"] = json.loads(args.sheet)

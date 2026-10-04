@@ -380,6 +380,76 @@ def _normalize_slot(slot: dict) -> None:
         slot["used"] = 0
 
 
+# ── Per-rest resource counters (RS2) ─────────────────────────────────────────
+# A class resource or racial feature with uses per rest: Kenku Recall (2 per
+# long rest), Bardic Inspiration (CHA mod, per long rest). Shape is
+#   "resources": {"Kenku Recall": {"used": 0, "max": 2}}
+#
+# The engine owns these. The GM sets the cap and the rest; the display
+# decrements the player's spend and reads the rest. Nothing here computes a
+# rules outcome: whether a feature applies to a check is a ruling, made by
+# whoever declared the offer, not here.
+#
+# This is deliberately NOT `milestones`. _milestone_dec pops the key at zero
+# and `badge_set` filters `count > 0`, which is right for a reward the player no
+# longer holds and wrong for a per-rest feature: a spent feature must keep
+# reading 0/2 so the player knows it exists and is spent. Conflating them would
+# also merge Bardic Inspiration (GM-awarded) with Kenku Recall (racial), which
+# are replenished by different events.
+_RESOURCE_LABEL_MAX = 60
+
+
+def _resource_entry(player: dict, label: str) -> dict:
+    """The {used, max} entry for `label`, created at 0/0 if absent.
+
+    A missing feature reads 0/0 rather than raising: the GM may not have run
+    --resource-set yet, and the pad has to have something to render either way.
+    The spend check (RS2.2) is what refuses a spend against 0/0, not this.
+    """
+    res = player.setdefault("resources", {})
+    label = str(label)[:_RESOURCE_LABEL_MAX]
+    entry = res.get(label)
+    if not isinstance(entry, dict):
+        entry = {"used": 0, "max": 0}
+        res[label] = entry
+    if "used" not in entry or "max" not in entry:
+        # Tolerate a pushed {"remaining": N} the way _normalize_slot does, so a
+        # hand-written --resource-set is not silently read as 0/0.
+        entry.setdefault("max", 0)
+        _normalize_slot(entry)
+    try:
+        entry["used"] = max(0, int(entry.get("used", 0)))
+        entry["max"] = max(0, int(entry.get("max", 0)))
+    except (TypeError, ValueError):
+        entry["used"], entry["max"] = 0, 0
+    return entry
+
+
+def _set_resource(player: dict, label: str, spec) -> dict:
+    """Full replace for one feature: {"used": N, "max": M} or a bare int cap.
+
+    `--resource-set "Kenku Recall:2"` sends {"Kenku Recall": 2}, meaning full —
+    the GM setting the cap after a long rest is asserting a fresh count, and
+    used=0 is the only reading that matches "I have 2". Passing a dict sets both
+    numbers explicitly for the mid-session case.
+    """
+    label = str(label)[:_RESOURCE_LABEL_MAX]
+    if isinstance(spec, dict):
+        used, mx = spec.get("used", 0), spec.get("max", 0)
+    else:
+        try:
+            mx = int(spec)
+        except (TypeError, ValueError):
+            mx = 0
+        used = 0
+    res = player.setdefault("resources", {})
+    try:
+        res[label] = {"used": max(0, int(used or 0)), "max": max(0, int(mx or 0))}
+    except (TypeError, ValueError):
+        res[label] = {"used": 0, "max": 0}
+    return res[label]
+
+
 def _sent_snapshot() -> dict:
     """Return a serialisable copy of the sent log."""
     return {k: {"text": v["text"]} for k, v in _sent.items()}
@@ -2285,6 +2355,7 @@ def stats():
                     "_hd_use", "_hd_restore",
                     "_effect_start", "_effect_end",
                     "_milestone_inc", "_milestone_dec",
+                    "_resource_set", "_resource_restore",
                 }
                 if match:
                     for key, val in incoming.items():
@@ -2371,6 +2442,25 @@ def stats():
                             # sidebar clean (no "Bennie: 0" lingering).
                             if ms.get(label, 0) == 0:
                                 ms.pop(label, None)
+                        elif key == "_resource_set":
+                            # val is {"Label": {"used": 0, "max": 2}, ...}. The GM
+                            # owns the cap and the rest: this is a full replace
+                            # for the named features, mirroring --spell-slots, so
+                            # one command overwrites both the cap and the count
+                            # and the display cannot drift from the sheet on this.
+                            if isinstance(val, dict):
+                                for lbl, entry in val.items():
+                                    _set_resource(match, str(lbl), entry)
+                        elif key == "_resource_restore":
+                            # val is one label or a list of them (push_stats sends
+                            # a list even for a single --resource-restore). One
+                            # command per feature per long rest, and the GM
+                            # decides when. Mirrors _slot_restore, which
+                            # decrements `used`; the cap is enforced when the
+                            # feature is set, not here.
+                            for _lbl in (val if isinstance(val, list) else [val]):
+                                res = _resource_entry(match, str(_lbl))
+                                res["used"] = max(res["used"] - 1, 0)
                         elif isinstance(val, dict) and isinstance(match.get(key), dict):
                             match[key].update(val)
                         else:
