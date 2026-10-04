@@ -115,6 +115,12 @@ Campaign data root: `~/open-tabletop-gm/campaigns/<name>/` (override with
 `GM_CAMPAIGN_ROOT`). Combat state: `<campaign>/combat/encounter.json`.
 
 Engine conventions:
+- Browser combat permissions are enforced by the display server's `_COMBAT_READ`,
+  `_COMBAT_WRITE`, and `_COMBAT_ARG_FLAGS` allow-lists in
+  `display/gm-display-app.py`. When adding a browser combat verb or flag, update
+  `tests/test_display_combat.py` to cover its allowed use and refused boundary.
+  This allow-list governs what a browser may invoke, not GM role design: browser
+  actions still go through the engine, and player/GM authority remains separate.
 - Squares are `(x, y)` from the top left; labels are column letter + 1-based row
   (`(3, 4)` is `D5`).
 - Player dice under `roll_mode: players`: the engine raises `PendingRoll`; the
