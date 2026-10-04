@@ -161,8 +161,30 @@ class OfferDoor(unittest.TestCase):
 
 
 def _set_resources(mod, features, character="Kairos"):
-    """Declare how many uses are left for each named feature."""
-    mod.app.test_client().post("/stats", data=json.dumps(
+    """Declare how many uses are left for each named feature.
+
+    The roster entry is pushed FIRST, in its own request, because `/stats`
+    applies a mutation op only to a player it already knows: a push naming
+    someone new appends an entry built from the non-mutation keys alone, with
+    `_resource_set` stripped (`test_a_resource_set_on_an_unknown_player_creates_
+    the_name_but_no_counter` in tests/test_resources_counter.py pins that). One
+    request carrying both would therefore register the character and silently
+    drop the counter, and the spend would be refused at check 3 with a message
+    about a counter nobody set.
+
+    That made this helper order-dependent: it worked from the second call on,
+    because the first had created the name. So the file passed on a developer
+    machine, where `display/stats.json` is gitignored runtime state that a
+    previous run left holding Kairos, and failed in CI on a clean checkout,
+    where the roster starts empty and the very first seed registered nothing.
+    The seeding must not depend on what an earlier test or an earlier run left
+    behind.
+    """
+    client = mod.app.test_client()
+    client.post("/stats", data=json.dumps(
+        {"players": [{"name": character, "hp": {"current": 1, "max": 1}}]}),
+        content_type="application/json")
+    client.post("/stats", data=json.dumps(
         {"players": [{"name": character, "_resource_set": features}]}),
         content_type="application/json")
 
