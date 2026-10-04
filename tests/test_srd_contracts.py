@@ -535,6 +535,102 @@ def test_cmd_build_keeps_the_foundryvtt_sha_it_just_read(tmp_path, monkeypatch):
         assert info.get("sha"), (name, info)
 
 
+# ─── what the file says may be done with it ───────────────────────────────────
+#
+# `_meta.sources` answers "which commit did this come from". It does not answer
+# "may I ship this", and that is the question a consumer of a REDISTRIBUTED
+# dataset has: the data travels, the repository does not. So the license and
+# attribution pointers have to be inside the data (dnd-gm#139).
+#
+# Moved here from tests/test_rules_coverage.py, where #139 put them because that
+# file was its scope and not because it was the right home: this is the file
+# that already loads `build_srd` and drives `cmd_build` with the network
+# replaced, so the helper that loaded a second copy of the builder goes with
+# them. Only the two accessors changed: `build_srd` is the module loaded at the
+# top of this file, and `real` is this file's fixture (a `dataset` and a
+# `reason`), not the report-or-None the coverage instrument uses.
+
+
+def _assert_the_license_pointer_is_there(meta):
+    """Every field systems/dnd5e/NOTICE documents, so the two cannot drift.
+
+    Asserting the string "CC-BY-4.0" appears somewhere would be satisfied by a
+    key nobody reads. Each field is named instead, so renaming one is a failure
+    rather than a silent loss of the pointer.
+    """
+    block = meta["license"]
+    assert block["identifier"] == "CC-BY-4.0"
+    assert block["url"].startswith("https://creativecommons.org/licenses/by/4.0/")
+    assert "game text" in block["covers"], block
+    assert block["notice"] == "systems/dnd5e/NOTICE"
+
+    credit = meta["attribution"]
+    assert "System Reference Document 5.1" in credit["system_reference_document"]
+    assert "Wizards of the Coast" in credit["system_reference_document"]
+    assert "build_srd.py" in credit["modifications"]
+    assert credit["notice"] == "systems/dnd5e/NOTICE"
+
+    # Both upstreams LICENSE their own repositories as MIT, which covers their
+    # packaging and not the SRD text inside. Recorded separately because a
+    # reader shown only one of the two is misled by whichever they saw, and the
+    # MIT one is the misleading one.
+    for name in ("5e-bits", "foundryvtt"):
+        assert meta["sources"][name]["license"] == "MIT", name
+        assert meta["sources"][name]["license_url"].startswith("https://"), name
+    # The 5e-bits half named its path and the foundryvtt half did not, which
+    # made the same question answerable two ways depending on the source.
+    assert meta["sources"]["5e-bits"]["path"] == "packages/5e-database"
+    assert meta["sources"]["foundryvtt"]["path"] == "packs/_source"
+
+
+def test_the_real_dataset_says_what_may_be_done_with_it(real):
+    """A built dataset carries the pointer; a fixture cannot, and does not have to.
+
+    The checked-in fixture is a hand-written sample, not something build_srd.py
+    wrote, so it has no `_meta.license` and never will. That is not the gap
+    #139 is about: the gap is a GENERATED file arriving with nothing in it.
+    """
+    if real["dataset"] is None:
+        pytest.skip(f"real dataset not built: {real['reason']}. "
+                    "Run python3 systems/dnd5e/build_srd.py")
+    _assert_the_license_pointer_is_there(real["dataset"]["_meta"])
+
+
+@pytest.mark.parametrize("skip_fvtt", [False, True])
+def test_the_builder_writes_the_license_pointer_into_both_shapes(
+        tmp_path, monkeypatch, skip_fvtt):
+    """A full build and a --no-fvtt build, neither touching the network.
+
+    --no-fvtt is a separate shape and not a smaller copy of one: it is what you
+    get with no PyYAML, and its `features` list is empty. A pointer that only
+    reached the full build would leave every such dataset unattributed, which is
+    the whole gap #139 describes.
+    """
+    monkeypatch.setattr(build_srd, "OUT_FILE", str(tmp_path / "out.json"))
+    monkeypatch.setattr(build_srd, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(build_srd, "_latest_sha", lambda url: "0" * 40)
+    monkeypatch.setattr(build_srd, "_build_5ebits", lambda: {
+        "spells": [{"index": "fire-bolt", "name": "Fire Bolt", "level": 0,
+                    "mechanics": {"casting": "action", "flags": []}}],
+        "equipment": [{"index": "club", "name": "Club"}],
+        "magic_items": [{"index": "pewter", "name": "Pewter"}],
+        "conditions": [{"index": "blinded", "name": "Blinded"}],
+        "monsters": [{"index": "goblin", "name": "Goblin", "hp": 7, "ac": 15,
+                      "actions": []}],
+    })
+    monkeypatch.setattr(build_srd, "_build_fvtt",
+                        lambda: ([{"index": "haste", "name": "Haste"}], "f" * 40))
+
+    build_srd.cmd_build(skip_fvtt=skip_fvtt)
+
+    with open(tmp_path / "out.json", encoding="utf-8") as fh:
+        meta = json.load(fh)["_meta"]
+    _assert_the_license_pointer_is_there(meta)
+    # Proves the two parameterisations really are the two shapes, so this is not
+    # one build asserted twice.
+    assert bool(meta["record_counts"]["features"]) is not skip_fvtt
+
+
 def test_the_real_dataset_counts_agree_with_its_own_records(real):
     if real["dataset"] is None:
         pytest.skip(f"real dataset not built: {real['reason']}")
