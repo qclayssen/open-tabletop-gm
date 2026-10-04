@@ -528,16 +528,32 @@ class Panel(BrowserTestCase):
 
     def test_a_refusal_outlives_the_toast_timer(self):
         """The toast's 6s expiry is what the banner has to survive: before, the
-        only copy of the reason a click did nothing was on a timer."""
+        only copy of the reason a click did nothing was on a timer.
+
+        Waited on the banner rather than on the toast. The refusal is written to
+        one surface (#300 item 0.4 removed act()'s second one), so a wait for the
+        toast to come up would be a wait for the copy that no longer exists.
+
+        The toast is read while the refusal has just landed, not after the sleep,
+        and the order matters. The toast hides itself at 6s whatever wrote it, so
+        a `toast.hidden` read after the sleep is true of the double-showing code
+        as well as of the fixed code: it passes on the defect it is meant to
+        catch. Read inside the 6s window it can only be true if nothing put the
+        refusal there at all.
+        """
         page = self.open(DESKTOP, snapshot())
         page.route("**/combat/do", lambda route: route.fulfill(
             status=409, content_type="application/json",
             body=json.dumps({"error": "There is no player's turn open right now. "
                                       "It is Kobold 2's turn. Nothing was sent."})))
         page.click("#tx-actions button:has-text('End turn')")
-        self.present(page, "() => !document.getElementById('tx-toast').hidden",
-                     "the refusal to put the toast up")
-        page.wait_for_function("document.getElementById('tx-toast').hidden", timeout=12000)
+        self.present(page, """() => document.getElementById('tx-banner')
+                                       .textContent.includes('Kobold 2')""",
+                     "the refusal to reach the banner")
+        self.assertTrue(
+            page.evaluate("() => document.getElementById('tx-toast').hidden"),
+            "the refusal was raised on the toast as well as on the banner")
+        page.wait_for_timeout(6500)        # longer than the toast's own 6s
         still = page.inner_text("#tx-banner")
         self.assertIn("Kobold 2's turn", still,
                       f"the refusal went when the toast did: {still!r}")
