@@ -43,7 +43,14 @@
 <title>DnD — Dungeon Master</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600&family=IM+Fell+English:ital@0;1&display=swap" rel="stylesheet">
+<!-- Figtree is what the panel's own rules ask for (tactics.css, mapseditor.css)
+     and what display/static/reference/strixhaven_map_table.html sets the grid's
+     type in. It was never requested here, so every one of those declarations
+     silently fell back to system-ui and the panel read in a different face from
+     the reference it was built from. Four weights, because the rules use 400,
+     600, 700 and 800. The panel still names system-ui as its fallback, so an
+     offline display is unchanged. -->
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600&family=Figtree:wght@400;600;700;800&family=IM+Fell+English:ital@0;1&display=swap" rel="stylesheet">
 <link rel="icon" type="image/x-icon"  href="/favicon.ico">
 <link rel="icon" type="image/png" sizes="32x32"  href="/icons/app_icon_32.png">
 <link rel="apple-touch-icon" sizes="180x180"      href="/icons/app_icon_180.png">
