@@ -31,6 +31,7 @@ import contextlib
 import json
 import os
 import pathlib
+import re
 import signal
 import socket
 import subprocess
@@ -40,7 +41,8 @@ import time
 import unittest
 import urllib.request
 
-from tests._browser import BrowserTestCase, BrowserUnavailable, shared_browser
+from tests._browser import (BrowserTestCase, BrowserUnavailable,
+                             load_display_app, shared_browser)
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 APP = ROOT / "display" / "gm-display-app.py"
@@ -829,6 +831,141 @@ class ReplayDedupe(ConnectionTestCase):
         assigned = mod._broadcast({"text": "seq please"})
         self.assertEqual(assigned, before + 1)
         self.assertEqual(mod._seq, assigned)
+
+
+# ── where the narration log is written ───────────────────────────────────────
+
+class LogDestination(unittest.TestCase):
+    """GM_TEXT_LOG_FILE is an override, not a fallback.
+
+    The order used to be campaign first and override last, so a display told to
+    use a particular file wrote into the campaign directory the moment
+    display/.campaign named one. That file is gitignored: a fresh checkout has
+    none and the same commit passed, and a machine whose display had been
+    pointed at a campaign had one and the same commit failed. The test that
+    caught it was ReplayDedupe above, whose result was decided by a file
+    outside the repo.
+
+    These are the same two questions ReplayDedupe answers over a real browser,
+    asked directly so the destination is not measured through a page: which
+    file gets the narration, and what the registration says when the campaign
+    it was given resolves to nothing. No chromium, no subprocess, and nothing
+    written under display/ at all, which is the other half of the problem:
+    these set the variables rather than depending on whatever a developer
+    machine happens to have lying around.
+    """
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.state = pathlib.Path(self.tmp.name)
+        self.root = self.state / "root"
+        # One campaign that resolves and one that does not. The override has to
+        # win over both, because where the narration goes must not be a function
+        # of what the campaign happens to be.
+        demo = self.root / "campaigns" / "demo"
+        demo.mkdir(parents=True)
+        (demo / "state.md").write_text("# state\n", encoding="utf-8")
+        # Both variables are set for the whole test, not just around the import
+        # below, and the two want different lifetimes: GM_TEXT_LOG_FILE is read
+        # once at import, while GM_CAMPAIGN_ROOT is read on every lookup, so a
+        # display pointed at a temp root that is gone again by the time /chunk
+        # runs resolves against ~/open-tabletop-gm instead. That is the
+        # developer's real campaign root, and a test that quietly reads it is
+        # the same class of bug this one is about.
+        saved = {k: os.environ.get(k) for k in ("GM_TEXT_LOG_FILE", "GM_CAMPAIGN_ROOT")}
+        self.addCleanup(self._restore_env, saved)
+        os.environ["GM_TEXT_LOG_FILE"] = str(self.state / "text_log.json")
+        os.environ["GM_CAMPAIGN_ROOT"] = str(self.root)
+
+    @staticmethod
+    def _restore_env(saved: dict) -> None:
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+    def display_for(self, campaign: str):
+        """A display whose log is overridden and whose .campaign names `campaign`.
+
+        Loaded fresh every time: GM_TEXT_LOG_FILE is read at import, so a module
+        loaded before it was set is a module that never saw it. CAMP_FILE is
+        repointed at a temp file afterwards, which is what
+        tests/test_overview_map.py does for the same reason, so this never reads
+        or writes the repo's display/.campaign.
+        """
+        tag = re.sub(r"\W", "_", campaign)
+        mod = load_display_app("gm_display_app_logdest_" + tag)
+        camp_file = self.state / (".campaign-" + tag)
+        camp_file.write_text(campaign, encoding="utf-8")
+        mod.CAMP_FILE = str(camp_file)
+        return mod
+
+    def override_log(self) -> pathlib.Path:
+        return self.state / "text_log.json"
+
+    def logged_text(self) -> list:
+        log = self.override_log()
+        self.assertTrue(log.exists(), f"the narration should be in {log}")
+        return [e["text"] for e in json.loads(log.read_text(encoding="utf-8"))]
+
+    def test_the_override_outranks_a_campaign_that_resolves(self):
+        """The exact configuration ReplayDedupe failed in on a GM's machine."""
+        mod = self.display_for("demo")
+        r = mod.app.test_client().post("/chunk",
+                                       json={"campaign": "demo", "text": "Kept."})
+        self.assertLess(r.status_code, 400, r.data)
+        self.assertEqual(self.logged_text(), ["Kept."])
+        campaign_log = self.root / "campaigns" / "demo" / "text_log.json"
+        self.assertFalse(campaign_log.exists(),
+                         f"the campaign directory took the write instead: {campaign_log}")
+
+    def test_the_override_outranks_a_campaign_that_resolves_to_nothing(self):
+        """The other ReplayDedupe configuration, and the reason a 204 was worse.
+
+        A name that matches no campaign used to mean every later write aimed at
+        a directory that is not there. The override decides the destination, so
+        it lands in the file the display was given all the same.
+        """
+        gone = "a-campaign-that-does-not-exist"
+        mod = self.display_for(gone)
+        r = mod.app.test_client().post("/chunk", json={"campaign": gone, "text": "Kept."})
+        self.assertLess(r.status_code, 400, r.data)
+        self.assertEqual(self.logged_text(), ["Kept."])
+
+    def test_registering_a_campaign_that_resolves_to_nothing_is_not_a_bare_204(self):
+        """204 says stored, nothing to add. This request has something to add.
+
+        Not a rejection either: the name is registered, because a campaign
+        created after the display started is a legitimate registration. What it
+        is not is a success with no acknowledgement, so the response carries the
+        path the display will now be persisting into.
+        """
+        gone = "a-campaign-that-does-not-exist"
+        mod = self.display_for(gone)
+        r = mod.app.test_client().post("/chunk", json={"campaign": gone})
+        self.assertEqual(r.status_code, 200, r.data)
+        body = r.get_json()
+        self.assertEqual(body["campaign"], gone)
+        self.assertFalse(body["resolved"])
+        # The path is the one the display will actually write to, so it is
+        # asserted resolved: paths resolves the root, and on macOS tempfile
+        # hands back /var/folders where the resolver answers /private/var/folders.
+        self.assertEqual(body["path"],
+                         str((self.root / "campaigns" / gone / "text_log.json").resolve()))
+
+    def test_a_campaign_that_resolves_is_still_a_plain_204(self):
+        """The other half of the contract: a good registration says nothing."""
+        mod = self.display_for("demo")
+        r = mod.app.test_client().post("/chunk", json={"campaign": "demo"})
+        self.assertEqual(r.status_code, 204, r.data)
+
+    def test_a_chunk_with_no_campaign_is_still_a_plain_204(self):
+        """No campaign in the payload, no warning to carry."""
+        mod = self.display_for("demo")
+        r = mod.app.test_client().post("/chunk", json={"text": "No campaign here."})
+        self.assertEqual(r.status_code, 204, r.data)
 
 
 class PanelWithoutAStream(BrowserTestCase):

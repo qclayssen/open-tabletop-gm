@@ -10,12 +10,18 @@
   scene ("dungeon") and the title/background were wrong until enough new
   narration re-triggered detection.
 
+Every campaign name here is registered under a temp $GM_CAMPAIGN_ROOT written by
+ClearBase.setUp, so a switch is a switch to a campaign that resolves. /chunk
+answers 200 with a warning dict for a name that resolves to nothing (#218), and
+which of the two it is depended on where the test happened to be run.
+
 Ported from the stranded fix-report-b4-n-p4 branch, rewritten for the Send flow
 that replaced Stage/Ready: the branch cleared _staged, which no longer exists.
 """
 from __future__ import annotations
 
 import importlib.util
+import os
 import pathlib
 import tempfile
 import unittest
@@ -23,6 +29,19 @@ import unittest
 from tests.display_sources import read_display_sources
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
+
+
+def _write_campaign(campaign_dir: pathlib.Path) -> pathlib.Path:
+    """Make `campaign_dir` a campaign that paths._is_campaign accepts.
+
+    `state.md` is the one file that decides: paths.find_campaign only resolves a
+    name whose directory holds one, so a fixture that made the directory alone
+    would still resolve to nothing.
+    """
+    campaign_dir.mkdir(parents=True, exist_ok=True)
+    state_md = campaign_dir / "state.md"
+    state_md.write_text(f"# {campaign_dir.name}\n", encoding="utf-8")
+    return state_md
 
 
 def _import_app(tmp_dir: pathlib.Path):
@@ -43,14 +62,45 @@ def _import_app(tmp_dir: pathlib.Path):
 class ClearBase(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
-        self.mod = _import_app(pathlib.Path(self._tmp.name))
+        self.addCleanup(self._tmp.cleanup)
+        self._root = pathlib.Path(self._tmp.name)
+        # The campaign root is a path this test reaches through paths.py, not a
+        # module global, so _import_app cannot redirect it the way it redirects
+        # LOG_FILE and its siblings. Left alone it resolves against
+        # ~/open-tabletop-gm/campaigns, which exists on a developer machine and
+        # not on CI or a fresh clone: the campaign names below resolved on one
+        # machine and not the other, so the same test asserted two different
+        # answers depending on where it ran. paths._root() reads the variable on
+        # every lookup rather than caching it at import, so setting it here is
+        # enough for the display module that setUp already loaded.
+        #
+        # Registered with addCleanup rather than undone in tearDown: everything
+        # below this line can raise (importing the display app is the likeliest,
+        # and it raises whenever that file is broken), and a setUp that raises
+        # never reaches tearDown. A leaked GM_CAMPAIGN_ROOT would then aim every
+        # campaign lookup in the rest of the session at a directory about to be
+        # deleted. Cleanups run last-registered-first, so the variable is put back
+        # before the root it named is removed.
+        self._saved_root = os.environ.get("GM_CAMPAIGN_ROOT")
+        self.addCleanup(self._restore_root)
+        os.environ["GM_CAMPAIGN_ROOT"] = str(self._root)
+        # Both names the tests below register must exist under the new root.
+        # A name that resolves under the configured root short-circuits
+        # paths.find_campaign before its legacy fallback, which would otherwise
+        # copy the real ~/open-tabletop-gm/campaigns/<name> tree in here.
+        for name in ("strixhaven-kairos", "ember-hollow"):
+            _write_campaign(self._root / "campaigns" / name)
+        self.mod = _import_app(self._root)
         self.mod._token_ok = lambda: True
         self.sent = []
         self.mod._broadcast = self.sent.append
         self.client = self.mod.app.test_client()
 
-    def tearDown(self):
-        self._tmp.cleanup()
+    def _restore_root(self):
+        if self._saved_root is None:
+            os.environ.pop("GM_CAMPAIGN_ROOT", None)
+        else:
+            os.environ["GM_CAMPAIGN_ROOT"] = self._saved_root
 
     def _dirty_everything(self):
         """Put state in every place a campaign switch has to wipe."""
@@ -119,6 +169,12 @@ class CampaignSwitchClearsAutomatically(ClearBase):
     def test_switching_campaigns_wipes_state_with_no_manual_clear(self):
         pathlib.Path(self.mod.CAMP_FILE).write_text("ember-hollow", encoding="utf-8")
         self._dirty_everything()
+        # The name has to resolve for this to be a switch rather than a warning.
+        # Asserted first so a fixture that stopped resolving reports that, not a
+        # bare status mismatch somewhere below.
+        self.assertTrue(self.mod._campaign_exists("strixhaven-kairos"),
+                        "the fixture must register a campaign that exists, or this "
+                        "test is measuring the unresolvable path instead")
         r = self._chunk_campaign("strixhaven-kairos")
         self.assertEqual(r.status_code, 204)
         self._assert_wiped()
