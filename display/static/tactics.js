@@ -37,6 +37,13 @@
                cursor: null, ruler: { tool: null, a: null, b: null, fixed: false }, camMap: null, camTimer: 0,
                sight: false, sightFrom: null, sightData: null, sightKey: '', layoutAt: null,
                 svg: null, boardKey: null,
+                // User units per CSS pixel at the board's current cell size
+                // (C / cell), and the cell it was computed for. Published to
+                // the stylesheet as --tx-uu so the board's type, and the chrome
+                // drawn to hold that type, are sized in pixels rather than in
+                // squares: renderBoard sets it, tactics.css multiplies by it
+                // (#300 item 0.2).
+                uu: 1, cell: null,
                 // Whether the display is receiving live updates.
                 //
                 // Starts true, and that is not a claim that the stream is up.
@@ -1094,9 +1101,20 @@
     // resize or a phone reflow reuses the terrain and still refits the board.
     s.setAttribute('width', W * cell);
     s.setAttribute('height', H * cell);
-    // Only for a board that was just built: fitLabels measures the DOM, and a
-    // cached board already holds the right answer (see the function).
-    if (!reuse) fitLabels();
+    // How many user units a pixel is worth at this cell, published on the board
+    // so the stylesheet can size the board's type in pixels. It changes on every
+    // refit, not only when the board is rebuilt, because the svg is scaled into
+    // the box rather than the box being drawn to the svg.
+    ui.uu = C / cell;
+    s.style.setProperty('--tx-uu', ui.uu);
+    // Re-fitted when the board is built, and when the cell has moved since.
+    // fitLabels measures the DOM, and the clamp it computes is in user units
+    // against type that is in units of a pixel, so a resize that changes the
+    // cell changes what fits: a prefix clamped at one cell overflows at another.
+    // A cached board whose cell has not moved keeps its answer, which is the
+    // reason this is not simply "on every render".
+    if (!reuse || cell !== ui.cell) fitLabels();
+    ui.cell = cell;
     s.classList.toggle('tx-aiming', ui.mode === 'aim');
     clearLayers();
     drawSight();
@@ -1308,10 +1326,12 @@
 
   // Shorten every map label to the width of the region it names.
   //
-  // Runs once per BUILT board rather than per redraw. The budget is in user
-  // units, which do not change with the cell size, so a board kept by the cache
-  // keeps a prefix that is still correct after a resize; re-fitting per frame
-  // would measure every label sixty times a second for no change in the answer.
+  // Runs once per BUILT board rather than per redraw, and again only when the
+  // cell size has changed. The budget is in user units, so a board kept by the
+  // cache keeps a prefix that is still correct after a resize that did not move
+  // the cell; but the type it clamps is in units of a pixel (--tx-uu), so a
+  // resize that DID move the cell needs it again. Re-fitting per frame would
+  // measure every label sixty times a second for no change in the answer.
   //
   // After the append, never inside buildBoard: getComputedTextLength throws in
   // Chromium for an element that is not in the render tree, so measuring during
@@ -1457,9 +1477,18 @@
     return null;
   }
 
+  // The chance badge, in pixels rather than in squares. The plate exists to carry
+  // the number, so the two are sized together: at 28x14 user units and 11px type
+  // the text is about a quarter of the plate's width at cell = 32, which is what
+  // it was drawn for, and at cell = 10 the whole badge was nine pixels of it.
+  // Every number below is multiplied by uu, which is 1 at cell = 32, so the
+  // badge renders at its designed size at every cell and keeps its shape.
   function badge(layer, t, text, kind) {
-    svg('rect', { x: t.x * C + C - 22, y: t.y * C - 6, width: 28, height: 14, rx: 3, class: 'tx-pct-bg' + (kind ? ' ' + kind : '') }, layer);
-    const p = svg('text', { x: t.x * C + C - 8, y: t.y * C + 5, 'text-anchor': 'middle', class: 'tx-pct' }, layer);
+    const u = ui.uu;
+    svg('rect', { x: t.x * C + C - 22 * u, y: t.y * C - 6 * u, width: 28 * u, height: 14 * u,
+                  rx: 3 * u, class: 'tx-pct-bg' + (kind ? ' ' + kind : '') }, layer);
+    const p = svg('text', { x: t.x * C + C - 8 * u, y: t.y * C + 5 * u,
+                            'text-anchor': 'middle', class: 'tx-pct' }, layer);
     p.textContent = text;
   }
 
@@ -1503,10 +1532,13 @@
     const shapeNode = (style, parent) => svg(shape.tag, Object.assign({}, shape.geo, { style }), parent);
     // The three initials, used when there is no portrait and again if a
     // portrait fails to load. Outlined so they stay readable on light art.
+    // The font and its halo are in pixels like the rest of the chrome: the
+    // initials are a label on a token, not a mark on the map, and at cell = 10
+    // an 11-unit font is 3.4px of it with a 0.8px outline.
     function initialsInto(g, cx, cy) {
       const initials = t.name.split(/\s+/).map(w => /^\d+$/.test(w) ? w : w[0]).join('').slice(0, 3);
-      const tx = svg('text', { x: cx, y: cy + 4, 'text-anchor': 'middle',
-        style: 'fill:#fff;font:700 11px Figtree,sans-serif;paint-order:stroke;stroke:rgba(0,0,0,.6);stroke-width:2.5' }, g);
+      const tx = svg('text', { x: cx, y: cy + 4 * ui.uu, 'text-anchor': 'middle',
+        style: 'fill:#fff;font:700 calc(11px * var(--tx-uu)) Figtree,system-ui,sans-serif;paint-order:stroke;stroke:rgba(0,0,0,.6);stroke-width:2.5;vector-effect:non-scaling-stroke' }, g);
       tx.textContent = initials;
     }
     if (art) {
@@ -1548,8 +1580,12 @@
       svg('rect', { x: t.x * C + 4, y: t.y * C + C - 5, width: (C - 8) * pct, height: 3,
                     style: 'fill:' + (pct <= .25 ? 'var(--tx-danger)' : 'var(--tx-heal)') }, g);
       // Small corner markers: C = concentrating (top left), R = a readied action (top right).
-      if (t.concentration) marker(g, t.x * C + 5, t.y * C + 5, 'C', 'tx-conc');
-      if (t.readied) marker(g, t.x * C + C - 5, t.y * C + 5, 'R', 'tx-ready');
+      // Inset and sized in pixels, like every other piece of chrome that exists
+      // to carry a glyph: 5 units was half a pixel of inset at the phone
+      // minimum, and the glyph in it was 2.5.
+      const u = ui.uu;
+      if (t.concentration) marker(g, t.x * C + 5 * u, t.y * C + 5 * u, 'C', 'tx-conc');
+      if (t.readied) marker(g, t.x * C + C - 5 * u, t.y * C + 5 * u, 'R', 'tx-ready');
       conditionBadges(g, t);
     }
     if (mark && mark.badge) badge(g, t, mark.badge, mark.ally ? 'tx-ally' : '');
@@ -1560,25 +1596,31 @@
 
   // Up to two condition badges along the bottom edge, "+n" for the rest (the
   // full list is in the token's title, its label and the initiative strip).
-  // The badge is a tab on the token's lower edge rather than a dot beside it:
-  // it is 8 user units tall, which is 10px on a table display at 40px squares.
+  // The badge is a tab on the token's lower edge rather than a dot beside it,
+  // and it is 15x12px with an 8px code at every cell: the tab is the plate for
+  // the code, so the two are sized together. In user units it was 8 units of
+  // type in a 12-unit tab, which is 2.5px of it at the phone minimum.
   function conditionBadges(g, t) {
     const list = (t.conditions || []).filter(c => c !== 'hidden');
     if (!list.length) return;
     const shown = list.length > 2 ? list.slice(0, 1) : list;
     const codes = shown.map(c => CONDITION_CODES[c] || c.slice(0, 2).replace(/^./, m => m.toUpperCase()));
     if (list.length > shown.length) codes.push('+' + (list.length - shown.length));
+    const u = ui.uu;
     codes.forEach((code, i) => {
-      const x = t.x * C + 1 + i * 16, y = t.y * C + C - 20;
-      svg('rect', { x, y, width: 15, height: 12, rx: 3, class: 'tx-cond' + (code[0] === '+' ? ' tx-cond-more' : '') }, g);
-      const tx = svg('text', { x: x + 7.5, y: y + 9, 'text-anchor': 'middle', class: 'tx-cond-t' }, g);
+      const x = t.x * C + 1 * u + i * 16 * u, y = t.y * C + C - 20 * u;
+      svg('rect', { x, y, width: 15 * u, height: 12 * u, rx: 3 * u,
+                    class: 'tx-cond' + (code[0] === '+' ? ' tx-cond-more' : '') }, g);
+      const tx = svg('text', { x: x + 7.5 * u, y: y + 9 * u, 'text-anchor': 'middle',
+                              class: 'tx-cond-t' }, g);
       tx.textContent = code;
     });
   }
 
   function marker(g, x, y, text, cls) {
-    svg('circle', { cx: x, cy: y, r: 5.5, class: 'tx-mark ' + cls }, g);
-    const m = svg('text', { x, y: y + 3, 'text-anchor': 'middle', class: 'tx-mark-t' }, g);
+    const u = ui.uu;
+    svg('circle', { cx: x, cy: y, r: 5.5 * u, class: 'tx-mark ' + cls }, g);
+    const m = svg('text', { x, y: y + 3 * u, 'text-anchor': 'middle', class: 'tx-mark-t' }, g);
     m.textContent = text;
   }
 
@@ -1610,8 +1652,8 @@
                                 class: p.kind === 'map' ? 'tx-pin tx-pin-map' : 'tx-pin tx-pin-note',
                                 'data-kind': p.kind === 'map' ? 'map' : 'note' }, layer);
       const [cx, cy] = pinCentre(p, C);
-      const label = svg('text', { x: cx + (pinLabelAnchor(p) === 'end' ? -11 : 11),
-                                 y: cy + 4,
+      const label = svg('text', { x: cx + (pinLabelAnchor(p) === 'end' ? -11 : 11) * ui.uu,
+                                 y: cy + 4 * ui.uu,
                                  'text-anchor': pinLabelAnchor(p),
                                  class: 'tx-pin-label' }, layer);
       // The label is a text node, and it is the ONLY text this path writes. A

@@ -237,6 +237,30 @@ body.tx-min #tx-panel { max-height: none; }
 .tx-log .tx-odds { display: block; font-size: 12px; color: var(--tx-muted); }
 
 /* ── board ── */
+/* TWO SIZE SYSTEMS, and this is the seam between them.
+   ------------------------------------------------
+   Everything inside the board is in user units at C = 32 to the square, and the
+   board is drawn at `cell` px per square, so a size written here is multiplied
+   by cell/32 before a player sees it. At cell = 66 that is 2.06x; at the phone
+   minimum of cell = 10 it is 0.31x, which is 3.4px of label type and a 0.9px
+   outline around it. Neither is a choice anybody made.
+
+   So: THE MAP IS IN SQUARES and its chrome is not. Terrain, the grid, the
+   artwork, the overlays and the pins are the map, they are meant to grow with
+   it, and they stay in user units. Type, and the plates drawn to carry type, are
+   interface: a label is 11px because 11px is a readable label, at any cell.
+
+   --tx-uu is how many user units a pixel is worth at the board's current cell
+   (C / cell), set on the board svg by renderBoard on every refit. Multiplying a
+   pixel size by it converts the size into the user units that render as that
+   many pixels. It is 1 at cell = 32, so every rule below is unchanged at cell =
+   32 and correct at every other cell.
+
+   The fallback is 1 rather than an unset var so a board drawn before the first
+   refit (and the layout harness, which renders one) is the map at 1:1 rather
+   than a board full of invalid declarations. */
+.tx-board svg { --tx-uu: 1; }
+
 /* The grid, crisp. Every other line on this board is artwork or a shape and is
    left to antialias; a grid line is a rule, and a rule that lands between two
    device pixels is a grey smear rather than a line. Fractional cells are the
@@ -252,21 +276,25 @@ body.tx-min #tx-panel { max-height: none; }
    the region rather than the baseline, which at a 1x1 region would drop the
    text over the row below.
 
-   The halo is load-bearing twice: `paint-order: stroke` paints the 3-unit stroke
+   The halo is load-bearing twice: `paint-order: stroke` paints the stroke
    UNDER the fill, so the label keeps its contrast where it crosses terrain or
    map artwork, and the stroke colour comes from the inline style (paper), which
-   is why the ink fill alone would be unreadable over a bright wash.
+   is why the ink fill alone would be unreadable over a bright wash. It is 3px at
+   every cell, for the same reason the type is 11px at every cell: a halo exists
+   to keep THIS text readable, so it is sized against the text and not against
+   the square.
 
    Width is NOT bounded here. An SVG <text> has no box to put a max-width on:
    `text-overflow: ellipsis` applies to a block container, and there is no block
    container here. The clamp is fitLabelText in tactics.js, which measures the
    rendered string against the region's own width, and this rule owns only the
-   type. A label inside an SVG is sized in user units, so 11px here is 11 user
-   units and shrinks with the cell -- at the phone minimum of 10px a square that
-   is 3.4px of type. Fixing that needs non-scaling type or an HTML overlay
-   (#300 item 0.2, which owns the choice); it is not decided here. */
-.tx-cell-lbl { font: 600 11px Figtree, system-ui, sans-serif; fill: var(--tx-ink);
-               paint-order: stroke; stroke-width: 3;
+   type. The label is 11px whatever the square is (see --tx-uu at the top of the
+   board section), so fitLabels re-runs when the cell changes: the budget is in
+   user units and the text it clamps is no longer. */
+.tx-cell-lbl { font-family: Figtree, system-ui, sans-serif; font-weight: 600;
+               font-size: calc(11px * var(--tx-uu));
+               fill: var(--tx-ink);
+               paint-order: stroke; stroke-width: 3; vector-effect: non-scaling-stroke;
                text-anchor: middle; dominant-baseline: central; }
 
 /* Note pins. A pin marks a place, so it is scenery rather than a thing that
@@ -289,8 +317,11 @@ body.tx-min #tx-panel { max-height: none; }
 /* The label is haloed against the map the same way the cell labels are, and is
    transparent to the pointer so a label running over the next square cannot
    steal that square's click. */
-.tx-pin-label { font: 600 11px Figtree, system-ui, sans-serif; fill: var(--tx-ink);
+.tx-pin-label { font-family: Figtree, system-ui, sans-serif; font-weight: 600;
+                font-size: calc(11px * var(--tx-uu));
+                fill: var(--tx-ink);
                 paint-order: stroke; stroke: var(--tx-paper); stroke-width: 3;
+                vector-effect: non-scaling-stroke;
                 stroke-linejoin: round; pointer-events: none; }
 .tx-reach { fill: var(--tx-move); fill-opacity: .26; pointer-events: none; }
 .tx-dash { fill: none; stroke: var(--tx-move); stroke-opacity: .7; stroke-width: 1.5; stroke-dasharray: 4 3; pointer-events: none; }
@@ -300,15 +331,30 @@ body.tx-min #tx-panel { max-height: none; }
 .tx-threat-line { stroke: var(--tx-danger); stroke-opacity: .75; stroke-width: 1.5; }
 .tx-path { fill: none; stroke: var(--tx-brass); stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
 .tx-path.tx-risky { stroke: var(--tx-danger); }
-.tx-feet { font: 700 12px Figtree, system-ui, sans-serif; fill: var(--tx-ink); paint-order: stroke; stroke: var(--tx-panel); stroke-width: 4; pointer-events: none; }
+.tx-feet { font-family: Figtree, system-ui, sans-serif; font-weight: 700;
+           font-size: calc(12px * var(--tx-uu));
+           fill: var(--tx-ink); paint-order: stroke; stroke: var(--tx-panel);
+           stroke-width: 4; vector-effect: non-scaling-stroke; pointer-events: none; }
 .tx-tok { cursor: pointer; }
+/* The token's frame, its ring, and the badge outlines. These are chrome, not
+   map: the frame is the one thing on a token that says which side the creature
+   is, and the ring is the one thing that says whose turn it is, so their weights
+   are interface weights and do not belong to the square. At cell = 10 the frame
+   was 0.6px and the ring 0.9px, which is the same legibility bug as 3.4px of
+   type. The frame carries no class and cannot get one here (its geometry is
+   pinned verbatim by tests/test_display_tactics_ui.py), so the token group's
+   own children are addressed instead: the four that are stroked (the ring, the
+   frame, the condition tabs, the corner markers) and the three that are not (the
+   fill, the badge plate, the HP bar), which are therefore unaffected. */
+.tx-tok > circle, .tx-tok > path, .tx-tok > rect { vector-effect: non-scaling-stroke; }
 .tx-tok .tx-ring { fill: none; stroke: var(--tx-brass); stroke-width: 3; opacity: 0; }
 .tx-tok.tx-now .tx-ring { opacity: 1; animation: tx-pulse 1.6s ease-in-out infinite; }
 @keyframes tx-pulse { 50% { stroke-width: 5; } }
 .tx-tok.tx-dead { opacity: .3; cursor: default; }
 .tx-tok.tx-target .tx-ring { opacity: 1; stroke: var(--tx-danger); stroke-dasharray: 5 3; }
 .tx-tok text { pointer-events: none; }
-.tx-pct { font: 700 11px Figtree, system-ui, sans-serif; fill: #fff; }
+.tx-pct { font-family: Figtree, system-ui, sans-serif; font-weight: 700;
+          font-size: calc(11px * var(--tx-uu)); fill: #fff; }
 .tx-pct-bg { fill: var(--tx-danger); }
 .tx-pct-bg.tx-ally { fill: var(--tx-warnc); }
 .tx-pct-bg.tx-ally + .tx-pct { fill: #1B2830; }
@@ -318,7 +364,8 @@ body.tx-min #tx-panel { max-height: none; }
 .tx-mark { stroke: var(--tx-panel); stroke-width: 1.5; }
 .tx-mark.tx-conc { fill: var(--tx-brass); }
 .tx-mark.tx-ready { fill: var(--tx-accent); }
-.tx-mark-t { font: 800 8px Figtree, system-ui, sans-serif; fill: #fff; }
+.tx-mark-t { font-family: Figtree, system-ui, sans-serif; font-weight: 800;
+             font-size: calc(8px * var(--tx-uu)); fill: #fff; }
 
 /* ── fog of war, cover shading, condition badges, keyboard cursor ── */
 .tx-fog { fill: var(--tx-void); fill-opacity: .55; pointer-events: none; }
@@ -410,7 +457,8 @@ body.tx-min #tx-panel { max-height: none; }
 .tx-eye { fill: none; stroke: var(--tx-accent); stroke-width: 2; stroke-dasharray: 3 3; pointer-events: none; }
 .tx-cond { fill: var(--tx-ink); stroke: var(--tx-panel); stroke-width: 1; }
 .tx-cond.tx-cond-more { fill: var(--tx-muted); }
-.tx-cond-t { font: 800 8px Figtree, system-ui, sans-serif; fill: var(--tx-panel); }
+.tx-cond-t { font-family: Figtree, system-ui, sans-serif; font-weight: 800;
+             font-size: calc(8px * var(--tx-uu)); fill: var(--tx-panel); }
 .tx-cursor { fill: none; stroke: var(--tx-brass); stroke-width: 3; pointer-events: none; }
 .tx-board:focus { outline: none; }
 .tx-board:focus-visible { outline: 2px solid var(--tx-brass); outline-offset: 1px; }
@@ -428,14 +476,18 @@ body.tx-min #tx-panel { max-height: none; }
 .tx-aim.tx-armed { stroke: var(--tx-spell); stroke-width: 3; stroke-dasharray: none; }
 .tx-caught { fill: none; stroke: var(--tx-danger); stroke-width: 3; pointer-events: none; }
 .tx-caught.tx-ally { stroke: var(--tx-warnc); stroke-width: 4; stroke-dasharray: 4 2; }
-.tx-float { font: 800 16px Figtree, system-ui, sans-serif; paint-order: stroke; stroke: var(--tx-panel); stroke-width: 4; pointer-events: none; animation: tx-rise 1.3s ease-out forwards; }
+.tx-float { font-family: Figtree, system-ui, sans-serif; font-weight: 800;
+           font-size: calc(16px * var(--tx-uu));
+           paint-order: stroke; stroke: var(--tx-panel); stroke-width: 4;
+           vector-effect: non-scaling-stroke;
+           pointer-events: none; animation: tx-rise 1.3s ease-out forwards; }
 .tx-float.tx-dmg { fill: var(--tx-danger); }
 .tx-float.tx-heal { fill: var(--tx-heal); }
 /* The chance, drawn above the token it is about. Ink rather than a state
    colour, because it is not an outcome: nothing has happened yet. Smaller than
    the damage number it shares the rise with, and above the token so the two do
    not overprint on the same damage tick. */
-.tx-float.tx-odds-float { font-size: 12px; fill: var(--tx-ink); }
+.tx-float.tx-odds-float { font-size: calc(12px * var(--tx-uu)); fill: var(--tx-ink); }
 @keyframes tx-rise { from { transform: translateY(0); opacity: 1; } to { transform: translateY(-26px); opacity: 0; } }
 
 /* Above the map, not over the log. At the bottom of the panel it covered the
