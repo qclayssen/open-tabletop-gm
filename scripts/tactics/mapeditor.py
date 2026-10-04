@@ -321,8 +321,9 @@ def apply_alignment(spec: dict, body: dict) -> dict:
         raise ValueError(f"cell_px must be greater than 0, not {values['cell_px']:g}")
 
     out = dict(spec)
-    out["grid"] = {"cell_px": values["cell_px"],
-                   "offset_x": values["offset_x"], "offset_y": values["offset_y"]}
+    grid = dict(spec.get("grid") or {})
+    grid.update(values)
+    out["grid"] = grid
     # A size is only meaningful next to a picture. `image_px` is dropped rather
     # than refused here: this is the alignment box, and a GM aligning a map that
     # has no art yet is doing something reasonable.
