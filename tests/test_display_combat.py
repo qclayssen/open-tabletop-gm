@@ -253,6 +253,47 @@ class CombatEndpoints(unittest.TestCase):
                 self.assertEqual(code, 400, body)
         self.assertEqual(self.calls, [])
 
+    # ── second review pass ────────────────────────────────────────────────
+    #
+    # These three were defined inside the `if __name__ == "__main__":` block,
+    # *below* `unittest.main()`, so pytest never collected them. The file
+    # reported `20 passed` while three assertions ran zero times. A nested `def`
+    # is not a collectable module-level test, so conftest cannot catch this
+    # class either.
+    #
+    # They also use `self.push`, `self.do` and `self.queued`, which are
+    # `CombatEndpoints` fixtures, and they were sitting in `Snapshot`, which has
+    # none of them. Hoisting them into this class fixes both halves at once: at
+    # module scope they would collect and then error on a missing fixture, which
+    # is a different kind of green.
+    def test_monster_spells_and_previews_are_not_readable_from_a_browser(self):
+        self.push(SNAP)
+        code, body = self.do({"cmd": "spells", "args": ["frog-1"]})
+        self.assertEqual(code, 403)
+        code, body = self.do({"cmd": "preview-area", "args": ["frog-1", "fire bolt", "B7"]})
+        self.assertEqual(code, 403)
+        self.assertEqual(self.calls, [])
+        self.assertEqual(self.do({"cmd": "spells", "args": ["kairos"]})[0], 200)
+
+    def test_a_usage_error_is_an_error_not_a_pending_prompt(self):
+        self.push(SNAP)
+        self.reply = (2, "usage: combat.py cast ...\ncombat.py cast: error: argument --level: invalid int value: 'x'")
+        code, body = self.do({"cmd": "cast", "args": ["kairos", "fire bolt", "--level", "x"]})
+        self.assertIn("error", body)
+        self.assertNotIn("pending", body)
+        self.reply = (2, "Kairos rolls 1d20+5 for Fire Bolt vs Frog 1. Nothing has happened yet.")
+        code, body = self.do({"cmd": "cast", "args": ["kairos", "fire bolt", "frog-1"]})
+        self.assertIn("pending", body)
+
+    def test_the_reactions_setting_is_not_queued_for_the_gm(self):
+        self.push(SNAP)
+        self.reply = (0, json.dumps({"text": "Kairos: spell reactions auto.", "result": {}}))
+        code, body = self.do({"cmd": "reactions", "args": ["kairos", "auto"]})
+        self.assertTrue(body["ok"])
+        self.assertEqual(list(self.mod._input_queue), [])
+        self.assertEqual(self.queued(), [])
+
+
 class Snapshot(unittest.TestCase):
     """sync.snapshot carries what the spell and action UI shows."""
 
@@ -310,32 +351,4 @@ class Snapshot(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
-    # ── second review pass ──
-    def test_monster_spells_and_previews_are_not_readable_from_a_browser(self):
-        self.push(SNAP)
-        code, body = self.do({"cmd": "spells", "args": ["frog-1"]})
-        self.assertEqual(code, 403)
-        code, body = self.do({"cmd": "preview-area", "args": ["frog-1", "fire bolt", "B7"]})
-        self.assertEqual(code, 403)
-        self.assertEqual(self.calls, [])
-        self.assertEqual(self.do({"cmd": "spells", "args": ["kairos"]})[0], 200)
-
-    def test_a_usage_error_is_an_error_not_a_pending_prompt(self):
-        self.push(SNAP)
-        self.reply = (2, "usage: combat.py cast ...\ncombat.py cast: error: argument --level: invalid int value: 'x'")
-        code, body = self.do({"cmd": "cast", "args": ["kairos", "fire bolt", "--level", "x"]})
-        self.assertIn("error", body)
-        self.assertNotIn("pending", body)
-        self.reply = (2, "Kairos rolls 1d20+5 for Fire Bolt vs Frog 1. Nothing has happened yet.")
-        code, body = self.do({"cmd": "cast", "args": ["kairos", "fire bolt", "frog-1"]})
-        self.assertIn("pending", body)
-
-    def test_the_reactions_setting_is_not_queued_for_the_gm(self):
-        self.push(SNAP)
-        self.reply = (0, json.dumps({"text": "Kairos: spell reactions auto.", "result": {}}))
-        code, body = self.do({"cmd": "reactions", "args": ["kairos", "auto"]})
-        self.assertTrue(body["ok"])
-        self.assertEqual(list(self.mod._input_queue), [])
-        self.assertEqual(self.queued(), [])
 
