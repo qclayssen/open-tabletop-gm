@@ -60,7 +60,7 @@ def test_the_backfill_records_the_picture_s_own_size(tmp_path):
     path = _map(maps, "testmap")
     _png(maps / "images" / "art.png", 64, 48)
 
-    assert backfill.needs_size(json.loads(path.read_text()))
+    assert backfill.needs_size(json.loads(path.read_text(encoding="utf-8")))
 
     found, problems = backfill.survey(maps)
     assert problems == []
