@@ -184,8 +184,8 @@ CAST_ON_A_QUESTION = ("(engine) {spell} was not cast: that was a question, and t
                       "does not spend a slot on one. Say what your character casts and the "
                       "engine will resolve it.")
 CAST_QUESTION_OFFER = ("(engine) {spell} was not cast: that was a question, and the engine "
-                       "does not spend a slot on one. Say yes to cast it now, no to decline, "
-                       "or give any other input to cancel the offer.")
+                       "does not spend a slot on one. Say yes to cast it now{cost}, "
+                       "no to decline, or give any other input to cancel the offer.")
 CAST_TASK = ("Narrate the casting in 1 to 3 sentences, using only the numbers the Engine "
              "section gives (never a different AC, duration or slot count). Then the JSON "
              "line with null for every field.")
@@ -374,6 +374,27 @@ def _status_line(text: str) -> None:
     took, never what it said.
     """
     print(text, file=sys.stderr, flush=True)
+
+
+def _cast_cost(spec: dict) -> str:
+    """What saying `yes` costs, in the player's terms, or "" if unknowable.
+
+    `dm.md` forbids inventing a number, so a level the sheet does not carry
+    produces no clause at all rather than a guess. The alternative -- a bare "Say
+    yes to cast it now" -- is a trap: Mage Armor can be the last level 1 slot in
+    a session, and a player who cannot see the cost cannot consent to it.
+    Ruled 2026-10-06 (T0.3).
+    """
+    level = spec.get("level")
+    if level is None:
+        return ""
+    try:
+        level = int(level)
+    except (TypeError, ValueError):
+        return ""
+    if level <= 0:
+        return " (it is a cantrip, so no slot is spent)"
+    return f" (it spends a level {level} slot)"
 
 
 class Session:
@@ -1610,8 +1631,17 @@ class Session:
             # and never reaches the model -- but the two forms it does NOT claim still
             # do. A question cannot authorize a cast; a supported spell gets a
             # one-input yes/no offer. Any other next input consumes that offer.
-            if self._cast_lookup(cast_named)[3] is not None:
-                out.append(CAST_QUESTION_OFFER.format(spell=cast_named))
+            #
+            # OFFER ONLY WHAT THE PLAYER NAMED. A spend button under a spell the
+            # player never uttered is not agency, it is a second guess with a resource
+            # attached. So the gate is one clause: the player's own line has to contain
+            # the spell. "should I cast mage armor?" and "I cast Mage Armor, right?"
+            # qualify; "how many slots do I have left" does not, and gets the plain
+            # refusal below. Ruled 2026-10-06 (T0.3).
+            spec = self._cast_lookup(cast_named)[3]
+            if spec is not None and cast_named.lower() in line.lower():
+                out.append(CAST_QUESTION_OFFER.format(spell=cast_named,
+                                                       cost=_cast_cost(spec)))
                 self.pending_cast = (cast_named, line)
             else:
                 out.append(CAST_ON_A_QUESTION.format(spell=cast_named))

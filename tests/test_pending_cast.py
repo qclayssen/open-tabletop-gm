@@ -136,3 +136,58 @@ def test_unresolvable_spell_does_not_offer(session):
     out = " ".join(session.handle("Can I cast Wish?"))
     assert "Say yes" not in out
     assert session.pending_cast is None
+
+
+# ---------------------------------------------------------------------------
+# T0.3 (Game Designer, 2026-10-06) -- two requirements on what may be offered.
+# ---------------------------------------------------------------------------
+
+UNNAMED = "how many first-level slots do I have left?"
+
+
+def test_a_cast_the_player_never_named_is_not_offered(session):
+    """The headline case from #301. `cast` is a field the MODEL sets; the player
+    asked a question about their resources. A spend button under a spell they
+    never uttered is not agency, it is a second guess with a resource attached.
+
+    Before fix: the offer fired on any questionish line the model put a cast on.
+    """
+    out = " ".join(session.handle(UNNAMED))
+    assert "was not cast" in out
+    assert session.pending_cast is None, "a model-invented cast was offered"
+    assert "yes" not in out.lower() or "decline" not in out.lower(), \
+        "the output must not offer a confirmation the player did not ask for"
+    assert slots(session) == 0
+
+
+def test_a_cast_the_player_named_is_still_offered(session):
+    """The gate is one clause, and it must not over-block: naming the spell is
+    exactly what ratifying your own action means."""
+    out = " ".join(session.handle(QUESTION))
+    assert session.pending_cast is not None, "a named cast stopped being offered"
+    assert "Mage Armor" in out
+    assert slots(session) == 0
+
+
+def test_the_confirmation_names_what_yes_costs(session):
+    """A bare "Say yes to cast it now" is a trap when Mage Armor is the last
+    level 1 slot. The cost comes from the sheet; it is never invented."""
+    out = offer(session)
+    assert "level 1" in out, f"the offer does not name the slot it would spend: {out!r}"
+    assert "slot" in out
+
+
+def test_the_cost_clause_is_omitted_rather_than_invented_when_the_level_is_unknown():
+    """`dm.md` forbids inventing a number, so an absent level produces no clause."""
+    from localdm.play import _cast_cost
+    assert _cast_cost({"level": 0}).startswith(" (it is a cantrip")
+    assert _cast_cost({"level": 3}) == " (it spends a level 3 slot)"
+    assert _cast_cost({}) == ""
+    assert _cast_cost({"level": None}) == ""
+    assert _cast_cost({"level": "unknown"}) == ""
+
+
+def test_a_mind_sliver_offer_names_level_zero_rather_than_a_slot(session, monkeypatch):
+    """A cantrip costs nothing, and saying "level 0 slot" would be a lie."""
+    from localdm.play import _cast_cost
+    assert "no slot is spent" in _cast_cost({"level": 0})
