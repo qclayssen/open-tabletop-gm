@@ -83,7 +83,16 @@ stashing the diff and re-running the whole suite):
 
 ### Before merge
 
-- [ ] PR is OPEN, base `main`, and head is the reviewed SHA
+- [x] PR is OPEN, base `main`, and head is the reviewed SHA
+
+Verified after enqueue, before the gate: engine PR #260 reports `state=OPEN`,
+`base=main`, `head=2c0afdd1bb185b8342ef37110aff0eaa926ca52a`, byte-identical to local
+reviewed HEAD.
+
+CI green on this PR: `pytest` pass, `python 3.10 floor (engine glob)` pass, `eslint
+(advisory)` pass. Note that the engine's CI **provisions the SRD dataset**, which is why
+its `pytest` is green where the local full-suite run had 12 failures and 23 errors — that
+part of the brief's evidence is about the local clone, not about this PR.
 
 ## 6. Follow-ups
 
