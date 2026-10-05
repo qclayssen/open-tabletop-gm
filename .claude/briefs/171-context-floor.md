@@ -8,12 +8,30 @@
 
 ## 1. Implement
 
+> **CORRECTION, added after merge.** The severity claim originally written here was
+> wrong. It said a filled-in campaign at the **12000 default** hits the empty-the-list
+> loops, quoting `SPEC-dm-agent.md:66-69`. Those spec lines predate **#264** ("stop
+> charging the static prompt against the dynamic budget", landed `4c9127b`), which
+> already removed the default-budget path. Measured on `origin/main` after #260, with a
+> 4797-char digest, 8 turns and 8 canon records:
+>
+> | `--budget` | turns kept (old) | turns kept (with the floor) |
+> |---|---|---|
+> | 12000 (default) | 8 | 8 |
+> | 9000 | 8 | 8 |
+> | 400 | **0** | **2** |
+>
+> So the defect is real and reachable, but through an operator **lowering `--budget`**,
+> not through the ordinary case. `--budget` is operator-settable, so this is a real
+> session, not a theoretical one — the original brief said as much about reachability and
+> was right about that — but calling it "the ordinary case" was an overstatement, and it
+> was caused by quoting a spec section that had been superseded by a merge this change did
+> not account for. The code is unaffected; only the record was wrong.
+
 `build_messages` trimmed with `while can and spent() > budget` and
-`while lines and spent() > budget`. Both loops empty their list. A filled-in campaign
-has `fixed` of ~12-17k chars against the 12000 default (`SPEC-dm-agent.md:66-69`), so
-the **ordinary** case is the one where the DM loses the entire conversation and the
-entire canon — and the prompt still assembles, still parses, and still gets a reply,
-from a summary of nothing.
+`while lines and spent() > budget`. Both loops empty their list, so whenever the budget
+bites at all the DM loses the entire conversation and the entire canon — and the prompt
+still assembles, still parses, and still gets a reply, from a summary of nothing.
 
 - [x] `scripts/localdm/context.py:build_messages` — new `min_turns=2` and `min_canon=3`
   keyword arguments. The two loops stop at the floor instead of emptying. Canon is still

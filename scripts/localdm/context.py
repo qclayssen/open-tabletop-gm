@@ -496,11 +496,19 @@ def build_messages(system: str, digest: str, summary: str, recent: list, *, engi
     # =============================================
     # The loops below used to be `while can and spent() > budget` and `while
     # lines and spent() > budget`, which drop *everything*: every canon line and
-    # every turn. A filled-in campaign has `fixed` of ~12-17k chars against a
-    # 12000 budget (SPEC-dm-agent:66-69), so the ordinary case is the one where
-    # the DM loses the entire conversation and the entire canon with nothing to
-    # show for it. The prompt then still assembled, still parsed, and still got a
-    # DM reply -- from a summary of nothing.
+    # every turn. Whenever the budget bites at all, the DM loses the entire
+    # conversation and the entire canon with nothing to show for it. The prompt
+    # then still assembles, still parses, and still got a DM reply -- from a
+    # summary of nothing.
+    #
+    # Reachable by lowering `--budget`, which is operator-settable, so this is a
+    # real session and not a theoretical one. It is NOT the ordinary
+    # default-budget case: #264 ("stop charging the static prompt against the
+    # dynamic budget") already removed that path, and at the 12000 default a
+    # 4797-char digest with 8 turns and 8 canon records keeps all of them. An
+    # earlier version of this comment claimed the default case and cited
+    # SPEC-dm-agent:66-69, which predates #264; that was wrong and the brief
+    # records the correction with the measurements.
     #
     # So the floors are the feature, not a nicety. `min_turns` keeps the last few
     # turns so the DM can still see what just happened; `min_canon` keeps enough
