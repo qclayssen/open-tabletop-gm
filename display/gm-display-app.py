@@ -59,6 +59,14 @@ except Exception:
     _lookup = None          # type: ignore
     _SRD_AVAILABLE = False
 
+# Crash-safe writes, from the same SCRIPTS_DIR entry above. Persisted display
+# state goes through safeio rather than open(path, "w"), which truncates before
+# the first byte lands: a failure during the write leaves an empty or
+# half-written file where the last session's state was, and the display carries
+# on serving it. `_persist_tail` grew its own tempfile-then-rename for exactly
+# this reason, before safeio existed.
+import safeio as _safeio
+
 from paths import (
     campaigns_dir as _campaigns_dir,
     campaign_path as _campaign_path,
@@ -1244,14 +1252,25 @@ def _get_log_file() -> str:
 
 
 def _persist_log() -> None:
-    """Write the current text log to disk. Called after every chunk."""
+    """Write the current text log to disk. Called after every chunk.
+
+    Atomic: a kill or a full disk mid-write leaves the previous log intact
+    rather than a truncated one. The failure is reported rather than swallowed,
+    because a display that has silently stopped recording looks identical to one
+    that has nothing to record.
+    """
+    path = _get_log_file()
     try:
         with _text_log_lock:
             data = list(_text_log)
-        with open(_get_log_file(), "w", encoding="utf-8") as f:
-            json.dump(data, f)
-    except Exception:
-        pass
+        # indent=None keeps the on-disk form byte-identical to the json.dump this
+        # replaced. safeio defaults to indent=2, which is right for state files
+        # a human reads but wrong here: this fires after every chunk, and
+        # pretty-printing a full 60-entry log costs ~15% more bytes on the
+        # display's hottest write.
+        _safeio.atomic_write_json(path, data, indent=None)
+    except Exception as e:
+        print(f"_persist_log: write failed for {path}: {e}", file=sys.stderr)
 
 
 def _load_log() -> None:
@@ -1419,13 +1438,20 @@ _stats_lock = threading.Lock()
 
 
 def _persist_stats() -> None:
+    """Write party HP/XP/turn order to disk.
+
+    The same atomic contract as `_persist_log`, and the more costly breach: a
+    truncated stats file costs every character's HP, XP and position for the
+    whole party, not just the last line of narration.
+    """
     try:
         with _stats_lock:
             data = dict(_current_stats)
-        with open(STATS_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f)
-    except Exception:
-        pass
+        # indent=None for the same reason as _persist_log: keep the bytes as they
+        # were, so this change is about durability and nothing else.
+        _safeio.atomic_write_json(STATS_FILE, data, indent=None)
+    except Exception as e:
+        print(f"_persist_stats: write failed for {STATS_FILE}: {e}", file=sys.stderr)
 
 
 def _load_stats() -> None:

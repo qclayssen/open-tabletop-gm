@@ -27,6 +27,14 @@ display/.gm-watch.log
 display/.gm-watch.pid
 display/.input_queue.taken
 
+# safeio backups of the display's persisted state. It keeps a <name>.bak beside
+# each target it rewrites, and the display runs with the repo as its cwd, so
+# without these a `git add -A` in the checkout would commit the last few
+# snapshots of the narration log and everyone's hit points.
+display/stats.json.bak
+display/text_log.json.bak
+display/session_tail.json.bak
+
 # Battle map artwork (third-party, 5-13MB each). The map JSONs in
 # display/maps/ are committed and list normally; the pictures they point at are
 # installed locally by scripts/art_import.py. A clone without them still loads
