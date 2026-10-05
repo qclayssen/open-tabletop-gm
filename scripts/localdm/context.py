@@ -510,6 +510,32 @@ def build_messages(system: str, digest: str, summary: str, recent: list, *, engi
     # SPEC-dm-agent:66-69, which predates #264; that was wrong and the brief
     # records the correction with the measurements.
     #
+    # WHY A FLOOR AT ALL, WHICH IS NOT "IT COSTS MONEY"
+    # ===============================================
+    # The obvious reason to floor is cost: a prompt over the allowance is
+    # expensive, so report it. That reason is conditional -- it only bites when
+    # an operator lowers `--budget`, which is the path the paragraph above
+    # describes. The stronger reason does not depend on the budget at all:
+    #
+    # `## Player now` lives in `tail`, and `tail` is never trimmed. So with the
+    # floor at zero and the budget biting, the prompt still carries THIS turn's
+    # line while carrying no exchange for it to answer. The DM is asked to
+    # respond to something it cannot see the beginning of, and invents the rest.
+    # That is not a smaller prompt. It is a wrong one.
+    #
+    # Verified, not asserted: at `budget=400` with the floor at zero,
+    # `## Player now` and the player's line are present and `## Recent turns` is
+    # absent. So the floor is a correctness guard that happens to also make the
+    # overrun visible, and it holds at any budget.
+    #
+    # `min_canon` bounds canon and CANNOT cost a turn: canon is trimmed first
+    # down to its own floor, then turns down to theirs, and each loop stops at
+    # `len(x) > min_x` regardless of `spent()`. Measured across 33 budgets, the
+    # number of turns kept is identical for `min_canon` of 3, 1 and 0. Lowering
+    # it frees no budget for the conversation -- it only discards more of the
+    # verbatim record, which is the one layer `canon.py` calls append-only and
+    # never folded. Do not "optimise" it.
+    #
     # So the floors are the feature, not a nicety. `min_turns` keeps the last few
     # turns so the DM can still see what just happened; `min_canon` keeps enough
     # canon that a fact the player already heard survives. Which the current

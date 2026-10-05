@@ -426,16 +426,21 @@ def test_a_digest_over_the_budget_is_reported_rather_than_truncated():
 # #171 -- the budget has a floor, and the floor is reported.
 #
 # The two trim loops used to be `while can and spent() > budget` and
-# `while lines and spent() > budget`. Both empty their list, so a filled-in
-# campaign -- fixed of ~12-17k chars against a 12000 budget
-# (SPEC-dm-agent:66-69) -- lost the entire conversation AND the entire canon,
-# and the DM answered from what was left: nothing.
+# `while lines and spent() > budget`. Both empty their list, so whenever the
+# budget bites at all the DM lost the entire conversation AND the entire
+# canon, and answered from what was left: nothing.
+#
+# Reachable by lowering `--budget`. NOT the ordinary default-budget case: #264
+# already removed that path, and at the 12000 default a 4797-char digest with 8
+# turns and 8 canon records keeps all of them. An earlier version of this header
+# claimed the default case and cited SPEC-dm-agent:66-69, which predates #264.
+# Corrected in #262 along with the copy in context.py.
 # ---------------------------------------------------------------------------
 
 
 def test_a_prompts_fixed_content_alone_over_budget_still_keeps_the_floor():
-    """The ordinary case, not an edge case. With the digest alone over the line,
-    the last 2 turns and 3 canon lines survive instead of nothing."""
+    """The digest alone over the line, which an operator reaches by lowering
+    `--budget`. The last 2 turns and 3 canon lines survive instead of nothing."""
     report = {}
     msgs = context.build_messages(
         "SYS", "D" * 6000, "", _eight_turns(),
