@@ -329,6 +329,15 @@ def grants_injection(narration: str) -> bool:
 _OVERRIDE = re.compile(
     r"\b(?:forget|ignore|disregard|override)\b[^.!?\n]{0,40}?"
     r"\b(?:instruction|prompt|guardrail|polic(?:y|ies)|directive)s?\b"
+    # "rules" is in the attack vocabulary, but bare "rules" is also the most
+    # ordinary noun in the fiction: "Ignore the rules the tiefling laid down and
+    # take the west road" is a doorway sentence and is asserted to survive. So the
+    # word is matched only under a qualifier that points at the DM's own rules
+    # rather than an in-world authority -- "all previous rules", "your prior
+    # rules", "the above rules". No qualifier, no match, which keeps the missed
+    # exotic phrasing the safe direction the comment above asks for.
+    r"|\b(?:all|any|these|those|previous|prior|earlier|above|foregoing|original|initial|your)\s+"
+    r"(?:\w+\s+){0,2}?rules?"
     r"|\bnew\s+(?:system\s+)?instructions?\s*:"
     # role reassignment, and only when it names a system role: "you are now in
     # the library" is a doorway, "you are now the game master" is an attack.
@@ -336,6 +345,14 @@ _OVERRIDE = re.compile(
     r"\b(?:mode|assistant|ai|model|game\s?master|gm|admin(?:istrator)?|developer"
     r"|god|dungeon\s?master|unrestricted|unbound)\b"
     r"|\b(?:give|grant)\s+(?:me|us)\b[^.!?\n]{0,20}?\b(?:gold|gp|xp)\b"
+    # "gain" is the third-person form of the same grant -- "you gain +100 gp" is
+    # an award, and it arrived here because the give/grant branch needs a "me"
+    # or "us" object the sentence does not have. It is anchored on a second
+    # person on purpose: "the bandit gains gold from the toll booth" is ordinary
+    # narration and must not be eaten, so third-person gains are not matched.
+    r"|\byou\s+(?:may\s+|can\s+|will\s+|shall\s+)?(?:gain|gains|earn|earns)\b"
+    r"[^.!?\n]{0,20}?\b(?:gold|gp|xp)\b"
+    r"|\b(?:gain|gains|gained)\s+(?:me|us)\b[^.!?\n]{0,20}?\b(?:gold|gp|xp)\b"
     r"|\broll\s+(?:me\s+)?a\s+natural\s+(?:20|twenty)\b",
     re.I)
 _SENTENCE = re.compile(r"(?<=[.!?])[ \t]+")
