@@ -160,6 +160,24 @@ def flushed(page, timeout: int = 20000) -> None:
             "flushNewBlock() to run and post its divider", timeout=timeout)
 
 
+def divider_count(page) -> int:
+    """How many block dividers the story column carries.
+
+    `flushed()` proves that a flush happened; this counts them. `flushNewBlock()`
+    appends one divider per block it finalises, so a block closed twice reads as
+    two -- which is what makes "exactly once" an assertion and not an assumption.
+    """
+    return page.evaluate(
+        "() => document.querySelectorAll('#text-content .divider').length")
+
+
+def blocks(page) -> list:
+    """Each narration block's text, in document order."""
+    return page.evaluate(
+        "() => [...document.querySelectorAll('#text-content .dm-block')]"
+        ".map(b => b.textContent)")
+
+
 class CursorOwnership(unittest.TestCase):
     """The contract, asserted against the source without a browser.
 
@@ -284,6 +302,45 @@ class Browser(BrowserTestCase):
         flushed(page)          # the idle timer ran -- proven, not assumed
         self.assertIn(SENTENCE, story(page),
                       "the idle timer that closed the block deleted its last paragraph")
+
+    def test_a_slow_reveal_still_closes_its_block_once(self):
+        """A reveal slower than `IDLE_GAP * 2` must not defeat the idle timer.
+
+        The deadline is armed once per chunk to fire `IDLE_GAP * 2` later. When
+        that callback found the typewriter still running it returned without
+        re-arming, so a long sentence on a contended browser never closed its
+        block: no divider appeared and `flushNewBlock()` never ran. Slowing the
+        typewriter reaches that state deterministically, without touching
+        `IDLE_GAP`.
+        """
+        page = self.page_in_story()
+        page.evaluate("() => { charDelay = 100; }")
+        page.evaluate("t => handleIncomingText(t)", SENTENCE)
+        drained(page)          # the reveal outran the one-shot deadline
+        flushed(page)
+        self.assertEqual(divider_count(page), 1,
+                         "a slow reveal closed its block more than once")
+        self.assertIn(SENTENCE, story(page))
+
+    def test_a_second_chunk_resets_the_deadline_without_splitting_the_block(self):
+        """The deadline follows the newest chunk, and the block still closes once.
+
+        A second chunk arriving mid-reveal is inside `IDLE_GAP`, so it belongs
+        to the same block, and it must leave only the one pending timer behind:
+        two live deadlines would be two flushes for one block.
+        """
+        page = self.page_in_story()
+        page.evaluate("() => { charDelay = 100; }")
+        page.evaluate("t => handleIncomingText(t)", SENTENCE)
+        page.evaluate("t => handleIncomingText(t)", SECOND)
+        drained(page)
+        flushed(page)
+        self.assertEqual(divider_count(page), 1,
+                         "the second chunk produced a second flush")
+        self.assertEqual(len(blocks(page)), 1,
+                         "the second chunk was split into a block of its own")
+        self.assertIn(SENTENCE, story(page))
+        self.assertIn(SECOND, story(page))
 
     # 3. the other callers ----------------------------------------------------
     def test_a_reconnect_replay_keeps_in_progress_narration(self):

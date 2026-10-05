@@ -1743,11 +1743,20 @@ function handleIncomingText(text) {
   }
   lastChunkTime = now;
 
-  // Reset idle timer
+  // Reset idle timer. If the reveal is still running when it fires, re-arm
+  // rather than give up: a slow final chunk would otherwise leave the block
+  // open forever, with no divider and flushNewBlock() never run. Each call
+  // clears the pending timer first, so a later chunk resets the deadline
+  // instead of leaving a second one behind.
   clearTimeout(idleTimer);
-  idleTimer = setTimeout(() => {
-    if (!isTyping && charQueue.length === 0) flushNewBlock();
-  }, IDLE_GAP * 2);
+  const closeWhenDrained = () => {
+    if (isTyping || charQueue.length > 0) {
+      idleTimer = setTimeout(closeWhenDrained, IDLE_GAP * 2);
+      return;
+    }
+    flushNewBlock();
+  };
+  idleTimer = setTimeout(closeWhenDrained, IDLE_GAP * 2);
 
   // Enqueue — preprocess markdown to typed segment items
   const cleaned = text
