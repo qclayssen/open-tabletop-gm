@@ -24,7 +24,7 @@ import json
 import re
 import threading
 
-from .reply import strip_think
+from .reply import scrub_injection, strip_think
 
 KINDS = ("dialogue", "interaction", "reveal", "death")
 
@@ -67,6 +67,16 @@ class Canon:
         return self.dir / "canon.jsonl"
 
     def records(self) -> list:
+        """Canon records, scrubbed on read. #261.
+
+        `canon.jsonl` is appended from what the DM said, so it is model-authored
+        text on its way back to the model. `memory.turns()` has always scrubbed;
+        this path had not. Scrubbed here rather than in `relevant()` so every
+        caller gets it -- `relevant()` ranks over these dicts and both the rank
+        and the render read `text`.
+
+        The file is not rewritten; only what the model reads is cleaned.
+        """
         with self._lock:
             if not self._path.exists():
                 return []
@@ -80,6 +90,8 @@ class Canon:
             except json.JSONDecodeError:
                 continue                     # a torn append: skip it, keep the rest
             if isinstance(data, dict) and data.get("text"):
+                data = dict(data)
+                data["text"] = scrub_injection(str(data["text"]))
                 out.append(data)
         return out
 

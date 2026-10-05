@@ -110,6 +110,57 @@ def _truncate(text: str, limit: int) -> str:
     return kept + marker
 
 
+# Campaign content is demoted to this depth and deeper. `build_messages` writes
+# `##` for every block it owns (`## Engine (facts, do not change them)`,
+# `## Player now`, `## Your task`, `## Canon`), and the digests below render a
+# campaign file's own sections at `###`. So anything from a campaign file has to
+# sit at `####` or below to be unable to pose as one of those.
+#
+# WHY DEMOTION AND NOT AN ALLOWLIST (#261)
+# ==========================================
+# `state_digest` and `sheet_digest` filter by section name, but `notes_digest`
+# cannot: `templates/npcs.md` has NO `##` headings at all -- it is `# NPCs` with
+# `### <Name>`, `### Personality`, `### Relationships`, `### Notes` -- and
+# `_HEADING` matches `##` only. An allowlist keyed the way `state_digest`'s is
+# would keep **zero** sections of every npcs.md and silently delete the whole
+# roster. Measured:
+#
+#     _HEADING.finditer(templates/npcs.md)  ->  []
+#
+# A section-name allowlist on the notes files needs its own vocabulary and its
+# own migration, and is not what closes the hole. The hole is the heading
+# *level*, not the heading *name*: a forged `## Engine (facts, do not change
+# them)` is ordinary English, which is exactly why `scrub_injection` cannot see
+# it. Demotion is structural, so it survives paraphrase -- and it cannot drop
+# content, because it only renames what is already there.
+CAMPAIGN_HEADING_BASE = "####"
+# One more level than the digest's own `###`, so a campaign heading can never
+# outrank the section of the digest that contains it either.
+
+
+def _demote_headings(text: str, base: str = CAMPAIGN_HEADING_BASE) -> str:
+    """Push every ATX heading in `text` to `base` or deeper.
+
+    A heading shallower than `base` is deepened; one already at or below it is
+    left alone. That keeps nested structure nested instead of flattening a
+    `#####` sub-point up to the same level as its parent.
+    """
+    base_level = len(base)
+
+    def push(match: "re.Match") -> str:
+        hashes, text_after = match.group(1), match.group(3)
+        if len(hashes) >= base_level:
+            return match.group(0)      # already deep enough; keep its own nesting
+        # Anything shallower lands exactly AT `base`. Not `base` plus the
+        # difference: that arithmetic goes NEGATIVE for a shallow heading, and a
+        # negative repeat yields "", silently deleting the heading's text --
+        # which is the exact failure this change exists to prevent, and which a
+        # first attempt at this helper did reintroduce.
+        return base + " " + text_after
+
+    return re.sub(r"^(#{1,6})(\s+)(.*)$", push, text, flags=re.M)
+
+
 def state_digest(state_md: str, sections=DIGEST_SECTIONS, limit: int = 3000) -> str:
     """The state.md sections the DM reads, trimmed to what is actually filled in.
 
@@ -129,7 +180,8 @@ def state_digest(state_md: str, sections=DIGEST_SECTIONS, limit: int = 3000) -> 
             body = [line for line in state_md[m.end():end].splitlines()
                     if line.strip() and not is_template_line(line)]
         if body:
-            parts.append(f"### {m.group(1)}\n" + "\n".join(body))
+            parts.append(f"#### {m.group(1)}\n"
+                         + _demote_headings("\n".join(body)))
     # Scrubbed on load; read the ceiling note at the top of this module first.
     return _truncate(scrub_injection("\n\n".join(parts)), limit)
 
@@ -157,14 +209,32 @@ def sheet_digest(camp_dir, sections=SHEET_SECTIONS, limit: int = 3000) -> str:
         end = heads[i + 1].start() if i + 1 < len(heads) else len(text)
         body = [ln for ln in text[m.end():end].splitlines() if ln.strip()]
         if body:
-            parts.append(f"### Player character: {m.group(1)}\n" + "\n".join(body))
+            parts.append(f"#### Player character: {m.group(1)}\n"
+                         + _demote_headings("\n".join(body)))
     return scrub_injection("\n\n".join(parts))[:limit]   # scrubbed; see the ceiling note
 
 
 # world.md and npcs.md are the campaign's authored notes; faction_log.md is what
 # world.py actually writes the faction clock results to, and leaving it out meant
 # the DM was told about a faction move only if the GM transcribed it into state.md
-# by hand. The GM-only marker lines world.py writes are stripped by is_template_line.
+# by hand.
+#
+# THE GM-ONLY MARKERS ARE KEPT, NOT STRIPPED (#261)
+# ===============================================
+# This comment used to claim "the GM-only marker lines world.py writes are
+# stripped by is_template_line". That was false, and it was false in the
+# dangerous direction: had anyone acted on it, the one line telling the DM that
+# a faction clock moved off-screen is a line the GM must never read aloud --
+# exactly the line to preserve. Measured, not assumed:
+#
+#     is_template_line("## 2026-01-01 12:00:00 (GM-only)")  ->  ""   (real content)
+#     is_template_line("[GM-only] Mira: 3/6 -> 4/6")         ->  ""   (real content)
+#     notes_digest(camp_with_faction_log)  ->  "...(GM-only)\nMira advances: 3/6 -> 4/6"
+#
+# `is_template_line` classifies unfilled *authoring* scaffolding, not secrecy
+# annotations. Both are content the DM should see; conflating them would strip
+# the warning and keep the clock result, which is the inverse of what we want.
+# Pinned by test_provenance_boundary.py::test_gm_only_markers_survive_the_digest.
 NOTE_FILES = ("world.md", "npcs.md", "faction_log.md")
 _HEAD_LINE = re.compile(r"^#{1,6} ")
 _TEMPLATE_DEFAULT = re.compile(r"Attitude toward party:\*\*\s*neutral|Current stage:\*\*\s*1\b", re.I)
@@ -239,7 +309,8 @@ def notes_digest(camp_dir, files=NOTE_FILES, limit: int = 2500) -> str:
                     if not (_HEAD_LINE.match(ln)
                             and (i + 1 == len(keep) or _HEAD_LINE.match(keep[i + 1])))]
         if body:
-            parts.append(f"### {name}\n" + "\n".join(body))
+            parts.append(f"#### {name}\n"
+                         + _demote_headings("\n".join(body)))
     return scrub_injection("\n\n".join(parts))[:limit]   # scrubbed; see the ceiling note
 
 
