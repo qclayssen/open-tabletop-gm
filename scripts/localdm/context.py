@@ -405,7 +405,8 @@ def council_setting(state_md: str) -> str:
 def build_messages(system: str, digest: str, summary: str, recent: list, *, engine: str = "",
                    notes: str = "", player: str = "", task: str = "",
                    canon: list = (), budget: int = 12000,
-                   report: dict | None = None) -> list:
+                   report: dict | None = None,
+                   min_turns: int = 2, min_canon: int = 3) -> list:
     """Two messages: a static system head, and one ordered user message.
 
     WHY THE DIGEST IS NOT IN THE SYSTEM MESSAGE
@@ -456,6 +457,14 @@ def build_messages(system: str, digest: str, summary: str, recent: list, *, engi
     `budget` is the operator's signal that the digest, not the conversation, is
     what needs the cap. Bounding the combined digest is tracked in
     `ROADMAP-ideas.md` -> `## Session/context management`.
+
+    The floor is the other half of that answer. `min_turns` and `min_canon`
+    stop the trim loops before they empty the conversation or the canon, and
+    `report` says when the floor held (`over_budget`, `over_by`). SPEC-dm-agent
+    D4.2 also proposes degrading the digest sizes before dropping anything;
+    that is deliberately NOT done here, because the paragraph above records a
+    standing decision that the digest is never trimmed (`dm.md` refers to it by
+    name) and the two conflict. Resolving that is its own change.
     """
     sys_msg = system
     head = ([f"## Campaign\n{digest.strip()}"] if digest and digest.strip() else [])
@@ -483,15 +492,52 @@ def build_messages(system: str, digest: str, summary: str, recent: list, *, engi
         return (fixed + header + sum(len(p) + 1 for p in can)
                 + sum(len(p) + 1 for p in lines))
 
-    while can and spent() > budget:
+    # FLOOR, NOT CLIFF (#171, SPEC-dm-agent D4.2)
+    # =============================================
+    # The loops below used to be `while can and spent() > budget` and `while
+    # lines and spent() > budget`, which drop *everything*: every canon line and
+    # every turn. A filled-in campaign has `fixed` of ~12-17k chars against a
+    # 12000 budget (SPEC-dm-agent:66-69), so the ordinary case is the one where
+    # the DM loses the entire conversation and the entire canon with nothing to
+    # show for it. The prompt then still assembled, still parsed, and still got a
+    # DM reply -- from a summary of nothing.
+    #
+    # So the floors are the feature, not a nicety. `min_turns` keeps the last few
+    # turns so the DM can still see what just happened; `min_canon` keeps enough
+    # canon that a fact the player already heard survives. Which the current
+    # scene beats history, so canon is still dropped first -- just not all of it.
+    #
+    # When the floor does not fit, the function does NOT quietly drop below it and
+    # does NOT raise: the prompt is assembled, and `report` carries `over_budget`
+    # and `over_by` so the operator is told the number is a floor that beat the
+    # budget. An operator watching `dynamic` sit above `budget` needs to know it
+    # is because the floor held, not because the loop stopped early.
+    min_turns = max(0, min_turns)
+    min_canon = max(0, min_canon)
+    canon_dropped = 0
+    while len(can) > min_canon and spent() > budget:
         can.pop()                           # canon.relevant sorts best-first
-    while lines and spent() > budget:
+        canon_dropped += 1
+    turns_dropped = 0
+    while len(lines) > min_turns and spent() > budget:
         lines.pop(0)
+        turns_dropped += 1
+    over_by = max(0, spent() - budget)
     body = head + ([canon_mod.HEADER + "\n" + "\n".join(can)] if can else []) \
         + (["## Recent turns\n" + "\n".join(lines)] if lines else []) + tail
     user = "\n\n".join(body)
     if report is not None:
         report.update(system=len(sys_msg), dynamic=len(user), budget=budget,
-                      turns=len(lines), offered=offered)
+                      turns=len(lines), offered=offered,
+                      # #171: what the budget actually cost, so the floor is
+                      # observable instead of inferred from a smaller prompt.
+                      # `canon`/`canon_dropped` are counted against what was
+                      # offered, not against what survived, so a run that dropped
+                      # nothing reads 0 rather than being indistinguishable from
+                      # a run that offered nothing.
+                      canon=len(can), canon_dropped=canon_dropped,
+                      turns_dropped=turns_dropped,
+                      min_turns=min_turns, min_canon=min_canon,
+                      over_budget=over_by > 0, over_by=over_by)
     return [{"role": "system", "content": sys_msg},
             {"role": "user", "content": user}]

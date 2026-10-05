@@ -401,4 +401,150 @@ def test_a_digest_over_the_budget_is_reported_rather_than_truncated():
     user = msgs[1]["content"]
     assert report["dynamic"] == len(user) > report["budget"], report
     assert "x" * EVICTING_DIGEST in user, "the digest is delivered whole or not at all"
-    assert "## Recent turns" not in user, "so the turns are what give way, not the facts"
+    # CHANGED BY #171. This used to assert `"## Recent turns" not in user` --
+    # that when the digest alone blows the budget, the turns give way to
+    # nothing at all. It was a faithful statement of the old contract and this
+    # is now the opposite of it, deliberately: SPEC-dm-agent D4.2 and issue #171
+    # ask for a floor of the last 2 turns that is "never zero", so the DM keeps
+    # sight of what just happened instead of being handed a summary of nothing.
+    #
+    # The test's real contract is untouched and still asserted above and below:
+    # the digest is delivered WHOLE, and the overflow is REPORTED rather than
+    # hidden. What changed is only that the floor holds when there is nothing
+    # left to give, and that the operator is told it held.
+    assert "## Recent turns" in user, (
+        "the floor should keep the last turns even when the digest alone is "
+        f"over budget; report was {report}")
+    assert report["turns"] == 2, report
+    assert report["turns_dropped"] == 6, report
+    assert report["over_budget"] is True, (
+        "an over-budget prompt that held its floor must say so")
+    assert report["over_by"] > 0, report
+
+
+# ---------------------------------------------------------------------------
+# #171 -- the budget has a floor, and the floor is reported.
+#
+# The two trim loops used to be `while can and spent() > budget` and
+# `while lines and spent() > budget`. Both empty their list, so a filled-in
+# campaign -- fixed of ~12-17k chars against a 12000 budget
+# (SPEC-dm-agent:66-69) -- lost the entire conversation AND the entire canon,
+# and the DM answered from what was left: nothing.
+# ---------------------------------------------------------------------------
+
+
+def test_a_prompts_fixed_content_alone_over_budget_still_keeps_the_floor():
+    """The ordinary case, not an edge case. With the digest alone over the line,
+    the last 2 turns and 3 canon lines survive instead of nothing."""
+    report = {}
+    msgs = context.build_messages(
+        "SYS", "D" * 6000, "", _eight_turns(),
+        canon=[{"text": f"canon {i} " + "c" * 80} for i in range(8)],
+        budget=400, report=report)
+    user = msgs[1]["content"]
+    assert report["turns"] == 2, report
+    assert "## Recent turns" in user
+    assert report["canon"] == 3, report
+    assert report["canon_dropped"] == 5, report
+    assert report["turns_dropped"] == 6, report
+
+
+def test_an_over_budget_prompt_says_it_is_over_budget():
+    """Silence here is the bug. An operator seeing `dynamic` above `budget` has
+    to be able to tell the floor held from the loop stopping early."""
+    report = {}
+    context.build_messages("SYS", "D" * 6000, "", _eight_turns(),
+                           budget=400, report=report)
+    assert report["over_budget"] is True, report
+    assert report["over_by"] > 0, report
+    # `over_by` is measured by `spent()` on the assembled parts, while `dynamic`
+    # is `len(user)` after they are joined, so the two differ by the separators.
+    # Asserting they are equal would be asserting an identity between two
+    # different measurements; what matters is that both say "over".
+    assert report["dynamic"] > report["budget"], report
+
+
+def test_a_prompt_that_fits_reports_no_overflow():
+    report = {}
+    context.build_messages("SYS", "short digest", "Story.", _eight_turns(),
+                           budget=12000, report=report)
+    assert report["over_budget"] is False, report
+    assert report["over_by"] == 0, report
+    assert report["turns_dropped"] == 0, report
+    assert report["canon_dropped"] == 0, report
+
+
+def test_canon_is_dropped_before_turns_because_the_current_scene_beats_history():
+    """When the floor does not save both, canon is what gives way. A verbatim line
+    the player already heard is worth less than the turn they just played.
+
+    The digest is small here on purpose. With the digest alone over the line, both
+    floors are hit at once and the ordering cannot be observed -- which is what
+    the first test above covers.
+    """
+    report = {}
+    context.build_messages(
+        "SYS", "D" * 100, "", _eight_turns(),
+        canon=[{"text": f"canon {i} " + "c" * 80} for i in range(8)],
+        budget=1800, report=report)
+    assert report["canon_dropped"] == 3, report
+    assert report["canon"] == 5, report
+    assert report["turns_dropped"] == 0, (
+        f"canon should be spent before the conversation is: {report}")
+    assert report["over_budget"] is False, (
+        f"a budget the floor can satisfy should not report overflow: {report}")
+
+
+def test_the_floor_is_configurable_and_zero_disables_it():
+    """The floor is a default, not a law. An operator who wants the old
+    all-or-nothing behaviour can ask for it, and the tests above would fail
+    loudly if the default silently changed."""
+    report = {}
+    context.build_messages("SYS", "D" * 6000, "", _eight_turns(),
+                           budget=400, report=report, min_turns=0, min_canon=0)
+    assert report["turns"] == 0, report
+    assert report["canon"] == 0, report
+
+
+def test_the_floor_never_exceeds_what_was_offered():
+    """A floor above the supply must not invent turns. Asking for 5 with 2
+    available has to yield 2, not 5."""
+    report = {}
+    context.build_messages("SYS", "D" * 6000, "", _eight_turns()[:2],
+                           budget=400, report=report, min_turns=5)
+    assert report["turns"] == 2, report
+    assert report["offered"] == 2, report
+    assert report["turns_dropped"] == 0, report
+
+
+def test_a_negative_floor_is_clamped_rather_than_silently_ignored():
+    """`while len(lines) > -1` would pop until the list was empty and then keep
+    going on an empty list, which is a hang rather than a floor."""
+    report = {}
+    context.build_messages("SYS", "D" * 6000, "", _eight_turns(),
+                           budget=400, report=report, min_turns=-5, min_canon=-5)
+    assert report["turns"] == 0, report
+    assert report["canon"] == 0, report
+
+
+def test_the_resume_path_rebuilds_the_same_prompt_after_an_emptied_history():
+    """Overflow and resume in one assertion: a session whose turns were all
+    dropped still assembles, still reports, and can be resumed by adding turns
+    back without the floor state being sticky."""
+    first = {}
+    context.build_messages("SYS", "D" * 6000, "", _eight_turns(),
+                           budget=400, report=first)
+    second = {}
+    context.build_messages("SYS", "D" * 6000, "", _eight_turns(),
+                           budget=400, report=second)
+    assert first == second, "the same inputs must give the same report"
+
+    resumed = {}
+    context.build_messages("SYS", "D" * 6000, "", _eight_turns(),
+                           budget=12000, report=resumed)
+    assert resumed["turns"] == 8, resumed
+    assert resumed["turns_dropped"] == 0, resumed
+    # Raising the budget clears the overflow rather than leaving a sticky flag:
+    # the report is derived per call, so a resumed session that now fits says so.
+    assert resumed["over_budget"] is False, resumed
+    assert resumed["over_by"] == 0, resumed
