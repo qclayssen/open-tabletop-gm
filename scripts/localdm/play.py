@@ -179,10 +179,13 @@ CAST_MID_FIGHT = ("(engine) {spell} was not cast: a fight is running and the eng
 # B2 (the 2026-09-30 test report): a `cast` the model put on a line the player phrased as
 # a question. Spoken rather than dropped, for the same reason as CAST_MID_FIGHT: a
 # silently dropped slot request is its own bug, and a dropped request the player cannot
-# see is worse.
+# see is worse. A supported spell gets a one-input yes/no offer below.
 CAST_ON_A_QUESTION = ("(engine) {spell} was not cast: that was a question, and the engine "
                       "does not spend a slot on one. Say what your character casts and the "
                       "engine will resolve it.")
+CAST_QUESTION_OFFER = ("(engine) {spell} was not cast: that was a question, and the engine "
+                       "does not spend a slot on one. Say yes to cast it now, no to decline, "
+                       "or give any other input to cancel the offer.")
 CAST_TASK = ("Narrate the casting in 1 to 3 sentences, using only the numbers the Engine "
              "section gives (never a different AC, duration or slot count). Then the JSON "
              "line with null for every field.")
@@ -397,6 +400,7 @@ class Session:
         self.show_notes, self.budget = show_notes, budget
         self.canon_limit = 8               # canon records replayed per DM call
         self.pending = None            # {"args": [...], "rolls": [...]} while the player rolls
+        self.pending_cast = None        # (spell name, originating player line), for one input only
         self.saved_notes = ""          # from /advise, used by the next DM call
         self.notes = notes_mod.Notes(self.camp_dir)   # the same notes, kept on disk
         self.turn = 0
@@ -1042,9 +1046,23 @@ class Session:
     # ── input ──────────────────────────────────────────────────────────────
 
     def handle(self, line: str) -> list:
-        line = line.strip()
+        original = line.strip()
+        line = original
         line = self._take_directives(line)
+        had_directives = line != original
+        if had_directives:
+            # The directive itself consumes any offer. Text after it is handled
+            # normally, never as confirmation of the preceding question.
+            self.pending_cast = None
+        # An engine reaction or roll always owns the next answer. A cast offer
+        # cannot intercept it, even if both kinds of pending state are present.
+        if self.pending:
+            self.pending_cast = None
         if not line:
+            # A blank line keeps a cast offer alive, while a display directive
+            # is a real next input and consumes it even when nothing follows.
+            if original and self.pending_cast is not None:
+                self.pending_cast = None
             return []
         if self.pending:
             low = line.lower()
@@ -1054,6 +1072,25 @@ class Session:
             if low in ("yes", "no", "y", "n"):
                 return self._engine(p["args"], p["rolls"], p.get("reacts", [])
                                     + ["yes" if low.startswith("y") else "no"])
+        if self.pending_cast is not None:
+            spell_name, _origin = self.pending_cast
+            self.pending_cast = None
+            low = line.lower()
+            if low in ("yes", "y"):
+                self.memory.add("player", line)
+                self.turn += 1
+                if self.bridge.is_combat_active():
+                    refusal = CAST_MID_FIGHT.format(spell=spell_name)
+                    self.memory.add("engine", refusal)
+                    return [refusal]
+                self.memory.add("engine", f"(engine) {spell_name} cast confirmed with yes.")
+                return self._cast_spell(spell_name)
+            if low in ("no", "n"):
+                self.memory.add("player", line)
+                self.turn += 1
+                declined = f"(engine) {spell_name} cast cancelled."
+                self.memory.add("engine", declined)
+                return [declined]
         if line.isdigit() and not self.pending:
             return ["No roll is waiting on you. Say what your character does."]
         if line.startswith("/c "):
@@ -1571,10 +1608,13 @@ class Session:
             # a question. Reported on 2026-09-30 and reproduced: the explore router
             # claims an AC question, so the reported line is now answered by the sheet
             # and never reaches the model -- but the two forms it does NOT claim still
-            # do. The conservative direction is deliberate: a cast phrased as a
-            # question ("I cast mage armor, right?") loses the cast, and the player can
-            # always ask again in the imperative.
-            out.append(CAST_ON_A_QUESTION.format(spell=cast_named))
+            # do. A question cannot authorize a cast; a supported spell gets a
+            # one-input yes/no offer. Any other next input consumes that offer.
+            if self._cast_lookup(cast_named)[3] is not None:
+                out.append(CAST_QUESTION_OFFER.format(spell=cast_named))
+                self.pending_cast = (cast_named, line)
+            else:
+                out.append(CAST_ON_A_QUESTION.format(spell=cast_named))
         elif cast_named:
             out += self._cast_spell(cast_named)
 
