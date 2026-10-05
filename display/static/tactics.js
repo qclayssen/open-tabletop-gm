@@ -414,75 +414,6 @@
                            fogKey(sp)]);
   }
 
-  /* Pin geometry. Pins arrive from the server already filtered: a pin that is
-     not `revealed` is not in the payload at all, because the display has one
-     audience and no way to tell a GM from a player. So nothing here is a
-     security check -- the allow-list, the visibility rule and the containment
-     are all enforced server-side in scripts/pins.py, and a browser cannot reach
-     a file it was not sent.
-
-     What is here is layout, and it is here because it is arithmetic on C and
-     cell centres, which is exactly what the pure-helpers block exists to pin.
-     SPEC-grid-and-map.md 7 asks for the ruler and the pin layer to go through
-     one geometry helper, so P3's hex geometry object replaces pinCentre rather
-     than leaving a second one behind. */
-
-  // A pin sits in the top-left of its square, not the centre: the centre is
-  // where a token is, and a pin drawn under a token is a pin nobody can click.
-  //
-  // `cell` is a parameter, not the module-level C, so this block stays runnable
-  // on its own: the pure-helpers block is extracted by
-  // tests/test_display_tactics_ui.py and executed with nothing else in scope,
-  // and a helper that reached for C would raise ReferenceError there rather than
-  // in a browser. octagon() and boardCell() take their numbers the same way.
-  const PIN_INSET = 5, PIN_R = 7;
-  const pinCentre = (p, cell) => [p.x * cell + PIN_INSET + PIN_R, p.y * cell + PIN_INSET + PIN_R];
-
-  // Shape carries the kind, not colour. A triangle is a note, a diamond is a
-  // map, so a GM does not click one expecting prose and get a fight -- and the
-  // distinction survives greyscale and colour blindness, which a hue pair does
-  // not. Both are the same 14-unit box, so the board learns one visual language
-  // rather than two.
-  const pinGlyph = kind => (kind === 'map' ? 'diamond' : 'triangle');
-
-  const pinPath = (p, cell) => {
-    const [cx, cy] = pinCentre(p, cell), r = PIN_R;
-    if (pinGlyph(p.kind) === 'diamond') {
-      return `M${cx},${cy - r} L${cx + r},${cy} L${cx},${cy + r} L${cx - r},${cy} Z`;
-    }
-    // The triangle points UP rather than down, which is what makes it the same
-    // height as the diamond: an upward triangle's apex is at cy-r and its base
-    // at cy+r/2, so both shapes occupy r above centre and the pin never grows
-    // toward the HP bar and condition badges that live in the square's middle
-    // and lower edge. A downward triangle reaches 1.4r down and collides.
-    return `M${cx},${cy - r} L${cx + r},${cy + r * 0.5} L${cx - r},${cy + r * 0.5} Z`;
-  };
-
-  // Which side a pin's label tucks to, so it runs off the board as little as
-  // possible: a pin on the last column draws its label out of the viewBox and
-  // half of it is clipped away.
-  const pinLabelAnchor = p => {
-    const W = ui.W || 0;
-    return (p.x + 1) * C > (W * C) / 2 ? 'end' : 'start';
-  };
-
-  // How much of a label the board has room for. The board is read across a
-  // table, so the cap is deliberately short: a longer one runs over the next
-  // square, which may hold a token. Never wrapped -- a wrapped label becomes a
-  // block of text that reads as terrain.
-  const pinLabel = (p, cell) => {
-    const max = Math.max(4, Math.min(18, Math.floor(cell / 2.4)));
-    const text = String(p.label == null ? '' : p.label);
-    return text.length > max ? text.slice(0, max - 1) + '…' : text;
-  };
-
-  // A pin on a square that is not on the board. Dropped rather than clamped:
-  // a clamp puts a pin from off-map onto a real square, which reads as a pin
-  // somewhere it is not.
-  const pinOnBoard = (p, W, H) =>
-    Number.isFinite(p.x) && Number.isFinite(p.y) &&
-    p.x >= 0 && p.y >= 0 && p.x < W && p.y < H;
-
   /* Where the map's artwork goes, as the attributes of its <image>.
 
      The map file records two facts about its picture: how big it is
@@ -502,9 +433,9 @@
      for their presence. One bad number anywhere takes the whole map back to the
      legacy draw rather than to a NaN attribute.
 
-     `cell` is a parameter rather than the module-level C for the reason
-     `pinCentre` takes one: this block is extracted and run under node by
-     tests/test_display_tactics_ui.py, where there is no C. */
+     `cell` is a parameter rather than the module-level C because this block is
+     extracted and run under node by tests/test_display_tactics_ui.py, where
+     there is no module-level C to read. */
   /* Which terrain cells have a differently-terrained neighbour, and on which
      sides. An edge, not a stroke-per-rect: outlining every cell draws a box
      grid over uniform ground, which is worse over artwork than no outline at
@@ -748,11 +679,7 @@
       // keyboard can only get out of by finding its own Cancel button.
       if (el.prompt && !el.prompt.hidden && el.prompt.onEscape) { el.prompt.onEscape(); return; }
       // An open note next, and before ui.mode for the reason the chain above
-      // already gives twice: Escape answers the topmost thing on screen. If the
-      // note were below the mode check, closing a note the GM was reading would
-      // also silently cancel a player's in-progress Move, with nothing on
-      // screen to say why.
-      if (ui.note) { closeNotePanel(); return; }
+      // already gives twice: Escape answers the topmost thing on screen.
       if (ui.ruler.tool) { setRuler(null); return; }
       // render() redraws the bar and puts the keyboard back (restoreFocus), so
       // cancelling a mode does not also cost the player their place in it.
@@ -1120,7 +1047,6 @@
     drawSight();
     for (const t of snap.tokens || []) drawToken(t);
     drawOverlay();
-    drawPins();
     drawCursor();
     // Only a fresh svg has just had the scroll knocked out of it by the
     // innerHTML wipe; a reused one was never detached, so its scroll still is
@@ -1284,13 +1210,6 @@
     // and test_the_frame_is_drawn_after_whatever_is_inside_it pins it), so a pin
     // is a marker for an empty square, not a thing that competes for attention.
     // It is pinned in the top-left corner of its square, not the centre, which is
-    // where a token is.
-    //
-    // aria-hidden because the whole board svg is aria-hidden (buildBoard sets it,
-    // "the board itself speaks: see describe()"). ARIA on a pin would be
-    // decorative; the keyboard route is the board cursor, which is why
-    // describeSquare() has to learn about pins separately.
-    ui.pinLayer = svg('g', { 'aria-hidden': 'true', class: 'tx-pin-layer' }, s);
     // Portrait clips live in defs, not in the token layer: they are referenced
     // by url(#id) and never drawn themselves, and keeping them out of the layer
     // means nothing can mistake one for content. Rebuilt with the tokens on every
@@ -1624,47 +1543,6 @@
     m.textContent = text;
   }
 
-  // Draw the pins on this map. Empty on every map that has none, which is
-  // nearly all of them, so the layer is usually one `innerHTML = ''`.
-  //
-  // Everything about *whether* a pin appears was decided on the server: the GM
-  // authored it in a shell (`scripts/pin.py`), it was validated against the
-  // allow-list, and the unrevealed ones were dropped before this payload was
-  // built. Nothing here can reveal a pin, and nothing here reads a file.
-  function drawPins() {
-    const layer = ui.pinLayer; if (!layer) return;
-    layer.innerHTML = '';
-    const pins = (snap && snap.pins) || [];
-    for (const p of pins) {
-      if (!pinOnBoard(p, ui.W, ui.H)) continue;
-      // data-kind is what the stylesheet keys on. The shape is already the
-      // distinction; this is so the two are visibly different at rest rather
-      // than only under a magnifier.
-      // The class names are spelled out in full rather than composed from a
-      // prefix, because that is what makes them findable.
-      // `ScriptAndStylesheetAgree` (test_display_tactics_ui.py) works by reading
-      // the class names out of this file and finding each one in tactics.css, and
-      // a name assembled at runtime ('tx-pin-' + kind) is in neither: the
-      // stylesheet half passes because the string is not there to look for, and
-      // the pin silently loses its colour. Spelling them out keeps the inventory
-      // static, which is the only reason the check works.
-      const mark = svg('path', { d: pinPath(p, C),
-                                class: p.kind === 'map' ? 'tx-pin tx-pin-map' : 'tx-pin tx-pin-note',
-                                'data-kind': p.kind === 'map' ? 'map' : 'note' }, layer);
-      const [cx, cy] = pinCentre(p, C);
-      const label = svg('text', { x: cx + (pinLabelAnchor(p) === 'end' ? -11 : 11) * ui.uu,
-                                 y: cy + 4 * ui.uu,
-                                 'text-anchor': pinLabelAnchor(p),
-                                 class: 'tx-pin-label' }, layer);
-      // The label is a text node, and it is the ONLY text this path writes. A
-      // pin label has already been through scripts/pins.py's label cleaner, and
-      // textContent means it is never parsed as markup. There is no innerHTML on
-      // the pin path at all, which is the whole of the XSS position for a pin.
-      label.textContent = pinLabel(p, C);
-      mark.setAttribute('data-pin-id', p.id || '');
-    }
-  }
-
   function drawOverlay() {
     const o = ui.overlay; if (!o) return;
     o.innerHTML = '';
@@ -1912,9 +1790,6 @@
     // is aria-hidden: anything inside it is decorative to a screen reader, and
     // the square cursor reading through #tx-say is the board's only voice. A
     // pin with no line here is a pin a keyboard player cannot find at all.
-    const pin = ((snap && snap.pins) || []).find(x => x.x === p[0] && x.y === p[1]);
-    if (pin) bits.push(pin.kind === 'map'
-      ? `map pin to ${pin.target}, ${pin.label}` : `note pin, ${pin.label}`);
     if (t) {
       const tg = tags(t), mark = markFor(t);
       bits.push(`${t.name} (${sideOf(t).word}), ${t.dead ? 'dead' : t.hp + ' of ' + t.max_hp + ' HP'}` +
@@ -2598,89 +2473,13 @@
   }
 
   function onBoardClick(evt) {
-    // A pin is checked before the square, because a pin sits in a square and
-    // the square is what everything else here is keyed on. Clicking a pin during
-    // a move must open the note and NOT move a token, so this returns rather
-    // than falling through -- which is also why a pin needs no "am I in move
-    // mode" test of its own.
-    const pin = pinAt(evt);
-    if (pin) { openPin(pin); return; }
     const sq = cellAt(evt);
     if (sq) clickSquare(sq, evt.pointerType);
   }
 
-  // The pin under a pointer, or null. Uses the element the browser hit-tested
-  // rather than recomputing the cell: a pin is 14px across in the corner of a
   // 32px square, so a cell-derived answer would make most of the pin's own area
   // a miss and the click would move whoever was standing there instead.
-  function pinAt(evt) {
-    const target = evt.target;
-    if (!target || typeof target.getAttribute !== 'function') return null;
-    const id = target.getAttribute('data-pin-id');
-    if (!id) return null;
-    return ((snap && snap.pins) || []).find(p => p.id === id) || null;
-  }
-
-  // Open a pin. A note pin fetches its text and shows it in the panel; a map pin
-  // navigates, because there is no thumbnail to show (an inline SVG preview
-  // would be a second renderer, wrong for hex the moment it lands).
-  async function openPin(p) {
-    if (p.kind === 'map') return navigateToMap(p);
-    try {
-      const r = await fetch('/pins/note?id=' + encodeURIComponent(p.id) +
-                            '&map=' + encodeURIComponent(currentMapSlug()));
-      if (!r.ok) { refuse('That note is not available.'); return; }
-      showNotePanel(p.label, await r.text());
-    } catch (e) {
-      refuse('That note is not available.');
-    }
-  }
-
-  // The map this board is showing, which is what the pins on it belong to. The
-  // snapshot carries the map's name rather than its slug, so this is the one
-  // place the two have to be reconciled; an empty slug makes the fetch 404 and
-  // the pin say so, which is the honest failure if a map ever lacks a slug.
-  function currentMapSlug() {
-    const meta = (snap && snap.meta) || {};
-    return meta.slug || '';
-  }
-
-  // A map pin navigates to the target map's page. `/maps/<slug>` is the ARTWORK
-  // route (send_from_directory, gm-display-app.py:1476) -- going there opens a
-  // JPEG, not a map -- so the destination is the editor page, which is the only
-  // page that renders one named map.
-  //
-  // Deliberately not a preview. An inline SVG built from `rows` would be a
-  // second renderer, wrong for hex the moment SPEC-grid-and-map.md 4.2 lands, and
-  // it needs a route that compiles an arbitrary map and serves it to every phone
-  // on the LAN. `architect` cut it and that stands; see the brief's follow-ups.
-  function navigateToMap(p) {
-    // The same confirm() idiom clickSquare uses for a move that costs an action:
-    // leaving the encounter's map mid-turn is the same class of "are you sure",
-    // and this file already has the pattern rather than needing a new mechanism.
-    const target = p.label || p.target;
-    if (!confirm(`Open the map "${target}"? This leaves the fight on this map.`)) return;
-    window.location.assign('/maps/' + encodeURIComponent(p.target) + '/edit');
-  }
-
-  // The note panel. Its body goes in through textContent and nowhere else:
-  // `_renderMarkdown` escapes first and is the display's one markdown path, but
-  // this panel is reached by a click on a campaign file, and the cheapest way to
-  // be sure is for this function to have no HTML sink at all.
   // tests/test_pins_ui.py asserts that structurally.
-  function showNotePanel(title, body) {
-    if (!el.notePanel) return;
-    el.notePanel.hidden = false;
-    if (el.noteTitle) el.noteTitle.textContent = title || '';
-    if (el.noteBody) el.noteBody.textContent = body || '';
-    if (el.noteClose) el.noteClose.focus();
-  }
-
-  function closeNotePanel() {
-    if (!el.notePanel) return;
-    el.notePanel.hidden = true;
-    if (el.noteBody) el.noteBody.textContent = '';
-  }
 
   async function clickSquare(sq, pointerType) {
     if (ui.ruler.tool) { rulerClick(sq); return; }   // measuring is local; works offline
