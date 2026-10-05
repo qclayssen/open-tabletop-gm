@@ -546,6 +546,105 @@ def test_saving_to_an_unknown_map_is_a_404(client):
     assert response.status_code == 404
 
 
+def test_grid_route_saves_alignment_and_preserves_map_keys(client, app_module, tmp_path, monkeypatch):
+    spec = {**WATER, "image": "images/pond.jpg", "image_px": [500, 400],
+            "grid": {"cell_px": 100, "offset_x": 0, "offset_y": 0,
+                     "color": "#ff00ff", "snap": True},
+            "spawns": [{"type": "monster", "id": "goblin", "x": 1, "y": 2}],
+            "credit": "artist"}
+    path = tmp_path / "pond.json"
+    original = json.dumps(spec)
+    path.write_text(original, encoding="utf-8")
+    monkeypatch.setattr(app_module, "_token_ok", lambda: True)
+
+    response = client.post("/maps/pond/grid", json={
+        "cell_px": 50, "offset_x": 0, "offset_y": 0})
+
+    assert response.status_code == 200
+    assert response.get_json()["alignment"]["cell_px"] == 50
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert saved["grid"] == {"cell_px": 50.0, "offset_x": 0.0, "offset_y": 0.0,
+                              "color": "#ff00ff", "snap": True}
+    assert {k: v for k, v in saved.items() if k != "grid"} == {
+        k: v for k, v in spec.items() if k != "grid"}
+    assert response.get_json()["backup"] == "pond.json.bak"
+    assert path.with_suffix(".json.bak").read_text(encoding="utf-8") == original
+
+
+def test_grid_route_requires_authorization(client, app_module, tmp_path, monkeypatch):
+    path = tmp_path / "scratch.json"
+    path.write_text(json.dumps(BARE), encoding="utf-8")
+    monkeypatch.setattr(app_module, "_token_ok", lambda: False)
+    response = client.post("/maps/scratch/grid", json={
+        "cell_px": 50, "offset_x": 0, "offset_y": 0})
+    assert response.status_code == 403
+    assert path.read_text(encoding="utf-8") == json.dumps(BARE)
+
+
+def test_grid_route_rejects_unknown_map(client, app_module, monkeypatch):
+    monkeypatch.setattr(app_module, "_token_ok", lambda: True)
+    assert client.post("/maps/nope/grid", json={
+        "cell_px": 50, "offset_x": 0, "offset_y": 0}).status_code == 404
+
+
+@pytest.mark.parametrize("body", [None, {"cell_px": True, "offset_x": 0, "offset_y": 0}])
+def test_grid_route_rejects_malformed_input_without_mutation(client, app_module, scratch, monkeypatch, body):
+    monkeypatch.setattr(app_module, "_token_ok", lambda: True)
+    before = scratch.read_text(encoding="utf-8")
+    response = client.post("/maps/scratch/grid", json=body)
+    assert response.status_code == 400
+    assert scratch.read_text(encoding="utf-8") == before
+    assert not scratch.with_suffix(".json.bak").exists()
+
+
+def test_grid_route_saves_alignment_without_artwork(client, app_module, tmp_path, monkeypatch):
+    path = tmp_path / "blank.json"
+    spec = {"name": "Blank", "width": 4, "height": 3, "base": "floor",
+            "grid": {"cell_px": 100, "offset_x": 0, "offset_y": 0}}
+    path.write_text(json.dumps(spec), encoding="utf-8")
+    monkeypatch.setattr(app_module, "_token_ok", lambda: True)
+
+    response = client.post("/maps/blank/grid", json={
+        "cell_px": 80, "offset_x": 2, "offset_y": 3})
+
+    assert response.status_code == 200
+    assert json.loads(path.read_text(encoding="utf-8"))["grid"] == {
+        "cell_px": 80.0, "offset_x": 2.0, "offset_y": 3.0}
+
+
+def test_grid_route_rejects_dimensions_that_do_not_match_board(client, app_module, tmp_path, monkeypatch):
+    path = tmp_path / "art.json"
+    spec = {"name": "Art", "width": 5, "height": 3, "base": "floor",
+            "image": "images/art.jpg", "image_px": [400, 300],
+            "grid": {"cell_px": 80, "offset_x": 0, "offset_y": 0}}
+    original = json.dumps(spec)
+    path.write_text(original, encoding="utf-8")
+    monkeypatch.setattr(app_module, "_token_ok", lambda: True)
+
+    response = client.post("/maps/art/grid", json={
+        "cell_px": 100, "offset_x": 0, "offset_y": 0})
+
+    assert response.status_code == 400
+    assert "this board is 5x3" in response.get_json()["error"]
+    assert path.read_text(encoding="utf-8") == original
+    assert not path.with_suffix(".json.bak").exists()
+
+
+def test_grid_route_refuses_alignment_that_does_not_fit_without_mutation(client, app_module, tmp_path, monkeypatch):
+    path = tmp_path / "art.json"
+    spec = {"name": "Art", "width": 4, "height": 3, "base": "floor",
+            "image": "images/art.jpg", "image_px": [400, 300],
+            "grid": {"cell_px": 100, "offset_x": 0, "offset_y": 0}}
+    original = json.dumps(spec)
+    path.write_text(original, encoding="utf-8")
+    monkeypatch.setattr(app_module, "_token_ok", lambda: True)
+    response = client.post("/maps/art/grid", json={
+        "cell_px": 90, "offset_x": 0, "offset_y": 0})
+    assert response.status_code == 400
+    assert path.read_text(encoding="utf-8") == original
+    assert not path.with_suffix(".json.bak").exists()
+
+
 # ── the editor must not touch a map just by being opened ────────────────────
 
 def test_opening_the_editor_does_not_modify_the_map(client, scratch):

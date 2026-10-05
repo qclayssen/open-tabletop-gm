@@ -2,11 +2,8 @@
 
 The acceptance criteria are "pitch/offset controls with overlay/keyboard nudge",
 "metadata-only save preserves terrain/spawns", "existing backup/confirmation" and
-"invalid input untouched". All four are about `mapeditor.apply_alignment` and the
-editor page, and **none of them needs a Flask route** -- the rule is a pure
-function on a spec dict, so it is tested directly. That is deliberate: the route
-is not wired (see the note at the end and `docs/routes/map_grid_route.py.txt`),
-and a test that needed it would have forced the route to exist.
+"invalid input untouched". `mapeditor.apply_alignment` and the editor page are
+covered directly as well as through Flask route tests in `test_mapseditor.py`.
 
 The one thing that cannot be tested from Python is the pair of JavaScript
 drawings: `mapseditor.js`'s `artAttrs` and `tactics.js`'s, which both decide
@@ -98,10 +95,13 @@ def test_alignment_ignores_a_malformed_image_px():
 
 def test_apply_alignment_changes_the_grid_and_nothing_else():
     before = _played()
+    before["grid"]["color"] = "#ff00ff"
+    before["grid"]["snap"] = True
     after = _me.apply_alignment(before, {"cell_px": 50, "offset_x": 10, "offset_y": 20})
     changed = sorted(k for k in set(before) | set(after) if before.get(k) != after.get(k))
     assert changed == ["grid"]
-    assert after["grid"] == {"cell_px": 50.0, "offset_x": 10.0, "offset_y": 20.0}
+    assert after["grid"] == {"cell_px": 50.0, "offset_x": 10.0, "offset_y": 20.0,
+                              "color": "#ff00ff", "snap": True}
 
 
 def test_apply_alignment_cannot_reach_the_features_key_at_all():
@@ -312,6 +312,13 @@ def test_the_page_has_the_three_inputs_a_save_button_and_a_readout():
     assert "Save alignment" in html
 
 
+def test_alignment_save_validates_pitch_before_artwork_shortcuts():
+    js = MAPEDITOR_JS.read_text(encoding="utf-8")
+    body = js[js.index("function showAlignment()"):js.index("function nudge(")]
+    assert body.index("if (!(a.cell_px > 0))") < body.index("if (!state.image)")
+    assert body.index("if (!(a.cell_px > 0))") < body.index("if (!size || size.length !== 2)")
+
+
 def test_the_pitch_input_will_not_accept_zero_from_the_browser():
     """`min="1"` is belt to the script's braces: it stops a GM typing 0 before the
     page has to explain, and the page still refuses it if the number arrives some
@@ -347,6 +354,8 @@ def test_a_nudge_does_not_save():
     body = js[js.index("function nudge("):js.index("async function saveAlignment()")]
     for forbidden in ("saveAlignment", "fetch("):
         assert forbidden not in body, forbidden
+    assert body.index("trial = readAlignment();") < body.index("draw();"), \
+        "the keyboard nudge must update the trial overlay before drawing"
 
 
 def test_typing_previews_without_saving():
@@ -369,6 +378,8 @@ def test_the_four_arrow_keys_nudge_and_shift_nudges_by_ten():
                               ("ArrowUp", "offsetY", -1), ("ArrowDown", "offsetY", 1)):
         assert f"{key}: ['{field}', {delta}]" in js, key
     assert "e.shiftKey ? delta * 10 : delta" in js
+    assert "const [target, delta] = step;" in js
+    assert "nudge(target," in js
     assert "e.preventDefault()" in js, "an arrow key would also move the caret"
 
 
@@ -391,9 +402,7 @@ def test_the_saved_alignment_is_adopted_from_the_server_not_locally():
 
 
 def test_the_alignment_save_posts_to_the_grid_route():
-    """The route is not wired; this pins the URL the editor expects, so whoever
-    pastes `docs/routes/map_grid_route.py.txt` in gets a match rather than a
-    404."""
+    """Pin the URL and auth header used by the wired alignment save."""
     js = MAPEDITOR_JS.read_text(encoding="utf-8")
     assert "`/maps/${encodeURIComponent(state.slug)}/grid`" in js
     assert "'X-DND-Token'" in js, "the token gate is not sent"
@@ -505,17 +514,3 @@ def test_the_alignment_write_uses_the_existing_backup_policy(tmp_path):
     # A second save does not replace the first original with a saved version.
     _me.write(target, changed)
     assert bak.read_text(encoding="utf-8") == original
-
-
-def test_the_route_block_is_documented_and_deliberately_unwired():
-    """Criterion "existing backup/confirmation" is met by *reusing* the policy
-    rather than by adding a second one. This test exists so that a reader who
-    finds the unwired route knows it is on purpose: it asserts the block is
-    present, complete, and says why it is not in the display app."""
-    route = ROOT / "docs" / "routes" / "map_grid_route.py.txt"
-    assert route.is_file(), "the route block is missing; a reader cannot wire it"
-    text = route.read_text(encoding="utf-8")
-    assert "NOT in" in text and "CAT-8" in text
-    for needed in ("_token_ok()", "_mapeditor.apply_alignment", "_mapeditor.write",
-                   "_mapeditor.alignment", "editor_state"):
-        assert needed in text, needed
