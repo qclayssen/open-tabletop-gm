@@ -53,8 +53,10 @@
 ### Before PR
 
 - [x] suite green in the worktree, not the primary checkout
-- [x] collected-test count: -318 (`test_pins_ui.py`) +145 (new file). The
-      removed file tested dead code; the new file tests the removal.
+- [x] collected-test count, measured with `--collect-only` against the branch's
+      own base 7305ec5 (4109 collected) rather than against a moving main:
+      this branch = 4101, i.e. exactly -8 = -16 (`test_pins_ui.py`) +8 (new
+      file). The removed file tested dead code; the new file tests the removal.
 - [x] own diff read and reviewed
 
 ### Before merge
