@@ -28,10 +28,13 @@ arriving is the only thing left to observe.
 `present` is the other one, and it exists for a different reason. Every call to
 `page.wait_for_function` that times out raises playwright's own
 `TimeoutError: Timeout 5000ms exceeded`, whose message names nothing: not the
-predicate, not the element, not the state of the page. The usual cause of that
-timeout is that the thing never rendered, and read as written it says the
-machine was slow, so the next thing anybody does is re-run it and hope. Every
-call goes through here instead, and the failure names what was being waited for.
+predicate, not the element, not the state of the page. Read as written it says
+the machine was slow, so the next thing anybody does is re-run it and hope. The
+timeout alone does not say which it was: a predicate that never became true is
+what a rendering or timer defect and a contended machine look like from the
+outside, and the budget cannot tell them apart. Every call goes through here
+instead, and the failure names what was being waited for and which state to
+inspect before the budget is trusted.
 """
 from __future__ import annotations
 
@@ -137,7 +140,15 @@ def present(page, predicate, what, timeout=SETTLE_TIMEOUT, arg=None):
         raise AssertionError(
             f"{what} never arrived ({timeout}ms).\n"
             f"  predicate: {predicate}\n"
-            f"  This is normally the thing never having rendered, not a slow "
-            f"machine. Playwright's own message for it says only "
+            f"  Read this as 'the predicate was not observed true within "
+            f"{timeout}ms', which is all a timeout proves. On its own it cannot "
+            f"tell a rendering or timer defect from contention on a loaded "
+            f"machine: both leave the predicate false for the whole budget. "
+            f"Before raising the budget, check what the predicate was actually "
+            f"reading (for a reveal that never drained, isTyping, "
+            f"charQueue.length and any live idle timer) and reproduce it in "
+            f"isolation as well as under -n4. A larger budget that clears only "
+            f"the contended run hides the defect rather than fixing it. "
+            f"Playwright's own message for it says only "
             f"'Timeout {timeout}ms exceeded', which is why it is wrapped here."
         ) from exc
