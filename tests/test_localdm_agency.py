@@ -43,7 +43,7 @@ for p in (ROOT / "scripts", ROOT / "tests"):
 
 from localdm import agency, llm, reply               # noqa: E402
 from localdm.play import Session                      # noqa: E402
-from tests.localdm_fakes import FakeBridge, FakeClient  # noqa: E402
+from tests.localdm_fakes import FakeBridge, FakeClient, fixed_check_roll  # noqa: E402
 
 NULLS = '\n{"escalate": null, "command": null}'
 MODELS = llm.Models("dm-local", "dm-advisor", "dm-council")
@@ -331,7 +331,7 @@ def test_the_alias_reaches_the_same_command(tmp_path):
     assert s.handle("/gm-agency")[0] == s.handle("/agency")[0]
 
 
-def test_a_failed_check_narrated_for_free_is_logged_and_the_rewrite_settles_it(tmp_path):
+def test_a_failed_check_narrated_for_free_is_logged_and_the_rewrite_settles_it(tmp_path, monkeypatch):
     """The fail-forward form. A stall is "you fail", with no cost and nothing changed;
     a good rewrite names one. The rewrite carries a cost word ("snaps", "alarm"),
     which is the whole test `reply.is_costless_failure` turns on."""
@@ -339,8 +339,10 @@ def test_a_failed_check_narrated_for_free_is_logged_and_the_rewrite_settles_it(t
                               "The pick snaps in the ward-lock and the sound carries the "
                               "length of the stair. The door stays shut, and now the "
                               "archivist has stopped writing." + NULLS])
+    rolls = fixed_check_roll(monkeypatch, face=19)
     s._ability_check("Investigation hard", "I try the lock.",
                      {"stakes": "the door stays shut", "target": "the archive door"})
+    assert rolls == [(1, 20)]
     got = {r["form"]: r["outcome"] for r in logged(tmp_path)}
     assert got.get("fail-forward") == "caught"
     assert len(c.dm_calls()) == 2
