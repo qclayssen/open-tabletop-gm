@@ -84,7 +84,8 @@ divider wait (`flushNewBlock()` never ran), and pass after it.
   the story column.
 - `test_a_second_chunk_resets_the_deadline_without_splitting_the_block` - a
   second chunk arrives mid-reveal (inside `IDLE_GAP`, so the same block); asserts
-  one divider and one block, so the reset did not leave two live deadlines.
+  one divider and one block. This checks visible flush behavior; it does not
+  independently prove that the prior timer was cancelled.
 
 Run them from the `open-tabletop-gm` checkout (or its worktree):
 
@@ -108,9 +109,10 @@ failure before changing anything:
    false. For a reveal that never drained, check `isTyping`, `charQueue.length`
    and whether any idle timer is still live (the callback re-arms, so a stuck
    timer is a different bug from a dropped one).
-2. Reproduce the test alone, then under `-n4`. A failure that appears only under
-   `-n4` is contention, and raising `SETTLE_TIMEOUT` hides it; a failure that
-   reproduces alone is a defect, and raising the timeout hides that too.
+2. Reproduce the test alone, then under `-n4`. A parallel-only failure can
+   indicate contention, a race, or shared fixture state; an isolated failure
+   can still reflect machine load. Compare predicate and timer observations
+   before attributing the cause. Neither result alone diagnoses the defect.
 3. Only after that, decide whether the budget or the code is wrong.
 
 `SETTLE_TIMEOUT` (8000ms in `tests/display_settle.py`) exists so a hang is a
@@ -133,11 +135,12 @@ Grounded in the outer `qclayssen/dnd-gm` repo's `docs/guides/ci.md` and
 - `merge_queue.py merge` runs from the owning worktree and, after `gate`, runs
   the **full local integrated suite** in that worktree before merging; a failure
   aborts. After the merge, `merge_queue.py landed <PR>` must prove the merge
-  commit is on `main`. CI never runs on `main`, so the landed proof is what
-  closes that gap.
+  commit is on `main` and measure the full merged-main suite against its
+  recorded baseline. CI never runs on `main`, so that measurement closes the gap.
 - `merge_queue.py next` skips blocked entries and names them (non-zero when
   nothing is eligible). Skipping is visible, but it is not an authorisation to
-  merge the blocked PR: only `gate`, for the head of the queue, clears one.
+  merge the blocked PR: `gate` validates the next eligible entry, and the
+  locked merge command must still run its local suite and landing checks.
 
 ### Flaky is a claim, not an observation
 
