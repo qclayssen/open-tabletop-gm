@@ -161,7 +161,15 @@ def _apply_campaign_sfx_languages() -> None:
 
 
 HELP_LOCK     = os.path.join(_DISPLAY_DIR, ".help-lock")
-CAMP_FILE     = os.path.join(_DISPLAY_DIR, ".campaign")
+# Per display, like STATS_FILE below and like the launcher's per-port pid file.
+# `.campaign` used to be one file for every display on the machine, so a second
+# display's `send.py --set-campaign` rewrote the main display's campaign while the
+# main display carried on pushing its own roster -- and a restart then loaded one
+# campaign's party under another's name. GM_DISPLAY_CAMPAIGN_FILE is honoured here
+# and by display/wrapper.py, which resolves the same two files and must not
+# disagree about where they are. The default keeps the bare `.campaign` name, so
+# the single-display case is unchanged.
+CAMP_FILE     = os.environ.get("GM_DISPLAY_CAMPAIGN_FILE") or os.path.join(_DISPLAY_DIR, ".campaign")
 # The roster the sidebar is built from. GM_STATS_FILE moves it, for the same
 # reason as GM_TEXT_LOG_FILE above: it is gitignored runtime state that every
 # display loads at startup and replays into its sidebar.
