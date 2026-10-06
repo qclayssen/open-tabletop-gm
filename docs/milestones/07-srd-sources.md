@@ -34,13 +34,20 @@ Stop depending on a dead upstream, and ship the attribution the bundled SRD data
 ## Open
 - ~~Fix the Foundry `advancement` crash (blocks a fresh-clone build).~~ **Closed 2026-09-29**;
   see Findings.
-- Optional: add a license pointer to `_meta` in the generated `dnd5e_srd.json`. Still open, and
-  the only genuinely unfinished line in this milestone. `_meta` records each source's repo,
-  branch, SHA and fetch time, but not that the content is CC-BY-4.0 — so a consumer reading the
-  dataset alone has no licence pointer. `systems/dnd5e/NOTICE` carries it, so this is a small
-  addition to the `_meta` block at `build_srd.py:989`, not a research task. Note this repo's
-  builder writes no per-record `_license`; the sibling `claude-dnd-skill` builder does, so the
-  two datasets differ in provenance granularity and this one is the coarser of the two.
+- ~~Add a license pointer to `_meta` in the generated `dnd5e_srd.json`.~~ **Closed 2026-10-04**
+  by `open-tabletop-gm#249` ("the dataset says what may be done with it"), which added the
+  `license`, `license_url` and attribution fields to every source in `_meta`. A consumer reading
+  the dataset alone now has the licence pointer, which was the whole point of the line.
+
+  The line previously read *"Still open, and the only genuinely unfinished line in this
+  milestone"*, which `main` asserted while simultaneously shipping the fix. It also pointed at
+  `build_srd.py:989` for the `_meta` block; that was already stale and is now at
+  `build_srd.py:1395`. Both corrections land here rather than in the PR that closed the work,
+  because that PR's declared scope was the builder and `NOTICE`, not this milestone doc.
+
+  Still true, and worth keeping: this repo's builder writes no per-record `_license`; the
+  sibling `claude-dnd-skill` builder does, so the two datasets still differ in provenance
+  granularity and this one remains the coarser of the two.
 - Declined, not deferred: Improved Initiative statblock import/export; a Foundry MCP adapter as
   a display back-end; replacing `scripts/dice.py` with `avrae/d20`. The first and last are
   superseded by the in-repo engine; the middle reintroduces the dependency rejected in
