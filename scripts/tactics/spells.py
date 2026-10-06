@@ -143,7 +143,10 @@ def _targets(enc, c, spec, refs: list) -> dict:
         out["squares"] = squares
         out["origin_sq"] = c.pos if spec["origin"] == "self" else pos
         on = set(squares)
-        out["affected"] = [t for t in enc.tokens.values() if t.active and t.pos in on]
+        # A creature is caught when any square it stands on is in the area:
+        # a Large creature whose anchor is outside a cone can still have its
+        # far squares inside it, and that is the creature being hit.
+        out["affected"] = [t for t in enc.tokens.values() if t.active and t.squares & on]
         return out
     if mode == "darts":
         if not refs:
@@ -505,7 +508,7 @@ def preview_action(enc, token_ref, action_name: str, target) -> dict:
     pos, _ = _point(enc, target)
     squares = area_squares(enc, t.pos, spec["area"], "self", pos)
     on = set(squares)
-    return {"squares": squares, "affected": [x for x in enc.tokens.values() if x.active and x.pos in on]}
+    return {"squares": squares, "affected": [x for x in enc.tokens.values() if x.active and x.squares & on]}
 
 
 def _find_action(t, name: str) -> dict:
@@ -529,7 +532,7 @@ def use_action(enc, roller: Roller, token_ref, action_name: str, target, reactio
     pos, _ = _point(enc, target)
     squares = area_squares(enc, t.pos, spec["area"], "self", pos)
     on = set(squares)
-    affected = [x for x in enc.tokens.values() if x.active and x.pos in on]
+    affected = [x for x in enc.tokens.values() if x.active and x.squares & on]
     mark = len(roller.log)
     u = (t.extra.get("usage") or {}).get(a["name"])
     if u is not None:

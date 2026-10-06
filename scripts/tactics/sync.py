@@ -190,6 +190,10 @@ def snapshot(enc, meta: dict = None) -> dict:
                      "bonus_used": enc.turn.bonus_used,
                      "reaction": bool(cur and not cur.reaction_used)},
             "tokens": [{"id": t.id, "name": t.name, "side": t.side, "x": t.x, "y": t.y,
+                        # The footprint in squares, anchored at (x, y). Published
+                        # for the renderer; a browser that ignores it draws the
+                        # same 1x1 token it always did.
+                        "width": t.width, "height": t.height,
                         "hp": t.hp, "max_hp": t.max_hp, "ac": t.ac, "conditions": t.conditions,
                         "dead": t.dead, "controller": t.controller,
                         "concentration": t.concentration, "effects": effect_names(t),
