@@ -1740,12 +1740,31 @@ def test_the_dm_turn_completes_while_the_advisor_is_still_blocked(tmp_path):
     """
     import threading as th
     gate = th.Event()
-    reached = []
+    # STARTED vs FINISHED, and the distinction is the whole test.
+    #
+    # The first version recorded `reached.append("advisor")` on ENTRY and asserted
+    # it was empty when the turn returned. That is not a property anything
+    # guarantees: `_start_shadow` starts the shadow advisor's thread BY DESIGN, so
+    # on a loaded scheduler that thread can be scheduled and reach the advisor
+    # call before `handle()` returns. It flaked on main (recorded red by the
+    # merge queue) and passed every local run -- the signature of a scheduling
+    # race wearing a test's clothes.
+    #
+    # What IS deterministic is whether the call FINISHED. The gate is released
+    # only after the assertions, so:
+    #   * threaded (correct) -- the thread is still inside `gate.wait(5)`, so
+    #     nothing has finished when the turn returns;
+    #   * inlined (the mutant) -- `run()` executes inside `_player_turn`, so the
+    #     turn blocks for the full 5s and the call has FINISHED by the time
+    #     `handle()` returns.
+    # `gate.wait(5)` TIMING OUT is what makes that true: with a block-forever gate
+    # the mutant would hang rather than fail, and a hang is a worse signal.
+    finished = []
 
     def responder(model, msgs, role):
         if role.startswith("advisor"):
-            reached.append("advisor")
-            gate.wait(5)                    # stays blocked for the whole test
+            gate.wait(5)                    # released only after the assertions
+            finished.append("advisor")
             return "Note."
         return "Reeds." + NULLS
 
@@ -1754,14 +1773,16 @@ def test_the_dm_turn_completes_while_the_advisor_is_still_blocked(tmp_path):
                 shadow=True)
     out = s.handle("I look.")
 
-    # We are here, so the turn did NOT block on the advisor.
+    # We are here, so the turn returned. Did it return while the advisor was
+    # still waiting, or after waiting for it?
     assert out == ["Reeds."], "the turn returned the wrong narration"
-    assert reached == [], (
-        "the advisor was consulted synchronously; the DM waited on it. This is "
-        "the exact regression _start_shadow's thread exists to prevent.")
+    assert finished == [], (
+        "an advisor call had FINISHED by the time the turn returned, so the turn "
+        "waited for it. This is the exact regression _start_shadow's thread "
+        "exists to prevent.")
     assert s.saved_notes == "", (
-        "a note was filed before the advisor thread could have run; the note "
-        "would have reached the DM only because the turn blocked")
+        "a note was filed before the assertions ran; the note would have reached "
+        "the DM only because the turn blocked")
 
     gate.set()
     s.join_background(5)
