@@ -57,7 +57,7 @@ is decoration (`agents/verifier.md`).
 - [x] SIX MUTANTS, each verified to fail: name not honoured 2 | repetition key has
       the name 1 | ceiling removed 1 | refusal silent 4 | cost cap removed 2 |
       prefix never parsed 18 | restored 239 passed
-- [x] full suite green in the worktree: 239 passed across reply/advisor/play
+- [x] full suite green in the worktree: **4142 passed, 61 skipped, 0 failed**
 
 ## 3. Advisors required
 
@@ -89,10 +89,12 @@ nothing to add is a real result, say so rather than leaving the box open.
 
 ### Before PR
 
-- [x] full suite green in the worktree: 239 passed across reply/advisor/play
+- [x] full suite green in the worktree: **4142 passed, 61 skipped, 0 failed**
 - [x] own diff read and reviewed
-- [ ] collected-test count vs clean `origin/main` -- NOT YET MEASURED. Do not tick
-      on the assumption that "N added tests" means "+N net".
+- [x] collected-test count, measured with `--collect-only` in a detached worktree of
+      each: clean `origin/main` = 4169, this branch = 4203. **+34, 0 removed.** Measured
+      rather than inferred -- "N added tests" and "+N net" are different claims, and
+      this branch also edits existing test files.
 - [x] brief named for the branch slug from the start (`286-named-specialist.md`),
       which is what the merge-queue gate derives the brief path from -- the third
       time this session
