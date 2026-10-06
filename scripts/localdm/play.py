@@ -43,6 +43,7 @@ import argparse
 import contextlib
 import dataclasses
 import io
+import json
 import os
 import pathlib
 import re
@@ -69,6 +70,7 @@ from localdm.summarizer import Summarizer                       # noqa: E402
 from localdm import canon as canon_mod                         # noqa: E402
 from localdm import recap as recap_mod                         # noqa: E402
 from localdm import agency as agency_mod                       # noqa: E402
+from localdm import graph_writer                               # noqa: E402
 
 #: The stream headless skill checks roll off. One per process, seeded by the
 #: canonical factory, so the seed is on the object as `.seed_value` and every
@@ -1001,6 +1003,151 @@ class Session:
             self._shadow_thread.join(timeout)
         self.summarizer.join(timeout)
         self.extractor.join(timeout)
+        # After the extractor, deliberately: the proposals are built from
+        # `canon.jsonl`, so proposing before the extractor has finished would
+        # read whatever had landed and silently under-report the session.
+        #
+        # Contained because it is new behaviour at the end of every session, on
+        # all four exit routes, including Ctrl-C. A session must not end with a
+        # traceback over a proposal the GM never asked for.
+        try:
+            self.propose_graph_updates()
+        except Exception as e:                        # noqa: BLE001 - see above
+            print(f"graph proposals skipped: {e}", file=sys.stderr)
+
+    def _graph_path(self) -> pathlib.Path:
+        return self.camp_dir / "graph.json"
+
+    def _proposals_path(self) -> pathlib.Path:
+        return self.camp_dir / "localdm" / "graph-proposals.json"
+
+    def has_graph(self) -> bool:
+        """Does this campaign keep a graph at all?
+
+        The T2.5 no-graph contract, read the same way `_scene_notes()` reads it:
+        a campaign without a graph behaves exactly as it does today. So nothing
+        here may create one. Absence is a first-class answer, not an error to
+        work around, and `propose_graph_updates()` returns early on it.
+        """
+        return self._graph_path().is_file()
+
+    def propose_graph_updates(self) -> list:
+        """Turn this session's canon into graph proposals. Writes NO graph.
+
+        The review gate is the point, so nothing here touches `graph.json` --
+        proposals go to `localdm/graph-proposals.json` and only `/graph apply`
+        writes a graph, through `gm_graph.apply_proposals`, the same writer
+        `extract-apply` uses. #289's criterion is that a session update goes
+        through the existing API rather than beside it, and the cheapest way to
+        guarantee that is for the session never to hold a graph writer at all.
+
+        Returns the proposals, which is what makes this testable without reading
+        a file.
+        """
+        if not self.has_graph():
+            return []
+        records = self.canon.records()
+        if not records:
+            return []
+        proposals = graph_writer.proposals_from_canon(records)
+        if not proposals:
+            return []
+        path = self._proposals_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(proposals, indent=2, ensure_ascii=False),
+                        encoding="utf-8")
+        return proposals
+
+    def pending_graph_proposals(self) -> list:
+        path = self._proposals_path()
+        if not path.is_file():
+            return []
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except ValueError:
+            return []
+
+    def _graph_cmd(self, rest: str) -> list:
+        """`/graph` — proposals this session found. `/graph apply` writes them.
+
+        GM-only, like `/notes`, and for a sharper version of the same reason: the
+        graph feeds the DM's context, so a DM that has just read its own pending
+        provenance has been shown exactly where its next scene context comes
+        from. The GM reviews; the DM does not.
+
+        `apply` requires a graph to already exist and never creates one, so a
+        campaign that has opted out of the graph cannot opt in by accident.
+        """
+        parts = (rest or "").split()
+        pending = self.pending_graph_proposals()
+
+        if not self.has_graph():
+            return [f"(No graph.json in {self.campaign}, so there is nothing to propose "
+                    f"into and nothing was proposed. The turn falls back to the full "
+                    f"notes digest, which is the contract from T2.5.)"]
+
+        if not parts:
+            if not pending:
+                return ["(No graph proposals from this session.)"]
+            lines = [f"[GM - {len(pending)} graph proposal(s) awaiting /graph apply]"]
+            for i, p in enumerate(pending, 1):
+                lines.append(f"  {i}. {p.get('to')}: {p.get('summary', '')}")
+            return lines
+
+        if parts[0] != "apply":
+            return [f"/graph takes 'apply' or nothing, not {parts[0]!r}."]
+        if not pending:
+            return ["(No graph proposals to apply.)"]
+
+        try:
+            import gm_graph
+        except ImportError:
+            return ["(gm_graph is not importable, so no proposal can be applied.)"]
+
+        # Interactive review, the same shape as `extract-apply --review`: "q"
+        # declines this one and the rest. This is reached from a REPL whose stdin
+        # is a terminal, so input() is legitimate here -- but a piped or closed
+        # stdin must decline rather than apply everything.
+        def _decide(i: int, total: int, p: dict) -> str:
+            # The verbatim anchor beside the summary, because the summary is
+            # bounded and may be truncated and the GM is approving what gets
+            # written -- they need the sentence it came from, not the excerpt.
+            anchor = ((p.get("source") or {}).get("anchor") or "").strip()
+            print(f"\n[{i}/{total}] summary for {p.get('to')}  "
+                  f"(confidence={p.get('confidence','?')}, from canon turn "
+                  f"{(p.get('source') or {}).get('turn')})")
+            print(f"    write: {p.get('summary', '')}")
+            if anchor and anchor != (p.get("summary") or "").strip():
+                print(f"    from:  \"{anchor}\"")
+            print("    (a GM-written summary on this node is never overwritten)")
+            while True:
+                try:
+                    a = input("    apply? [y]es / [n]o / [q]uit: ").strip().lower()
+                except EOFError:
+                    return "q"
+                if a in {"y", "yes", ""}:
+                    return "y"
+                if a in {"n", "no", "s", "skip"}:
+                    return "n"
+                if a in {"q", "quit", "exit"}:
+                    return "q"
+                print("    please enter y / n / q")
+
+        counts = gm_graph.apply_proposals(self.campaign, pending, decide=_decide)
+        if not counts["summaries"] and not counts["edges"]:
+            try:
+                self._proposals_path().unlink()
+            except OSError:
+                pass
+            return [f"(Nothing applied: {counts['declined']} declined, "
+                    f"{counts['skipped']} skipped. Proposals kept.)"]
+        try:
+            self._proposals_path().unlink()
+        except OSError:
+            pass
+        return [f"graph.json: +{counts['summaries']} summaries, "
+                f"+{counts['edges']} edges, {counts['skipped']} skipped, "
+                f"{counts['declined']} declined. (Proposals cleared.)"]
 
     def _say(self, text: str) -> None:
         """Narration the player sees: remembered, and kept for the display."""
@@ -1239,6 +1386,8 @@ class Session:
             return self._notes_cmd(line[len(line.split()[0]):])
         if line.split() and line.split()[0] in ("/agency", "/gm-agency"):
             return self._agency_cmd(line[len(line.split()[0]):])
+        if line.split() and line.split()[0] in ("/graph", "/gm-graph"):
+            return self._graph_cmd(line[len(line.split()[0]):])
         if line == "/usage":
             return self._usage()
         if line == "/recap":

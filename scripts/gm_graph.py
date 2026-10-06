@@ -56,12 +56,29 @@ import argparse
 import json
 import pathlib
 import sys
+import threading
 from typing import Optional
 
 from paths import find_campaign
+from safeio import atomic_write_json
 
 
 # -------- IO --------
+
+#: Serializes every read-modify-write of `graph.json` inside this process.
+#:
+#: Needed from #289 on. `graph.json` is written by `_load` -> mutate -> `_save`
+#: cycles, so two writers that interleave lose one another's work. Until now
+#: every writer was a CLI verb that runs alone, so the hazard did not exist; a
+#: play session proposes updates from a background thread while the GM may also
+#: run `/graph`, which is exactly the interleaving this rules out.
+#:
+#: In-process only, and deliberately: a cross-process file lock would be the
+#: right tool for two concurrent GMs, and no code path in this repo does that.
+#: The other half of the problem -- a process killed mid-write leaving a
+#: truncated file -- is `atomic_write_json` below, not the lock.
+_GRAPH_WRITE_LOCK = threading.RLock()
+
 
 def _graph_path(campaign: str):
     return find_campaign(campaign) / "graph.json"
@@ -80,10 +97,21 @@ def _load(campaign: str) -> dict:
 
 
 def _save(campaign: str, data: dict) -> None:
+    """Write `graph.json` atomically, keeping a `.bak`.
+
+    Was `open(p, "w")` -- a truncating write, the only one in `scripts/` that
+    was. A process killed between the truncate and the `json.dump` left a
+    half-written file, and `_load` would then raise `ValueError` on it for the
+    rest of the campaign's life. `_load`'s own contract already says a broken
+    graph must not take a turn down, but a graph this function corrupted was
+    not that.
+
+    `ensure_ascii=False` and `indent=2` are kept verbatim from the old
+    `json.dump` so the bytes on disk are unchanged apart from being atomic.
+    """
     p = _graph_path(campaign)
     p.parent.mkdir(parents=True, exist_ok=True)
-    with open(p, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+    atomic_write_json(p, data, ensure_ascii=False)
 
 
 # -------- disposition / standing vocabulary --------
@@ -578,11 +606,196 @@ def cmd_extract(args) -> int:
     return 0
 
 
+def _resolve_or_create(data: dict, name: str, *, is_category: bool = False,
+                       no_auto_nodes: bool = False) -> tuple:
+    """`name` as a node id, creating the node if it is new. Returns (id, created).
+
+    Was a closure redefined on every loop iteration of `cmd_extract_apply`, which
+    is why nothing outside that function could reuse it. #289 needs a second
+    caller -- a play session proposing graph updates -- and the acceptance
+    criterion is that it go through the existing writer rather than beside it.
+    """
+    existing_id = _resolve_node(data, name)
+    if existing_id:
+        return existing_id, False
+    if is_category:
+        new_id = f"cat_{_slug(name)}"
+        data.setdefault("nodes", []).append({
+            "id": new_id, "type": "category", "name": name,
+            "tags": [], "summary": "",
+            "category_node": True,
+            "_auto_created_from_extract": True,
+        })
+        return new_id, True
+    if no_auto_nodes:
+        raise ValueError(f"node not found and --no-auto-nodes set: {name!r}")
+    new_id = f"npc_{_slug(name)}"
+    data.setdefault("nodes", []).append({
+        "id": new_id, "type": "npc", "name": name, "tags": [], "summary": "",
+        "_auto_created_from_extract": True,
+    })
+    return new_id, True
+
+
+def _apply_node_summary(data: dict, p: dict, *, no_auto_nodes: bool) -> tuple:
+    """Fill one node's `summary` from a `node_summary` proposal.
+
+    `summary` is the only per-node field the turn path actually renders
+    (`play.py:522-526` prints `name` and `summary` and ignores `type`, `tags`
+    and every edge), so it is the field worth writing and the field that has to
+    be written carefully.
+
+    THE GM'S OWN WORDS WIN. A summary that is already filled and carries no
+    `summary_source` was typed by the GM, and is never overwritten -- not by a
+    longer proposal, not by a more confident one, not by a later session. Only an
+    empty summary, or one this function wrote before (identified by its own
+    `summary_source`), is fair game. A graph that a session can rewrite is a
+    graph the GM stops trusting, and trust is the whole reason this passes a
+    review step at all.
+
+    Returns (state, node_id, created) where state is "written", "kept" or
+    "skipped".
+    """
+    name = (p.get("to") or p.get("name") or "").strip()
+    summary = (p.get("summary") or "").strip()
+    if not name or not summary:
+        return "skipped", None, False
+    node_id, created = _resolve_or_create(
+        data, name, is_category=bool(p.get("category_to")),
+        no_auto_nodes=no_auto_nodes)
+    node = _node_by_id(data, node_id)
+    if node is None:                                   # unreachable, but cheap
+        return "skipped", node_id, created
+    previous = (node.get("summary") or "").strip()
+    if previous and not node.get("summary_source"):
+        return "kept", node_id, created
+    if previous == summary:
+        return "skipped", node_id, created
+    node["summary"] = summary
+    source = p.get("source") or {}
+    if source:
+        node["summary_source"] = source
+    return "written", node_id, created
+
+
+def apply_proposals(campaign: str, proposals: list, *, decide=None,
+                    no_auto_nodes: bool = False, report=None) -> dict:
+    """Apply proposals to `graph.json`. THE writer -- nothing else writes a graph.
+
+    Extracted from `cmd_extract_apply` so a play session can propose updates
+    through the same code path rather than beside it. Two things were true of the
+    `cmd_*` verbs and are why they could not simply have been called: they take
+    an `argparse.Namespace` and return an exit code, and node/edge resolution
+    runs through `_resolve_or_die`, which calls `sys.exit(1)` -- which kills a
+    play session rather than declining one proposal.
+
+    `decide(i, total, proposal) -> "y" | "n" | "q"` is the review gate. `None`
+    means apply everything, which is what `extract-apply` without `--review` has
+    always done and what a non-interactive caller gets. `"q"` stops and declines
+    the rest. An interactive caller that hits EOF must pass `"q"`, not `"y"`.
+
+    Returns counts: `nodes`, `edges`, `summaries`, `skipped`, `declined`.
+
+    Holding `_GRAPH_WRITE_LOCK` across the whole load-mutate-save is the point:
+    `data` is read once and written once, so two interleaved writers would lose
+    whichever finished second.
+    """
+    say = report if report is not None else (lambda m: print(m))
+    counts = {"nodes": 0, "edges": 0, "summaries": 0, "skipped": 0, "declined": 0}
+    with _GRAPH_WRITE_LOCK:
+        data = _load(campaign)
+        total = len(proposals)
+        quit_review = False
+        for i, p in enumerate(proposals, 1):
+            if quit_review:
+                counts["declined"] += 1
+                continue
+            if decide is not None:
+                decision = decide(i, total, p)
+                if decision == "q":
+                    quit_review = True
+                    counts["declined"] += 1
+                    continue
+                if decision != "y":
+                    counts["declined"] += 1
+                    continue
+
+            if p.get("kind") == "node_summary":
+                try:
+                    state, node_id, created = _apply_node_summary(
+                        data, p, no_auto_nodes=no_auto_nodes)
+                except ValueError as e:
+                    say(f"  skip {i}: {e}")
+                    counts["skipped"] += 1
+                    continue
+                if state == "written":
+                    counts["summaries"] += 1
+                    counts["nodes"] += int(created)
+                    say(f"  summary {node_id}: {p.get('summary', '')[:60]}")
+                elif state == "kept":
+                    # Counted as skipped, and printed, rather than silently
+                    # dropped: a GM who applies three proposals and sees "+0"
+                    # has to be able to tell "nothing happened" from "all three
+                    # were refused because you wrote those summaries yourself".
+                    counts["skipped"] += 1
+                    say(f"  keep {node_id}: already has a GM-written summary")
+                else:
+                    counts["skipped"] += 1
+                continue
+
+            etype = p.get("type", "")
+            since = p.get("since_session")
+            source = p.get("source") or {}
+            note = p.get("note") or ""
+            try:
+                frm_id, made_frm = _resolve_or_create(
+                    data, p.get("from", ""), is_category=bool(p.get("category_from")),
+                    no_auto_nodes=no_auto_nodes)
+                to_id, made_to = _resolve_or_create(
+                    data, p.get("to", ""), is_category=bool(p.get("category_to")),
+                    no_auto_nodes=no_auto_nodes)
+            except ValueError as e:
+                say(f"  skip {i}: {e}")
+                counts["skipped"] += 1
+                continue
+            counts["nodes"] += int(made_frm) + int(made_to)
+
+            if _existing_edge_match(data, frm_id, to_id, etype):
+                counts["skipped"] += 1
+                continue
+
+            edge = {
+                "id": _next_edge_id(data["edges"]),
+                "from": frm_id,
+                "to": to_id,
+                "type": etype,
+                "since_session": since,
+                "until_session": None,
+                "note": note,
+            }
+            if source:
+                edge["source"] = source
+            data["edges"].append(edge)
+            counts["edges"] += 1
+            say(f"  applied {edge['id']}  {frm_id} --[{etype}]--> {to_id} (s{since}+)")
+
+        # Only save if something changed. Not an optimisation -- it is the T2.5
+        # no-graph contract. A GM who reviews every proposal and declines all of
+        # them must not end up with a `graph.json` they did not have before,
+        # because "has a graph" is what switches the turn off the full notes
+        # digest and onto the scene cull. Creating one as a side effect of
+        # declining everything breaks that contract from the least expected
+        # direction, and `cmd_extract_apply` inherited it by always saving.
+        if counts["nodes"] or counts["edges"] or counts["summaries"]:
+            _save(campaign, data)
+    return counts
+
+
 def cmd_extract_apply(args) -> int:
     """Apply edge proposals from a JSON file produced by extract --write."""
     proposals_path = pathlib.Path(args.proposals).expanduser()
     if not proposals_path.exists():
-        print(f"proposals file not found: {proposals_path}", file=sys.stderr)
+        print(f"error: proposals file not found: {proposals_path}", file=sys.stderr)
         return 1
     proposals = json.loads(proposals_path.read_text(encoding="utf-8"))
     pick = None
@@ -594,18 +807,21 @@ def cmd_extract_apply(args) -> int:
         print("error: --review and --pick are mutually exclusive", file=sys.stderr)
         return 2
 
-    data = _load(args.campaign)
-    applied_nodes = 0
-    applied_edges = 0
-    skipped = 0
-    review_skipped = 0
-
-    def _review_prompt(idx: int, total: int, p: dict) -> str:
+    def _decide(i: int, total: int, p: dict) -> str:
+        if pick is not None and i not in pick:
+            return "n"
+        if not review:
+            return "y"
         src = p.get("source", {}) or {}
         anchor = (src.get("anchor") or "")[:140]
         conf = p.get("confidence", "?")
-        print(f"\n[{idx}/{total}] {p.get('from','?')} --[{p.get('type','?')}]--> {p.get('to','?')}"
-              f"  (s{p.get('since_session','?')}+, confidence={conf})")
+        if p.get("kind") == "node_summary":
+            print(f"\n[{i}/{total}] summary for {p.get('to') or p.get('name')}"
+                  f"  (confidence={conf})")
+            print(f"    {p.get('summary', '')[:160]}")
+        else:
+            print(f"\n[{i}/{total}] {p.get('from','?')} --[{p.get('type','?')}]--> {p.get('to','?')}"
+                  f"  (s{p.get('since_session','?')}+, confidence={conf})")
         if anchor:
             print(f"    src: {src.get('file','?')} s{src.get('session','?')} — \"{anchor}\"")
         if p.get("note"):
@@ -623,85 +839,14 @@ def cmd_extract_apply(args) -> int:
                 return "q"
             print("    please enter y / n / q")
 
-    quit_review = False
-    for i, p in enumerate(proposals, 1):
-        if quit_review:
-            review_skipped += 1
-            continue
-        if pick is not None and i not in pick:
-            continue
-        if review:
-            decision = _review_prompt(i, len(proposals), p)
-            if decision == "q":
-                quit_review = True
-                review_skipped += 1
-                continue
-            if decision == "n":
-                review_skipped += 1
-                continue
-        frm_name = p.get("from", "")
-        to_name = p.get("to", "")
-        etype = p.get("type", "")
-        since = p.get("since_session")
-        note = p.get("note") or ""
-        source = p.get("source") or {}
-
-        def resolve_or_create(name: str, is_category: bool = False) -> str:
-            existing_id = _resolve_node(data, name)
-            if existing_id:
-                return existing_id
-            if is_category:
-                new_id = f"cat_{_slug(name)}"
-                data.setdefault("nodes", []).append({
-                    "id": new_id, "type": "category", "name": name,
-                    "tags": [], "summary": "",
-                    "category_node": True,
-                    "_auto_created_from_extract": True,
-                })
-                nonlocal applied_nodes
-                applied_nodes += 1
-                return new_id
-            if args.no_auto_nodes:
-                raise ValueError(f"node not found and --no-auto-nodes set: {name!r}")
-            new_id = f"npc_{_slug(name)}"
-            data.setdefault("nodes", []).append({
-                "id": new_id, "type": "npc", "name": name, "tags": [], "summary": "",
-                "_auto_created_from_extract": True,
-            })
-            applied_nodes += 1
-            return new_id
-
-        try:
-            frm_id = resolve_or_create(frm_name, is_category=bool(p.get("category_from")))
-            to_id = resolve_or_create(to_name, is_category=bool(p.get("category_to")))
-        except ValueError as e:
-            print(f"  skip {i}: {e}", file=sys.stderr)
-            skipped += 1
-            continue
-
-        if _existing_edge_match(data, frm_id, to_id, etype):
-            skipped += 1
-            continue
-
-        edge = {
-            "id": _next_edge_id(data["edges"]),
-            "from": frm_id,
-            "to": to_id,
-            "type": etype,
-            "since_session": since,
-            "until_session": None,
-            "note": note,
-        }
-        if source:
-            edge["source"] = source
-        data["edges"].append(edge)
-        applied_edges += 1
-        print(f"  applied {edge['id']}  {frm_id} --[{etype}]--> {to_id} (s{since}+)")
-
-    _save(args.campaign, data)
-    msg = f"# done: +{applied_nodes} nodes, +{applied_edges} edges, {skipped} skipped"
-    if review_skipped:
-        msg += f", {review_skipped} declined in review"
+    counts = apply_proposals(args.campaign, proposals, decide=_decide,
+                             no_auto_nodes=bool(getattr(args, "no_auto_nodes", False)))
+    msg = (f"# done: +{counts['nodes']} nodes, +{counts['edges']} edges, "
+           f"{counts['skipped']} skipped")
+    if counts["summaries"]:
+        msg += f", {counts['summaries']} summaries written"
+    if counts["declined"]:
+        msg += f", {counts['declined']} declined in review"
     print(msg)
     return 0
 
