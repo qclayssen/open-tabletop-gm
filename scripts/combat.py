@@ -133,6 +133,20 @@ def format_attack(r: dict) -> str:
 
 
 if __name__ == "__main__":
+    # Hard Rule 4: this must run on a non-UTF-8 console. `format_attack` emits an
+    # em dash (U+2014) in its summary line, and under `LC_ALL=C` stdout is ascii,
+    # so the print raises UnicodeEncodeError and the CLI dies with a traceback on
+    # line one -- which reads as broken data rather than a missing glyph.
+    #
+    # Same remedy and same reasoning as `build_srd.main()` (#275): the rule glyphs
+    # and the em dash are decoration, a missing glyph is a cosmetic degradation,
+    # and reconfigure is a no-op when stdout is already UTF-8.
+    for _stream in (sys.stdout, sys.stderr):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):  # a non-TextIO wrapper, or detached
+            pass
+
     argv = sys.argv[1:]
     if not argv:
         print(__doc__)
