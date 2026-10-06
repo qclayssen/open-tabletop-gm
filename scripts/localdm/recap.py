@@ -32,6 +32,13 @@ SUMMARY_CHARS = 700
 
 _PRIVATE = re.compile(r"\b(?:gm|dm)[- ]?(?:only|note|notes)\b|\bsecret\b|\bspoilers?\b"
                       r"|\bhidden\b|\bsealed\b", re.I)
+# Credential-shape filter: catches API keys, bearer tokens, secrets in assignment form
+# This is a shape-based filter, not a word list, so it catches OMNIROUTE_API_KEY=... etc.
+_CREDENTIAL = re.compile(
+    r"(?i)(?:api[_-]?key|access[_-]?token|secret[_-]?key|private[_-]?key|bearer[_-]?token)\s*[:=]\s*\S+"
+    r"|(?:authorization|x-api-key)\s*:\s*\S+"
+    r"|\bbearer\s+[A-Za-z0-9._-]+\b"
+)
 _CONSUMABLE = re.compile(r"ration|potion|scroll|torch|oil|arrow|bolt|waterskin|water|food|"
                          r"antitoxin|healer|elixir|bomb|flask|rope|lantern|candle", re.I)
 _ORDER = re.compile(r"marching[ _]order|watch[ _]order|first[ _]watch|night watch|watches", re.I)
@@ -61,7 +68,10 @@ def gap_setting(env=None) -> float:
 
 
 def _public(line: str) -> bool:
-    return bool(line.strip()) and not context.is_template_line(line) and not _PRIVATE.search(line)
+    return (bool(line.strip())
+            and not context.is_template_line(line)
+            and not _PRIVATE.search(line)
+            and not _CREDENTIAL.search(line))
 
 
 def section_lines(state_md: str, name: str) -> list:

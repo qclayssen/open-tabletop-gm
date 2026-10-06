@@ -168,22 +168,75 @@ def state_digest(state_md: str, sections=DIGEST_SECTIONS, limit: int = 3000) -> 
     World State yet costs the prompt nothing rather than briefing the DM that the
     in-world date is "<Day, Month, Year - canonical source>".
     """
+    # Extract handoff fields for injection (only where_we_are and in_flight per spec §B2)
+    handoff_where, handoff_in_flight = _parse_handoff(state_md)
+    
     heads = list(_HEADING.finditer(state_md or ""))
     parts = []
+    handoff_injected = False
     for i, m in enumerate(heads):
-        if m.group(1) not in sections:
+        section_name = m.group(1)
+        if section_name not in sections:
             continue
         end = heads[i + 1].start() if i + 1 < len(heads) else len(state_md)
-        if m.group(1) == "World Queue":
+        if section_name == "World Queue":
             body = world_queue.digest_lines(state_md[m.end():end])
         else:
             body = [line for line in state_md[m.end():end].splitlines()
                     if line.strip() and not is_template_line(line)]
         if body:
-            parts.append(f"#### {m.group(1)}\n"
+            parts.append(f"#### {section_name}\n"
                          + _demote_headings("\n".join(body)))
+        # Inject handoff fields after Pinned Facts (high priority, before World State)
+        if not handoff_injected and section_name == "Pinned Facts":
+            if handoff_where or handoff_in_flight:
+                handoff_parts = []
+                if handoff_where:
+                    handoff_parts.append(f"Where we are: {handoff_where}")
+                if handoff_in_flight:
+                    handoff_parts.append("In flight:\n" + "\n".join(f"  - {item}" for item in handoff_in_flight))
+                if handoff_parts:
+                    parts.append("#### Handoff (injected)\n" + _demote_headings("\n".join(handoff_parts)))
+                handoff_injected = True
     # Scrubbed on load; read the ceiling note at the top of this module first.
     return _truncate(scrub_injection("\n\n".join(parts)), limit)
+
+
+def _parse_handoff(state_md: str) -> tuple[str | None, list[str] | None]:
+    """Extract `where_we_are` and `in_flight` from the ## Handoff YAML block.
+    
+    Returns (where_we_are_str, in_flight_list) or (None, None) if not found/parseable.
+    Only these two fields are injected per spec §B2.
+    """
+    import yaml
+    heads = list(_HEADING.finditer(state_md or ""))
+    for i, m in enumerate(heads):
+        if m.group(1).strip() != "Handoff":
+            continue
+        end = heads[i + 1].start() if i + 1 < len(heads) else len(state_md)
+        section_text = state_md[m.end():end]
+        # Find the YAML fence
+        yaml_match = re.search(r"```ya?ml\s*\n(.*?)\n```", section_text, re.S)
+        if not yaml_match:
+            return None, None
+        try:
+            data = yaml.safe_load(yaml_match.group(1))
+            if not isinstance(data, dict):
+                return None, None
+            where = data.get("where_we_are")
+            in_flight = data.get("in_flight")
+            if where and isinstance(where, str):
+                where = where.strip()
+            else:
+                where = None
+            if in_flight and isinstance(in_flight, list):
+                in_flight = [str(item).strip() for item in in_flight if str(item).strip()]
+            else:
+                in_flight = None
+            return where, in_flight
+        except yaml.YAMLError:
+            return None, None
+    return None, None
 
 
 SHEET_SECTIONS = ("Identity", "Combat Stats", "Features & Traits", "Equipment & Inventory",
