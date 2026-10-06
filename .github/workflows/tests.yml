@@ -319,6 +319,80 @@ jobs:
         # so a 3.11+ name, keyword argument or stdlib member is an error rather
         # than something no check ever looks at.
         run: python -m pytest tests/test_tactics_*.py -q
+  non-utf8-locale:
+    # Hard Rule 4's Windows half, as far as Linux can reach it. #277.
+    #
+    # WHY A SEPARATE JOB AND NOT A MATRIX ENTRY
+    # ==========================================
+    # The point is that macOS and Linux default to UTF-8, so the whole encoding
+    # class is invisible on every runner this repo already has. `LC_ALL=C` is the
+    # cheapest way to reach a non-UTF-8 console, and it is STRICT for this class:
+    # a cp1251 or cp936 console fails the same way, so this is not a weakened
+    # stand-in for the thing Hard Rule 4 actually names. Windows' other classes
+    # (CRLF, path separators, os.name) are a separate decision with a separate
+    # brief, which is what open-tabletop-gm/CLAUDE.md hard rule 4 now says too.
+    name: non-UTF-8 locale
+    runs-on: ubuntu-latest
+    env:
+      LC_ALL: C
+      LANG: C
+      # UTF-8 Mode is an INTERPRETER option, and it overrides the locale. Without
+      # these two, this job would be green for the wrong reason on every run.
+      PYTHONUTF8: '0'
+      # PEP 538 coerces a C locale to C.UTF-8 at interpreter start-up, which would
+      # silently undo LC_ALL=C. This is what stops that.
+      PYTHONCOERCECLOCALE: '0'
+      # PYTHONIOENCODING is deliberately NOT set. Hard Rule 4 names the LOCALE
+      # default, and forcing the encoding here would test something else.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.13'
+
+      - name: Install test dependencies
+        run: python -m pip install --upgrade pip pytest
+
+      - name: Assert the locale really is non-UTF-8
+        # A job that silently runs on UTF-8 is a green check mark for nothing, and
+        # "the suite passed under LC_ALL=C" is a claim about the ENVIRONMENT, not
+        # about the code. So the environment is asserted before anything depends
+        # on it. sys.stdout.encoding is the thing that decides whether print()
+        # raises, which is why it is checked rather than the shell's $LANG.
+        run: |
+          python - <<'PY'
+          import sys
+          enc = (sys.stdout.encoding or "").lower()
+          assert "utf" not in enc, (
+              f"stdout is {enc!r}, so this job would pass for the WRONG REASON: "
+              "the encoding class it exists to catch cannot occur. Check "
+              "PYTHONUTF8 and PYTHONCOERCECLOCALE, and whether the runner "
+              "image ignores LC_ALL.")
+          assert sys.flags.utf8_mode == 0, (
+              "UTF-8 Mode is on, so the locale is being overridden by the "
+              "interpreter. Set PYTHONUTF8=0.")
+          print(f"stdout encoding is {enc!r}; the guard is armed.")
+          PY
+
+      - name: Prove the assertion can fail
+        # An assertion nothing can violate is decoration. This runs a print() of a
+        # non-ASCII character and REQUIRES it to die: if that print succeeds, the
+        # environment is not what step 2 claimed, and every later result is void.
+        run: |
+          if python -c "print('—')" >/dev/null 2>&1; then
+            echo "::error::a non-ASCII print SUCCEEDED, so this job cannot detect the class it exists for"
+            exit 1
+          fi
+          echo "the failure is reproducible; the guard below is meaningful."
+
+      - name: Provision the SRD dataset
+        # Same reason the pytest job does: the dataset is gitignored and
+        # CI-built, and without it ~35 node IDs fail regardless of encoding.
+        run: python scripts/provision_srd.py
+
+      - name: The suite on a non-UTF-8 console
+        run: python -m pytest tests/ -q
+
   eslint:
     # The JavaScript floor, and the first thing in this file that has ever looked at a
     # .js file.
