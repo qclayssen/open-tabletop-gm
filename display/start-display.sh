@@ -86,10 +86,10 @@ fi
 
 # Check the campaign exists before killing a running display for it.
 if [[ -n "$CAMPAIGN" ]]; then
-  python3 "$DISPLAY_DIR/preflight.py" "$CAMPAIGN" > "$DISPLAY_DIR/.preflight" || {
+  python3 "$DISPLAY_DIR/display_check.py" "$CAMPAIGN" > "$DISPLAY_DIR/.preflight" || {
     cat "$DISPLAY_DIR/.preflight"; rm -f "$DISPLAY_DIR/.preflight"; exit 1; }
 else
-  python3 "$DISPLAY_DIR/preflight.py" > "$DISPLAY_DIR/.preflight"
+  python3 "$DISPLAY_DIR/display_check.py" > "$DISPLAY_DIR/.preflight"
 fi
 
 if $TLS_MODE && [[ -z "$LAN_FLAG" ]]; then

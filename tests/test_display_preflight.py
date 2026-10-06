@@ -8,10 +8,10 @@ import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-PREFLIGHT = ROOT / "display" / "preflight.py"
+PREFLIGHT = ROOT / "display" / "display_check.py"
 
 sys.path.insert(0, str(ROOT / "display"))
-import preflight  # noqa: E402
+import display_check as preflight  # noqa: E402
 
 
 def run(root, *args):

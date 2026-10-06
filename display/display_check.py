@@ -2,7 +2,7 @@
 """preflight.py: checks before a session, printed by start-display.sh.
 
 Usage:
-    python3 display/preflight.py [campaign]
+    python3 display/display_check.py [campaign]
 
 Prints one line per problem or piece of news, nothing when all is well:
   - the campaign is missing, or the folder carrying that name is not a campaign
