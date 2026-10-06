@@ -39,6 +39,71 @@ class DMReply:
     cast: str | None = None         # "Mage Armor": a spell with a lasting stat effect, cast
                                      # outside a fight (B4: resolved on the engine, not guessed)
     check_meta: dict | None = None  # structured check keys: stakes, target, time_pressure, changed
+    # Who the DM asked, from an optional specialist prefix on `escalate`
+    # ("historian: who founded the Ninefold?"). #253 / SPEC D1.
+    #
+    # This is a field on ONE existing key, not a fifth JSON key. A small model
+    # mangles or omits an extra key, and every added key is prompt weight on the
+    # 8 KB always-loaded prompt -- so the addressee rides along inside `escalate`
+    # and degrades to today's behaviour when the prefix is absent.
+    escalate_to: str | None = None
+
+
+# The optional specialist prefix on `escalate` (SPEC D1). Group 1 is the
+# requested advisor, group 2 the question. The length bound keeps a sentence
+# like "the tavern: something happened" from being read as a name, and
+# membership in ADVISORS (checked by the caller) is what actually decides --
+# anything not in NAMEABLE is left alone rather than guessed at.
+_ESCALATE_PREFIX = re.compile(r"^\s*(?:ask\s+)?([A-Za-z][A-Za-z-]{3,15})\s*[:\-]\s*(.*)$", re.S)
+
+
+def split_escalate(value, known):
+    """`escalate`'s text as (requested_name_or_None, question).
+
+    EXTRACTION IS SYNTACTIC, DECISION IS NOT. This pulls out any prefix that
+    looks like a council name and lets the caller decide whether it is allowed.
+    Doing the membership test here instead was wrong in a way only a test caught:
+    the name never reached `_help`, so the refusal was silent and the GM saw a
+    normal ask with no indication the DM had asked for something impossible.
+
+    `known` is `ADVISORS`, not `NAMEABLE`, precisely so the four non-nameable
+    advisors (`arbiter`, `interface`, `referee`, `mascot-handler`) ARE extracted
+    and can be refused out loud. A fully hallucinated name is not in `ADVISORS`,
+    so it stays in the question text and is routed by topic -- which is the right
+    outcome anyway, minus the status line.
+
+    Anything unrecognised comes back with its text whole, so a question that
+    merely contains a colon keeps every word of it. The object shape
+    `{"escalate": {"to": ..., "question": ...}}` is accepted with the same
+    tolerance `_cast_field` already gives `cast`.
+    """
+    # An ABSENT escalate must stay None, not become "". `_text_field` returns
+    # None for absent and `DMReply.escalate` is typed `str | None`, so coercing
+    # it to "" changes the contract for every caller that tests truthiness on
+    # `is None` -- and the six existing reply tests caught exactly that.
+    if value is None:
+        return None, None
+    if isinstance(value, dict):
+        to = str(value.get("to") or "").strip().lower()
+        body = value.get("question") or value.get("text") or ""
+        if to in known and str(body).strip():
+            return to, str(body).strip()
+        return None, str(body).strip() if body else ""
+    text = str(value).strip()
+    # Blank/whitespace is None, matching `_text_field` on the same line of
+    # reasoning: a field that carries nothing carries no directive at all.
+    if not text:
+        return None, None
+    m = _ESCALATE_PREFIX.match(text)
+    if m:
+        to, body = m.group(1).strip().lower(), m.group(2).strip()
+        if to not in known:
+            return None, text
+        # A real name with no remainder asks nothing. Dropping the whole thing
+        # is the point: routing "historian:" by topic would send the advisor an
+        # empty question and file an odd empty note.
+        return (to, body) if body else (None, None)
+    return None, text
 
 
 def strip_think(text: str) -> str:
@@ -138,8 +203,13 @@ def parse(text: str) -> DMReply:
             data = {}
     text = _PROMPT_TAIL.sub("", text).rstrip()
     check, meta = _check_field(data)
-    return DMReply(text, _text_field(data, "escalate"), _text_field(data, "command"),
-                   check, _cast_field(data), meta)
+    # The specialist prefix is split here, once, so every caller downstream sees a
+    # plain question and a separate addressee. Doing it in `_help` instead would
+    # mean every future reader has to know the prefix exists.
+    from localdm import advisor as _advisor
+    escalate_to, escalate = split_escalate(data.get("escalate"), _advisor.ADVISORS)
+    return DMReply(text, escalate, _text_field(data, "command"),
+                   check, _cast_field(data), meta, escalate_to)
 
 
 # Guardrail: the DM may not put words, thoughts or feelings in the player's mouth.

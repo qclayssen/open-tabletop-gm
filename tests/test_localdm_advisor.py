@@ -151,3 +151,39 @@ def test_one_silent_advisor_does_not_hide_the_others():
     out = advisor.consult(FakeClient(responder), "m", ["arbiter", "director"], "q", "")
     assert "Arbiter: (unavailable:" in out
     assert "Director: Check DC 13, not 10." in out
+
+
+# ── #253 / SPEC D1: NAMEABLE is a deliberate subset, not the whole council ──
+
+
+def test_nameable_is_a_subset_of_advisors():
+    """The invariant that makes `_help`'s membership check sound. If a name were
+    in NAMEABLE but not ADVISORS, `brief(name)` would raise inside the turn."""
+    assert set(advisor.NAMEABLE) <= set(advisor.ADVISORS)
+
+
+def test_arbiter_is_guardrail_only_and_stays_unnameable():
+    """It arbitrates dice. A DM asking it a lore question is a misroute, not a
+    specialist request, and offering it invites exactly that."""
+    assert "arbiter" in advisor.ADVISORS
+    assert "arbiter" not in advisor.NAMEABLE
+
+
+@pytest.mark.parametrize("name", ["interface", "referee", "mascot-handler"])
+def test_the_fire_on_what_the_table_is_doing_advisors_stay_unnameable(name):
+    """These three trigger on what the table is doing, not on what the DM wants
+    answered, so naming them is never the right call."""
+    assert name in advisor.ADVISORS
+    assert name not in advisor.NAMEABLE
+
+
+def test_nameable_is_the_five_the_dm_prompt_offers():
+    """The prompt lists exactly these five. If one side changes and the other
+    does not, the model is told to name an advisor the code will refuse."""
+    from pathlib import Path
+    dm = (Path(__file__).resolve().parents[1]
+          / "scripts" / "localdm" / "prompts" / "dm.md").read_text(encoding="utf-8")
+    for name in advisor.NAMEABLE:
+        assert name in dm, f"{name} is nameable but the prompt never offers it"
+    # And nothing the prompt offers is missing from NAMEABLE.
+    assert "arbiter:" not in dm, "the prompt offers arbiter, which _help would refuse"

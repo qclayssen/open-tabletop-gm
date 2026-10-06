@@ -16,6 +16,17 @@ from .reply import strip_think
 BRIEFS = pathlib.Path(__file__).resolve().parent / "prompts" / "advisors"
 ADVISORS = ("historian", "continuity", "director", "tactician", "designer", "arbiter",
             "interface", "referee", "mascot-handler")
+# The five a DM may NAME, as opposed to keyword-route. #253 / SPEC D1.
+#
+# Deliberately a subset, and the omissions are the design:
+#   * `arbiter` is guardrail-only -- it arbitrates dice, and a DM asking it a
+#     lore question is a misroute, not a specialist request;
+#   * `interface`, `referee` and `mascot-handler` stay keyword-anchored --
+#     they fire on what the table is doing, not on what the DM wants answered.
+# Offering all nine costs prompt tokens and buys wrong picks; five is the set
+# where naming is almost always the right call.
+NAMEABLE = ("historian", "continuity", "director", "tactician", "designer")
+
 MAX_WORDS = 150
 FALLBACK = ["continuity", "director"]
 KEYWORDS = {

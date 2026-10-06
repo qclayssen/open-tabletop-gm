@@ -10,7 +10,7 @@ import pytest
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from localdm import reply        # noqa: E402
+from localdm import advisor, reply        # noqa: E402
 
 
 def test_plain_text_is_all_narration():
@@ -419,3 +419,109 @@ def test_a_number_the_engine_produced_is_backed():
 def test_engine_numbers_reads_text_ints_and_nested_fields_and_skips_none():
     assert reply.engine_numbers("8 / 8 HP, AC 12", 3, None, [(5, 9), None],
                                 {"x": 1}, True) == {8, 12, 3, 5, 9}
+
+
+# ── #253 / SPEC D1: the optional specialist prefix on `escalate` ──────────
+#
+# The design constraint is a 9B model: a NEW JSON key gets mangled or omitted,
+# and every key is prompt weight on the always-loaded prompt. So the addressee
+# rides inside the existing `escalate` string and is split once, in parse(),
+# so every caller downstream sees a plain question and a separate name.
+
+
+def test_a_named_specialist_is_split_out_of_the_escalate_text():
+    r = reply.parse('Rain.\n{"escalate": "historian: who founded the Ninefold?"}')
+    assert r.escalate_to == "historian"
+    assert r.escalate == "who founded the Ninefold?"
+
+
+@pytest.mark.parametrize("text,to,body", [
+    ("HISTORIAN: who founded it?", "historian", "who founded it?"),
+    ("ask historian: who founded it?", "historian", "who founded it?"),
+    ("historian - who founded it?", "historian", "who founded it?"),
+    ("  historian:   who founded it?  ", "historian", "who founded it?"),
+])
+def test_case_insensitive_optional_ask_and_either_separator(text, to, body):
+    """Small models vary all three. The tolerance costs nothing and the length
+    bound plus NAMEABLE membership is what stops it misfiring."""
+    r = reply.parse('Ok.\n{"escalate": %s}' % repr(text).replace("'", '"'))
+    assert r.escalate_to == to and r.escalate == body
+
+
+def test_an_object_shaped_escalate_is_accepted_like_cast_already_is():
+    """`cast` has always tolerated an object; a model that wraps one key in an
+    object will do the same to this one rather than only to cast."""
+    r = reply.parse('Ok.\n{"escalate": {"to": "designer", "question": "is that fair?"}}')
+    assert r.escalate_to == "designer"
+    assert r.escalate == "is that fair?"
+
+
+@pytest.mark.parametrize("text", [
+    "the tavern: something happened last night",   # not a name -- "the" is 3 chars
+    "who founded the Ninefold: ask later",         # prefix after the question
+    "archivist: where is the map?",                 # hallucinated, not in ADVISORS
+    "nine: a question that starts with a number",  # length bound rejects it
+])
+def test_anything_unrecognised_leaves_the_question_whole(text):
+    """A prefix that is not a council name is left in the text, not stripped.
+
+    The alternative -- strip anything shaped like a prefix -- would delete "the
+    tavern:" from a perfectly good question, and the DM would ask the advisor
+    about a different thing than the table just discussed.
+    """
+    r = reply.parse('Ok.\n{"escalate": %s}' % repr(text).replace("'", '"'))
+    assert r.escalate_to is None
+    assert r.escalate == text.strip()
+
+
+@pytest.mark.parametrize("name", ["arbiter", "interface", "referee", "mascot-handler"])
+def test_a_real_but_unnameable_advisor_is_extracted_so_the_refusal_is_audible(name):
+    """Extraction is over ADVISORS, not NAMEABLE, so `_help` can refuse OUT LOUD.
+
+    Gating on NAMEABLE here instead meant `escalate_to` was None, `_help` never
+    learned a name had been requested, and the GM saw an ordinary ask with no
+    sign the DM had asked for something impossible. That is the silent-failure
+    shape this whole split exists to avoid.
+    """
+    r = reply.parse('Ok.\n{"escalate": "%s: who founded it?"}' % name)
+    assert r.escalate_to == name, "the name never reached the layer that refuses it"
+    assert r.escalate == "who founded it?"
+    assert name not in advisor.NAMEABLE
+
+
+def test_a_name_with_no_question_asks_nothing():
+    """"historian:" alone must not reach the advisor. Asking with an empty
+    question is a wasted remote call and an odd thing to find in a note."""
+    r = reply.parse('Ok.\n{"escalate": "historian:"}')
+    assert r.escalate_to is None
+    assert not r.escalate
+
+
+def test_an_absent_or_blank_escalate_stays_none_not_empty_string():
+    """Caught by the six pre-existing reply tests, which is why they are worth
+    keeping: `escalate` is typed `str | None` and callers test `is None`. A
+    prefix-splitter that coerces absence to "" breaks that contract quietly."""
+    assert reply.parse("Just narration.").escalate is None
+    assert reply.parse('Ok.\n{"escalate": "   "}').escalate is None
+    assert reply.parse('Ok.\n{"escalate": null}').escalate is None
+
+
+def test_a_named_prefix_on_a_complete_line_still_parses():
+    """The control for the truncation contract below, so this test cannot be
+    satisfied by the JSON line simply being ignored."""
+    r = reply.parse('Rain.\n{"escalate": "tactician: how do I beat the ogre?", "command": null}')
+    assert r.escalate_to == "tactician"
+    assert r.escalate == "how do I beat the ogre?"
+
+
+def test_a_truncated_json_line_yields_no_directive_at_all():
+    """Pre-existing behaviour, pinned so the prefix work cannot quietly change
+    it: a cut-off JSON line is unreadable, so `data` is `{}` and there is no
+    directive -- named or not. Verified identical on pristine `origin/main`
+    (`escalate=None` for a truncated escalate with or without a prefix).
+
+    An earlier version of this test asserted the prefix SURVIVED truncation. It
+    did not, and the assertion was about a behaviour that never existed rather
+    than about a regression introduced here.
+    """
+    assert reply.parse('Rain.\n{"escalate": "tactician: how do I beat the ogre?"').escalate is None

@@ -223,6 +223,10 @@ HELP = ("The GM has a question the campaign notes do not answer. Answer it in at
         "{n} words, for the GM's eyes only: the fact if you know it, and plainly saying "
         "you do not if you do not. Never invent lore to fill the gap.")
 HELP_ADVISORS = 2             # advisors asked per DM request: enough to cross-check
+# Distinct questions the DM may escalate on in one session, before its own notes
+# take over. A cost circuit-breaker, not a correctness gate (#253): at 9B the
+# model escalates on nearly every turn, and each ask is a remote call.
+MAX_ASKS_PER_SESSION = 12
 
 # A tripped guardrail is the DM's own draft breaking a rule (writing for the
 # player, or obeying a player-issued system instruction). That is the moment a
@@ -438,7 +442,8 @@ class Session:
         self.on_status = on_status or (lambda text: None)
         self._status_lock = threading.Lock()
         self._guard_notes = {}       # guardrail kind -> (draft, ruling): the last one only
-        self._asked = set()          # questions the DM already escalated on
+        self._asked = set()          # questions the DM already escalated on (text only,
+                                     # never name+question -- see _help)
         # The name ledger: which names this campaign established, and which one
         # the model has started handing to everyone. Rebuilt from the digest each
         # time the digest changes, and read on every reply (see Session._dm).
@@ -863,14 +868,24 @@ class Session:
             self._guard_notes[kind] = (draft, notes)
         return notes
 
-    def _help(self, question: str) -> str:
+    def _help(self, question: str, to: str | None = None) -> str:
         """The DM asked a smarter advisor for help (its "escalate" field).
 
         Always allowed, on every turn: a DM inventing a fact to avoid a round trip
         is the worse failure, and the roadmap's "please wait" item is what pays for
-        the wait. The one bound is repetition -- a small model escalates on nearly
-        every turn, and the same question twice buys nothing, so an identical
-        question is asked once and later turns fall through to the DM's own notes.
+        the wait. The bounds are repetition and cost -- a small model escalates on
+        nearly every turn, and the same question twice buys nothing.
+
+        `to` is the specialist the DM named (#253 / SPEC D1). It LEADS, and keyword
+        routing still cross-checks behind it: `pick()`'s answer is appended so a
+        wrong name costs a second opinion rather than a wrong answer. An unknown or
+        non-nameable name is ignored with a status line, never a lookup failure --
+        the DM hallucinating "archivist" must not take the turn down.
+
+        THE REPETITION KEY IS THE QUESTION ALONE, deliberately. Keying it on
+        name+question would let a DM re-ask the same thing forever by varying the
+        name, which converts a cost bound into no bound at all. It is pinned by a
+        test that asks the same question to two different specialists.
         """
         # The question is model-written, and a player pushing for an injection can
         # reach this field, so it is treated as untrusted: capped, and never
@@ -878,17 +893,32 @@ class Session:
         question = " ".join((question or "").split())[:400]
         if not question:
             return ""
+        names = advisor.pick(question, limit=HELP_ADVISORS)
+        to = (to or "").strip().lower()
+        if to:
+            if to in advisor.NAMEABLE:
+                names = [to] + [n for n in names if n != to]
+            else:
+                self._say_status(f"[dm] unknown advisor '{to}', routing by topic")
+                to = None
+        names = names[:HELP_ADVISORS]
         key = question.lower()
         if key in self._asked:
             self._say_status("[dm] already asked that, narrating on its own notes")
             return ""
         self._asked.add(key)
+        # Distinct-ask ceiling. A circuit-breaker, not a correctness gate: small
+        # models escalate on nearly every turn, and the cost is real. Keyed on the
+        # question set, so naming a different specialist does not buy more asks.
+        if len(self._asked) > MAX_ASKS_PER_SESSION:
+            self._say_status("[dm] asked enough this session, narrating on its own notes")
+            return ""
         # The bridge answers "is a fight running" and nothing else: it does not
         # know the room, so a non-combat ask gets the neutral pool rather than a
         # line that invents a tavern (stall.NEUTRAL_CONTEXT).
         ctx = "combat" if self.bridge.is_combat_active() else stall.NEUTRAL_CONTEXT
         self.on_stall(stall.get_stall_line(ctx))    # shown now: the ask blocks next
-        notes, _failed = self._ask(advisor.pick(question, limit=HELP_ADVISORS),
+        notes, _failed = self._ask(names,
                                    HELP.format(n=advisor.MAX_WORDS) + f"\n\n{question}",
                                    "its notes")
         return notes
@@ -1644,7 +1674,7 @@ class Session:
         # which meant the model escalated into a void and narrated anyway. Repeats
         # of an identical question are the thing actually bounded (_help).
         if r.escalate:
-            helped = self._help(r.escalate)
+            helped = self._help(r.escalate, r.escalate_to)
             if helped:
                 notes = _join(notes, helped)
                 r = self._dm(player=line, engine=engine, notes=notes, task=PLAYER_TURN)
