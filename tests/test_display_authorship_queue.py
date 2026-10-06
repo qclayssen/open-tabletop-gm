@@ -228,6 +228,112 @@ class StaleTurnOrder(Base):
         self.assertTrue(self.mod._current_stats["turn_order"])
 
 
+class StaleCampaignState(Base):
+    """stats.json restored under the wrong campaign.
+
+    The roster is not cosmetic state. `display/wrapper.py` `_known_chars()` reads
+    the `players` names out of this same file and uses them as the allowlist that
+    decides which character names may post a turn (wrapper.py:175), so a stale
+    roster rejects the real party's turns and admits the other campaign's
+    characters.
+
+    The no-stamp case is asserted here as a first-class expectation rather than
+    left incidental. Trusting it is a deliberate choice, not an oversight: an
+    EMPTY roster makes wrapper.py skip its name check entirely ("Empty set =
+    bypass name check", wrapper.py:134), so dropping the roster would turn a name
+    allowlist into no allowlist. Trust is also the reversible branch -- dropping
+    can be added later as one more line.
+    """
+
+    CAMPAIGN_SCOPED = ("players", "world_time", "factions", "quests")
+
+    def _campaign(self, name="c1"):
+        camp = self.tmp / "camps" / (name or "c1")
+        (camp / "combat").mkdir(parents=True, exist_ok=True)
+        self.mod._find_campaign = lambda wanted: camp
+        pathlib.Path(self.mod.CAMP_FILE).write_text(name or "", encoding="utf-8")
+
+    def _load(self, payload):
+        pathlib.Path(self.mod.STATS_FILE).write_text(json.dumps(payload), encoding="utf-8")
+        self.mod._current_stats = {}
+        self.mod._load_stats()
+
+    def _everything(self, stamp):
+        payload = {"players": [{"name": "A"}], "world_time": {"day": 3},
+                   "factions": [{"name": "Grove", "standing": "Friendly"}],
+                   "quests": [{"id": "q1"}]}
+        if stamp is not None:
+            payload["_campaign"] = stamp
+        return payload
+
+    def test_another_campaigns_roster_is_dropped(self):
+        self._campaign("c1")
+        self._load(self._everything("other-campaign"))
+        self.assertNotIn("players", self.mod._current_stats)
+
+    def test_every_campaign_scoped_key_is_dropped_not_just_the_roster(self):
+        # A cross-campaign file restores another campaign's clock, factions and
+        # quest log too, and none of them is re-derived on load. Dropping only
+        # `players` would close one instance of the class and leave the rest.
+        self._campaign("c1")
+        self._load(self._everything("other-campaign"))
+        for key in self.CAMPAIGN_SCOPED:
+            self.assertNotIn(key, self.mod._current_stats,
+                             f"{key} survived a cross-campaign restore")
+
+    def test_a_matching_campaign_keeps_everything(self):
+        # Kills the over-eager-drop mutant: a guard that cleared on any stamp
+        # would pass the test above and fail this one.
+        self._campaign("c1")
+        self._load(self._everything("c1"))
+        for key in self.CAMPAIGN_SCOPED:
+            self.assertIn(key, self.mod._current_stats)
+
+    def test_an_unstamped_file_is_trusted(self):
+        # Kills a drop-on-no-stamp implementation, which is the one that fails
+        # open on wrapper.py's allowlist.
+        self._campaign("c1")
+        self._load(self._everything(None))
+        for key in self.CAMPAIGN_SCOPED:
+            self.assertIn(key, self.mod._current_stats)
+
+    def test_an_unresolvable_campaign_leaves_the_file_alone(self):
+        # No .campaign at all: the honest state is unknown, so the saved table is
+        # left exactly as _drop_stale_turn_order leaves it when the encounter
+        # cannot be resolved.
+        self._campaign("")
+        self._load(self._everything("other-campaign"))
+        for key in self.CAMPAIGN_SCOPED:
+            self.assertIn(key, self.mod._current_stats)
+
+    def test_the_drop_persists_so_the_next_restart_reads_the_right_file(self):
+        # Clearing the key without persisting leaves the wrong file on disk and
+        # the bug returns on the next restart.
+        self._campaign("c1")
+        self._load(self._everything("other-campaign"))
+        on_disk = json.loads(pathlib.Path(self.mod.STATS_FILE).read_text(encoding="utf-8"))
+        for key in self.CAMPAIGN_SCOPED:
+            self.assertNotIn(key, on_disk, f"{key} still in stats.json after the drop")
+
+    def test_turn_order_is_not_stamp_guarded(self):
+        # turn_order keeps its own oracle -- the campaign's encounter.json, which
+        # is per-campaign and status-bearing -- so this guard must not touch it.
+        # The encounter file has to exist and be active, otherwise
+        # _drop_stale_turn_order clears it for its own reason and this would
+        # assert the wrong cause.
+        camp = self.tmp / "camps" / "c1"
+        (camp / "combat").mkdir(parents=True, exist_ok=True)
+        (camp / "combat" / "encounter.json").write_text(
+            json.dumps({"status": "active"}), encoding="utf-8")
+        self.mod._find_campaign = lambda name: camp
+        pathlib.Path(self.mod.CAMP_FILE).write_text("c1", encoding="utf-8")
+        self._load({"_campaign": "other-campaign", "players": [{"name": "A"}],
+                    "turn_order": {"order": [{"name": "Giant Frog"}]}})
+        self.assertNotIn("players", self.mod._current_stats)
+        self.assertIsNotNone(self.mod._current_stats.get("turn_order"),
+                             "the stamp guard cleared turn_order, which has its own oracle")
+
+
 class NpcSheets(Base):
     def setUp(self):
         super().setUp()
