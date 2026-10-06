@@ -12,6 +12,40 @@ This project is the LLM-agnostic, system-flexible fork of [claude-dnd-skill](htt
 
 ## [Unreleased]
 
+### Fixed: the tactical panel's type was not the face it asked for, its labels grew with the board, and a refusal was on two surfaces at once
+
+Five correctness items from COMBAT-FEEL Wave 0 (#300), merged as `b582333` on 2026-10-05.
+
+**The panel rendered in a different face than its own stylesheet asked for.** `tactics.css` and
+`mapseditor.css` both request Figtree, and `static/reference/strixhaven_map_table.html` sets the
+grid's type in it, but `index.html` never requested the font, so every one of those declarations
+silently fell back to `system-ui`. The panel read in a different face from the reference it was
+built from. `index.html` now requests Figtree at the four weights the rules use (400, 600, 700,
+800); it still names `system-ui` as its fallback, so an offline display is unchanged.
+
+**Label size scaled with the board, so the same label was a different size at every zoom.** The
+grid sets `--tx-uu`, how many user units a pixel is worth at the board's current cell size, and
+the labels now compute `font-size: calc(11px * var(--tx-uu))`. An 11px label is 11px whatever the
+square is, which is the thing a player reads at a glance.
+
+**Strokes scaled with the board too, so a grid line was hairline at one zoom and thick at
+another.** `shape-rendering: crispEdges` on `.tx-grid`, and `vector-effect: non-scaling-stroke` on
+the token outlines, HP rings, distance rings, AoE templates and the ruler. Covers are unaffected
+in intent: their stroke is meant to read at the board's scale.
+
+**A refusal appeared on two surfaces with two different initials, and a stale error could look
+current.** Refusals are the banner's alone now, and the only place. The comment on the old path
+says why this matters: the duplicate surface is what made a stale error read as current.
+
+**Conditions are a label on the token's lower edge rather than a dot beside it, and initials are
+the label rather than a mark on the map.** At cell = 10 the old dot overlapped the token's own
+glyph. A GM reading the board could no longer see what was happening to a creature from its
+marker alone.
+
+`tests/test_dice_request_offers.py` and `tests/test_display_retest_findings.py` grew with the
+change, including coverage for the new helpers passing in isolation -- the property the old shared
+helper lacked.
+
 ### Fixed: main was red, and three of the reasons were the tests being wrong
 
 `main` failed 10 tests. Four distinct causes, and only one of them was an
