@@ -164,7 +164,80 @@ def test_a_wall_on_the_top_or_left_edge_still_blocks_sight():
     assert not g.line_of_sight((0, 0), (0, 4))
 
 
-# ─── areas of effect (milestone 4) ────────────────────────────────────────────
+# ─── footprints (#257) ────────────────────────────────────────────────────────
+
+class _Body:
+    """A stand-in for a token: `adjacent` reads x, y, width and height off
+    whatever it is handed, the way `Grid.cover` reads a position or a square."""
+
+    def __init__(self, x, y, width=1, height=1):
+        self.x, self.y, self.width, self.height = x, y, width, height
+
+
+def test_a_footprint_is_every_square_a_creature_covers():
+    # The anchor is the top-left square and stays where it is: a Large creature
+    # at C3 covers C3, D3, C4 and D4, and its `pos` is still C3.
+    assert grid.footprint((2, 3)) == frozenset({(2, 3)})
+    assert grid.footprint((2, 3), (2, 2)) == frozenset({(2, 3), (3, 3), (2, 4), (3, 4)})
+    assert len(grid.footprint((0, 0), (4, 4))) == 16
+    assert len(grid.footprint((1, 1), (3, 3))) == 9
+
+
+def test_adjacent_falls_back_to_the_old_rule_for_two_medium_creatures():
+    """The Chebyshev rule `max(|dx|, |dy|) <= 1` is what the display still uses
+    (display/static/tactics.js), and for two 1x1 tokens `adjacent` must agree
+    with it exactly, or every existing adjacency answer changes."""
+    for a in [(0, 0), (1, 2), (3, 3), (7, 0)]:
+        for b in [(0, 0), (0, 1), (1, 1), (2, 0), (3, 2), (9, 9)]:
+            chebyshev = max(abs(a[0] - b[0]), abs(a[1] - b[1])) <= 1
+            assert grid.adjacent(a, b) is chebyshev, (a, b)
+            assert grid.adjacent(b, a) is chebyshev, (b, a)
+
+
+def test_adjacency_uses_occupied_squares_not_anchors():
+    # The centre rule reads "a 2x2 at A1 beside a 1x1 at C1" as two squares
+    # apart and says no. Their squares share an edge, so the engine says yes.
+    large, medium = _Body(0, 0, 2, 2), _Body(2, 0)
+    assert max(abs(large.x - medium.x), abs(large.y - medium.y)) == 2    # the old rule
+    assert grid.adjacent(large, medium) and grid.adjacent(medium, large)
+    # A 3x3 at A1 reaches C3, so a creature at D4 touches its corner.
+    huge = _Body(0, 0, 3, 3)
+    assert grid.adjacent(huge, _Body(3, 3))
+    assert not grid.adjacent(huge, _Body(3, 4))       # a square of clear air between
+    assert not grid.adjacent(huge, _Body(5, 5))
+
+
+def test_min_distance_is_distance_for_two_medium_creatures():
+    g = open_grid()
+    for a in [(0, 0), (2, 5), (7, 1)]:
+        for b in [(0, 1), (4, 4), (9, 9), (11, 0)]:
+            assert g.min_distance(a, b) == g.distance(a, b), (a, b)
+            # The sizes default to 1x1, so asking with them spelled out is the
+            # same question as leaving them off.
+            assert g.min_distance(a, b, (1, 1), (1, 1)) == g.distance(a, b), (a, b)
+
+
+def test_min_distance_measures_edge_to_edge():
+    g = open_grid()
+    # A 2x2 at A1 covers A1..B2, so C1 is one square from B1: 5 ft, where the
+    # anchors are two squares (10 ft) apart.
+    assert g.min_distance((0, 0), (2, 0), (2, 2)) == 5
+    # C3 touches D2's corner: one diagonal square is still 5 ft.
+    assert g.min_distance((0, 0), (2, 2), (2, 2)) == 5
+    # D3 is a clear square past the body's corner: two diagonal squares = 10 ft.
+    assert g.min_distance((0, 0), (3, 3), (2, 2)) == 10
+    # A 3x3 at A1 covers A1..C3, so D1 is one square past C1.
+    assert g.min_distance((0, 0), (3, 0), (3, 3)) == 5
+    assert g.min_distance((0, 0), (4, 0), (3, 3)) == 10
+
+
+def test_water_is_still_normal_terrain_for_a_creature_that_swims():
+    """A footprint does not change what a square costs: `_step_cost` reads the
+    square being entered and the mover's MoveOptions, never how wide it is."""
+    g = Grid([".~~."])
+    assert g.path((0, 0), (3, 0), opts=MoveOptions(swim=True))[1] == 15
+    assert g.path((0, 0), (3, 0))[1] == 25
+
 
 from tactics.grid import Grid, area, label, parse_square  # noqa: E402
 
@@ -220,3 +293,67 @@ def test_walls_block_an_area_and_are_never_in_it():
 def test_areas_stop_at_the_map_edge():
     assert all(label(parse_square(s)) == s for s in _area("sphere", 10, (0, 0), (0, 0), from_self=False))
     assert len(_area("sphere", 10, (0, 0), (0, 0), from_self=False)) == 6
+
+
+# ─── footprint: areas of effect and cover (#257) ──────────────────────────────
+
+def _area_squares(shape, size, caster, target=None, rows=None, **kw):
+    g = Grid(rows or ["." * 20] * 20)
+    return area(g, shape, size, caster, target, **kw)["squares"]
+
+
+def test_a_cone_catches_a_large_creature_by_any_occupied_square():
+    """`area` answers which *squares* are in the effect, by centre. It must keep
+    answering that way: whether a body is caught is a question for the consumer,
+    which asks whether any square it occupies is on the list."""
+    # Caster F6, cone east: G6 H6 I5 I6 I7 (the label test above).
+    on = set(_area_squares("cone", 15, (5, 5), (9, 5)))
+    assert (6, 4) not in on                      # a 2x2 anchored at G5 (6, 4) ...
+    assert grid.footprint((6, 4), (2, 2)) & on   # ... still has two squares inside
+    assert (8, 5) in on and grid.footprint((8, 5), (2, 2)) & on
+    assert not grid.footprint((9, 5), (2, 2)) & on   # clear of it entirely
+
+
+def test_cover_traces_the_whole_footprint_not_the_anchor_square():
+    """A pillar at B3, attacker A1, target C5. As a Medium creature 3 of the 4
+    corner lines from A1 end inside the pillar, so the target is mostly hidden
+    (cover 5). As a 2x2 anchored at C5 the far corners move out to (4, 4) and
+    (2, 6): the line to (4, 4) passes diagonally above the pillar and the line to
+    (2, 6) leaves it below, so only 2 of the 4 lines are blocked and the answer
+    is half cover. Same anchor, same pillar, different body."""
+    g = Grid(["......",
+              "......",
+              ".#....",
+              "......",
+              "......",
+              "......"])
+    assert g.cover((0, 0), (2, 4)) == {"los": True, "cover": 5}
+    assert g.cover((0, 0), (2, 4), target_size=(2, 2)) == {"los": True, "cover": 2}
+
+
+def test_cover_is_unchanged_when_both_creatures_are_medium():
+    """Pinned against the same pillar test above: spelling out the default 1x1
+    sizes must not move the answer by a single corner."""
+    g = Grid([".....",
+              ".....",
+              "..#..",
+              ".....",
+              "....."])
+    assert g.cover((0, 2), (4, 2), attacker_size=(1, 1), target_size=(1, 1)) == \
+        g.cover((0, 2), (4, 2)) == {"los": True, "cover": 2}
+
+
+def test_a_footprint_is_not_its_own_soft_cover():
+    """Every square the target stands on is the target. A feature under its own
+    body must not count as the thing in the way of its own far corner, or a
+    creature is permanently half-hidden by the ground it stands on."""
+    rows = [".....",
+            "..o..",      # C2 is a feature: cover 2 (grid.TERRAIN)
+            ".....",
+            ".....",
+            "....."]
+    g = Grid(rows)
+    # A Medium creature on the feature already excludes its own square.
+    assert g.cover((0, 1), (2, 1)) == {"los": True, "cover": 0}
+    # A 2x2 anchored at C2 covers C2..D3: its own body squares, not cover.
+    assert g.cover((0, 1), (2, 1), target_size=(2, 2)) == {"los": True, "cover": 0}

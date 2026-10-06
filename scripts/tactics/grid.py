@@ -71,6 +71,48 @@ def parse_square(text: str) -> Pos:
     return (x - 1, int(m.group(2)) - 1)
 
 
+# ─── Footprints ───────────────────────────────────────────────────────────────
+#
+# A creature wider than one square (#257) is a set of occupied squares, anchored
+# at its top-left one. The anchor never moves off that square -- the command
+# line, the saved file and the display all keep saying "C3" -- so anything that
+# asks "where is this creature" has to ask for its squares instead.
+#
+# `footprint` is the one place that knows the shape. Everything else takes a
+# size and unions squares: `adjacent`, `Grid.min_distance` and `Grid.cover`.
+
+def footprint(pos: Pos, size: tuple = (1, 1)) -> frozenset:
+    """Every square a size (width, height) creature covers, anchored at pos."""
+    w, h = size
+    return frozenset((pos[0] + dx, pos[1] + dy) for dx in range(w) for dy in range(h))
+
+
+def _anchor(a) -> tuple:
+    """(pos, size) for a Pos, or for anything carrying x, y, width and height.
+
+    The duck typing is deliberate and narrow: a Token has x/y/width/height but
+    no `pos` tuple, and `adjacent` is called with either. A bare tuple is a
+    square: one square wide, as it always was.
+    """
+    if isinstance(a, (tuple, list)):
+        return (a[0], a[1]), (1, 1)
+    return (a.x, a.y), (getattr(a, "width", 1), getattr(a, "height", 1))
+
+
+def adjacent(a, b) -> bool:
+    """Do these two creatures touch? Squares count, not anchors.
+
+    A 2x2 at A1 and a Medium at C1 read as two squares apart by their anchors
+    and share an edge on the board. For two Medium creatures this is exactly the
+    `max(|dx|, |dy|) <= 1` rule the display still applies, so nothing about the
+    common case changes.
+    """
+    (ax, ay), (aw, ah) = _anchor(a)
+    (bx, by), (bw, bh) = _anchor(b)
+    return (ax - 1 <= bx + bw - 1 and bx <= ax + aw
+            and ay - 1 <= by + bh - 1 and by <= ay + ah)
+
+
 # ─── Grid ─────────────────────────────────────────────────────────────────────
 
 # ── The geometry seams ────────────────────────────────────────────────────────
@@ -234,6 +276,25 @@ class Grid:
             return (diag + straight) * SQUARE_FT
         return (straight + diag + diag // 2) * SQUARE_FT
 
+    def min_distance(self, a: Pos, b: Pos, a_size: tuple = (1, 1),
+                     b_size: tuple = (1, 1)) -> int:
+        """Feet from the nearest square of a's body to the nearest of b's.
+
+        The distance between two creatures is the distance between the closest
+        pair of squares they stand on, because that is what a reach of 5 ft
+        means to a body that is four squares wide. Measured with `distance`, so
+        the diagonal rule is the grid's own: for two 1x1 creatures there is one
+        pair and this is `distance(a, b)` exactly, which is why every caller
+        that asks about two Medium creatures is unchanged.
+        """
+        best = None
+        for p in footprint(a, a_size):
+            for q in footprint(b, b_size):
+                d = self.distance(p, q)
+                if best is None or d < best:
+                    best = d
+        return best if best is not None else 0
+
     # ── movement ──
     def _step_cost(self, frm: Pos, to: Pos, parity: int, opts: MoveOptions):
         """(feet, new_parity) for one step, or None if the step is illegal."""
@@ -368,7 +429,7 @@ class Grid:
                 return False
         return True
 
-    def _corners(self, p: Pos):
+    def _corners(self, p: Pos, size: tuple = (1, 1)):
         """The points a sight line is traced from and to: a square's four corners.
 
         A hook rather than a static method for the same reason `neighbors` is one.
@@ -381,8 +442,16 @@ class Grid:
         The corners are lattice points (`(x, y)` through `(x+1, y+1)`), which is
         what `_segment_hits` and `_cells_between` expect: they trace a segment
         through *cells*, and a square grid's corners are also cell corners.
+
+        A footprint larger than one square traces the corners of its whole
+        outline, which is what makes cover about the body rather than about the
+        square its anchor sits on. At size (1, 1) this is `_cell_polygon` at the
+        same four points in the same order, so every existing answer is
+        unchanged.
         """
-        return self._cell_polygon(p)
+        x, y = p
+        w, h = size
+        return [(x, y), (x + w, y), (x + w, y + h), (x, y + h)]
 
     def line_of_sight(self, a: Pos, b: Pos) -> bool:
         """True if some line from a corner of a to a corner of b clears every wall."""
@@ -395,7 +464,7 @@ class Grid:
         cached = self.__dict__.get("_cover_cache", {}).get((tuple(a), tuple(b), frozenset()))
         if cached is not None:
             return cached["los"]
-        return any(not self._walled(c, t, skip=(a, b))
+        return any(not self._walled(c, t, skip=frozenset({tuple(a), tuple(b)}))
                    for c in self._corners(a) for t in self._corners(b))
 
     def visible_from(self, origin: Pos) -> set:
@@ -408,27 +477,40 @@ class Grid:
                                    if self._sees(key, (x, y)))
         return set(cache[key])
 
-    def cover(self, attacker: Pos, target: Pos, creatures=frozenset()) -> dict:
+    def cover(self, attacker: Pos, target: Pos, creatures=frozenset(),
+              attacker_size: tuple = (1, 1), target_size: tuple = (1, 1)) -> dict:
         """DMG grid cover: from the attacker's best corner, trace lines to the
-        four corners of the target's square; 1-2 blocked = half (+2 AC),
-        3-4 blocked = three-quarters (+5 AC). Creatures and features give at
-        most half cover. No line clear of walls from any corner = no line of
-        sight (total cover).
+        four corners of the target; 1-2 blocked = half (+2 AC), 3-4 blocked =
+        three-quarters (+5 AC). Creatures and features give at most half cover.
+        No line clear of walls from any corner = no line of sight (total cover).
+
+        The corners traced are the outline of each creature's body, so a Large
+        target is judged by its whole footprint rather than by the square its
+        anchor sits on. Sizes default to 1x1: every existing caller and every
+        Medium creature gets the answer it always got.
+
+        `creatures` is the set of occupied squares -- the bodies of everyone
+        else, not their anchors (see `footprint`).
 
         Returns {"los": bool, "cover": 0|2|5}.
         """
-        creatures = frozenset(creatures) - {attacker, target}
+        attacker_pos, target_pos = tuple(attacker), tuple(target)
+        attacker_body = footprint(attacker_pos, attacker_size)
+        target_body = footprint(target_pos, target_size)
+        creatures = frozenset(creatures) - (attacker_body | target_body)
         # Terrain never changes for a Grid, so the answer depends only on these.
         # Enemy menus ask the same question thousands of times.
-        key = (tuple(attacker), tuple(target), creatures)
+        key = (attacker_pos, target_pos, creatures, attacker_size, target_size)
         cache = self.__dict__.setdefault("_cover_cache", {})
         if key not in cache:
             if len(cache) > 50000:
                 cache.clear()
-            cache[key] = self._cover(attacker, target, creatures)
+            cache[key] = self._cover(attacker_pos, target_pos, creatures,
+                                     attacker_size, target_size)
         return dict(cache[key])
 
-    def _cover(self, attacker: Pos, target: Pos, creatures: frozenset) -> dict:
+    def _cover(self, attacker: Pos, target: Pos, creatures: frozenset,
+               attacker_size: tuple = (1, 1), target_size: tuple = (1, 1)) -> dict:
         best = None
         any_los = False
         # The DMG's bands are stated out of four, and four is `len(_corners)` for
@@ -439,15 +521,19 @@ class Grid:
         # corners "three-quarters" when 3 of 6 is half. The thresholds are
         # floor/ceil of the same proportion, so a square's answer is unchanged:
         # blocked <= 2 of 4 is <= 0.5, blocked <= 3 of 6 is <= 0.5.
-        corners = len(self._corners(target))
+        # Every square either body stands on is that creature, not something in
+        # the way: without this a 2x2 is permanently half-hidden by its own
+        # far squares.
+        skip = footprint(attacker, attacker_size) | footprint(target, target_size)
+        corners = len(self._corners(target, target_size))
         half_at = max(1, corners // 2)
-        for c in self._corners(attacker):
+        for c in self._corners(attacker, attacker_size):
             hard = soft = 0
-            for t in self._corners(target):
-                if self._walled(c, t, skip=(attacker, target)):
+            for t in self._corners(target, target_size):
+                if self._walled(c, t, skip=skip):
                     hard += 1
                     continue
-                cells = [q for q in self._cells_between(c, t) if q not in (attacker, target)]
+                cells = [q for q in self._cells_between(c, t) if q not in skip]
                 if any(q in creatures or (self.in_bounds(q) and self.terrain(q)["cover"])
                        for q in cells):
                     soft += 1
