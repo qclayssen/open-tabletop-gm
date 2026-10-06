@@ -10,7 +10,8 @@ import json
 
 import pytest
 
-from tests.tactics_fixtures import (encounter, engine, frog, kairos, roller, start, state)
+from tests.tactics_fixtures import (encounter, engine, frog, grid, kairos, monster, roller,
+                                    start, state)
 from tactics.roller import PendingRoll
 
 CombatError, DecisionNeeded = engine.CombatError, engine.DecisionNeeded
@@ -431,6 +432,61 @@ def test_a_natural_20_death_save_gives_the_speed_back_for_the_turn():
     assert enc.turn.pending == "death_save" and engine.remaining_movement(enc) == 0
     engine.death_save(enc, roller(supplied=[20]))
     assert k.hp == 1 and engine.remaining_movement(enc) == 30      # still prone: stand for 15
+
+
+# ─── footprints in the turn loop (#257) ───────────────────────────────────────
+
+def test_move_options_block_every_square_of_a_creatures_body():
+    """A Huge dragon at E5 is not one blocked square: walking into F6 walks into
+    it. Options carry its whole 3x3 body, not just the anchor."""
+    k = kairos(pos=(0, 0))
+    dragon = monster("adult-red-dragon", "dragon-1", (4, 4))
+    opts = engine.move_options(encounter([k, dragon]), k)
+    assert opts.blocked == frozenset(grid.footprint((4, 4), (3, 3)))
+    assert len(opts.blocked) == 9 and (4, 4) in opts.blocked and (6, 6) in opts.blocked
+
+
+def test_a_mover_cannot_end_inside_a_large_creatures_body():
+    """F6 is inside the dragon's body but is not its anchor, so an anchor-only
+    occupancy rule lets a creature step into the middle of it."""
+    k = kairos(pos=(0, 0))
+    dragon = monster("adult-red-dragon", "dragon-1", (4, 4))   # E5..G7
+    enc = start(encounter([k, dragon]), ["kairos", "dragon-1"])
+    with pytest.raises(CombatError, match="occupied"):
+        engine.preview_move(enc, "kairos", (5, 5))
+
+
+def test_a_large_swimmer_still_treats_water_as_normal():
+    """The footprint changes which squares a creature occupies, not what a
+    square costs it: the swim flag still comes from the swim speed, and the
+    water in front of a 2x2 body is ordinary ground for it."""
+    spider = monster("giant-spider", "spider-1", (0, 0))
+    spider.swim_speed = 30
+    enc = encounter([spider], rows=[".~~.", ".~~."])
+    opts = engine.move_options(enc, spider)
+    assert opts.swim is True
+    # A1 -> D1 across three water squares: 15 ft with a swim speed, 25 without.
+    board = enc.board()
+    assert board.path((0, 0), (3, 0), opts=opts)[1] == 15
+    assert board.path((0, 0), (3, 0), opts=grid.MoveOptions())[1] == 25
+
+
+def test_an_opportunity_attack_reads_the_movers_body_not_its_anchor():
+    """Kairos reaches 10 ft. A Large mover anchored at E4 covers E4..F5, and F5
+    is 10 ft from G7, inside his reach, while the anchor E4 is 15 ft away. Its
+    next step puts the body 15 ft out. The anchor-only rule reads E4 (15 ft) to
+    D3 (20 ft) and never sees the body leave, so it misses the attack."""
+    k = kairos(pos=(6, 6))
+    k.attacks = [dict(a, reach=10) for a in k.attacks]
+    spider = monster("giant-spider", "spider-1", (4, 3))       # E4..F5
+    enc = start(encounter([k, spider]), ["spider-1", "kairos"])
+    # The body is in reach; the anchor, which is the old rule, is not.
+    board = enc.board()
+    assert board.min_distance((4, 3), (6, 6), (2, 2), (1, 1)) == 10
+    assert board.distance((4, 3), (6, 6)) == 15
+    pv = engine.preview_move(enc, "spider-1", (2, 2))
+    assert [w["id"] for w in pv["opportunity_attacks"]] == ["kairos"], pv["text"]
+    assert "Provokes Kairos" in pv["text"]
 
 
 def test_a_readied_move_uses_the_movers_speed_not_the_current_creatures():

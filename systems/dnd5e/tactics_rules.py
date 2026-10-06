@@ -1102,6 +1102,16 @@ def _other_actions(record: dict) -> list:
     return out
 
 
+# SRD size to squares per side. The 2014 SRD names one size per creature; the
+# 2024-style "Medium or Small" and anything unrecognised is one square, which is
+# what a token was before footprints existed (#257).
+_SIZE_SQUARES = {"large": 2, "huge": 3, "gargantuan": 4}
+
+
+def _size_squares(record: dict) -> int:
+    return _SIZE_SQUARES.get(str(record.get("size", "")).strip().lower(), 1)
+
+
 def token_from_monster(record: dict, token_id: str, name: str, pos: tuple,
                        side: str = "enemy") -> Token:
     """Build a token from an SRD monster record (lookup.lookup_record(..., "monster")).
@@ -1136,8 +1146,13 @@ def token_from_monster(record: dict, token_id: str, name: str, pos: tuple,
             if a.get(k):
                 spec[k] = a[k]
         attacks.append(spec)
+    # A creature's size is what it occupies on the grid, so it is read here
+    # rather than left to the caller: without this a Giant Ape (Huge) enters
+    # play as a single square and the footprint rules never reach the table.
+    squares = _size_squares(record)
     return Token(
         id=token_id, name=name, side=side, x=pos[0], y=pos[1],
+        width=squares, height=squares,
         hp=int(record["hp"]), max_hp=int(record["hp"]), ac=int(record["ac"]),
         speed=speeds.get("walk", 30), swim_speed=speeds.get("swim", 0),
         dex_mod=_mod(record.get("dex", 10)),

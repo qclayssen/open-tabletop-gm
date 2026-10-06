@@ -538,6 +538,29 @@ def test_a_prone_rider_leaves_no_empty_effect():
     assert f.has("prone") and f.effects == []
 
 
+# ─── footprints in areas and the snapshot (#257) ──────────────────────────────
+
+def test_a_cone_catches_a_large_creature_by_any_square_it_covers():
+    """Burning hands from A1 covers B1, C1, D1 and D2. A Large creature anchored
+    at C2 has its anchor outside the cone and D2 inside it, so membership has to
+    be asked of the body rather than of the anchor square."""
+    k = caster(spells=KAIROS_SPELLS + ["Burning Hands"])
+    spider = monster("giant-spider", "spider-1", (2, 1))       # C2..D3
+    enc = fight(k, spider)
+    pv = spells.preview(enc, "kairos", "burning hands", "D1")
+    assert "C2" not in pv["squares"] and "D2" in pv["squares"]
+    assert "spider-1" in [r["id"] for r in pv["affected"]]
+
+
+def test_the_snapshot_publishes_each_tokens_footprint():
+    from tactics import sync
+    k, spider = caster(), monster("giant-spider", "spider-1", (3, 3))
+    enc = fight(k, spider)
+    rows = {t["id"]: t for t in sync.snapshot(enc)["tokens"]}
+    assert (rows["spider-1"]["width"], rows["spider-1"]["height"]) == (2, 2)
+    assert (rows["kairos"]["width"], rows["kairos"]["height"]) == (1, 1)
+
+
 def test_a_hidden_enemy_is_not_in_the_players_snapshot():
     from tactics import sync
     k, g = caster(), monster("goblin", "goblin-1", (3, 0))

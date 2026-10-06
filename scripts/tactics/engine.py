@@ -25,7 +25,7 @@ from __future__ import annotations
 from . import effects as fx
 from .core import (CombatError, DecisionNeeded, hostile, log, player_rolls,  # noqa: F401
                    resolve, rules_for)
-from .grid import MoveOptions, label, parse_square
+from .grid import MoveOptions, adjacent, footprint, label, parse_square
 from .roller import PendingRoll, Roller, average
 from .rules import AttackContext
 from .state import Encounter, TurnState
@@ -79,7 +79,9 @@ def move_options(enc: Encounter, token) -> MoveOptions:
     for t in enc.tokens.values():
         if t.id == token.id or not t.active:
             continue
-        (blocked if hostile(token, t) else occupied).add(t.pos)
+        # Every square of the creature's body, not its anchor: walking into the
+        # second square of a Huge dragon is walking into the dragon.
+        (blocked if hostile(token, t) else occupied).update(t.squares)
     return MoveOptions(blocked=frozenset(blocked), occupied=frozenset(occupied),
                        crawling=R.crawling(token), swim=token.swim_speed > 0)
 
@@ -181,7 +183,8 @@ def check(enc: Encounter, roller: Roller, token_ref, name: str, dc: int = 0,
     source_in_sight = True
     if source_ref:
         src = _resolve(enc, source_ref)
-        source_in_sight = enc.board().cover(t.pos, src.pos)["los"]
+        source_in_sight = enc.board().cover(t.pos, src.pos, attacker_size=t.size,
+                                            target_size=src.size)["los"]
     mark = len(roller.log)
     R = rules_for(enc)
     res = R.ability_check(t, name, int(dc or 0), roller, player_rolls(enc, t, roller),
@@ -240,14 +243,18 @@ def _oa(enc: Encounter, h, mover, square):
     square: the rules' choice if it reaches that far, else h's best melee attack
     that does. Cover counts against opportunity attacks like any other."""
     R, grid = rules_for(enc), enc.board()
-    dist = grid.distance(square, h.pos)
+    # The mover's nearest square, not its anchor: a Large creature leaving a
+    # reach is still touching it while any part of its body is.
+    dist = grid.min_distance(square, h.pos, mover.size, h.size)
     atk = R.opportunity_attack(h)
     if atk is not None and atk.get("reach", 5) < dist:
         longer = [a for a in h.attacks if a.get("type") in ("melee", "melee_or_ranged")
                   and "unparsed" not in a.get("flags", []) and a.get("reach", 5) >= dist]
         atk = max(longer, key=average_damage, default=None)
-    others = {t.pos for t in enc.tokens.values() if t.active and t.id not in (h.id, mover.id)}
-    cov = grid.cover(h.pos, square, creatures=others)["cover"]
+    others = {p for t in enc.tokens.values() if t.active and t.id not in (h.id, mover.id)
+              for p in t.squares}
+    cov = grid.cover(h.pos, square, creatures=others,
+                     attacker_size=h.size, target_size=mover.size)["cover"]
     return atk, AttackContext(distance=dist, melee=True, cover=cov, opportunity=True)
 
 
@@ -263,7 +270,9 @@ def _provokers(enc: Encounter, mover, path) -> list:
             continue
         reach = R.reach(h)
         for i in range(len(path) - 1):
-            if grid.distance(path[i], h.pos) <= reach < grid.distance(path[i + 1], h.pos):
+            near = grid.min_distance(path[i], h.pos, mover.size, h.size)
+            far = grid.min_distance(path[i + 1], h.pos, mover.size, h.size)
+            if near <= reach < far:
                 out.append((i, h))
                 break
     return sorted(out, key=lambda x: x[0])
@@ -334,7 +343,9 @@ def _plan(enc: Encounter, t, square):
         raise CombatError(f"{label(dest)} is off the map.")
     if not grid.passable(dest):
         raise CombatError(f"{label(dest)} is a {grid.terrain_name(dest)}.")
-    if dest != t.pos and (dest in opts.blocked or dest in opts.occupied):
+    # Any square of the destination footprint, not just the anchor: C3 can be
+    # empty while the 2x2 a Huge creature would occupy from C3 is not.
+    if dest != t.pos and footprint(dest, t.size) & (opts.blocked | opts.occupied):
         raise CombatError(f"{label(dest)} is occupied.")
     parity = enc.turn.diag_parity if enc.current and enc.current.id == t.id else 0
     found = grid.path(t.pos, dest, opts=opts, parity=parity)
@@ -500,7 +511,7 @@ def stand_up(enc: Encounter, token_ref) -> dict:
 def _attack_context(enc: Encounter, attacker, target, attack: dict):
     """(AttackContext, None) or (None, reason it cannot be made)."""
     R, grid = rules_for(enc), enc.board()
-    dist = grid.distance(attacker.pos, target.pos)
+    dist = grid.min_distance(attacker.pos, target.pos, attacker.size, target.size)
     kind = attack.get("type", "melee")
     reach = attack.get("reach", 5)
     rng = attack.get("range")
@@ -514,14 +525,18 @@ def _attack_context(enc: Encounter, attacker, target, attack: dict):
         if dist > rng[1]:
             return None, f"{target.name} is {dist} ft away; {attack['name']} range is {rng[0]}/{rng[1]} ft."
         melee, long_range = False, dist > rng[0]
-    others = {t.pos for t in enc.tokens.values() if t.active and t.id not in (attacker.id, target.id)}
-    cov = grid.cover(attacker.pos, target.pos, creatures=others)
+    others = {p for t in enc.tokens.values() if t.active and t.id not in (attacker.id, target.id)
+              for p in t.squares}
+    cov = grid.cover(attacker.pos, target.pos, creatures=others,
+                     attacker_size=attacker.size, target_size=target.size)
     if not cov["los"]:
         return None, f"{attacker.name} has no line of sight to {target.name}."
-    adjacent = any(hostile(attacker, h) and h.active and R.can_act(h)
-                   and grid.distance(attacker.pos, h.pos) <= 5 for h in enc.tokens.values())
+    # Named apart from the `adjacent` helper on purpose: binding it to the same
+    # name in this scope would shadow the import for the whole function.
+    enemy_adjacent = any(hostile(attacker, h) and h.active and R.can_act(h)
+                         and adjacent(attacker, h) for h in enc.tokens.values())
     return AttackContext(distance=dist, melee=melee, cover=cov["cover"],
-                         long_range=long_range, hostile_adjacent=adjacent,
+                         long_range=long_range, hostile_adjacent=enemy_adjacent,
                          source_in_sight=_source_in_sight(enc, attacker, target)), None
 
 
@@ -542,7 +557,8 @@ def _source_in_sight(enc: Encounter, attacker, target) -> bool:
             source = enc.tokens.get(source_id)
             if source is None or not source.active:
                 return False
-            if not enc.board().cover(victim.pos, source.pos)["los"]:
+            if not enc.board().cover(victim.pos, source.pos, attacker_size=victim.size,
+                                     target_size=source.size)["los"]:
                 return False
     return True
 
@@ -578,7 +594,7 @@ def _threatens(enc: Encounter, mover, h) -> bool:
         return False
     if not (h.active and R.can_react(h) and R.opportunity_attack(h)):
         return False
-    return enc.board().distance(mover.pos, h.pos) <= R.reach(h)
+    return enc.board().min_distance(mover.pos, h.pos, mover.size, h.size) <= R.reach(h)
 
 
 def attack_options(enc: Encounter, attacker_ref) -> list:
@@ -731,7 +747,7 @@ def reveal_hidden(enc: Encounter) -> list:
             continue
         for h in enc.tokens.values():
             if h.active and hostile(t, h) and R.can_act(h):
-                cov = grid.cover(h.pos, t.pos)
+                cov = grid.cover(h.pos, t.pos, attacker_size=h.size, target_size=t.size)
                 if cov["los"] and cov["cover"] == 0:
                     t.remove_condition("hidden")
                     lines.append(f"{h.name} spots {t.name}.")

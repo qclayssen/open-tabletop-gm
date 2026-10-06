@@ -545,6 +545,11 @@ TOKEN_SCHEMA = SchemaField({
     "side": StringField(choices=_SIDE),
     "x": NumberField(integer=True),                # negative is legal: a grid can
     "y": NumberField(integer=True),                # be offset, and validate() owns bounds
+    # A creature's footprint in squares, anchored at (x, y) (its top-left
+    # square). Defaulted to 1 so every file written before #257 still loads,
+    # and so the schema and the Token dataclass agree on import (state.py).
+    "width": NumberField(min=1, integer=True, default=1),
+    "height": NumberField(min=1, integer=True, default=1),
     "hp": NumberField(min=0, integer=True),
     "max_hp": NumberField(min=0, integer=True),    # 0 until prepare_derived estimates it
     "ac": NumberField(min=0, integer=True),

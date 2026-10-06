@@ -428,7 +428,7 @@ def _v2_document() -> dict:
 
 def test_a_v2_encounter_file_with_display_shaped_slots_still_loads():
     enc = Encounter.from_dict(_v2_document())
-    assert enc.version == state.SCHEMA_VERSION == 3
+    assert enc.version == state.SCHEMA_VERSION == 4
     assert slots.read(enc.tokens["wiz"]) == {1: {"total": 2, "used": 1},
                                              2: {"total": 3, "used": 0}}
     assert enc.tokens["wiz"].extra["slots"]["1"] == {"total": 2, "used": 1}
@@ -443,7 +443,7 @@ def test_migration_rewrites_the_file_only_when_the_fight_is_touched(tmp_path):
     assert json.loads(path.read_text(encoding="utf-8"))["version"] == 2, "reading never writes"
     state.save(loaded, path)
     saved = json.loads(path.read_text(encoding="utf-8"))
-    assert saved["version"] == 3
+    assert saved["version"] == 4
     assert saved["tokens"]["wiz"]["extra"]["slots"] == {"1": {"total": 2, "used": 1},
                                                         "2": {"total": 3, "used": 0}}
 
