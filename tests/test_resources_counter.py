@@ -49,11 +49,19 @@ class ResourceCounter(unittest.TestCase):
         cls.client = cls.mod.app.test_client()
 
     def setUp(self):
-        # replace_players, because gm-display-app.py holds module-level state
-        # that outlives a test: each class imports its own module, but within a
-        # class the previous test's features would still be on Kairos and every
-        # assertion about "the resources" would be about the union of them. That
-        # is the fixture-leak class, and the fix is a wipe, not a longer label.
+        # gm-display-app.py holds module-level state that outlives a test: each
+        # class imports its own module, but within a class the previous test's
+        # features would still be on Kairos and every assertion about "the
+        # resources" would be about the union of them. That is the fixture-leak
+        # class, and the fix is a wipe.
+        #
+        # The wipe is direct now. It used to be a `replace_players` push, which
+        # worked only because that flag wiped every seated player's fields
+        # (#282). It decides WHO is at the table and now deliberately preserves
+        # the state of one who stays, so using it as a reset would have quietly
+        # turned this file into a test of nothing — the assertion would have been
+        # satisfied by state this fixture itself installed.
+        self.mod._current_stats = {}
         self.client.post("/stats", data=json.dumps({
             "players": [{"name": "Kairos", "hp": {"current": 20, "max": 20}}],
             "replace_players": True}), content_type="application/json")
