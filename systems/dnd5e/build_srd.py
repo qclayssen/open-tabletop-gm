@@ -1452,6 +1452,26 @@ def cmd_build(skip_fvtt: bool = False) -> None:
 
 
 def main() -> None:
+    # The progress output below draws box rules (U+2500) and a tick, and a bare
+    # `print()` of those raises UnicodeEncodeError on any console that is not
+    # UTF-8. That is not hypothetical: the `non-UTF-8 locale` CI job runs this
+    # script under LC_ALL=C with UTF-8 Mode and PEP 538 coercion off, and it
+    # failed here at `cmd_build`'s first separator with
+    #     UnicodeEncodeError: 'ascii' codec can't encode characters in position 0-1
+    # before this line existed. Hard Rule 4 requires the tree to run on Windows
+    # with a non-UTF-8 locale, and cp936/cp1251 consoles fail the same way.
+    #
+    # `errors="replace"` rather than a hard failure: the alternative is a build
+    # that cannot report its own progress on a console it is otherwise fine on,
+    # and a U+2500 is decoration. A missing glyph is a cosmetic degradation; a
+    # traceback on line one is a provisioning failure that looks like a bug in
+    # the data. Reconfigure is a no-op when stdout is already UTF-8, so this
+    # costs nothing on the runners that were working.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):  # a non-TextIO wrapper, or detached
+            pass
     args = sys.argv[1:]
     if "--status" in args:
         cmd_status()
