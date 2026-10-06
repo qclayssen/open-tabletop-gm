@@ -297,6 +297,32 @@ body.tx-min #tx-panel { max-height: none; }
                paint-order: stroke; stroke-width: 3; vector-effect: non-scaling-stroke;
                text-anchor: middle; dominant-baseline: central; }
 
+/* Note pins. A pin marks a place, so it is scenery rather than a thing that
+   moves: brass, not a faction colour, so it never reads as an ally or an enemy.
+   The stroke is the contrast, not a drop shadow -- a pin lands on walls and on
+   map artwork, and it has to survive on either. Brass measures 3.47:1 on the
+   panel in the light theme and 7.68:1 in the dark, both over the 3:1 floor that
+   WCAG 1.4.11 sets for a non-text graphic. */
+.tx-pin-layer { pointer-events: none; }
+.tx-pin { fill: var(--tx-brass); stroke: var(--tx-ink); stroke-width: 1.5; cursor: pointer;
+          pointer-events: auto; }
+.tx-pin:hover { stroke-width: 2.5; }
+/* The map pin differs by silhouette first -- a diamond, not a triangle -- so the
+   distinction survives greyscale and colour blindness. Colour is the second
+   signal, never the only one. Both rules are stated even though the note colour
+   is also .tx-pin's, because ScriptAndStylesheetAgree requires every class the
+   script sets to be styled and the two kinds must not drift apart by accident. */
+.tx-pin-note { fill: var(--tx-brass); }
+.tx-pin-map { fill: var(--tx-lore); }
+/* The label is haloed against the map the same way the cell labels are, and is
+   transparent to the pointer so a label running over the next square cannot
+   steal that square's click. */
+.tx-pin-label { font-family: Figtree, system-ui, sans-serif; font-weight: 600;
+                font-size: calc(11px * var(--tx-uu));
+                fill: var(--tx-ink);
+                paint-order: stroke; stroke: var(--tx-paper); stroke-width: 3;
+                vector-effect: non-scaling-stroke;
+                stroke-linejoin: round; pointer-events: none; }
 .tx-reach { fill: var(--tx-move); fill-opacity: .26; pointer-events: none; }
 .tx-dash { fill: none; stroke: var(--tx-move); stroke-opacity: .7; stroke-width: 1.5; stroke-dasharray: 4 3; pointer-events: none; }
 .tx-reach-edge { fill: none; stroke: var(--tx-move); stroke-width: 2.5; stroke-linecap: square; pointer-events: none; }
