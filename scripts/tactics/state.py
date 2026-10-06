@@ -18,9 +18,9 @@ from dataclasses import asdict, dataclass, field
 from dataclasses import fields as dataclass_fields
 
 from . import schemas
-from .grid import Grid, label
+from .grid import Grid, footprint, label
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 SIDES = ("pc", "ally", "enemy", "neutral")
 
 
@@ -62,6 +62,11 @@ class Token:
     hp: int
     max_hp: int
     ac: int
+    # The creature's footprint in squares, anchored at (x, y) as its top-left
+    # square. 1x1 for Medium and smaller; set from the SRD size by
+    # rules.token_from_monster (Large 2, Huge 3, Gargantuan 4).
+    width: int = 1
+    height: int = 1
     speed: int = 30
     swim_speed: int = 0
     temp_hp: int = 0
@@ -111,6 +116,21 @@ class Token:
     @property
     def pos(self) -> tuple:
         return (self.x, self.y)
+
+    @property
+    def size(self) -> tuple:
+        """(width, height) in squares. The shape `grid.footprint` takes."""
+        return (self.width, self.height)
+
+    @property
+    def squares(self) -> frozenset:
+        """Every square the creature occupies, `(x, y)` top-left first.
+
+        The anchor `pos` stays where it is: it is the creature's own square and
+        the one the command line names, so a Large creature at C3 covers C3..D4
+        and still answers "C3" to `where`.
+        """
+        return footprint(self.pos, self.size)
 
     @property
     def square(self) -> str:
@@ -356,7 +376,33 @@ def migrate_v2_to_v3(d: dict) -> dict:
     return out
 
 
-MIGRATIONS = {(1, 2): migrate_v1_to_v2, (2, 3): migrate_v2_to_v3}
+def migrate_v3_to_v4(d: dict) -> dict:
+    """v3 -> v4: creature footprints.
+
+    Every token saved before this step was one square, because the engine had
+    no other shape, so the step is a statement of that fact rather than a
+    guess: width and height become 1. A file that already carries a footprint
+    keeps it, which is what makes the step safe to run twice.
+
+    Filling it in rather than letting the schema default do the work is
+    deliberate. The default would also load an old file, but only until the
+    first save, and a token whose width is missing from the document is one
+    that any other reader -- the display, a hand-edit, an export -- has to
+    know to default as well. The migration writes down what the engine knows.
+    """
+    out = copy.deepcopy(d)
+    for token in (out.get("tokens") or {}).values():
+        if not isinstance(token, dict):
+            continue
+        for name in ("width", "height"):
+            value = token.get(name)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                token[name] = 1
+    return out
+
+
+MIGRATIONS = {(1, 2): migrate_v1_to_v2, (2, 3): migrate_v2_to_v3,
+              (3, 4): migrate_v3_to_v4}
 
 
 def migrate(d: dict) -> dict:
@@ -405,14 +451,23 @@ def validate(enc: Encounter) -> list:
             problems.append(f"token key {tid!r} does not match id {t.id!r}")
         if t.side not in SIDES:
             problems.append(f"{t.id}: side {t.side!r} not one of {SIDES}")
-        if not grid.in_bounds(t.pos):
-            problems.append(f"{t.id}: {t.pos} is off the map")
-        elif not grid.passable(t.pos):
-            problems.append(f"{t.id}: stands in a wall at {t.square}")
+        # A creature of any size is where its whole body is, not where its
+        # anchor is: a Large token one square from the edge hangs off it, and a
+        # wall under any of its squares is a wall it is standing in.
+        body = t.squares
+        off_map = sorted(p for p in body if not grid.in_bounds(p))
+        if off_map:
+            problems.append(f"{t.id}: {off_map[0]} is off the map")
+        else:
+            wall = next((p for p in sorted(body) if not grid.passable(p)), None)
+            if wall is not None:
+                problems.append(f"{t.id}: stands in a wall at {label(wall)}")
         if t.active:
-            if t.pos in seen:
-                problems.append(f"{t.id} and {seen[t.pos]} share {t.square}")
-            seen[t.pos] = t.id
+            for p in sorted(body):
+                if p in seen:
+                    problems.append(f"{t.id} and {seen[p]} share {label(p)}")
+                    break
+                seen[p] = t.id
         if not (0 <= t.hp <= t.max_hp):
             problems.append(f"{t.id}: hp {t.hp} outside 0..{t.max_hp}")
         if t.temp_hp < 0:

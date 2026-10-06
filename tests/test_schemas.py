@@ -28,7 +28,7 @@ from tactics.schemas import (
 )
 from tactics.state import Encounter, Token
 
-from tests.tactics_fixtures import caster, encounter, frog, kairos, open_map, state
+from tests.tactics_fixtures import caster, encounter, frog, kairos, monster, open_map, state
 
 # ─── A4.1 field types ─────────────────────────────────────────────────────────
 
@@ -268,6 +268,56 @@ def test_a_token_from_a_monster_still_loads():
            {k: v.to_dict() for k, v in enc.tokens.items()}
 
 
+# ─── A4.2b the footprint (#257) ───────────────────────────────────────────────
+
+def test_the_footprint_fields_are_a_positive_integer_wider_than_one_square():
+    """`width` and `height` say how many squares the creature covers, so the
+    field has to refuse 0 (a creature that is nowhere) and refuse text (a
+    creature that is 1d4 squares wide). The default is one square, which is
+    what every token written before this change was."""
+    for name in ("width", "height"):
+        field = schemas.TOKEN_SCHEMA.fields[name]
+        assert field.default == 1 and field.integer and field.min == 1
+    d = kairos().to_dict()
+    d.pop("width"), d.pop("height")
+    t = Token.from_dict(d)
+    assert (t.width, t.height) == (1, 1) and t.size == (1, 1) and t.squares == frozenset({(0, 0)})
+    d["width"], d["height"] = 2, 3
+    assert Token.from_dict(d).size == (2, 3)
+    with pytest.raises(SchemaError, match="width"):
+        Token.from_dict({**d, "width": 0})
+
+
+def test_a_token_carries_its_footprint_through_json():
+    s = monster("giant-spider", "spider-1", (2, 2))
+    again = Token.from_dict(json.loads(json.dumps(s.to_dict())))
+    assert again.size == s.size == (2, 2)
+    # The anchor stays the top-left square: a 2x2 at C3 covers C3..D4.
+    assert again.pos == (2, 2) and again.squares == frozenset({(2, 2), (3, 2), (2, 3), (3, 3)})
+
+
+def test_a_footprint_that_leaves_the_map_or_stands_in_a_wall_is_a_problem():
+    """The anchor's bounds check is not enough once a token covers four squares:
+    a 2x2 anchored on the last column is half off the board."""
+    g = open_map(w=4, h=4)
+    spider = monster("giant-spider", "spider-1", (3, 1))     # D2..E3, E is off a 4-wide map
+    problems = state.validate(encounter([spider], rows=g["rows"]))
+    assert any("spider-1" in p and "off the map" in p for p in problems), problems
+
+
+def test_overlapping_large_creatures_are_rejected_like_overlapping_medium_ones():
+    """Two anchors a square apart still overlap when both bodies are 2x2: the
+    anchors (0, 0) and (1, 1) are different squares, so an anchor-only collision
+    check calls this legal and the board shows one spider standing in another."""
+    a = monster("giant-spider", "spider-1", (0, 0))          # A1..B2
+    b = monster("giant-spider", "spider-2", (1, 1))          # B2..C3
+    problems = state.validate(encounter([a, b]))
+    assert any("share" in p and "B2" in p for p in problems), problems
+    # A Medium creature is still caught the way it always was.
+    problems = state.validate(encounter([kairos(pos=(0, 0)), frog("frog-1", (0, 0))]))
+    assert any("share A1" in p for p in problems), problems
+
+
 # ─── A4.3 migration ───────────────────────────────────────────────────────────
 
 def _v1_encounter() -> dict:
@@ -314,6 +364,27 @@ def test_migration_drops_hit_dice_it_cannot_read_rather_than_guessing_a_die():
     d = _v1_encounter()
     d["tokens"]["kairos"]["extra"]["hit_dice"] = {"remaining": 3, "max": 6}
     assert "hit_dice" not in Encounter.from_dict(d).tokens["kairos"].extra
+
+
+def test_a_v3_file_loads_as_a_one_square_footprint():
+    """v3 wrote no footprint: every creature in it was one square, and that is
+    what it must still be. The step fills 1x1 rather than guessing from the
+    name or the stat block, so a saved fight is unchanged by the upgrade."""
+    assert state.SCHEMA_VERSION == 4, "the footprint change is the v3 -> v4 step"
+    d = _v1_encounter()
+    d["version"] = 3
+    assert "width" not in d["tokens"]["kairos"]
+    k = Encounter.from_dict(d).tokens["kairos"]
+    assert (k.width, k.height) == (1, 1)
+    assert Encounter.from_dict(d).version == state.SCHEMA_VERSION
+
+
+def test_a_v4_file_that_carries_a_footprint_keeps_it_through_the_migration_chain():
+    """The step must not overwrite a footprint the file already states."""
+    d = _v1_encounter()
+    d["version"] = 3
+    d["tokens"]["kairos"]["width"], d["tokens"]["kairos"]["height"] = 2, 2
+    assert Encounter.from_dict(d).tokens["kairos"].size == (2, 2)
 
 
 def test_a_file_with_no_version_is_treated_as_the_oldest():
