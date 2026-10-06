@@ -82,9 +82,22 @@ class Memory:
         return reply.sanitize_turns(turns)
 
     def summary(self) -> str:
+        """`summary.md`, scrubbed on read. #261.
+
+        `turns()` has always scrubbed (`reply.sanitize_turns`), so the one path
+        into the prompt that a *model* wrote was the one path that did not.
+        A summary is a paraphrase of turns by construction, which makes it the
+        easiest place for a captured injection to hide -- see the residual in
+        #261: this closes the cheap case and not the laundering one.
+
+        The file on disk is not rewritten; only what the model reads is cleaned.
+        """
         path = self.dir / "summary.md"
         with self._lock:
-            return path.read_text(encoding="utf-8").strip() if path.exists() else ""
+            if not path.exists():
+                return ""
+            return reply.scrub_injection(
+                path.read_text(encoding="utf-8").strip())
 
     def meta(self) -> dict:
         path = self.dir / "meta.json"
