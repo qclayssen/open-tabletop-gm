@@ -299,6 +299,11 @@
 <div id="stream-toast" role="alert" hidden></div>
 
 <script src="/static/display.js"></script>
+<!-- #118. Loaded AFTER tactics.js so the MutationObserver in player-view.js is
+     watching before the deferred tactical DOM is built, rather than racing it.
+     The observer would catch those nodes either way, but ordering it this way
+     means no frame ever renders a GM control on a player screen. -->
+<script src="/static/player-view.js" defer></script>
 <script src="/static/tactics.js" defer></script>
 </body>
 </html>

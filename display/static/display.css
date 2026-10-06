@@ -1970,6 +1970,63 @@
     margin-right: 8px;
   }
 
+  /* ── Player table view (shared second screen): ?view=player ── #118 ──────
+   *
+   * This block is PRESENTATION ONLY. The authoritative policy — what is
+   * operator furniture and what is not — is the PLAYER_SURFACES /
+   * OPERATOR_SURFACES sets in static/player-view.js, and the classification
+   * test is tests/test_player_view.py. Keep the two in step: this CSS shapes
+   * and hides, but it decides almost nothing. Elements the policy suppresses
+   * get display:none from JS with !important; what remains here is the layout
+   * the table screen needs once the operator panels are gone.
+   *
+   * It is a presentation feature, NOT an authorization boundary (#118). It does
+   * not keep secrets from anyone who can reach this port.
+   */
+  body.player-view {
+    overscroll-behavior: contain;
+    -webkit-text-size-adjust: 100%;
+  }
+  /* With the sidebar and controls gone, narration and the battle map get the
+     whole screen — which is the point of a table screen. */
+  body.player-view #sidebar,
+  body.player-view #sidebar-toggle,
+  body.player-view #controls-toggle,
+  body.player-view #controls-toggle-row,
+  body.player-view #device-approvals,
+  body.player-view #dm-help-btn,
+  body.player-view #sent-log,
+  body.player-view #corner-logo,
+  body.player-view #overview-link,
+  body.player-view #audio-controls {
+    display: none !important;
+  }
+  /* The GM scrubs narration, speed and verbosity from these; mid-sentence in
+     front of the table, that is a control that must not be reachable. */
+  body.player-view #speed-row,
+  body.player-view #vb-slider,
+  body.player-view #verbosity-row,
+  body.player-view #theme-row,
+  body.player-view #textsize-row,
+  body.player-view #skip-turn-btn,
+  body.player-view #autorun-indicator,
+  body.player-view #waiting-indicator {
+    display: none !important;
+  }
+  /* Tactical command controls, the cover toggle and the combat log. #tx-info is
+     deliberately NOT here: it carries the death-save prompt, and a player who
+     cannot see that their character is dying has been handed a worse screen
+     than the one this mode was meant to improve. */
+  body.player-view #tx-actions,
+  body.player-view #tx-leads,
+  body.player-view #tx-prompt,
+  body.player-view #tx-toast,
+  body.player-view #tx-log,
+  body.player-view #tx-cover,
+  body.player-view .tx-rulers {
+    display: none !important;
+  }
+
   /* ── Input-only view (mobile players): http://...:5001/?view=input ── */
   body.input-only #text-scroll,
   body.input-only #sidebar,
