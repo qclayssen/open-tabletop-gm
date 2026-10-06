@@ -142,13 +142,67 @@ def feed(page, text: str) -> None:
     drained(page)
 
 
-def drained(page, timeout: int = 20000) -> None:
+# The typewriter and the idle timer are real JS timers in a real browser, so both
+# legs scale with how fast the runner is. These are the multipliers applied to the
+# page's OWN constants, read at run time -- not to numbers typed in here.
+#
+# WHY DERIVED AND NOT A BIGGER LITERAL (#252)
+# ===========================================
+# `timeout=20000` was a hand-picked number with no relationship to the work it
+# was waiting for. Measured on a quiet machine the whole path takes
+#
+#     len(SENTENCE) * charDelay  +  IDLE_GAP * 2
+#     = 56 * 36                   +  1800 * 2      =  ~5.6s
+#
+# so 20s looked like 3.5x headroom. It is not: on a loaded macOS arm64 runner
+# every one of those timers stretches with it, and the typewriter leg stretches
+# with the CHARACTER COUNT while the idle leg stretches on its own. The result is
+# a test that passes on a developer machine and on a free CI runner and fails on a
+# contended one -- which is what "times out in CI on 4 of 4 unrelated branches"
+# was actually reporting. A literal bump would have moved the cliff, not removed it.
+#
+# The margin is 4x the derived budget, which is generous enough for a runner at
+# several times normal speed and still bounded: a flush that genuinely never runs
+# fails in well under a minute instead of hanging to a job timeout.
+TIMER_MARGIN = 4
+#: Never wait less than this, however short the derived budget computes. A budget
+#: that collapsed to a few hundred ms would turn a slow runner into a flake again,
+#: which is the bug rather than its cure.
+MIN_TIMER_BUDGET_MS = 30000
+
+
+def timer_budget(page, chars: int, *, margin: int = TIMER_MARGIN) -> int:
+    """How long this page's OWN constants say `chars` of typing plus one idle
+    flush should take, times `margin`.
+
+    Read from the page rather than imported, because these are mutable in
+    `display.js` -- `charDelay` is reassigned by the speed toggle at
+    `display.js:2930` -- so a value copied into this file would be wrong the
+    moment anyone moved the slider. `charDelay` is a top-level `let` and
+    `IDLE_GAP` a top-level `const`, both of which live in the page's global
+    lexical environment and are readable from `evaluate` (verified, not assumed).
+    """
+    # Index the returned dict rather than unpacking it. `delay, gap = {...}` on
+    # a two-key dict yields the KEYS -- the strings "delay" and "gap" -- and
+    # `chars * "delay"` is then silent string REPETITION in Python, so the budget
+    # comes out as one enormous number and `int()` raises thousands of characters
+    # later. Typed the values so a future return of the wrong shape fails here
+    # rather than as arithmetic on strings.
+    got = page.evaluate("() => ({delay: charDelay, gap: IDLE_GAP})")
+    delay, gap = int(got["delay"]), int(got["gap"])
+    needed = (chars * delay) + (2 * gap)
+    return max(MIN_TIMER_BUDGET_MS, int(needed * margin))
+
+
+def drained(page, timeout: int = None) -> None:
     """Block until the typewriter has nothing left to type."""
+    if timeout is None:
+        timeout = timer_budget(page, len(SENTENCE))
     present(page, "() => !isTyping && charQueue.length === 0",
             "the typewriter to drain", timeout=timeout)
 
 
-def flushed(page, timeout: int = 20000) -> None:
+def flushed(page, timeout: int = None) -> None:
     """Block until the block really has been flushed.
 
     Proof that the flush happened, so "the text is still there" cannot be
@@ -156,6 +210,8 @@ def flushed(page, timeout: int = 20000) -> None:
     `flushNewBlock()` appends for a block that had content, so its presence is
     the observable the flush is judged by.
     """
+    if timeout is None:
+        timeout = timer_budget(page, len(SENTENCE))
     present(page, "() => !!document.querySelector('#text-content .divider')",
             "flushNewBlock() to run and post its divider", timeout=timeout)
 
@@ -389,3 +445,110 @@ class Browser(BrowserTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+# ── why the budget is derived rather than typed in (#252) ─────────────────
+#
+# The defect is ENVIRONMENT-DEPENDENT: on a quiet machine every budget passes,
+# and on a contended CI runner the old hardcoded 20s was not enough. That means a
+# mutation on the timeout value CANNOT be caught here -- verified, not assumed:
+# reverting to the literal 20000 passes locally, and so does collapsing the floor
+# to 6s. Both pass. A test that cannot fail on the broken version is decoration,
+# and pretending otherwise would be the same error as the original bug.
+#
+# What CAN be pinned here is the property that makes the fix more than a bigger
+# number: the budget is DERIVED from the page's own constants, so it moves when
+# they move. A typed-in literal cannot have that property, which is why the old
+# value drifted out of relationship with the work it waited for.
+
+class TimerBudget(unittest.TestCase):
+    """`timer_budget` as arithmetic, against pages with known constants.
+
+    No browser: the function's whole contract is "read two numbers, derive a
+    budget", and a chromium launch to check multiplication would cost a second to
+    prove nothing the arithmetic does not.
+    """
+
+    class _Page:
+        def __init__(self, delay, gap):
+            self._delay, self._gap = delay, gap
+
+        def evaluate(self, _script):
+            return {"delay": self._delay, "gap": self._gap}
+
+    def test_a_slower_typewriter_buys_a_larger_budget(self):
+        """The speed toggle reassigns `charDelay` (`display.js:2930`). A GM who
+        slows the typewriter down, or a future default change, must not silently
+        outrun a budget computed from the old number."""
+        fast = timer_budget(self._Page(36, 1800), 56)
+        slow = timer_budget(self._Page(120, 1800), 56)
+        assert slow > fast, f"{slow} is not larger than {fast}"
+
+    def test_a_longer_idle_gap_buys_a_larger_budget(self):
+        fast = timer_budget(self._Page(36, 1800), 56)
+        long_gap = timer_budget(self._Page(36, 4000), 56)
+        assert long_gap > fast
+
+    def test_more_characters_buy_a_larger_budget(self):
+        short = timer_budget(self._Page(36, 1800), 10)
+        long_sentence = timer_budget(self._Page(36, 1800), 500)
+        assert long_sentence > short, (
+            "the typewriter leg scales with character COUNT, which is the half "
+            "of the old 20s that was least likely to be checked")
+
+    def test_the_budget_exceeds_what_the_page_actually_needs(self):
+        """The margin's whole job: the budget must be comfortably above the real
+        work, or it is the same cliff with a different number."""
+        delay, gap, chars = 36, 1800, 56
+        needed = (chars * delay) + (2 * gap)
+        budget = timer_budget(self._Page(delay, gap), chars)
+        assert budget >= needed * 2, (
+            f"budget {budget} is under 2x the {needed}ms the page actually needs")
+
+    def test_the_budget_is_never_smaller_than_the_floor(self):
+        """A budget that collapsed to a few hundred ms would turn a slow runner
+        into a flake again, which is the bug rather than its cure."""
+        instant = timer_budget(self._Page(0, 0), 1)
+        assert instant >= MIN_TIMER_BUDGET_MS
+
+    def test_a_dict_return_is_indexed_not_unpacked(self):
+        """The bug I made while writing this.
+
+        `delay, gap = page.evaluate(...)` on a two-key dict yields the KEYS --
+        the strings "delay" and "gap" -- and `chars * "delay"` is then silent
+        string repetition in Python, so the budget became one enormous number and
+        `int()` raised thousands of characters away from the cause. Pinned
+        because the failure looks like an arithmetic problem, not a type one.
+        """
+        got = self._Page(36, 1800).evaluate("ignored")
+        assert isinstance(got, dict)
+        delay, gap = int(got["delay"]), int(got["gap"])
+        assert (delay, gap) == (36, 1800)
+        assert not isinstance(56 * got["delay"], str)
+
+
+class BoundedFailure(unittest.TestCase):
+    """A wait that can never be satisfied must still FAIL, in bounded time.
+
+    The counterweight to raising a budget: a timeout raised far enough to survive
+    a loaded runner must not also survive a flush that genuinely never runs, or
+    the test stops being a signal and becomes a stall.
+    """
+
+    def test_a_predicate_that_never_becomes_true_still_raises(self):
+        """Uses the SHARED browser from tests/_browser.py, not a fresh
+        `sync_playwright()`. Launching one inside the test body trips the sync
+        API's own guard -- "you are using Playwright Sync API inside the asyncio
+        loop" -- which is the harness telling me to reuse the session browser,
+        and it is what every other display test here does."""
+        from tests._browser import BrowserUnavailable, shared_browser
+        try:
+            browser = shared_browser()
+        except BrowserUnavailable as exc:
+            self.skipTest(str(exc))
+        page = browser.new_context().new_page()
+        self.addCleanup(page.context.close)
+        page.set_content("<html><body><p>x</p></body></html>")
+        with self.assertRaises(AssertionError) as caught:
+            present(page, "() => false",
+                    "something that never arrives", timeout=1500)
+        assert "never arrived (1500ms)" in str(caught.exception)
