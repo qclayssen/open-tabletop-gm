@@ -161,14 +161,21 @@ def feed(page, text: str) -> None:
 # contended one -- which is what "times out in CI on 4 of 4 unrelated branches"
 # was actually reporting. A literal bump would have moved the cliff, not removed it.
 #
-# The margin is 4x the derived budget, which is generous enough for a runner at
-# several times normal speed and still bounded: a flush that genuinely never runs
-# fails in well under a minute instead of hanging to a job timeout.
-TIMER_MARGIN = 4
+# The floor is 60000, which is ~10.7x the 5.6s this sentence actually needs, and
+# the CI evidence says a floor of 3.5x (the old 20000) is not enough on a loaded
+# macOS arm64 runner. Ten is not derived from a measurement -- it is a judgement
+# that the cost of being generous is one minute on a test file that already runs
+# for ~35s, and the cost of being tight is the flake this whole change exists to
+# remove. It is also the only number here that cannot be falsified locally, which
+# is stated rather than hidden: see the note on local non-reproducibility below.
+#
+# Bounded on purpose: a flush that genuinely never runs fails in one minute,
+# rather than hanging to a job timeout.
+TIMER_MARGIN = 6
 #: Never wait less than this, however short the derived budget computes. A budget
 #: that collapsed to a few hundred ms would turn a slow runner into a flake again,
 #: which is the bug rather than its cure.
-MIN_TIMER_BUDGET_MS = 30000
+MIN_TIMER_BUDGET_MS = 60000
 
 
 def timer_budget(page, chars: int, *, margin: int = TIMER_MARGIN) -> int:
