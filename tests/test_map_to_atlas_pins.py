@@ -120,6 +120,45 @@ def vault(tmp_path):
     return v
 
 
+#: The one filename in `camp` below that is deliberately not ASCII. Hard rule 4
+#: is about a note target that has to survive a non-ASCII name, so it is not
+#: decoration -- every test here needs this file to exist.
+NON_ASCII_NOTE = "caf\u00e9-notes.md"
+
+
+def _fs_can_hold(name: str) -> bool:
+    """Can this interpreter create a file with this name at all?
+
+    Python encodes paths with the filesystem encoding, which under a genuine C
+    locale on Linux is ASCII. The `\u00e9` in the fixture's filename then cannot be
+    created -- not "may misbehave", cannot exist -- and every test here errors in
+    fixture setup rather than in the code under test.
+
+    This is an OS-level constraint, not a defect in this tree, and it is
+    invisible on a developer machine because macOS pins the filesystem encoding to
+    UTF-8 regardless of locale. Same shape and same reasoning as
+    `_argv_can_carry()` in `test_encoding_utf8.py`.
+    """
+    try:
+        name.encode(sys.getfilesystemencoding())
+        return True
+    except (UnicodeEncodeError, LookupError):
+        return False
+
+
+pytestmark = pytest.mark.skipif(
+    not _fs_can_hold(NON_ASCII_NOTE),
+    reason=(
+        "filesystem encoding is "
+        f"{sys.getfilesystemencoding()!r}, which cannot represent the non-ASCII "
+        f"note name {NON_ASCII_NOTE!r} the `camp` fixture creates. Every test "
+        "here would fail in fixture setup instead of testing hard rule 4. The "
+        "guards in test_encoding_utf8.py still run under this locale and cover "
+        "the encoding class this file is incidentally sensitive to."
+    ),
+)
+
+
 @pytest.fixture
 def camp(vault, monkeypatch):
     """A campaign that genuinely resolves: `state.md`, three allowed folders, and
@@ -134,7 +173,7 @@ def camp(vault, monkeypatch):
         (root / folder).mkdir(parents=True, exist_ok=True)
     (root / "state.md").write_text("**System:** D&D 5e\n", encoding="utf-8")
     (root / "notes" / "harbour.md").write_text("# The Harbour\n\nFog.\n", encoding="utf-8")
-    (root / "notes" / "café-notes.md").write_text(
+    (root / "notes" / NON_ASCII_NOTE).write_text(
         "# Le Café\n\nA non-ASCII note, so hard rule 4 is exercised on this path.\n",
         encoding="utf-8")
     (root / "locations" / "rotunda.md").write_text("# The Rotunda\n", encoding="utf-8")
