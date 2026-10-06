@@ -1470,6 +1470,7 @@ def _load_stats() -> None:
             _current_stats.update(data)
     except Exception:
         pass
+    _drop_stale_campaign_state()
     _drop_stale_turn_order()
 
 
@@ -1496,6 +1497,91 @@ def _encounter_active() -> "bool | None":
     except (OSError, ValueError):
         return None
     return isinstance(enc, dict) and enc.get("status", "active") == "active"
+
+
+# The keys in stats.json that describe ONE campaign's table rather than the
+# display. `turn_order` is absent on purpose: it has a better oracle (the
+# campaign's own encounter.json, which is per-campaign and status-bearing), and
+# `system_version` is absent because it is re-derived from campaign state.md on
+# every /chunk that carries a campaign, so it is a cache of something the display
+# can recompute rather than state only a push knows.
+_CAMPAIGN_SCOPED_KEYS = ("players", "world_time", "factions", "quests")
+
+# Provenance for the campaign-scoped keys, set ONLY by the /stats handler that
+# received them. It deliberately is not written by _persist_stats(): that
+# function has five call sites and one of them (_drop_stale_turn_order, reached
+# from _load_stats) runs while a roster loaded from ANOTHER campaign is in
+# memory, so stamping from CAMP_FILE at persist time would stamp the currently
+# active campaign onto the wrong roster and launder a stale roster into a
+# correctly-stamped stale one -- permanent, and self-concealing. Assigning it
+# where the data arrives closes that by construction: _persist_stats keeps
+# writing dict(_current_stats) verbatim and the load path never mints a stamp.
+_STATS_CAMPAIGN_KEY = "_campaign"
+
+
+def _stats_campaign() -> str:
+    """The active campaign's name, or "" when it cannot be resolved.
+
+    The "" case is the file's honest state, not a value to guess at: an empty
+    stamp is indistinguishable from a truncated one, so the caller is given a
+    real answer for "unknown" and leaves the saved table alone. Same
+    tri-state reasoning as _encounter_active(), which returns None for exactly
+    this case and whose docstring states the rule: the caller must leave the
+    saved fight alone.
+    """
+    try:
+        camp = open(CAMP_FILE, encoding="utf-8").read().strip()
+    except OSError:
+        return ""
+    if not camp:
+        return ""
+    try:
+        _campaign_dir_for_name(camp)
+    except (TypeError, ValueError, OSError):
+        return ""
+    return camp
+
+
+def _drop_stale_campaign_state() -> None:
+    """Drop restored campaign state that belongs to a different campaign.
+
+    stats.json survives restarts on purpose -- a fight in progress comes back --
+    but it carries no campaign of its own until a /stats push stamps it, so a
+    file written by one campaign loads into another and puts the wrong party on
+    the sidebar. That is not cosmetic: display/wrapper.py _known_chars() reads
+    the `players` names out of this same file and uses them as the allowlist that
+    decides which character names may post a turn, so a stale roster rejects the
+    real party's turns and admits the other campaign's characters.
+
+    Two deliberate choices:
+
+    An ABSENT stamp is trusted, not dropped. Trusting it costs at most one stale
+    roster, on the first restart after this lands, and the GM can see it and fix
+    it. Dropping it is not the safe direction: wrapper.py skips its name check
+    when the roster is empty ("Empty set = bypass name check"), so clearing
+    players would convert a name allowlist into no allowlist at all. Trust is the
+    reversible branch; dropping can be added later as one more line.
+
+    The keys are CLEARED, not unlinked. _do_clear() os.remove()s the file, which
+    would take the stamp with it and leave the remaining campaign-scoped keys
+    unstamped and therefore trusted forever.
+    """
+    active = _stats_campaign()
+    if not active:
+        # Campaign unresolvable: leave the saved table alone, exactly as
+        # _drop_stale_turn_order does when _encounter_active() is None.
+        return
+    with _stats_lock:
+        stamped = _current_stats.get(_STATS_CAMPAIGN_KEY)
+        if not stamped or stamped == active:
+            return
+        stale = [key for key in _CAMPAIGN_SCOPED_KEYS if key in _current_stats]
+        for key in stale:
+            _current_stats.pop(key, None)
+    print(f"[display] stats.json belonged to campaign {stamped!r}, active is "
+          f"{active!r} — dropped {', '.join(stale) or 'nothing'}", file=sys.stderr)
+    # Persist the decision, or the next restart reads the same wrong file back.
+    _persist_stats()
 
 
 def _drop_stale_turn_order() -> None:
@@ -2696,6 +2782,22 @@ def stats():
 
         # turn_order replaces entirely (None = clear); also ticks round-based effects
         _effect_expire_events: list[dict] = []
+        # Stamp the campaign these keys came from, HERE and only here. This is the
+        # /stats push that produced them, so the stamp means "the campaign whose
+        # push wrote this" rather than "the campaign active when the file was
+        # written" -- a different claim, and only the first is load-bearing. See
+        # _STATS_CAMPAIGN_KEY. Assigning it in _persist_stats instead would stamp
+        # the active campaign onto whatever roster happened to be in memory at
+        # write time, including one just restored from another campaign's file.
+        #
+        # Only when a campaign-scoped key is actually present, so a push carrying
+        # none of them cannot mint provenance for state it did not write. No stamp
+        # is written when the campaign is unresolvable; "" is not a value here,
+        # because an empty stamp is indistinguishable from a truncated one.
+        if any(key in data for key in _CAMPAIGN_SCOPED_KEYS):
+            _pushed_campaign = _stats_campaign()
+            if _pushed_campaign:
+                _current_stats[_STATS_CAMPAIGN_KEY] = _pushed_campaign
         if "turn_order" in data:
             new_to = data["turn_order"]
             _current_stats["turn_order"] = new_to
