@@ -895,4 +895,17 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+
+    # Hard Rule 4: this must run on a non-UTF-8 console. Rule glyphs and arrows
+    # in the summaries below are decoration; under `LC_ALL=C` stdout is ascii and
+    # a single one of them raises UnicodeEncodeError, killing the CLI with a
+    # traceback on line one -- which reads as broken data rather than a missing
+    # glyph. Same remedy as build_srd.py (#275): reconfigure both streams, and
+    # `errors="replace"` because a dropped glyph is cosmetic where a traceback is
+    # a failure. A no-op when stdout is already UTF-8.
+    for _stream in (sys.stdout, sys.stderr):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):  # a non-TextIO wrapper, or detached
+            pass
     sys.exit(main())
