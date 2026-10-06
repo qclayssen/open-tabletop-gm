@@ -1149,6 +1149,50 @@ class Session:
                 f"+{counts['edges']} edges, {counts['skipped']} skipped, "
                 f"{counts['declined']} declined. (Proposals cleared.)"]
 
+    def _gm_end_cmd(self, rest: str) -> list:
+        """/gm end — end the session and write a handoff.
+        
+        Writes a structured handoff with written_because: session_end.
+        """
+        if self.summarizer.write_handoff("session_end"):
+            return ["(Session ended. Handoff written to summary.md.)"]
+        return ["(Failed to write session handoff.)"]
+
+    def _gm_arc_advance_cmd(self, rest: str) -> list:
+        """/gm arc advance — advance the campaign arc and write a handoff.
+        
+        Writes a structured handoff with written_because: beat_landed.
+        """
+        # First, try to advance the arc using the existing arc logic
+        from . import arc as arc_mod
+        try:
+            # Check if there's a current beat to advance
+            state_text = self._state()
+            import re
+            arc_match = re.search(r"## Campaign Arc\s*\n```ya?ml\s*\n(.*?)\n```", state_text, re.S)
+            if arc_match:
+                import yaml
+                arc_data = yaml.safe_load(arc_match.group(1))
+                if arc_data and arc_data.get("type") != "sandbox":
+                    outstanding = arc_data.get("outstanding_beats", [])
+                    current = arc_data.get("current_beat")
+                    if current and current in outstanding:
+                        # Advance to next beat
+                        idx = outstanding.index(current)
+                        if idx + 1 < len(outstanding):
+                            arc_data["current_beat"] = outstanding[idx + 1]
+                            # Write back the updated arc
+                            new_yaml = yaml.dump(arc_data, sort_keys=False)
+                            new_state = state_text[:arc_match.start(1)] + new_yaml + state_text[arc_match.end(1):]
+                            (self.camp_dir / "state.md").write_text(new_state, encoding="utf-8")
+        except Exception:
+            # If arc advance fails, still write the handoff
+            pass
+        
+        if self.summarizer.write_handoff("beat_landed"):
+            return ["(Beat advanced. Handoff written to summary.md.)"]
+        return ["(Failed to write beat handoff.)"]
+
     def _say(self, text: str) -> None:
         """Narration the player sees: remembered, and kept for the display."""
         self.memory.add("dm", text)
@@ -1388,6 +1432,12 @@ class Session:
             return self._agency_cmd(line[len(line.split()[0]):])
         if line.split() and line.split()[0] in ("/graph", "/gm-graph"):
             return self._graph_cmd(line[len(line.split()[0]):])
+        # /gm end - write handoff at session boundary
+        if line.split() and line.split()[0] in ("/end", "/gm-end", "/gm end"):
+            return self._gm_end_cmd(line[len(line.split()[0]):].strip())
+        # /gm arc advance - write handoff when beat lands
+        if line.split() and line.split()[0] in ("/arc-advance", "/gm-arc-advance", "/gm arc advance"):
+            return self._gm_arc_advance_cmd(line[len(line.split()[0]):].strip())
         if line == "/usage":
             return self._usage()
         if line == "/recap":

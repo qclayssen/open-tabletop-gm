@@ -553,3 +553,86 @@ def test_the_resume_path_rebuilds_the_same_prompt_after_an_emptied_history():
     # the report is derived per call, so a resumed session that now fits says so.
     assert resumed["over_budget"] is False, resumed
     assert resumed["over_by"] == 0, resumed
+
+
+def test_handoff_partial_injection_where_we_are_and_in_flight():
+    """Only where_we_are and in_flight from ## Handoff inject into the digest."""
+    state = """## Pinned Facts
+- Kairos promised to find Mira's brother.
+
+## Handoff
+```yaml
+written_at: "session 1, 01 January"
+written_because: session_end
+pacing_used: brisk
+scenes_completed: ["s1"]
+scenes_remaining: ["s2"]
+where_we_are: "The party is at the guildhall."
+in_flight:
+  - "The broker is now expendable"
+  - "Promise to return the book"
+party_state: "Party rested, 40gp owed"
+open_threads: ["Who burned the ledger"]
+world_moved: ["Salt Guild advances"]
+next_session_opens_on: "The guildhall at dawn"
+```
+
+## World State
+- **Season:** spring
+"""
+    d = context.state_digest(state)
+    # Handoff fields should inject after Pinned Facts
+    assert "Where we are: The party is at the guildhall." in d
+    assert "In flight:" in d
+    assert "  - The broker is now expendable" in d
+    assert "  - Promise to return the book" in d
+    # Other handoff fields should NOT inject
+    assert "Party rested, 40gp owed" not in d
+    assert "Who burned the ledger" not in d
+    assert "Salt Guild advances" not in d
+    assert "The guildhall at dawn" not in d
+    # Regular sections still work
+    assert "#### Pinned Facts" in d
+    assert "Kairos promised" in d
+    assert "#### World State" in d
+    assert "spring" in d
+
+
+def test_handoff_missing_or_unparseable_does_not_break_digest():
+    """A missing or malformed Handoff section should not break the digest."""
+    # No Handoff section
+    state = """## Pinned Facts
+- A fact.
+## World State
+- **Season:** winter
+"""
+    d = context.state_digest(state)
+    assert "A fact." in d
+    assert "winter" in d
+    assert "Handoff" not in d
+
+    # Malformed YAML in Handoff
+    state = """## Pinned Facts
+- A fact.
+## Handoff
+```yaml
+not: valid: yaml: [
+```
+## World State
+- **Season:** winter
+"""
+    d = context.state_digest(state)
+    assert "A fact." in d
+    assert "winter" in d
+
+    # Handoff without YAML fence
+    state = """## Pinned Facts
+- A fact.
+## Handoff
+This is not YAML.
+## World State
+- **Season:** winter
+"""
+    d = context.state_digest(state)
+    assert "A fact." in d
+    assert "winter" in d
