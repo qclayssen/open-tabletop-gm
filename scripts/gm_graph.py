@@ -424,7 +424,7 @@ def cmd_subgraph(args) -> int:
         return 0
     seeds = [_resolve_or_die(data, s, "seed") for s in args.seed if s]
     sub = _expand(data, seeds, args.hops, args.at_session)
-    _emit_subgraph(sub, args.at_session)
+    print(render_subgraph(sub, args.at_session))
     return 0
 
 
@@ -450,7 +450,7 @@ def cmd_scene_context(args) -> int:
     print(f"# scene context — seeds: {', '.join(seeds)}, hops: {args.hops}"
           + (f", at session {args.at_session}" if args.at_session is not None else ""))
     print()
-    _emit_subgraph(sub, args.at_session)
+    print(render_subgraph(sub, args.at_session))
     return 0
 
 
@@ -483,7 +483,20 @@ def _expand(data: dict, seeds: list[str], hops: int,
     return {"nodes": nodes, "edges": visited_edges}
 
 
-def _emit_subgraph(sub: dict, at_session: Optional[int]) -> None:
+def render_subgraph(sub: dict, at_session: Optional[int]) -> str:
+    """The subgraph as markdown TEXT, for callers that embed it in a prompt.
+
+    Split out of `_emit_subgraph` for #276. That function prints to stdout
+    because every caller until now was a CLI subcommand, and `play.py` needs
+    the same rendering as a string it can put in a prompt -- not a shell it has
+    to capture. Capturing stdout would be the smaller diff and the worse one: it
+    turns a formatting bug into a subprocess dependency in the hot turn path,
+    and it silently captures anything else that writes to stdout meanwhile.
+
+    The CLI wrapper is unchanged in behaviour: it prints exactly what this
+    returns, plus the trailing newline `print` supplied before.
+    """
+    lines: list[str] = []
     by_type: dict[str, list[dict]] = {}
     for n in sub["nodes"]:
         by_type.setdefault(n.get("type", "?"), []).append(n)
@@ -499,14 +512,14 @@ def _emit_subgraph(sub: dict, at_session: Optional[int]) -> None:
         return (t or "?") + "s"
 
     for t in sorted(by_type):
-        print(f"## {_plural(t)} ({len(by_type[t])})")
+        lines.append(f"## {_plural(t)} ({len(by_type[t])})")
         for n in sorted(by_type[t], key=lambda x: x.get("name", "")):
             tags = " [" + ",".join(n.get("tags", [])) + "]" if n.get("tags") else ""
             summary = f" — {n['summary']}" if n.get("summary") else ""
-            print(f"  {n['id']}  {_label(n)}{tags}{summary}")
-        print()
+            lines.append(f"  {n['id']}  {_label(n)}{tags}{summary}")
+        lines.append("")
     if sub["edges"]:
-        print(f"## relationships ({len(sub['edges'])})")
+        lines.append(f"## relationships ({len(sub['edges'])})")
         node_label = {n["id"]: _label(n) for n in sub["nodes"]}
         for e in sub["edges"]:
             f_name = node_label.get(e["from"], e["from"])
@@ -523,8 +536,8 @@ def _emit_subgraph(sub: dict, at_session: Optional[int]) -> None:
             # Disposition/standing edges carry a level on the normalized scale;
             # fold it into the type so the party's stance reads at a glance.
             etype = f"{e['type']}:{e['level']}" if e.get("level") else e["type"]
-            print(f"  {f_name} --[{etype}]--> {t_name}{sess_str}{note}")
-
+            lines.append(f"  {f_name} --[{etype}]--> {t_name}{sess_str}{note}")
+    return "\n".join(lines)
 
 
 def _existing_edge_match(data: dict, frm_id: str, to_id: str, etype: str) -> bool:
@@ -812,3 +825,127 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+# -------- scene relevance for the play.py turn path (#276) --------
+
+def _overlap_terms(query: str) -> set:
+    """Content words from a scene description, lowercased.
+
+    Deliberately not a stemmer and deliberately not a stopword list. A stopword
+    list is a maintenance liability for a marginal gain here: the query is a
+    state.md excerpt where the informative words ("cellar", "smuggler") are the
+    content anyway, and a wrong stopword silently drops a node the DM needed.
+    Short tokens are dropped because they match everything.
+
+    KNOWN LIMIT, and it is a real one: a node whose distinguishing words are all
+    <=3 characters ("Al", "Bo", "Mal", "Ash") can never be matched lexically, so
+    it survives a cull only if it is also graph-adjacent to a seed. That is the
+    right trade -- short tokens match so much that admitting them would flood
+    every scene -- but it means an off-screen NPC with a short name and no graph
+    edge is culled. Noted rather than papered over: the fix is a name-length
+    check on `add-node` or a `graph.json` edge, both of which are campaign-setup
+    decisions, not something this ranking should guess at.
+    """
+    words = {w.strip(".,;:!?'()[]").lower().replace(chr(34), "")
+             for w in (query or "").split()}
+    return {w for w in words if len(w) > 3}
+
+
+def scene_nodes(campaign: str, query: str, *, hops: int = 2,
+                present: Optional[str] = None, limit: int = 12,
+                at_session: Optional[int] = None) -> dict:
+    """The nodes worth putting in front of the DM for THIS scene. #276.
+
+    Returns `{"present": bool, "nodes": [...], "names": {slug: name}}`.
+
+    `present` is False when the campaign has no graph, which is the signal for
+    the caller to fall back to the full notes digest and behave exactly as it
+    does today. That is the whole of the no-graph contract: a campaign without a
+    graph must not acquire a new failure mode, so nothing here raises and
+    nothing here is required for a turn to happen.
+
+    WHY RELEVANCE AND NOT STRICT ADJACENCY
+    ======================================
+    Adjacency alone culls by distance, and this repo depends on the DM knowing
+    what is OFF-screen, which is the opposite of what distance-culling does:
+
+      * `world_queue.py` exists to hold pressure "waiting to surface". A faction
+        two hops away with a clock about to fire is precisely what must survive.
+      * `dm.md` requires danger be "signalled before it lands: a rumour, a cost
+        someone else already paid." Foreshadowing is by definition knowledge of
+        something that has not arrived yet.
+
+    So this is a HYBRID rank, and the two halves are deliberately different
+    kinds of evidence:
+
+      * adjacency says a node is structurally connected to the seeds, and
+        contributes a decaying bonus by hop distance;
+      * lexical overlap says a node is being talked about RIGHT NOW, in the
+        scene text itself, regardless of where it sits in the graph.
+
+    A node named in the scene outranks a node merely nearby, which is what makes
+    the far-but-live-threat case survive a cull. Adjacency alone would drop it
+    and the DM would learn about the threat when it landed -- the exact failure
+    `dm.md` forbids.
+    """
+    try:
+        data = _load(campaign)
+    except (OSError, ValueError):
+        # A malformed graph.json must not take the turn down with it. The
+        # campaign falls back to the full digest, which is today's behaviour.
+        return {"present": False, "nodes": [], "names": {}}
+    if not data["nodes"]:
+        return {"present": False, "nodes": [], "names": {}}
+
+    # Seeds: whatever the caller names as present. Location is a hint, not a
+    # requirement -- a scene in a car or a dream has no place node, and a
+    # missing seed must not disable the whole thing.
+    seeds: list = []
+    for ref in (present or "").split(","):
+        ref = ref.strip()
+        if not ref:
+            continue
+        resolved = _resolve_node(data, ref)
+        if resolved:
+            seeds.append(resolved)
+
+    by_hop: dict = {}
+    if seeds:
+        # _expand is hop-bounded BFS; walk it in rings so distance is known.
+        ring = list(seeds)
+        seen = set(seeds)
+        for hop in range(hops + 1):
+            for nid in ring:
+                by_hop[nid] = hop
+            if hop == hops:
+                break
+            sub = _expand(data, ring, 1, at_session)
+            nxt = [n["id"] for n in sub["nodes"] if n["id"] not in seen]
+            seen.update(nxt)
+            ring = nxt
+            if not ring:
+                break
+
+    terms = _overlap_terms(query)
+    scored = []
+    for node in data["nodes"]:
+        haystack = " ".join(str(node.get(k) or "")
+                           for k in ("name", "summary")).lower()
+        hits = sum(1 for term in terms if term in haystack)
+        if by_hop.get(node["id"]) is not None:
+            # Connected nodes are relevant even when the scene never names them.
+            scored.append((hits, -by_hop[node["id"]], node))
+        elif hits:
+            # Named but unconnected: still relevant. This is the branch that
+            # keeps an off-screen threat, and it is the whole reason this
+            # function exists instead of a plain _expand call.
+            scored.append((hits, -(hops + 1), node))
+    scored.sort(key=lambda row: (row[0], row[1], str(row[2].get("name", ""))),
+                reverse=True)
+    chosen = [row[2] for row in scored[:limit]]
+    return {
+        "present": True,
+        "nodes": chosen,
+        "names": {_slug(n.get("name", "")): n.get("name", "") for n in chosen},
+    }

@@ -479,9 +479,79 @@ class Session:
         except OSError:
             return ""
 
+    def _scene_notes(self) -> str:
+        """Scene-relevant lore from the campaign graph, or "" when there is none.
+
+        #276. `gm_graph` already extracts scene-relevant subgraphs and is wired
+        into `/gm load`; nothing in `localdm/` called it, so `play.py` narrated
+        with the full `notes_digest` every turn. This is the wiring.
+
+        THE CONTRACT: a campaign with no `graph.json` must behave EXACTLY as it
+        does today. So every failure path returns "" -- no graph, an
+        unparseable graph, a graph whose nodes do not resolve, an import that
+        does not land -- and the caller falls back to `notes_digest`. The graph
+        is an optimisation, and an optimisation that can raise into the hot turn
+        path is a new failure mode wearing a feature's clothes.
+
+        `present` is what `state.md` says is on-scene. It is a hint: a scene in
+        a carriage has no place node, and the lexical half of the rank still
+        works, so an unresolved seed costs precision rather than the feature.
+        """
+        try:
+            import gm_graph
+        except ImportError:
+            return ""
+        try:
+            selection = gm_graph.scene_nodes(
+                self.campaign, self._state(),
+                hops=2, present=self._scene_present(),
+            )
+        except Exception:
+            # Broad on purpose, and deliberately not logged as an error: the
+            # contract above is "behave exactly as today", and a graph bug must
+            # not become a turn failure. Silently falling back is the correct
+            # behaviour here, not a suppressed error.
+            return ""
+        if not selection.get("present"):
+            return ""
+        lines = [
+            f"  {n.get('name', n.get('id', '?'))}"
+            + (f" — {n['summary']}" if n.get("summary") else "")
+            for n in selection["nodes"]
+        ]
+        if not lines:
+            return ""
+        # Scrubbed, because this is campaign-authored text on its way to a
+        # prompt and every other digest section is. `notes_digest` scrubs, the
+        # state digest scrubs, the canon scrub was added in #261 -- a new lore
+        # path that skipped it would be the one hole in a boundary that took
+        # three issues to establish. See #261/#270 for the residual: the scrub
+        # catches injection phrases, not paraphrase.
+        return context.scrub_injection(
+            "Scene (from the campaign graph — off-screen pressure included):\n"
+            + "\n".join(lines))
+
+    def _scene_present(self) -> str:
+        """NPCs `state.md` puts on-scene, for the graph's adjacency half.
+
+        Read from the Live State Flags the digest already parses rather than
+        from a new source, so this cannot disagree with what the DM was told
+        about who is present. Anything unrecognised yields "", which costs the
+        adjacency half and leaves the lexical rank intact.
+        """
+        try:
+            snap = self.bridge.snapshot()
+        except Exception:
+            return ""
+        if not snap:
+            return ""
+        return ",".join(str(t.get("name", "")) for t in snap.get("tokens", [])
+                        if t.get("name"))
+
     def _digest(self) -> str:
+        """State + sheet + lore, with lore culled to the scene when possible."""
         return _join(context.state_digest(self._state()), context.sheet_digest(self.camp_dir),
-                     context.notes_digest(self.camp_dir))
+                     self._scene_notes() or context.notes_digest(self.camp_dir))
 
     AGENCY_FIX = ("Your last draft wrote speech, thoughts or feelings for the player's "
                   "character. Rewrite it: narrate only the world's and the NPCs' response, "
