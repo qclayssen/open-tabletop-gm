@@ -120,7 +120,11 @@ sacrificed, never the line.
 
 - escalate: null on almost every turn. Only when the player's action hinges on an
   established fact you do not have (named lore, an NPC's past, a rule), write a short
-  question for a smarter advisor.
+  question for a smarter advisor. To say who should answer it, prefix the question
+  with historian (lore), continuity (NPCs and promises), director (pacing),
+  tactician (fights), or designer (rules):
+  {"escalate": "historian: who founded the Ninefold?"}
+  Naming one is optional. Leave the prefix off and it is routed by topic as before.
 - command: only in grid combat, on the player's turn, when the player clearly declared
   an action: the one engine command for it (move / attack / dash / disengage / dodge /
   stand / death-save / end-turn); else null. Use the token ids and squares shown in the
