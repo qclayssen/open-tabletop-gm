@@ -2647,9 +2647,20 @@ def stats():
     _effect_expire_events: list[dict] = []
     with _stats_lock:
         if "players" in data:
-            # replace_players=true wipes the list first — used on campaign load
-            if data.get("replace_players"):
-                _current_stats["players"] = []
+            # NOT cleared first, even for replace_players. It used to be, and the
+            # order was the whole bug: the clear ran BEFORE existing_players was
+            # bound, so the by-name match below could never hit and every incoming
+            # player was re-appended through the new-player branch carrying only
+            # the eight keys context.party_stats() parses off the sheet — name,
+            # race, class, level, hp, ac, initiative, speed. Everything else a
+            # player carries (xp, spell_slots, hit_dice, effects, concentration,
+            # conditions, inventory, resources) is pushed separately, by
+            # push_stats.py and tactics/sync.py, and was therefore discarded for
+            # the whole party on every GM start and every out-of-combat cast.
+            #
+            # replace_players decides WHO is at the table, not what each player's
+            # fields are. Membership is applied below, by filtering the list down
+            # to the incoming names once the merge has run.
             existing_players: list = _current_stats.setdefault("players", [])
             for incoming in data["players"]:
                 name = incoming.get("name")
@@ -2779,6 +2790,18 @@ def stats():
                     existing_players.append(
                         {k: v for k, v in incoming.items() if k not in _MUTATION_KEYS}
                     )
+            if data.get("replace_players"):
+                # Membership, applied last, because it is the only thing
+                # replace_players means. The merge above has already overlaid
+                # what the push carried, so keeping only the incoming names drops
+                # a character who left the party without touching the state of
+                # one who stayed. Filtering afterwards rather than clearing
+                # beforehand is what makes the two independent.
+                incoming_names = {p.get("name") for p in data["players"]
+                                  if p.get("name")}
+                _current_stats["players"] = [
+                    p for p in existing_players if p.get("name") in incoming_names
+                ]
 
         # turn_order replaces entirely (None = clear); also ticks round-based effects
         _effect_expire_events: list[dict] = []
