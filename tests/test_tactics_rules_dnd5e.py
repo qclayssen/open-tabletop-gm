@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from tests.tactics_fixtures import RULES, frog, goblin, kairos, roller
+from tests.tactics_fixtures import RULES, frog, goblin, kairos, monster, roller
 from tactics.roller import PendingRoll
 from tactics.rules import AttackContext
 
@@ -281,6 +281,17 @@ def test_paralyzed_fails_dex_saves_automatically():
     k = kairos()
     k.add_condition("paralyzed")
     assert RULES.saving_throw(k, "dex", 10, roller(), player=True)["auto_fail"]
+
+
+def test_a_monsters_size_becomes_its_footprint():
+    """Without this a Giant Ape enters play as a 1x1 and the whole footprint
+    change never reaches the table: every SRD monster would be Medium."""
+    assert monster("giant-spider", "s1", (0, 0)).size == (2, 2)            # Large
+    assert monster("djinni", "d1", (0, 0)).size == (2, 2)                  # Large
+    assert monster("adult-red-dragon", "r1", (0, 0)).size == (3, 3)        # Huge
+    assert monster("ancient-brass-dragon", "b1", (0, 0)).size == (4, 4)    # Gargantuan
+    assert monster("giant-frog", "f1", (0, 0)).size == (1, 1)              # Medium
+    assert monster("goblin", "g1", (0, 0)).size == (1, 1)                  # Small
 
 
 def test_save_uses_the_sheet_bonus():
