@@ -58,8 +58,17 @@ import queue_claim  # (needs the sys.path line above it)
 _DIR           = pathlib.Path(__file__).parent
 TRIGGER_FILE   = str(_DIR / ".input_trigger")
 QUEUE_FILE     = str(_DIR / ".input_queue")
-STATS_FILE     = str(_DIR / "stats.json")
-CAMP_FILE      = str(_DIR / ".campaign")
+# Honours GM_STATS_FILE, because gm-display-app.py:168 does. It did not, and the
+# two disagreeing is not cosmetic: _known_chars() below reads this file and its
+# `players` names ARE the input allowlist, so whenever GM_STATS_FILE was set the
+# sidebar showed one party's roster while this wrapper admitted a different
+# party's turns. start-display.sh now also sets it per port, so a second display
+# reads its own roster rather than the main one's.
+#
+# The default is unchanged, so a single display on the default port still reads
+# `display/stats.json`.
+STATS_FILE     = os.environ.get("GM_STATS_FILE") or str(_DIR / "stats.json")
+CAMP_FILE      = os.environ.get("GM_DISPLAY_CAMPAIGN_FILE") or str(_DIR / ".campaign")
 AUDIT_LOG      = str(_DIR / "input_log.json")
 TOKEN_FILE     = str(_DIR / ".token")
 DISPLAY_URL    = "https://127.0.0.1:5001"

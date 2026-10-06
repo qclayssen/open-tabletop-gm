@@ -30,6 +30,33 @@ export GM_DISPLAY_PORT="$PORT"
 # test display twice mid-fight.)
 PID_FILE="$DISPLAY_DIR/app-$PORT.pid"
 
+# Per port, for the same reason: campaign state has to be per display, not per
+# directory. `gm-display-app.py` reads BOTH `CAMP_FILE` (.campaign) and
+# `STATS_FILE` (stats.json) out of `display/`, so before this every display on
+# the machine shared one campaign and one roster. Two displays on two ports then
+# overwrote each other: display 2's `send.py --set-campaign` rewrote the shared
+# .campaign while display 1 kept pushing its own roster, and restarting either
+# one loaded the wrong party -- a sidebar showing level 1 / HP 8 against a sheet
+# saying level 2 / HP 20. It also makes a campaign stamp in stats.json
+# meaningless, since the file would have N writers and last-persist-wins.
+#
+# The default port keeps the bare `stats.json` name, so the single-display case
+# -- every existing install, every test that points GM_STATS_FILE at a temp path,
+# and the file a GM's `.gitignore` already covers -- is byte-for-byte unchanged.
+# Only a second port gets a new name.
+#
+# Exported, not just assigned: `wrapper.py` reads the same roster to build its
+# input allowlist, and before it honoured this variable at all, so a display and
+# its wrapper could disagree about which file the party is in.
+if [ "$PORT" = "5001" ]; then
+    GM_STATS_FILE="$DISPLAY_DIR/stats.json"
+    GM_DISPLAY_CAMPAIGN_FILE="$DISPLAY_DIR/.campaign"
+else
+    GM_STATS_FILE="$DISPLAY_DIR/stats-$PORT.json"
+    GM_DISPLAY_CAMPAIGN_FILE="$DISPLAY_DIR/.campaign-$PORT"
+fi
+export GM_STATS_FILE GM_DISPLAY_CAMPAIGN_FILE
+
 # UTF-8 mode for the server and anything it spawns. Unlike per-call-site
 # encoding= this also fixes open()'s DEFAULT, which is what bites on a
 # non-English Windows console (#36). Must be set before the interpreter
