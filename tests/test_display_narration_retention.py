@@ -88,6 +88,9 @@ from tests.display_settle import present
 #: disappears, and with no markup in it so a failure cannot be blamed on
 #: _mdParse splitting it somewhere unexpected.
 SENTENCE = "The lantern gutters as the door swings shut behind them."
+#: Short enough that `charDelay` can be set so the typing outlasts the idle
+#: gap. Long enough to be a real block, which is what earns a divider.
+SLOW = "Rain on the shutters."
 
 #: The second sentence, for the paths that append to the same block.
 SECOND = "Rain starts to tick against the shutter."
@@ -154,23 +157,31 @@ def feed(page, text: str) -> None:
 #     len(SENTENCE) * charDelay  +  IDLE_GAP * 2
 #     = 56 * 36                   +  1800 * 2      =  ~5.6s
 #
-# so 20s looked like 3.5x headroom. It is not: on a loaded macOS arm64 runner
-# every one of those timers stretches with it, and the typewriter leg stretches
-# with the CHARACTER COUNT while the idle leg stretches on its own. The result is
-# a test that passes on a developer machine and on a free CI runner and fails on a
-# contended one -- which is what "times out in CI on 4 of 4 unrelated branches"
-# was actually reporting. A literal bump would have moved the cliff, not removed it.
+# so 20s looked like 3.5x headroom. The derivation is right and worth keeping:
+# every one of those timers stretches with the runner, and the typewriter leg
+# stretches with the CHARACTER COUNT while the idle leg stretches on its own, so
+# the wait has to be a function of both rather than a constant.
 #
-# The floor is 60000, which is ~10.7x the 5.6s this sentence actually needs, and
-# the CI evidence says a floor of 3.5x (the old 20000) is not enough on a loaded
-# macOS arm64 runner. Ten is not derived from a measurement -- it is a judgement
-# that the cost of being generous is one minute on a test file that already runs
-# for ~35s, and the cost of being tight is the flake this whole change exists to
-# remove. It is also the only number here that cannot be falsified locally, which
-# is stated rather than hidden: see the note on local non-reproducibility below.
+# WHAT THIS CHANGE DID NOT FIX, AND WHY THAT MATTERS
+# ==================================================
+# Raising the floor from 20000 to 60000 did not make the CI failure go away. The
+# same two tests failed again on a 60000ms budget, and now it is known why: the
+# idle timer in `display.js` was a ONE-SHOT. Armed only in `handleIncomingText()`,
+# it flushed only `if (!isTyping && charQueue.length === 0)`, and nothing re-armed
+# it -- so whenever it fired while the typewriter was still going, which a 3.6s
+# gap against 1.8s of typing makes routine on a contended runner, the block never
+# closed at all. Not late. Never, at any budget.
 #
-# Bounded on purpose: a flush that genuinely never runs fails in one minute,
-# rather than hanging to a job timeout.
+# So read the floor below as HEADROOM, not as the fix. 60000 is ~10.7x the 5.6s
+# this sentence needs, and ten is a judgement, not a measurement: being generous
+# costs a minute on a file that already runs ~35s, and being tight costs a flake.
+# It was NOT tuned against evidence that 3.5x was insufficient, because the
+# evidence that appeared to say so was really a lost flush wearing a timeout's
+# clothes. That is the honest reading of that CI failure -- a `display.js` bug,
+# not a number.
+#
+# Bounded on purpose: a failure that genuinely cannot resolve fails in one
+# minute, rather than hanging to a job timeout.
 TIMER_MARGIN = 6
 #: Never wait less than this, however short the derived budget computes. A budget
 #: that collapsed to a few hundred ms would turn a slow runner into a flake again,
@@ -347,6 +358,34 @@ class Browser(BrowserTestCase):
         flushed(page)          # the idle timer ran -- proven, not assumed
         self.assertIn(SENTENCE, story(page),
                       "the idle timer that closed the block deleted its last paragraph")
+
+    def test_the_idle_timer_comes_back_for_a_second_round(self):
+        """The bug: a slow typewriter lost the flush FOREVER, not late.
+
+        The idle timer was a one-shot. `handleIncomingText()` armed it and its
+        callback flushed only `if (!isTyping && charQueue.length === 0)`, and
+        nothing ever re-armed it -- `idleTimer` is cleared in four places and
+        assigned in one, and the drain branch of `typeNextChar()` sets
+        `isTyping = false` and returns without flushing. So a timer that fired
+        while the typewriter was still going simply ceased to exist.
+
+        That is routine rather than exotic: the timer waits IDLE_GAP * 2 = 3.6s
+        and SENTENCE takes 1.8s to type, so the margin is under 2x and a
+        contended runner erases it. The block then never closed, and no value of
+        the wait could have saved it -- which is why #252's bump from 20s to 60s
+        changed nothing but the time it took to fail.
+
+        Slow the typewriter past the timer rather than trusting a loaded machine
+        to do it: `charDelay` is read from the page, so this is the same code
+        path at a value that makes the race certain instead of occasional.
+        """
+        page = self.page_in_story()
+        page.evaluate("charDelay = 300")   # 13 chars x 300ms = 3.9s > the 3.6s gap
+        self.post_chunk(SLOW)
+        drained(page)
+        flushed(page, timer_budget(page, len(SLOW)))
+        self.assertIn(SLOW, story(page),
+                      "the block was closed and still kept its paragraph")
 
     # 3. the other callers ----------------------------------------------------
     def test_a_reconnect_replay_keeps_in_progress_narration(self):

@@ -1121,6 +1121,43 @@ if (document.readyState === 'loading') {
   _watchBlocksForBadges();
 }
 
+// Close the block once the typewriter has FINISHED typing it, having seen no
+// new chunk for IDLE_GAP*2.
+//
+// This was a bare one-shot timer armed in `handleIncomingText()`, whose callback
+// flushed only `if (!isTyping && charQueue.length === 0)`. Two things follow,
+// and only the first was obvious:
+//
+//   1. If the timer fired while the typewriter was still typing -- entirely
+//      routine, since the gap it waits is 3.6s and typing 50 characters at the
+//      default 36ms/char takes 1.8s, so the margin is under 2x and a loaded
+//      machine erases it -- the condition was false and the callback did
+//      NOTHING.
+//   2. Nothing ever re-armed it. `idleTimer` is cleared in four places but
+//      assigned in exactly one, and the drain branch of `typeNextChar()` sets
+//      `isTyping = false` and returns without flushing or re-arming. So the one
+//      timer that was going to close the block silently ceased to exist.
+//
+// The block then never closed. Not late: never. No value of the wait fixes it,
+// which is why raising the test's timeout from 20s to 60s (#252) changed nothing
+// and merely made the failure slower to arrive.
+//
+// The predicate is `charQueue.length === 0` rather than `!isTyping &&` because
+// "queued work is done" is the property a flush depends on. `isTyping` true with
+// an empty queue is the drain branch mid-return, where flushing is correct
+// anyway, so keying off the queue removes a flag that has to be kept in step
+// with the typewriter rather than a length that cannot disagree with it.
+function _armIdleFlush() {
+  clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => {
+    if (charQueue.length === 0) {
+      flushNewBlock();
+    } else {
+      _armIdleFlush();   // still typing; look again in another IDLE_GAP*2
+    }
+  }, IDLE_GAP * 2);
+}
+
 function flushNewBlock() {
   // Finalise the current block and start a fresh one next time.
   //
@@ -1744,10 +1781,7 @@ function handleIncomingText(text) {
   lastChunkTime = now;
 
   // Reset idle timer
-  clearTimeout(idleTimer);
-  idleTimer = setTimeout(() => {
-    if (!isTyping && charQueue.length === 0) flushNewBlock();
-  }, IDLE_GAP * 2);
+  _armIdleFlush();
 
   // Enqueue — preprocess markdown to typed segment items
   const cleaned = text
