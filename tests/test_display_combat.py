@@ -197,6 +197,103 @@ class CombatEndpoints(unittest.TestCase):
         code, body = self.do({"cmd": "cast", "args": ["kairos", "burning hands", "D7", "--level", "1"]})
         self.assertEqual(code, 200)
 
+    def test_remaining_browser_combat_verbs_are_explicitly_allowed(self):
+        self.push(SNAP)
+        commands = [
+            ("preview", ["kairos", "D5"]),
+            ("targets", ["kairos", "fire bolt"]),
+            ("status", []),
+            ("dash", ["kairos"]),
+            ("disengage", ["kairos"]),
+            ("dodge", ["kairos"]),
+            ("stand", ["kairos"]),
+            ("undo-move", []),
+            ("end-turn", []),
+            ("death-save", ["kairos"]),
+        ]
+        for cmd, args in commands:
+            with self.subTest(cmd=cmd):
+                code, body = self.do({"cmd": cmd, "args": args})
+                self.assertEqual(code, 200, body)
+                self.assertTrue(body["ok"])
+        self.assertEqual([call[0] for call in self.calls],
+                         [[cmd, *args] for cmd, args in commands])
+
+    def test_all_browser_only_argument_flags_are_limited_to_their_commands(self):
+        self.push(SNAP)
+        accepted = [
+            ["cast", "kairos", "fire bolt", "frog-1", "--level", "1"],
+            ["preview-area", "kairos", "burning hands", "D7", "--level=2"],
+            ["ready", "kairos", "attack", "Dagger", "--target", "frog-1",
+             "--trigger=a frog approaches", "--level", "1"],
+        ]
+        for args in accepted:
+            with self.subTest(args=args):
+                code, body = self.do({"cmd": args[0], "args": args[1:]})
+                self.assertEqual(code, 200, body)
+        call_count = len(self.calls)
+        refused = [
+            ("attack", ["kairos", "frog-1", "--level", "1"]),
+            ("cast", ["kairos", "fire bolt", "frog-1", "--target", "frog-1"]),
+            ("cast", ["kairos", "fire bolt", "frog-1", "--trigger", "yes"]),
+            ("ready", ["kairos", "attack", "Dagger", "--roll", "20"]),
+            ("preview-area", ["kairos", "burning hands", "D7", "--target", "frog-1"]),
+        ]
+        for cmd, args in refused:
+            with self.subTest(cmd=cmd, args=args):
+                code, body = self.do({"cmd": cmd, "args": args})
+                self.assertEqual(code, 400, body)
+        self.assertEqual(len(self.calls), call_count)
+
+    def test_browser_refuses_unlisted_engine_verbs_without_running_them(self):
+        self.push(SNAP)
+        for cmd in ("start", "end", "remove", "devices", "receipts"):
+            with self.subTest(cmd=cmd):
+                code, body = self.do({"cmd": cmd, "args": ["kairos"]})
+                self.assertEqual(code, 400, body)
+        self.assertEqual(self.calls, [])
+
+    # ── second review pass ────────────────────────────────────────────────
+    #
+    # These three were defined inside the `if __name__ == "__main__":` block,
+    # *below* `unittest.main()`, so pytest never collected them. The file
+    # reported `20 passed` while three assertions ran zero times. A nested `def`
+    # is not a collectable module-level test, so conftest cannot catch this
+    # class either.
+    #
+    # They also use `self.push`, `self.do` and `self.queued`, which are
+    # `CombatEndpoints` fixtures, and they were sitting in `Snapshot`, which has
+    # none of them. Hoisting them into this class fixes both halves at once: at
+    # module scope they would collect and then error on a missing fixture, which
+    # is a different kind of green.
+    def test_monster_spells_and_previews_are_not_readable_from_a_browser(self):
+        self.push(SNAP)
+        code, body = self.do({"cmd": "spells", "args": ["frog-1"]})
+        self.assertEqual(code, 403)
+        code, body = self.do({"cmd": "preview-area", "args": ["frog-1", "fire bolt", "B7"]})
+        self.assertEqual(code, 403)
+        self.assertEqual(self.calls, [])
+        self.assertEqual(self.do({"cmd": "spells", "args": ["kairos"]})[0], 200)
+
+    def test_a_usage_error_is_an_error_not_a_pending_prompt(self):
+        self.push(SNAP)
+        self.reply = (2, "usage: combat.py cast ...\ncombat.py cast: error: argument --level: invalid int value: 'x'")
+        code, body = self.do({"cmd": "cast", "args": ["kairos", "fire bolt", "--level", "x"]})
+        self.assertIn("error", body)
+        self.assertNotIn("pending", body)
+        self.reply = (2, "Kairos rolls 1d20+5 for Fire Bolt vs Frog 1. Nothing has happened yet.")
+        code, body = self.do({"cmd": "cast", "args": ["kairos", "fire bolt", "frog-1"]})
+        self.assertIn("pending", body)
+
+    def test_the_reactions_setting_is_not_queued_for_the_gm(self):
+        self.push(SNAP)
+        self.reply = (0, json.dumps({"text": "Kairos: spell reactions auto.", "result": {}}))
+        code, body = self.do({"cmd": "reactions", "args": ["kairos", "auto"]})
+        self.assertTrue(body["ok"])
+        self.assertEqual(list(self.mod._input_queue), [])
+        self.assertEqual(self.queued(), [])
+
+
 class Snapshot(unittest.TestCase):
     """sync.snapshot carries what the spell and action UI shows."""
 
@@ -254,32 +351,4 @@ class Snapshot(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
-    # ── second review pass ──
-    def test_monster_spells_and_previews_are_not_readable_from_a_browser(self):
-        self.push(SNAP)
-        code, body = self.do({"cmd": "spells", "args": ["frog-1"]})
-        self.assertEqual(code, 403)
-        code, body = self.do({"cmd": "preview-area", "args": ["frog-1", "fire bolt", "B7"]})
-        self.assertEqual(code, 403)
-        self.assertEqual(self.calls, [])
-        self.assertEqual(self.do({"cmd": "spells", "args": ["kairos"]})[0], 200)
-
-    def test_a_usage_error_is_an_error_not_a_pending_prompt(self):
-        self.push(SNAP)
-        self.reply = (2, "usage: combat.py cast ...\ncombat.py cast: error: argument --level: invalid int value: 'x'")
-        code, body = self.do({"cmd": "cast", "args": ["kairos", "fire bolt", "--level", "x"]})
-        self.assertIn("error", body)
-        self.assertNotIn("pending", body)
-        self.reply = (2, "Kairos rolls 1d20+5 for Fire Bolt vs Frog 1. Nothing has happened yet.")
-        code, body = self.do({"cmd": "cast", "args": ["kairos", "fire bolt", "frog-1"]})
-        self.assertIn("pending", body)
-
-    def test_the_reactions_setting_is_not_queued_for_the_gm(self):
-        self.push(SNAP)
-        self.reply = (0, json.dumps({"text": "Kairos: spell reactions auto.", "result": {}}))
-        code, body = self.do({"cmd": "reactions", "args": ["kairos", "auto"]})
-        self.assertTrue(body["ok"])
-        self.assertEqual(list(self.mod._input_queue), [])
-        self.assertEqual(self.queued(), [])
 
