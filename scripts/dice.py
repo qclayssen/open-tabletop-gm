@@ -158,6 +158,18 @@ def run(notation: str, silent: bool = False, rng=None) -> int:
 
 
 if __name__ == "__main__":
+    # Hard Rule 4: this must run on a non-UTF-8 console. The roll summary ends in
+    # U+2192 (RIGHTWARDS ARROW), and under `LC_ALL=C` stdout is ascii, so the print
+    # raises UnicodeEncodeError and the CLI dies with a traceback on line one.
+    # Same remedy and same reasoning as `build_srd.main()` (#275) and
+    # `combat.py`: the glyph is decoration, a missing glyph is cosmetic, and
+    # reconfigure is a no-op when stdout is already UTF-8.
+    for _stream in (sys.stdout, sys.stderr):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):  # a non-TextIO wrapper, or detached
+            pass
+
     argv = list(sys.argv[1:])
 
     seed = None

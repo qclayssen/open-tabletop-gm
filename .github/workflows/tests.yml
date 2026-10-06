@@ -319,6 +319,123 @@ jobs:
         # so a 3.11+ name, keyword argument or stdlib member is an error rather
         # than something no check ever looks at.
         run: python -m pytest tests/test_tactics_*.py -q
+  non-utf8-locale:
+    # Hard Rule 4's Windows half, as far as Linux can reach it. #277.
+    #
+    # WHY A SEPARATE JOB AND NOT A MATRIX ENTRY
+    # ==========================================
+    # The point is that macOS and Linux default to UTF-8, so the whole encoding
+    # class is invisible on every runner this repo already has. `LC_ALL=C` is the
+    # cheapest way to reach a non-UTF-8 console, and it is STRICT for this class:
+    # a cp1251 or cp936 console fails the same way, so this is not a weakened
+    # stand-in for the thing Hard Rule 4 actually names. Windows' other classes
+    # (CRLF, path separators, os.name) are a separate decision with a separate
+    # brief, which is what open-tabletop-gm/CLAUDE.md hard rule 4 now says too.
+    name: non-UTF-8 locale
+    runs-on: ubuntu-latest
+    env:
+      LC_ALL: C
+      LANG: C
+      # UTF-8 Mode is an INTERPRETER option, and it overrides the locale. Without
+      # these two, this job would be green for the wrong reason on every run.
+      PYTHONUTF8: '0'
+      # PEP 538 coerces a C locale to C.UTF-8 at interpreter start-up, which would
+      # silently undo LC_ALL=C. This is what stops that.
+      PYTHONCOERCECLOCALE: '0'
+      # PYTHONIOENCODING is deliberately NOT set. Hard Rule 4 names the LOCALE
+      # default, and forcing the encoding here would test something else.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.13'
+
+      - name: Install test dependencies
+        # Mirrors the pytest job's install line, and every entry is here because
+        # a run without it failed -- not because it looks needed:
+        #
+        #   pyyaml     provision_srd.py cannot build the dataset without it and
+        #              exits 2; the suite then fails on ~35 node IDs.
+        #   flask      test_display_clear.py imports it directly, so its tests
+        #              fail with ModuleNotFoundError rather than skipping.
+        #   playwright WITHOUT IT ~80 DISPLAY TESTS SILENTLY SKIP. That is the
+        #              one that matters most here: this job would have gone GREEN
+        #              while testing nothing it exists to test, which is the exact
+        #              vacuous pass the guard step below exists to prevent -- so
+        #              omitting it would have made that guard misleading rather
+        #              than helpful.
+        #
+        # Left out deliberately: pytest-xdist (this job runs serially; xdist is
+        # about wall-clock, and a parallel encoding failure reports less clearly).
+        run: |
+          python -m pip install --upgrade pip pytest flask pyyaml playwright
+          # The browser, not just the package. `python -m playwright install
+          # chromium` is a SEPARATE step from the pip install, and the display
+          # files guard on `HAVE_PLAYWRIGHT` -- an importable playwright with no
+          # chromium binary still skips all ~80 of them. So omitting this line
+          # would leave this job green while testing nothing it exists to test,
+          # which is the same vacuous pass the guard step below is there to catch,
+          # one level further in.
+          python -m playwright install chromium
+
+      - name: Assert the locale really is non-UTF-8
+        # A job that silently runs on UTF-8 is a green check mark for nothing, and
+        # "the suite passed under LC_ALL=C" is a claim about the ENVIRONMENT, not
+        # about the code. So the environment is asserted before anything depends
+        # on it. sys.stdout.encoding is the thing that decides whether print()
+        # raises, which is why it is checked rather than the shell's $LANG.
+        run: |
+          python - <<'PY'
+          import sys
+          enc = (sys.stdout.encoding or "").lower()
+          assert "utf" not in enc, (
+              f"stdout is {enc!r}, so this job would pass for the WRONG REASON: "
+              "the encoding class it exists to catch cannot occur. Check "
+              "PYTHONUTF8 and PYTHONCOERCECLOCALE, and whether the runner "
+              "image ignores LC_ALL.")
+          assert sys.flags.utf8_mode == 0, (
+              "UTF-8 Mode is on, so the locale is being overridden by the "
+              "interpreter. Set PYTHONUTF8=0.")
+          print(f"stdout encoding is {enc!r}; the guard is armed.")
+          PY
+
+      - name: Prove the assertion can fail
+        # An assertion nothing can violate is decoration. This runs a print() of a
+        # non-ASCII character and REQUIRES it to die: if that print succeeds, the
+        # environment is not what step 2 claimed, and every later result is void.
+        run: |
+          if python -c "print('—')" >/dev/null 2>&1; then
+            echo "::error::a non-ASCII print SUCCEEDED, so this job cannot detect the class it exists for"
+            exit 1
+          fi
+          echo "the failure is reproducible; the guard below is meaningful."
+
+      - name: Prove the browser can launch here at all
+        # The guard above asks "is this console really non-UTF-8?". It cannot ask
+        # "will this job actually run anything?", because ~80 display tests skip
+        # wholesale when `HAVE_PLAYWRIGHT` is false -- and a suite that skipped
+        # them looks identical, in the check mark, to one that passed them.
+        #
+        # A skipped suite is the one failure mode a green tick cannot distinguish
+        # from success, so it is worth its own step. Launching chromium under
+        # LC_ALL=C also tests something this job genuinely cares about: whether a
+        # non-UTF-8 console can start the browser the display tests depend on.
+        run: |
+          python - <<'PY'
+          from playwright.sync_api import sync_playwright
+          with sync_playwright() as p:
+              b = p.chromium.launch()
+              b.close()
+          print("chromium launches; the display tests will run, not skip")
+          PY
+      - name: Provision the SRD dataset
+        # Same reason the pytest job does: the dataset is gitignored and
+        # CI-built, and without it ~35 node IDs fail regardless of encoding.
+        run: python scripts/provision_srd.py
+
+      - name: The suite on a non-UTF-8 console
+        run: python -m pytest tests/ -q
+
   eslint:
     # The JavaScript floor, and the first thing in this file that has ever looked at a
     # .js file.

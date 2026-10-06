@@ -297,3 +297,97 @@ def test_the_lossless_reader_refuses_rather_than_replacing():
                 "read_text returned replacement characters — writing that back "
                 "would make the corruption permanent"
             )
+
+
+# ── CLI entry points that PRINT non-ASCII (#277) ───────────────────────────
+#
+# A THIRD bug class, distinct from the two above, and the one that took
+# `build_srd.py` (#275) and then `combat.py` and `dice.py`: a file-handling
+# guard says nothing about `print()`. Under `LC_ALL=C` stdout is ascii, so a
+# single em dash or arrow in a summary line raises UnicodeEncodeError and the
+# CLI dies with a traceback on line one — which reads as broken data rather
+# than a missing glyph.
+#
+# So this detector is about CONSOLE OUTPUT, and the remedy is a stream
+# reconfigure at the entry point rather than a change to every string. A missing
+# glyph is a cosmetic degradation; a traceback is a provisioning failure.
+#
+# STATIC, because it must cover the scripts no test executes -- which is most
+# of them, and is exactly why the two-script fix was worth a detector rather
+# than two more one-line patches.
+
+_MAIN_GUARD = "reconfigure(encoding=\"utf-8\""
+
+
+def _cli_entry_points_with_non_ascii_prints() -> list[tuple[str, int]]:
+    """(path, line) for every `print(` of non-ASCII text in a script with a
+    `__main__` block that does not reconfigure its streams.
+
+    Scoped to `scripts/`: those are the CLIs. A library that never prints cannot
+    fail this way, and flagging every module in the tree would bury the signal
+    in files that are not entry points.
+    """
+    out: list[tuple[str, int]] = []
+    for path in sorted((ROOT / "scripts").rglob("*.py")):
+        try:
+            src = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        if '__name__ == "__main__"' not in src:
+            continue
+        # The GUARD, not the word. A loose `"reconfigure" in src` check is
+        # satisfied by a COMMENT mentioning it -- which is exactly what happened
+        # here: deleting the real call from gm_graph.py left the comment behind,
+        # the detector skipped the file, and the mutant passed. Caught by
+        # mutation, not by reading.
+        if _MAIN_GUARD in src:
+            continue
+        for i, line in enumerate(src.splitlines(), 1):
+            stripped = line.lstrip()
+            if not stripped.startswith(("print(", "print (", 'print(f"', "print(f'")):
+                continue
+            if any(ord(ch) > 127 for ch in line):
+                out.append((str(path.relative_to(ROOT)), i))
+    return out
+
+
+def test_no_cli_prints_non_ascii_without_reconfiguring_its_streams():
+    """The console half of Hard Rule 4, and the half `test_no_bare_open_*` and
+    `-X warn_default_encoding` cannot see: neither of them is about stdout."""
+    offenders = _cli_entry_points_with_non_ascii_prints()
+    assert not offenders, (
+        "these scripts print non-ASCII and do not reconfigure stdout/stderr at "
+        "their __main__ block, so they die with UnicodeEncodeError under "
+        "LC_ALL=C. Fix: reconfigure both streams to utf-8/errors=replace at the "
+        "entry point, the way build_srd.py (#275), combat.py and dice.py now do. "
+        f"Offenders: {offenders}"
+    )
+
+
+@pytest.mark.parametrize("script,args", [
+    ("combat.py", ["attack", "--atk", "20", "--ac", "5", "--dmg", "2d6+1", "--seed", "1"]),
+    ("dice.py", ["d20", "adv"]),
+])
+def test_a_documented_cli_invocation_survives_a_non_utf8_console(script, args, tmp_path):
+    """Behavioural companion to the static sweep, because the sweep reasons about
+    source text and this is about the process.
+
+    `LC_ALL=C` with UTF-8 Mode off is what makes the runner hand back an ascii
+    stdout. `COERCECLOCALE=0` stops PEP 538 from quietly turning `C` into
+    `C.UTF-8`, which would make this pass for the wrong reason -- the same reason
+    the #277 CI job carries its own assertion that the locale really is non-UTF-8.
+
+    `PYTHONIOENCODING` is deliberately NOT set: this is about the locale default,
+    which is the thing Hard Rule 4 actually names.
+    """
+    import os
+    env = dict(os.environ)
+    env.update({"LC_ALL": "C", "LANG": "C", "PYTHONUTF8": "0",
+                "PYTHONCOERCECLOCALE": "0"})
+    env.pop("PYTHONIOENCODING", None)
+    proc = subprocess.run([sys.executable, str(ROOT / "scripts" / script), *args],
+                          capture_output=True, text=True, encoding="utf-8",
+                          env=env, timeout=60)
+    assert proc.returncode == 0, (
+        f"{script} exited {proc.returncode} on a non-UTF-8 console:\n{proc.stderr}")
+    assert proc.stdout.strip(), f"{script} printed nothing"
