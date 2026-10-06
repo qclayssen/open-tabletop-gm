@@ -351,7 +351,18 @@ jobs:
           python-version: '3.13'
 
       - name: Install test dependencies
-        run: python -m pip install --upgrade pip pytest
+        # pyyaml is REQUIRED here, not optional: `provision_srd.py` cannot build
+        # the dataset without it and exits 2, and the suite then fails on ~35 node
+        # IDs rather than skipping. The pytest job's own comment says exactly this
+        # ("scripts/graph_extract_deterministic.py sys.exit(2)s at import without
+        # it"); I wrote the line without it and the first run died in
+        # "Provision the SRD dataset" with a message about PyYAML. Copied from the
+        # measured failure rather than from memory.
+        #
+        # playwright is NOT installed: it is only there so display tests do not
+        # SILENTLY SKIP, and this job's subject is console encoding, not rendering.
+        # Adding it would double the install for no signal this job is about.
+        run: python -m pip install --upgrade pip pytest pyyaml
 
       - name: Assert the locale really is non-UTF-8
         # A job that silently runs on UTF-8 is a green check mark for nothing, and
