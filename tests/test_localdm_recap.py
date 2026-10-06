@@ -113,3 +113,30 @@ def test_session_commands(tmp_path):
     assert "Previously on" in s.handle("/recap")[0]
     assert s.handle("/prep")[0].startswith("Before you play")
     assert c.calls == []
+
+
+def test_recap_filters_credential_shaped_strings(tmp_path):
+    """Credential-shaped strings (API_KEY=..., Bearer ...) are filtered from recap."""
+    d = tmp_path / "demo"
+    (d / "characters").mkdir(parents=True)
+    (d / "localdm").mkdir()
+    # Summary with credential-shaped strings
+    (d / "localdm" / "summary.md").write_text(
+        "The party reached the academy.\n"
+        "OMNIROUTE_API_KEY=sk-12345\n"
+        "Bearer abcdef12345\n"
+        "ACCESS_TOKEN=xyz789\n", encoding="utf-8")
+    (d / "state.md").write_text(
+        "# Campaign: demo\n## Recent Events\n- Found a key.\n", encoding="utf-8")
+    (d / "characters" / "kairos.md").write_text("# Kairos\n", encoding="utf-8")
+    (d / "localdm" / "transcript.jsonl").write_text('{"role": "dm", "text": "hi"}\n', encoding="utf-8")
+    
+    text = recap.build_recap(d)
+    assert "reached the academy" in text
+    assert "Found a key" in text
+    assert "OMNIROUTE_API_KEY" not in text
+    assert "sk-12345" not in text
+    assert "Bearer" not in text
+    assert "abcdef12345" not in text
+    assert "ACCESS_TOKEN" not in text
+    assert "xyz789" not in text

@@ -60,6 +60,23 @@ Applied Standard 16. Record what the world changed, not the roll. Clear each one
 player resolves it)*:
 *(none established)*
 
+## Handoff
+*Written at session end, context full, or beat landed. Fixed schema for resume fidelity. `where_we_are` and `in_flight` inject into the DM prompt; the full block is the source of record.*
+```yaml
+# written_at: "session 7, 23 Harvestmoon"
+# written_because: session_end      # session_end | context_full | beat_landed
+# pacing_used: brisk                # tempo vocabulary, RHYTHM-SCHEMA.md §2.1
+# scenes_completed: [s1, s2]
+# scenes_remaining: [s3]
+# where_we_are: "Bram bought a name; the broker is now expendable"
+# in_flight:                        # promises, debts, things mid-conversation
+#   - "the Salt Guild knows the manifest is copied"
+# party_state: "Bram alone, 2 days to the guildhall, 40gp owed to the Quiet Hand"
+# open_threads: ["who burned the ledger", "the dead lighthouse keeper"]
+# world_moved: ["Salt Guild 4/6 — ledger fire reported in the market"]
+# next_session_opens_on: "the guildhall, before the tide turns"
+```
+
 ## Campaign Arc
 *(sandbox campaigns: set `type: sandbox` — no arc tracking)*
 *(structured campaigns: populated by /gm import — use structured format)*
