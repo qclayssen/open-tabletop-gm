@@ -47,13 +47,13 @@ class _Base(unittest.TestCase):
         cls.client = cls.mod.app.test_client()
 
     def setUp(self):
-        # Two posts, and the reason matters. `replace_players: true` wipes the
-        # list and then appends each incoming player through the NEW-player
-        # branch, which strips every `_`-prefixed key — so a mutation op in the
-        # same push is silently discarded. Found by this fixture quietly not
-        # seeding anything; it is pre-existing behaviour for all mutation ops,
-        # and it means `push_stats --replace-players` combined with
-        # `--resource-set` in one call loses the counter.
+        # Two posts, and the reason matters. `_current_stats` is reset directly
+        # rather than with a `replace_players` push: module-level state outlives
+        # a test, but since #282 that flag decides WHO is at the table and
+        # preserves a seated player's fields, so as a reset it would wipe only
+        # the roster and leak the counters — which is exactly what these tests
+        # assert about.
+        self.mod._current_stats = {}
         self.client.post("/stats", data=json.dumps({
             "players": [{"name": "Kairos", "hp": {"current": 20, "max": 20}}],
             "replace_players": True}), content_type="application/json")
@@ -118,8 +118,16 @@ class _Base(unittest.TestCase):
         return rid
 
     def set_counter(self, label, used, max_, name="Kairos"):
-        """Seed one counter. Separate from the roster push because
-        `replace_players` strips mutation ops — see setUp."""
+        """Seed one counter, in a push of its own.
+
+        Not because the roster push would strip it — since #282 a mutation op
+        aimed at a player already seated is applied, because the merge matches
+        first. (Aimed at a player NOT yet seated it is still dropped: the
+        new-player branch strips `_`-prefixed keys, as it must, since there is
+        no entry for the op to mutate.) It is a push of its own so that what
+        this helper installs is the counter and nothing else, and so a test that
+        reads a counter knows it came from here.
+        """
         self.client.post("/stats", data=json.dumps({"players": [{
             "name": name, "_resource_set": {label: {"used": used, "max": max_}}}]}),
             content_type="application/json")
@@ -298,9 +306,14 @@ class Check3CounterMustBePositive(_Base):
     def test_a_feature_with_no_counter_is_refused(self):
         """An offer the GM never gave a cap for. Spending a resource nobody
         counted would be inventing state."""
+        # The counters setUp seeded are cleared outright. A `replace_players`
+        # push no longer would, and must not: that flag preserves a seated
+        # player's state (#282), so relying on it here would make this test
+        # depend on the bug it is not about.
+        self.mod._current_stats = {}
         self.client.post("/stats", data=json.dumps({
-            "players": [{"name": "Kairos", "hp": {"current": 20, "max": 20}}],
-            "replace_players": True}), content_type="application/json")
+            "players": [{"name": "Kairos", "hp": {"current": 20, "max": 20}}]}),
+            content_type="application/json")
         rid = self.rid(["Kenku Recall:advantage"])
         r = self.roll(rid, spend="kenku_recall")
         self.assertEqual(r.status_code, 400)
@@ -627,9 +640,14 @@ class ThePadIsToldTheCount(_Base):
         """None and 0 are different. None means the GM never ran
         --resource-set — an unconfigured display — and greying out every offer
         there would read as a broken phone."""
+        # Outright, not via replace_players -- see the note in
+        # test_a_feature_with_no_counter_is_refused. What is being asked here is
+        # "the GM never ran --resource-set", which is a state no roster push
+        # creates.
+        self.mod._current_stats = {}
         self.client.post("/stats", data=json.dumps({
-            "players": [{"name": "Kairos", "hp": {"current": 20, "max": 20}}],
-            "replace_players": True}), content_type="application/json")
+            "players": [{"name": "Kairos", "hp": {"current": 20, "max": 20}}]}),
+            content_type="application/json")
         seen = []
         self.mod._broadcast = lambda p: seen.append(p)
         self.request(["Kenku Recall:advantage"])
