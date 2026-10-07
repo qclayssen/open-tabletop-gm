@@ -2,9 +2,17 @@
 
 This is how to open a new campaign with the cinematic display in your browser: the GM runs in your terminal chat, and the story, party sidebar, dice and player input appear on `http://localhost:5001`.
 
-## 1. Install (once)
+## 1. Tutorial, then the display
 
 You need Python 3.10 or newer.
+
+The tutorial fight does not download anything and does not need Flask:
+
+```bash
+python3 start.py
+```
+
+That uses the kobold data shipped with the repo. The display and grid combat are the next step, and they do need Flask and the SRD.
 
 ```bash
 pip3 install -r display/requirements.txt
@@ -27,9 +35,15 @@ make a noise, install the optional pair as well:
 pip3 install -r display/requirements-audio.txt
 ```
 
-## 2. Start the display
+## 2. Check the endpoint, then start the display
 
-From the repo root:
+From the repo root, before the local DM:
+
+```bash
+python3 scripts/doctor.py
+```
+
+A row that is not ok prints a cause and a fix. The run is bounded. `bash display/start-display.sh` runs the same check and still opens the map.
 
 ```bash
 bash display/start-display.sh
