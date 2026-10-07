@@ -136,32 +136,28 @@ def in_game_date(campaign: str) -> str:
     return stamp.strip()
 
 
-def in_game_hour(campaign_dir) -> int | None:
-    """The campaign's clock as one number: hours since year 0, day 1, hour 0.
+def hour_of(data) -> int | None:
+    """A calendar dict as one number: hours since year 0, day 1, hour 0.
 
-    Or None for a campaign with no calendar. This is the same clock
-    `in_game_date` reads, reduced to something two moments can be subtracted
-    into, which is what an effect with a duration needs: it must expire when an
-    hour of the *fiction* has passed, and a table that stops for dinner has not
-    spent one.
-
-    takes a directory rather than a campaign name because the two callers have
-    different ones: tracker.py resolves the name itself, and the DM's context
-    builder is handed a path it already holds.
+    Or None for a dict that is no calendar at all. This is the reading
+    `in_game_hour` makes of calendar.json, split out because a rest needs the
+    same answer for a calendar it has only staged: the hour a long rest *ends*
+    at is not on disk yet when the stamp is set, so `rest.py` has to ask the
+    dict rather than the file. One formula, one place; two copies of it are how
+    a stamp ends up disagreeing with the clock it was read from.
 
     `day` and `month` are required and an absent year reads as 0. Only
-    differences matter, and a calendar.json carrying neither day nor month has no
-    clock to offer rather than a clock at zero.
+    differences matter, and a dict carrying neither day nor month has no clock
+    to offer rather than a clock at zero.
 
-    Hour-granular, because calendar.json records no smaller unit: the number
-    of months per year is taken from the calendar's own `months` list, falling
-    back to the twelve-month assumption `_month_length` already makes, and a
-    duration shorter than an hour therefore lasts until the next hour of
-    in-world time. That is a limit of the calendar this repo keeps, stated here
-    rather than discovered by a player.
+    Hour-granular, because calendar.json records no smaller unit: the number of
+    months per year is taken from the calendar's own `months` list, falling back
+    to the twelve-month assumption `_month_length` already makes, and a duration
+    shorter than an hour therefore lasts until the next hour of in-world time.
+    That is a limit of the calendar this repo keeps, stated here rather than
+    discovered by a player.
     """
-    data = _calendar(campaign_dir)
-    if not data:
+    if not isinstance(data, dict) or not data:
         return None
     try:
         day, month = int(data["day"]), int(data["month"])
@@ -177,6 +173,25 @@ def in_game_hour(campaign_dir) -> int | None:
     except (TypeError, ValueError):
         month_len = 30
     return ((max(0, year) * per_year + (max(0, month) - 1)) * month_len + (max(0, day) - 1)) * 24 + hour
+
+
+def in_game_hour(campaign_dir) -> int | None:
+    """The campaign's clock as one number: hours since year 0, day 1, hour 0.
+
+    Or None for a campaign with no calendar. This is the same clock
+    `in_game_date` reads, reduced to something two moments can be subtracted
+    into, which is what an effect with a duration needs: it must expire when an
+    hour of the *fiction* has passed, and a table that stops for dinner has not
+    spent one.
+
+    takes a directory rather than a campaign name because the two callers have
+    different ones: tracker.py resolves the name itself, and the DM's context
+    builder is handed a path it already holds.
+
+    The arithmetic is `hour_of`, which the rest also applies to the calendar it
+    has staged and not yet written.
+    """
+    return hour_of(_calendar(campaign_dir))
 
 
 # ─── Data structures ──────────────────────────────────────────────────────────

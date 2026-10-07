@@ -2,7 +2,7 @@
 
     short_rest(enc, token_ids, roller)   1 hour: Hit Dice, short-rest features, Pact Magic
     long_rest(enc, token_ids)            8 hours: HP, half the Hit Dice, every spell slot
-    cmd_rest(args, enc, roller)          the `rest` command, on a running encounter
+    cmd_rest(args, enc, roller, campaign)  the `rest` command, on a running encounter
     cmd_rest_campaign(args, dir, name)   the same command with no fight running
     advance_calendar(campaign, kind)     move the in-world clock on by the rest
 
@@ -38,6 +38,12 @@ as one unit: the sheets, tracker.json, calendar.json, and the faction clocks the
 calendar would roll. That is the whole of what "out of combat" means here. The
 same engine, the same rules, and a party read from its own sheets instead of from
 a fight.
+
+A long rest then records when it ended: `_record_long_rest` stamps the in-world
+hour on every rested entity in tracker.json, and warns when that hour is inside
+24 of the previous stamp. Both paths do it, because it is the same rest. The
+limit is narrated and never enforced -- the heal happens either way, which is why
+this is a stamp on the entity and not a refusal in front of the command.
 """
 
 from __future__ import annotations
@@ -268,13 +274,51 @@ def _clear_long_rest_conditions(token: Token) -> list:
 
 # ─── the command ──────────────────────────────────────────────────────────────
 
-def cmd_rest(args, enc: Encounter, roller: Roller = None) -> tuple:
+def _stamp_long_rest(enc: Encounter, campaign: str, targets: list) -> list:
+    """The long rest's end hour on every rested entity, and the 24-hour warning.
+
+    The rest taken inside a fight is the same long rest as the one between
+    fights, so it records the same fact the same way: `_record_long_rest` on the
+    calendar `calendar_step` stages, which is the hour the rest *ends* at. The
+    file still shows the hour before it, and `advance_calendar` writes the
+    staged dict only after this returns, so reading the clock off disk here
+    would stamp the hour the rest started at.
+
+    Staged on the same Transaction the out-of-combat rest uses and committed
+    once, so a write that dies leaves no stamp behind. No campaign name, or a
+    campaign with no calendar, is no clock: nothing is stamped and nothing is
+    written.
+    """
+    camp_dir = getattr(enc, "campaign_dir", None)
+    if not camp_dir:
+        if not campaign:
+            return []
+        from paths import find_campaign
+        camp_dir = find_campaign(campaign)
+    path, cal_data, _line = calendar_step(campaign, "long")
+    if path is None:
+        return []
+    state = sync.tracker_state(camp_dir, enc)
+    lines = _record_long_rest(state, targets, cal_data)
+    tx = Transaction()
+    tx.stage_json(pathlib.Path(camp_dir) / "tracker.json", state)
+    tx.commit()
+    return lines
+
+
+def cmd_rest(args, enc: Encounter, roller: Roller = None, campaign: str = "") -> tuple:
     """The `rest short|long [--token NAME]` command, on the caller's encounter.
 
     Takes the encounter `cli.run` has already loaded rather than loading its
     own: the caller saves the copy it holds after every command, so a second
     load here would mean a second copy, and whichever was written last would be
     the one that did not rest.
+
+    `campaign` is the name `cli.run` resolved for this command, and is what
+    makes a long rest taken here the same event as one taken between fights: the
+    end hour is stamped on every rested entity, in tracker.json, off the same
+    staged calendar. Without it there is no clock and nothing is stamped, which
+    is the only difference between the two paths.
     """
     if enc.status != "active":
         raise CombatError("No combat is running. Rest between fights, or start one first.")
@@ -284,6 +328,9 @@ def cmd_rest(args, enc: Encounter, roller: Roller = None) -> tuple:
         lines = short_rest(enc, token_ids, roller)
     else:
         lines = long_rest(enc, token_ids)
+        # After the heal, never instead of it: the 24-hour limit is narrated
+        # (D-7), and a rest inside it still restores everything it would have.
+        lines += _stamp_long_rest(enc, campaign, _targets(enc, token_ids))
     # A Hit Die the GM said "--for-me" to is a die the engine rolled on a player's
     # behalf, and it went unrecorded: nothing called core.log here, so the roll was
     # in roller.log and in no receipt and in no log entry. `mark` scopes the entry
@@ -340,6 +387,63 @@ def _calendar_module():
 
 
 REST_HOURS = {"short": 1, "long": 8}       # systems/dnd5e/system.md, "Rests"
+
+# Narrated, never enforced. The 24-hour limit is outside the SRD this engine
+# reads, so a second long rest still heals; the DM is told to narrate the limit.
+_LONG_REST_LIMIT = ("The once-per-24-hours limit applies; narrate it. "
+                    "The rest still resolves.")
+
+
+def _hour_of(data: dict) -> int | None:
+    """The in-world hour of a calendar dict: hours since year 0, day 1, hour 0.
+
+    Through `world.hour_of`, so the stamp and `world.in_game_hour` are one
+    formula and not two. The rest cannot call `in_game_hour` itself: the
+    advanced calendar is only staged, and the file still says the hour before
+    the rest. Loaded lazily for the same reason `_faction_store` loads it
+    lazily -- a campaign that ships without the world scripts still gets to
+    rest, it just has no clock to stamp.
+    """
+    try:
+        import world
+    except ImportError:
+        return None
+    return world.hour_of(data)
+
+
+def _prior_long_rest(value):
+    """An earlier stamp as an int, or None when the field is absent or junk."""
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _record_long_rest(state: dict, tokens, cal_data) -> list:
+    """Stamp each rested entity and warn when the new hour is inside 24 of the last.
+
+    Mutates `state` only. The caller stages that dict on the Transaction; this
+    writes nothing. A dead token did not rest. No calendar means no stamp and
+    no warning. Never refuses, skips, or clamps the heal `long_rest` already did.
+    """
+    hour = _hour_of(cal_data) if cal_data else None
+    if hour is None:
+        return []
+    lines = []
+    for token in tokens:
+        if token.dead:
+            continue
+        ent = state.get(token.name.lower())
+        if not isinstance(ent, dict):
+            continue
+        prev = _prior_long_rest(ent.get("last_long_rest"))
+        if prev is not None and hour - prev < 24:
+            lines.append(f"{token.name}: this long rest falls inside 24 hours of the last one. "
+                         f"{_LONG_REST_LIMIT}")
+        ent["last_long_rest"] = hour
+    return lines
 
 
 def calendar_step(campaign: str, rest_type: str) -> tuple:
@@ -519,9 +623,14 @@ def cmd_rest_campaign(args, camp_dir, campaign: str, roller: Roller = None) -> t
         else:
             tx.stage(path, new)
             written_sheets.append((name, path, sync.short_diff(old, new)))
-    tx.stage_json(pathlib.Path(camp_dir) / "tracker.json", sync.tracker_state(camp_dir, enc))
-
+    # The hour comes from the staged calendar, not from the file, which still
+    # shows the time before this rest. The stamp is set on the tracker dict
+    # before it is staged, so commit is the only write and a rollback drops it.
     cal_path, cal_data, cal_line = calendar_step(campaign, args.type)
+    state = sync.tracker_state(camp_dir, enc)
+    limit_lines = (_record_long_rest(state, targets, cal_data)
+                   if args.type == "long" else [])
+    tx.stage_json(pathlib.Path(camp_dir) / "tracker.json", state)
     if cal_path is not None:
         tx.stage_json(cal_path, cal_data)
     # Faction clocks move on whole days (scripts/calendar.py, _tick_world), which
@@ -535,6 +644,7 @@ def cmd_rest_campaign(args, camp_dir, campaign: str, roller: Roller = None) -> t
     out = list(lines)
     if cal_line:
         out.append(cal_line)
+    out.extend(limit_lines)
     for name, path, diff in written_sheets:
         if path is None:
             out.append(f"{name}: no sheet in characters/, nothing written.")
