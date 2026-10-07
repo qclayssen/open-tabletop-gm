@@ -100,7 +100,7 @@ _DISPLAY_CAMPAIGN = _SCRIPTS.parent / "display" / ".campaign"
 # encounter loaded is exactly how it was found broken.
 READ_ONLY = ("status", "options", "preview", "reachable", "approach", "targets", "log", "spells",
              "preview-area", "sight", "card", "budget", "day", "rate", "receipts", "formation",
-             "scene", "here", "invocations")
+             "scene", "here", "invocations", "propose")
 # `invocations` is here for the same reason `receipts` is: it reads the journal
 # this very section writes, so it must not write anything, must not roll, and
 # must not consume a pending command. A diagnosis tool that mutated the campaign
@@ -946,6 +946,20 @@ def run(args) -> int:
             text, data = encounter.cmd_day(args, camp_dir, _campaign(args))
         else:
             text, data = encounter.cmd_rate(args, camp_dir, _campaign(args))
+    elif args.cmd == "propose":
+        text, data = encounter.cmd_propose(args, camp_dir, _campaign(args))
+        if args.json:
+            print(json.dumps({"text": text, "result": data}, default=str, indent=1))
+        else:
+            print(text)
+        return 0
+    elif args.cmd == "accept":
+        text, data = encounter.cmd_accept(args, camp_dir, _campaign(args))
+        if args.json:
+            print(json.dumps({"text": text, "result": data}, default=str, indent=1))
+        else:
+            print(text)
+        return 0
     elif args.cmd == "formation":
         # `save` reads the board as it stands, so it needs the running encounter;
         # the other three must work with nothing running, which is exactly when
@@ -1332,6 +1346,25 @@ def parser() -> argparse.ArgumentParser:
                    help="'auto' (default) is every character sheet in the campaign")
     s.add_argument("--ruleset", choices=list(encounter.RULESETS),
                    help="defaults to the campaign's own system version")
+    s = sub.add_parser("propose", parents=c,
+                       help="generate a bounded, seeded encounter proposal (read-only)")
+    s.add_argument("--difficulty", choices=["easy", "medium", "hard"],
+                   default="medium", help="target difficulty band (default: medium)")
+    s.add_argument("--party", default="auto", metavar="auto|NAMES",
+                   help="'auto' (default) is every character sheet in the campaign")
+    s.add_argument("--map", default="", metavar="NAME",
+                   help="map name to place the encounter on")
+    s.add_argument("--monsters", default="", metavar="LIST",
+                   help='eligible monsters: "goblin x4, hobgoblin" (default: all SRD)')
+    s.add_argument("--max-enemies", type=int, default=8, metavar="N",
+                   help="maximum number of enemies (default: 8)")
+    s.add_argument("--proposal-seed", default="", metavar="SEED",
+                   help="seed for reproducible proposals (default: derived from inputs)")
+    s = sub.add_parser("accept", parents=c,
+                       help="accept a proposal and start combat")
+    s.add_argument("proposal_id", help="the proposal ID to accept")
+    s.add_argument("--force", action="store_true",
+                   help="accept even if validation fails (not recommended)")
     s = sub.add_parser("formation", parents=c,
                        help="save and replay a monster arrangement across maps")
     fs = s.add_subparsers(dest="formation_action", required=True, metavar="action")

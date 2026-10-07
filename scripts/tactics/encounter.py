@@ -408,3 +408,152 @@ def award_xp(camp_dir, rules, enc, campaign: str) -> list[str]:
                     f"{data['count']} monsters]"
                     + (" — recorded in xp-ledger.jsonl." if entries else "."))
     return lines
+
+
+# ── propose: generate a bounded, seeded encounter proposal ────────────────────
+
+def generate_proposal(camp_dir, rules, campaign: str, *,
+                      difficulty: str = "medium",
+                      party_spec: str = "auto",
+                      map_name: str = "",
+                      monsters: str = "",
+                      max_enemies: int = 8,
+                      seed: str = "") -> dict:
+    """Generate a bounded, seeded 2014 encounter proposal.
+
+    Returns a dict with:
+    - party: ordered [{name, level, square}]
+    - monsters: ordered [{name, square}]
+    - map: canonical map identity
+    - rating: {raw_xp, adjusted_xp, threshold, actual_band}
+    - target_band: the requested difficulty
+    - seed: effective seed used
+    - warning: terrain/tactics/resources/abilities caveat
+    - snapshot: digests of material inputs
+    - proposal_id: stable ID from canonical request/snapshot/placements
+
+    Raises CombatError with structured refusal on impossible constraints.
+    """
+    # Validate difficulty (2014 only, no deadly in v1)
+    if difficulty not in ("easy", "medium", "hard"):
+        if difficulty == "deadly":
+            raise CombatError(
+                "deadly",
+                "Deadly encounters are not supported in the first release. "
+                "Choose easy, medium, or hard.",
+                {"difficulty": difficulty},
+                ["Choose easy, medium, or hard instead."]
+            )
+        raise CombatError(
+            "invalid_difficulty",
+            f"Unknown difficulty: {difficulty!r}. Choose easy, medium, or hard.",
+            {"difficulty": difficulty},
+            ["Use easy, medium, or hard."]
+        )
+
+    # Resolve ruleset (2014 only for v1)
+    version = ruleset(campaign, "2014")
+    if version != "2014":
+        raise CombatError(
+            "unsupported_ruleset",
+            f"Encounter generator supports 2014 rules only. This campaign uses {version!r}.",
+            {"ruleset": version},
+            ["Use a 2014 campaign or pass --ruleset 2014."]
+        )
+
+    # Resolve party
+    party_levels = party(camp_dir, rules, party_spec)
+    if not party_levels:
+        raise CombatError(
+            "missing_party",
+            "No character sheets found. Add sheets to characters/ or pass --party.",
+            {"party": party_spec},
+            ["Add character sheets to the campaign."]
+        )
+
+    # Get budget data for target band
+    budget_data = rules.encounter_budget([lvl for _, lvl in party_levels], version)
+    tiers = budget_data["tiers"]
+    thresholds = budget_data["thresholds"]
+    tier_index = {"easy": 0, "medium": 1, "hard": 2}[difficulty]
+    target_threshold = thresholds[tier_index]
+
+    # Parse monster constraints
+    allowed_monsters = None
+    if monsters:
+        allowed_monsters = parse_monsters(monsters)
+
+    # Generate effective seed
+    import hashlib
+    effective_seed = seed if seed else hashlib.sha256(
+        f"{campaign}:{difficulty}:{party_spec}:{map_name}:{monsters}:{max_enemies}".encode("utf-8")
+    ).hexdigest()[:16]
+
+    # Build proposal using bounded search
+    # This is a simplified implementation - the full version would:
+    # 1. Load the map and validate it
+    # 2. Get eligible monsters from the SRD catalog
+    # 3. Run bounded search with the seed
+    # 4. Validate placements through the shared validator
+    # 5. Return the proposal with all required fields
+
+    # For now, return a structured refusal indicating the feature is not yet fully implemented
+    raise CombatError(
+        "not_implemented",
+        "The encounter generator is not yet fully implemented. "
+        "This is a placeholder for the bounded search and placement logic.",
+        {"difficulty": difficulty, "party": party_levels, "target_threshold": target_threshold},
+        ["Wait for the full implementation in a future release."]
+    )
+
+
+def cmd_propose(args, camp_dir, campaign: str) -> tuple[str, dict]:
+    """Handle the `propose` command: generate and display an encounter proposal."""
+    rules = _rules_for(campaign)
+    try:
+        proposal = generate_proposal(
+            camp_dir, rules, campaign,
+            difficulty=getattr(args, "difficulty", "medium"),
+            party_spec=getattr(args, "party", "auto"),
+            map_name=getattr(args, "map", ""),
+            monsters=getattr(args, "monsters", ""),
+            max_enemies=getattr(args, "max_enemies", 8),
+            seed=getattr(args, "proposal_seed", ""),
+        )
+    except CombatError as e:
+        # Return structured refusal
+        refusal = {
+            "ok": False,
+            "refusal": {
+                "code": e.args[0] if e.args else "unknown",
+                "message": e.args[1] if len(e.args) > 1 else str(e),
+                "details": e.args[2] if len(e.args) > 2 else {},
+                "suggestions": e.args[3] if len(e.args) > 3 else [],
+            }
+        }
+        return json.dumps(refusal, indent=2), refusal
+
+    # Format human-readable output
+    lines = [
+        f"Encounter Proposal ({proposal['target_band'].upper()})",
+        f"Party: {', '.join(f'{p['name']} L{p['level']}' for p in proposal['party'])}",
+        f"Map: {proposal['map']}",
+        f"Monsters: {', '.join(f'{m['name']}' for m in proposal['monsters'])}",
+        f"Rating: {proposal['rating']['adjusted_xp']} XP (threshold: {proposal['rating']['threshold']})",
+        f"Actual band: {proposal['rating']['actual_band']}",
+        f"Seed: {proposal['seed']}",
+        f"Warning: {proposal['warning']}",
+    ]
+    return "\n".join(lines), proposal
+
+
+def cmd_accept(args, camp_dir, campaign: str) -> tuple[str, dict]:
+    """Handle the `accept` command: accept a proposal and start combat."""
+    # This would validate the proposal against current state and start combat
+    # For now, return a structured refusal
+    raise CombatError(
+        "not_implemented",
+        "The accept command is not yet fully implemented.",
+        {},
+        ["Wait for the full implementation in a future release."]
+    )
