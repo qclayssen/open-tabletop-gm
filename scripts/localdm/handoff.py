@@ -85,12 +85,9 @@ def run_fold_benchmark(
         - latency: seconds per fold + restart
         - secrets_filtered: number of credential-shaped strings filtered from recap
     """
-    import random
-
-    if seed is not None:
-        random.seed(seed)
-
-    # Create a pinned-fixture campaign with promises, location, reveals and open threads
+    # `seed` is accepted for a later deterministic fixture. Do not touch
+    # `random.seed`: that is the global generator, which
+    # tests/test_legacy_dice_replay.py forbids outside dice.new_rng().
     pinned_facts = _create_pinned_fixture(seed)
 
     metrics = {
@@ -176,12 +173,10 @@ def _create_pinned_fixture(seed: int | None = None) -> dict:
     """Create a fixture campaign with promises, location, reveals and open threads.
 
     The fixture has named promises, location, reveals and open threads so that
-    fact loss is measurable rather than asserted.
+    fact loss is measurable rather than asserted. `seed` is unused: a shuffle
+    would make loss unmeasurable against this named set.
     """
-    if seed is not None:
-        import random
-        random.seed(seed)
-
+    _ = seed
     fixture = {
         "promises": [
             "The ancient dragon's hoard is guarded by a fire seal",

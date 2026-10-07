@@ -119,8 +119,11 @@ def test_a_state_md_forgery_is_dropped_by_the_allowlist(camp):
     assert FORGERY not in digest
     assert "The moon is full." not in digest, (
         "the forged heading carried its body out of the allowlisted section")
-    # And the genuine section still works.
-    assert "Current Situation" not in digest or True
+    # The forged heading terminated ## Current Situation with an empty body, so
+    # state_digest omits it. A filled genuine section is
+    # test_state_md_ordinary_sections_still_reach_the_dm. The `or True` that
+    # used to end this line made the assertion unable to fail.
+    assert "Current Situation" not in digest
 
 
 def test_state_md_ordinary_sections_still_reach_the_dm(camp):
