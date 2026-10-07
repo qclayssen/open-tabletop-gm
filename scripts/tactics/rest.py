@@ -2,7 +2,7 @@
 
     short_rest(enc, token_ids, roller)   1 hour: Hit Dice, short-rest features, Pact Magic
     long_rest(enc, token_ids)            8 hours: HP, half the Hit Dice, every spell slot
-    cmd_rest(args, enc, roller)          the `rest` command, on a running encounter
+    cmd_rest(args, enc, roller, campaign)  the `rest` command, on a running encounter
     cmd_rest_campaign(args, dir, name)   the same command with no fight running
     advance_calendar(campaign, kind)     move the in-world clock on by the rest
 
@@ -38,6 +38,12 @@ as one unit: the sheets, tracker.json, calendar.json, and the faction clocks the
 calendar would roll. That is the whole of what "out of combat" means here. The
 same engine, the same rules, and a party read from its own sheets instead of from
 a fight.
+
+A long rest then records when it ended: `_record_long_rest` stamps the in-world
+hour on every rested entity in tracker.json, and warns when that hour is inside
+24 of the previous stamp. Both paths do it, because it is the same rest. The
+limit is narrated and never enforced -- the heal happens either way, which is why
+this is a stamp on the entity and not a refusal in front of the command.
 """
 
 from __future__ import annotations
@@ -268,13 +274,51 @@ def _clear_long_rest_conditions(token: Token) -> list:
 
 # ─── the command ──────────────────────────────────────────────────────────────
 
-def cmd_rest(args, enc: Encounter, roller: Roller = None) -> tuple:
+def _stamp_long_rest(enc: Encounter, campaign: str, targets: list) -> list:
+    """The long rest's end hour on every rested entity, and the 24-hour warning.
+
+    The rest taken inside a fight is the same long rest as the one between
+    fights, so it records the same fact the same way: `_record_long_rest` on the
+    calendar `calendar_step` stages, which is the hour the rest *ends* at. The
+    file still shows the hour before it, and `advance_calendar` writes the
+    staged dict only after this returns, so reading the clock off disk here
+    would stamp the hour the rest started at.
+
+    Staged on the same Transaction the out-of-combat rest uses and committed
+    once, so a write that dies leaves no stamp behind. No campaign name, or a
+    campaign with no calendar, is no clock: nothing is stamped and nothing is
+    written.
+    """
+    camp_dir = getattr(enc, "campaign_dir", None)
+    if not camp_dir:
+        if not campaign:
+            return []
+        from paths import find_campaign
+        camp_dir = find_campaign(campaign)
+    path, cal_data, _line = calendar_step(campaign, "long")
+    if path is None:
+        return []
+    state = sync.tracker_state(camp_dir, enc)
+    lines = _record_long_rest(state, targets, cal_data)
+    tx = Transaction()
+    tx.stage_json(pathlib.Path(camp_dir) / "tracker.json", state)
+    tx.commit()
+    return lines
+
+
+def cmd_rest(args, enc: Encounter, roller: Roller = None, campaign: str = "") -> tuple:
     """The `rest short|long [--token NAME]` command, on the caller's encounter.
 
     Takes the encounter `cli.run` has already loaded rather than loading its
     own: the caller saves the copy it holds after every command, so a second
     load here would mean a second copy, and whichever was written last would be
     the one that did not rest.
+
+    `campaign` is the name `cli.run` resolved for this command, and is what
+    makes a long rest taken here the same event as one taken between fights: the
+    end hour is stamped on every rested entity, in tracker.json, off the same
+    staged calendar. Without it there is no clock and nothing is stamped, which
+    is the only difference between the two paths.
     """
     if enc.status != "active":
         raise CombatError("No combat is running. Rest between fights, or start one first.")
@@ -284,6 +328,9 @@ def cmd_rest(args, enc: Encounter, roller: Roller = None) -> tuple:
         lines = short_rest(enc, token_ids, roller)
     else:
         lines = long_rest(enc, token_ids)
+        # After the heal, never instead of it: the 24-hour limit is narrated
+        # (D-7), and a rest inside it still restores everything it would have.
+        lines += _stamp_long_rest(enc, campaign, _targets(enc, token_ids))
     # A Hit Die the GM said "--for-me" to is a die the engine rolled on a player's
     # behalf, and it went unrecorded: nothing called core.log here, so the roll was
     # in roller.log and in no receipt and in no log entry. `mark` scopes the entry
@@ -350,27 +397,18 @@ _LONG_REST_LIMIT = ("The once-per-24-hours limit applies; narrate it. "
 def _hour_of(data: dict) -> int | None:
     """The in-world hour of a calendar dict: hours since year 0, day 1, hour 0.
 
-    The same number `world.in_game_hour` reads off disk. The rest cannot call
-    that: the advanced calendar is only staged, and the file still says the
-    hour before the rest. No dict, or a dict with no day and month, is no clock.
+    Through `world.hour_of`, so the stamp and `world.in_game_hour` are one
+    formula and not two. The rest cannot call `in_game_hour` itself: the
+    advanced calendar is only staged, and the file still says the hour before
+    the rest. Loaded lazily for the same reason `_faction_store` loads it
+    lazily -- a campaign that ships without the world scripts still gets to
+    rest, it just has no clock to stamp.
     """
-    if not isinstance(data, dict) or not data:
-        return None
     try:
-        day, month = int(data["day"]), int(data["month"])
-        year = int(data.get("year") or 0)
-        hour = int(data.get("hour") or 0)
-    except (KeyError, TypeError, ValueError):
+        import world
+    except ImportError:
         return None
-    months = data.get("months")
-    per_year = len(months) if isinstance(months, list) and months else 12
-    month_len = data.get("month_length") or 30
-    try:
-        month_len = max(1, int(month_len))
-    except (TypeError, ValueError):
-        month_len = 30
-    return ((max(0, year) * per_year + (max(0, month) - 1)) * month_len
-            + (max(0, day) - 1)) * 24 + hour
+    return world.hour_of(data)
 
 
 def _prior_long_rest(value):

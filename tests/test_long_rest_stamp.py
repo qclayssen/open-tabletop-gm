@@ -9,6 +9,11 @@ and the heal still happens: a refusal would deny a heal the engine is not
 allowed to refuse. A short rest is a different event and must leave the stamp
 alone. A campaign with no calendar has no clock, so it stamps nothing and
 warns nothing.
+
+A long rest taken inside a fight is the same long rest: `cmd_rest` is handed the
+campaign too, and records the same hour off the same staged calendar, through
+the same Transaction the between-fights rest stages. One formula turns the clock
+into a number, and it lives in `world.hour_of`.
 """
 from __future__ import annotations
 
@@ -218,6 +223,104 @@ def test_tracker_state_merge_keeps_the_stamp(camp, capsys):
     assert merged["kairos"]["last_long_rest"] == stamped
     assert merged["mira"]["last_long_rest"] == 11
     assert merged["kairos"]["conditions"] == []
+
+
+# ─── one formula for the hour ─────────────────────────────────────────────────
+
+def test_world_hour_of_is_the_one_formula(camp, monkeypatch):
+    """before fix: `world.hour_of` does not exist and `rest._hour_of` is a second
+    copy of the arithmetic, free to drift from the clock it stamps.
+
+    Both readers have to go through it: patching the one function moves the
+    answer both of them give.
+    """
+    data = json.loads((camp / "calendar.json").read_text(encoding="utf-8"))
+    assert world.hour_of(data) == world.in_game_hour(camp) == rest._hour_of(data)
+    assert world.hour_of(dict(data, hour=data["hour"] + 1)) == world.hour_of(data) + 1
+    assert world.hour_of({}) is None, "no calendar is no clock, not a clock at zero"
+    assert world.hour_of("not a calendar") is None
+    assert world.hour_of({"month": 8, "day": "the fifteenth"}) is None
+
+    monkeypatch.setattr(world, "hour_of", lambda _data: 4242)
+    assert rest._hour_of(data) == 4242, "rest.py is not reading the shared formula"
+    assert world.in_game_hour(camp) == 4242
+
+
+# ─── the same stamp, inside a fight ───────────────────────────────────────────
+
+def start_fight(capsys, camp) -> None:
+    """A live encounter, the same one the in-fight rest tests start."""
+    code = cli.main(["-c", "demo", "start", "frog-pond", "--pc", "Kairos@B7",
+                     "--monster", "giant frog@J5", "--seed", "3"])
+    assert code == 0, capsys.readouterr().out
+    capsys.readouterr()
+    assert (camp / "combat" / "encounter.json").exists()
+
+
+def test_a_long_rest_inside_a_fight_stamps_the_end_hour(camp, capsys):
+    """before fix: `cli.run` hands the in-fight rest no campaign, so the one long
+    rest the engine already knows how to stamp records nothing here."""
+    start_fight(capsys, camp)
+    before = world.in_game_hour(camp)
+    code, out = run(capsys, "rest", "long")
+    assert code == 0, out
+    assert "Kairos: healed 6 HP (now 8/8)." in out, out
+    assert _LIMIT not in out, "a first rest has no earlier stamp to warn about"
+    stamp = tracker(camp)["kairos"]["last_long_rest"]
+    assert stamp == world.in_game_hour(camp), "the stamp must be the hour after the rest"
+    assert stamp == before + 8, (before, stamp)
+
+
+def test_a_second_long_rest_inside_a_fight_warns_and_still_resolves(camp, capsys):
+    """before fix: nothing was stamped, so nothing is compared and nothing warns."""
+    start_fight(capsys, camp)
+    assert run(capsys, "rest", "long")[0] == 0
+    first = tracker(camp)["kairos"]["last_long_rest"]
+
+    code, out = run(capsys, "rest", "long")
+    assert code == 0, out
+    assert _LIMIT in out, out
+    assert "cannot" not in out.lower() and "refus" not in out.lower(), out
+    assert "Hit Dice restored" in out, "the rest was refused, skipped, or clamped"
+    assert tracker(camp)["kairos"]["last_long_rest"] == first + 8
+
+
+def test_a_short_rest_inside_a_fight_leaves_the_stamp_alone(camp, capsys):
+    """before fix: an in-fight short rest cannot touch a stamp, because the
+    in-fight long rest never wrote one."""
+    start_fight(capsys, camp)
+    assert run(capsys, "rest", "short")[0] == 0
+    assert "last_long_rest" not in tracker(camp).get("kairos", {})
+    assert run(capsys, "rest", "long")[0] == 0
+    stamped = tracker(camp)["kairos"]["last_long_rest"]
+    assert run(capsys, "rest", "short")[0] == 0
+    assert tracker(camp)["kairos"]["last_long_rest"] == stamped
+
+
+def test_a_failed_write_inside_a_fight_leaves_no_stamp(camp, capsys, monkeypatch):
+    """before fix: the in-fight rest writes no stamp at all, and the failure
+    lands on the tracker write that follows the encounter save, so the fight is
+    already a night older when the rest it belongs to did not happen. The stamp
+    is staged and committed inside the rest, so a write that dies leaves the
+    tracker and the encounter exactly as they were."""
+    start_fight(capsys, camp)
+    on_disk = tracker(camp)
+    assert "last_long_rest" not in on_disk.get("kairos", {})
+    before = (camp / "tracker.json").read_text(encoding="utf-8")
+    fight_before = (camp / "combat" / "encounter.json").read_text(encoding="utf-8")
+    real = safeio.atomic_write_text
+
+    def boom(path, text, *a, **k):
+        if pathlib.Path(path).name == "tracker.json":
+            raise OSError("disk full")
+        return real(path, text, *a, **k)
+
+    monkeypatch.setattr(safeio, "atomic_write_text", boom)
+    with pytest.raises(OSError, match="disk full"):
+        run(capsys, "rest", "long")
+    assert (camp / "tracker.json").read_text(encoding="utf-8") == before
+    assert (camp / "combat" / "encounter.json").read_text(encoding="utf-8") == fight_before, (
+        "the rest was written before the stamp it belongs to")
 
 
 class _NoCalendar:

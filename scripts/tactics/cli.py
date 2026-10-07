@@ -1111,7 +1111,10 @@ def run(args) -> int:
         elif cmd == "end-turn":
             text = engine.end_turn(enc, roller)["text"]
         elif cmd == "rest":
-            text, data = rest.cmd_rest(args, enc, roller)
+            # The campaign name, so a long rest taken in a fight stamps the same
+            # end hour in tracker.json as one taken between fights: the rest is
+            # the same event whether or not an encounter happens to be loaded.
+            text, data = rest.cmd_rest(args, enc, roller, _campaign(args))
             moved = rest.advance_calendar(_campaign(args), args.type)
             if moved:
                 text += "\n" + moved
