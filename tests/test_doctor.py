@@ -104,6 +104,35 @@ def test_http_429_says_quota_was_not_measured(tmp_path):
     assert "not measured" in text
 
 
+def test_unset_reasoning_warns_for_a_mandatory_model(tmp_path):
+    rows = _quiet(
+        campaign_root=_one(tmp_path),
+        env={"GM_DM_MODEL": "gpt-oss", "GM_ADVISOR_MODEL": "gpt-oss"},
+        probe=lambda *a: None,
+    )
+    text = doctor.format_report(rows)
+    assert "WARN reasoning" in text
+    assert "GM_REASONING=medium" in text
+
+
+def test_qwen_default_does_not_warn(tmp_path):
+    rows = _quiet(
+        campaign_root=_one(tmp_path),
+        env={"GM_DM_MODEL": "qwen3.5", "GM_ADVISOR_MODEL": "qwen3.5"},
+        probe=lambda *a: None,
+    )
+    assert doctor.format_report(rows) == ""
+
+
+def test_reasoning_set_prints_nothing(tmp_path):
+    rows = _quiet(
+        campaign_root=_one(tmp_path),
+        env={"GM_DM_MODEL": "gpt-oss", "GM_ADVISOR_MODEL": "gpt-oss", "GM_REASONING": "medium"},
+        probe=lambda *a: None,
+    )
+    assert doctor.format_report(rows) == ""
+
+
 def test_no_answer_budget_names_gm_reasoning(tmp_path):
     rows = _quiet(campaign_root=_one(tmp_path), probe=lambda *a: "no-answer-budget")
     text = doctor.format_report(rows)
