@@ -189,10 +189,11 @@ class FrameGeometry(unittest.TestCase):
         # shapes are the same size on the board and only the outline differs.
         # The geometry now lives in one `shape` object that is drawn twice --
         # filled underneath, stroked over the top -- so that a portrait cannot
-        # change the silhouette. The radius is still C / 2 - 4 for both.
+        # change the silhouette. frameRadius is C/2 - 4 when the token is 1x1.
         js = JS.read_text(encoding="utf-8")
-        self.assertIn("{ tag: 'circle', geo: { cx, cy, r: C / 2 - 4 } }", js)
-        self.assertIn("{ tag: 'path', geo: { d: octagon(cx, cy, C / 2 - 4) } }", js)
+        self.assertIn("Math.min(w, h)", js)
+        self.assertIn("{ tag: 'circle', geo: { cx, cy, r: frameRadius } }", js)
+        self.assertIn("{ tag: 'path', geo: { d: octagon(cx, cy, frameRadius) } }", js)
 
     def test_every_side_has_its_own_frame_colour_and_word(self):
         out = _run("return {cls: Object.values(SIDES).map(s => s.cls), "
@@ -384,7 +385,7 @@ class ScriptAndStylesheetAgree(unittest.TestCase):
         js = self.js()
         self.assertRegex(js, r"const isEnemy = t\.side === 'enemy'")
         self.assertRegex(js, r"\? \{ tag: 'path', geo: \{ d: octagon\(")
-        self.assertRegex(js, r": \{ tag: 'circle', geo: \{ cx, cy, r: C / 2 - 4 \} \}")
+        self.assertRegex(js, r": \{ tag: 'circle', geo: \{ cx, cy, r: frameRadius \} \}")
         # One helper draws it, so the fill and the frame cannot drift apart.
         self.assertIn("const shapeNode = (style, parent) =>", js)
         self.assertIn("shapeNode('fill:none;stroke:var(--tx-panel);stroke-width:2', g);", js)

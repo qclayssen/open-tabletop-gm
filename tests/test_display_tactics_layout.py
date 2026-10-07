@@ -100,6 +100,28 @@ class MeasuredLayout(BrowserTestCase):
         return page.evaluate(PROBE)
 
     # ── must-have 6: a table display reads from across the table ───────────
+    def test_a_2x2_body_is_larger_than_a_1x1_and_a_missing_size_stays_1x1(self):
+        """The ring is the body the player sees. A 2x2 covers more of the board
+        than a 1x1, and a snapshot with no width/height still draws the 1x1 ring
+        (C/2 - 1, C = 32 user units). Measured on the element, not the source."""
+        page = self.open_page(size=VIEWPORTS["table"], wait=200)
+        got = page.evaluate("""() => {
+          const snap = JSON.parse(JSON.stringify(window.__SNAP));
+          const big = snap.tokens.find(t => t.id === 'frog-1');
+          big.width = 2; big.height = 2;
+          const small = snap.tokens.find(t => t.id === 'kairos');
+          delete small.width; delete small.height;
+          window.Tactics.update(snap);
+          const ring = id => +document.querySelector(
+            `.tx-tok[data-id="${id}"] .tx-ring`).getAttribute('r');
+          const bars = id => document.querySelectorAll(
+            `.tx-tok[data-id="${id}"] rect`).length;
+          return {big: ring('frog-1'), small: ring('kairos'), bars: bars('frog-1')};
+        }""")
+        self.assertAlmostEqual(got["small"], 15, places=2)
+        self.assertGreater(got["big"], got["small"] + 10)
+        self.assertGreaterEqual(got["bars"], 2)
+
     def test_a_table_display_draws_squares_of_at_least_40px(self):
         got = self.panel("table")
         self.assertGreaterEqual(got["cell"], 40)

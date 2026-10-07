@@ -89,7 +89,18 @@
   const myTurn = () => { const t = current(); return !!(snap && snap.status === 'active' && t && t.controller === 'player' && !t.dead); };
   const reduced = () => window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
   const hostile = (a, b) => (a.side === 'enemy') !== (b.side === 'enemy');
-  const adjacent = (a, b) => Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y)) <= 1;
+  // Same test as grid.adjacent: squares touch, not anchors. A 1x1 pair is
+  // still Chebyshev <= 1. A 2x2 beside a Medium shares an edge the anchors miss.
+  const adjacent = (a, b) => {
+    const aw = a.width || 1, ah = a.height || 1, bw = b.width || 1, bh = b.height || 1;
+    return a.x - 1 <= b.x + bw - 1 && b.x <= a.x + aw
+        && a.y - 1 <= b.y + bh - 1 && b.y <= a.y + ah;
+  };
+  const squaresOf = t => {
+    const w = t.width || 1, h = t.height || 1, out = [];
+    for (let dx = 0; dx < w; dx++) for (let dy = 0; dy < h; dy++) out.push(label(t.x + dx, t.y + dy));
+    return out;
+  };
   const living = () => ((snap && snap.tokens) || []).filter(t => !t.dead);
   const sqOf = t => label(t.x, t.y);
 
@@ -1403,16 +1414,19 @@
   // Every number below is multiplied by uu, which is 1 at cell = 32, so the
   // badge renders at its designed size at every cell and keeps its shape.
   function badge(layer, t, text, kind) {
-    const u = ui.uu;
-    svg('rect', { x: t.x * C + C - 22 * u, y: t.y * C - 6 * u, width: 28 * u, height: 14 * u,
+    const u = ui.uu, w = t.width || 1;
+    svg('rect', { x: t.x * C + w * C - 22 * u, y: t.y * C - 6 * u, width: 28 * u, height: 14 * u,
                   rx: 3 * u, class: 'tx-pct-bg' + (kind ? ' ' + kind : '') }, layer);
-    const p = svg('text', { x: t.x * C + C - 8 * u, y: t.y * C + 5 * u,
+    const p = svg('text', { x: t.x * C + w * C - 8 * u, y: t.y * C + 5 * u,
                             'text-anchor': 'middle', class: 'tx-pct' }, layer);
     p.textContent = text;
   }
 
   function drawToken(t) {
-    const cx = t.x * C + C / 2, cy = t.y * C + C / 2;
+    const w = t.width || 1, h = t.height || 1;
+    // Body centre of the WxH footprint, anchored at (t.x, t.y). w = h = 1
+    // is the old centre, so a 1x1 token does not move.
+    const cx = t.x * C + w * C / 2, cy = t.y * C + h * C / 2;
     const cls = ['tx-tok'];
     if (t.id === snap.current) cls.push('tx-now');
     if (t.dead) cls.push('tx-dead');
@@ -1425,7 +1439,10 @@
       'aria-label': `${t.name}, ${sideOf(t).word}, ${t.dead ? 'dead' : t.hp + ' of ' + t.max_hp + ' HP'}, AC ${ac}, ${label(t.x, t.y)}` +
         (tg.length ? ', ' + tg.join(', ') : '') + (mark && mark.say ? ', ' + mark.say : '') }, ui.tokenLayer);
     const side = sideOf(t);
-    svg('circle', { cx, cy, r: C / 2 - 1, class: 'tx-ring' }, g);
+    // Ring fits the smaller side of the body, with the same 1px inset a 1x1
+    // has always had (C/2 - 1). The selection highlight is this ring.
+    const ringRadius = Math.floor(C / 2 * Math.min(w, h)) - 1;
+    svg('circle', { cx, cy, r: ringRadius, class: 'tx-ring' }, g);
     // The frame is what says whose turn-relevant creature this is: a notched
     // octagon for an enemy, a round frame for everyone else. Side stays
     // readable in greyscale, at a glance, and to a colour-blind player.
@@ -1443,9 +1460,10 @@
     // The silhouette, as tag + geometry. One description, drawn twice: once as
     // the fill underneath and once as the frame over the top, so the two can
     // never drift apart.
+    const frameRadius = Math.floor(C / 2 * Math.min(w, h)) - 4;
     const shape = isEnemy
-      ? { tag: 'path', geo: { d: octagon(cx, cy, C / 2 - 4) } }
-      : { tag: 'circle', geo: { cx, cy, r: C / 2 - 4 } };
+      ? { tag: 'path', geo: { d: octagon(cx, cy, frameRadius) } }
+      : { tag: 'circle', geo: { cx, cy, r: frameRadius } };
     // svg() takes (tag, attrs, parent) -- three. The style belongs in attrs, or
     // it lands in the parent slot and the call throws.
     const shapeNode = (style, parent) => svg(shape.tag, Object.assign({}, shape.geo, { style }), parent);
@@ -1482,7 +1500,7 @@
       const clip = svg('clipPath', { id: clipId }, ui.defsLayer);
       svg(shape.tag, shape.geo, clip);
       img = svg('image', {
-        class: 'tx-art', x: cx - C / 2 + 2, y: cy - C / 2 + 2, width: C - 4, height: C - 4,
+        class: 'tx-art', x: t.x * C + 2, y: t.y * C + 2, width: w * C - 4, height: h * C - 4,
         preserveAspectRatio: 'xMidYMid slice', 'clip-path': `url(#${clipId})`,
         href: '/tokens/' + art.split('/').pop()
       }, g);
@@ -1495,8 +1513,8 @@
     shapeNode('fill:none;stroke:var(--tx-panel);stroke-width:2', g);
     if (!t.dead) {
       const pct = Math.max(0, t.hp / Math.max(1, t.max_hp));
-      svg('rect', { x: t.x * C + 4, y: t.y * C + C - 5, width: C - 8, height: 3, style: 'fill:var(--tx-line)' }, g);
-      svg('rect', { x: t.x * C + 4, y: t.y * C + C - 5, width: (C - 8) * pct, height: 3,
+      svg('rect', { x: t.x * C + 4, y: t.y * C + h * C - 5, width: w * C - 8, height: 3, style: 'fill:var(--tx-line)' }, g);
+      svg('rect', { x: t.x * C + 4, y: t.y * C + h * C - 5, width: (w * C - 8) * pct, height: 3,
                     style: 'fill:' + (pct <= .25 ? 'var(--tx-danger)' : 'var(--tx-heal)') }, g);
       // Small corner markers: C = concentrating (top left), R = a readied action (top right).
       // Inset and sized in pixels, like every other piece of chrome that exists
@@ -1504,7 +1522,7 @@
       // minimum, and the glyph in it was 2.5.
       const u = ui.uu;
       if (t.concentration) marker(g, t.x * C + 5 * u, t.y * C + 5 * u, 'C', 'tx-conc');
-      if (t.readied) marker(g, t.x * C + C - 5 * u, t.y * C + 5 * u, 'R', 'tx-ready');
+      if (t.readied) marker(g, t.x * C + w * C - 5 * u, t.y * C + 5 * u, 'R', 'tx-ready');
       conditionBadges(g, t);
     }
     if (mark && mark.badge) badge(g, t, mark.badge, mark.ally ? 'tx-ally' : '');
@@ -1527,7 +1545,8 @@
     if (list.length > shown.length) codes.push('+' + (list.length - shown.length));
     const u = ui.uu;
     codes.forEach((code, i) => {
-      const x = t.x * C + 1 * u + i * 16 * u, y = t.y * C + C - 20 * u;
+      const bh = t.height || 1;
+      const x = t.x * C + 1 * u + i * 16 * u, y = t.y * C + bh * C - 20 * u;
       svg('rect', { x, y, width: 15 * u, height: 12 * u, rx: 3 * u,
                     class: 'tx-cond' + (code[0] === '+' ? ' tx-cond-more' : '') }, g);
       const tx = svg('text', { x: x + 7.5 * u, y: y + 9 * u, 'text-anchor': 'middle',
@@ -1571,7 +1590,17 @@
       const pts = pv.path.map(parseSq).filter(Boolean).map(p => `${p[0] * C + C / 2},${p[1] * C + C / 2}`).join(' ');
       svg('polyline', { points: pts, class: 'tx-path' + (pv.opportunity_attacks && pv.opportunity_attacks.length ? ' tx-risky' : '') }, o);
       const end = parseSq(pv.path[pv.path.length - 1]);
-      const f = svg('text', { x: end[0] * C + C / 2, y: end[1] * C - 3, 'text-anchor': 'middle', class: 'tx-feet' }, o);
+      const me = current();
+      const dw = (me && me.width) || 1, dh = (me && me.height) || 1;
+      if (dw > 1 || dh > 1) {
+        for (let dx = 0; dx < dw; dx++) for (let dy = 0; dy < dh; dy++) {
+          svg('rect', {
+            x: (end[0] + dx) * C + 1, y: (end[1] + dy) * C + 1, width: C - 2, height: C - 2,
+            style: 'fill:none;stroke:var(--tx-quan);stroke-width:2',
+          }, o);
+        }
+      }
+      const f = svg('text', { x: end[0] * C + dw * C / 2, y: end[1] * C - 3, 'text-anchor': 'middle', class: 'tx-feet' }, o);
       f.textContent = pv.feet + ' ft';
     }
   }
@@ -1580,13 +1609,15 @@
   // back in, so the edge outlines the area rather than boxing each token.
   function closeHoles(set) {
     const out = Object.assign({}, set), me = current();
-    if (me) out[sqOf(me)] = 0;
+    if (me) for (const sq of squaresOf(me)) out[sq] = 0;
     for (const t of living()) {
-      const sq = sqOf(t);
-      if (sq in out) continue;
-      const n = [[0, -1], [0, 1], [-1, 0], [1, 0]].map(([dx, dy]) => [t.x + dx, t.y + dy])
-        .filter(([x, y]) => x >= 0 && y >= 0 && x < ui.W && y < ui.H);
-      if (n.every(([x, y]) => label(x, y) in out)) out[sq] = 0;
+      for (const sq of squaresOf(t)) {
+        if (sq in out) continue;
+        const p = parseSq(sq); if (!p) continue;
+        const n = [[0, -1], [0, 1], [-1, 0], [1, 0]].map(([dx, dy]) => [p[0] + dx, p[1] + dy])
+          .filter(([x, y]) => x >= 0 && y >= 0 && x < ui.W && y < ui.H);
+        if (n.length && n.every(([x, y]) => label(x, y) in out)) out[sq] = 0;
+      }
     }
     return out;
   }
@@ -1647,7 +1678,12 @@
       }
       for (const a of pv.affected || []) {
         const t = tokenById(a.id); if (!t) continue;
-        svg('circle', { cx: t.x * C + C / 2, cy: t.y * C + C / 2, r: C / 2 - 1, class: 'tx-caught' + (a.ally ? ' tx-ally' : '') }, ui.markLayer);
+        const w = t.width || 1, h = t.height || 1;
+        svg('circle', {
+          cx: t.x * C + w * C / 2, cy: t.y * C + h * C / 2,
+          r: Math.floor(C / 2 * Math.min(w, h)) - 1,
+          class: 'tx-caught' + (a.ally ? ' tx-ally' : ''),
+        }, ui.markLayer);
         const b = 'fail_percent' in a ? a.fail_percent + '%' : 'hit_percent' in a ? a.hit_percent + '%' : 'darts' in a ? '×' + a.darts : '';
         if (b) badge(ui.markLayer, t, b, a.ally ? 'tx-ally' : '');
       }
