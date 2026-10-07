@@ -716,6 +716,12 @@ class DnD5e(Rules):
                                 player=player, crit=crit)
                 parts.append({"amount": d.total, "type": p.get("type", "")})
             out["damage"] = self.damage(target, parts, crit=crit, ctx=ctx)
+        # On the d20, after damage() has a total. The damage die above is a
+        # second Roll and stays blank. A miss leaves damage unset so the dict
+        # has no damage key: 0 is a hit that dealt nothing.
+        r.hit = hit
+        if hit:
+            r.damage = out["damage"]["total"]
         tag = " (CRIT)" if crit else " (nat 1)" if natural == 1 else ""
         adv = f", {mode}" if mode != "normal" else ""
         cover = f", +{ctx.cover} cover" if ctx.cover else ""

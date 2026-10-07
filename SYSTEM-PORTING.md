@@ -156,7 +156,11 @@ r.odds = {"percent": chance["percent"], "label": "to hit",
           "about": target.id, "advantage": mode}
 ```
 
-`percent` is the number the display shows, `label` is what it is about in your system's words, `about` is the id of the token the number belongs to (the display floats it over that square), and `advantage` is for your own use. Call `hit_chance`/`save_chance` for this rather than recomputing: one function means the badge the player chose on and the number printed beside the result cannot disagree. Leave `odds` unset on rolls nobody can doubt (damage dice) and on anything your system has no odds for; the total shows either way. Note the redaction rule below before adding anything else to it.
+`percent` is the number the display shows, `label` is what it is about in your system's words, `about` is the id of the token the number belongs to (the display floats it over that square), and `advantage` is for your own use. Call `hit_chance`/`save_chance` for this rather than recomputing: one function means the badge the player chose on and the number printed beside the result cannot disagree. Leave `odds` unset on rolls nobody can doubt (damage dice) and on anything your system has no odds for; the total shows either way.
+
+**Put the outcome on that same d20, once damage is resolved.** An attack rolls the d20 and then, only on a hit, the damage dice. Both `Roll`s land in one log entry. Set `hit` and `damage` on the d20 only, after `damage()` returns, so a reader takes one outcome from one roll. `damage` is the post-mitigation integer, `damage()["total"]`, not the damage result dict. A miss sets `hit` to `False` and leaves `damage` unset: `to_dict` then has no `damage` key. Do not write `0` for a miss. `0` is a hit that dealt nothing. Leave both fields at their defaults on the damage die, on saves, and on any roll that is not an attack. The defaults are there so those callers do not have to supply them.
+
+The redaction rule, for `odds` and for these two fields alike: they live on the roll because `sight.redact_log` drops `rolls` wholesale for an entry that names a creature the players cannot see. A `hit` or a `damage` sitting beside `rolls` on the log entry would survive that and give the result away.
 
 | Area | Method | Returns |
 |------|--------|---------|
