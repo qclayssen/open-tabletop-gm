@@ -490,23 +490,76 @@ class Session:
         """Scene-relevant lore from the campaign graph, or "" when there is none.
 
         #276. `gm_graph` already extracts scene-relevant subgraphs and is wired
-        into `/gm load`; nothing in `localdm/` called it, so `play.py` narrated
-        with the full `notes_digest` every turn. This is the wiring.
+        into `/gm load`; this is the wiring into the turn path so the DM narrates
+        against scene-relevant lore rather than the full `notes_digest` every turn.
 
         THE CONTRACT: a campaign with no `graph.json` must behave EXACTLY as it
         does today. So every failure path returns "" -- no graph, an
         unparseable graph, a graph whose nodes do not resolve, an import that
-        does not land -- and the caller falls back to `notes_digest`. The graph
-        is an optimisation, and an optimisation that can raise into the hot turn
-        path is a new failure mode wearing a feature's clothes.
+        does not land, or a cyclic graph -- and the caller falls back to
+        `notes_digest`. The graph is an optimisation, and an optimisation that
+        can raise into the hot turn path is a new failure mode wearing a
+        feature's clothes.
 
-        `present` is what `state.md` says is on-scene. It is a hint: a scene in
-        a carriage has no place node, and the lexical half of the rank still
-        works, so an unresolved seed costs precision rather than the feature.
+        `present` is what `state.md` says is on-scene (via `_scene_present()`),
+        used as seeds for the graph expansion. Relevance, not adjacency, is the
+        design constraint per #276: two things adjacent in the graph may not both
+        be relevant to the current scene.
+
+        --hops DEFAULT: 2. This is a budget/latency trade selected for a 24B-class
+        local model at the Phase 6 budget ceiling; it is not a correctness value
+        and must not be hardcoded into relevance logic.
+
+        OUTPUT DESTINATION: the scene-context string is placed into the digest
+        via `_digest()` at line 561, joining with `state_digest` and
+        `sheet_digest`. It does not enter the user message directly; advisor
+        notes (Phase 6 constraint 6) still go to the user message and are never
+        folded, so scene-context does not interact with that code path.
+
+        Returns "" when the graph is absent, unparseable, seeds resolve to
+        nothing, or any error obtainable from gm_graph. The caller in
+        `_digest()` then falls back to `context.notes_digest()`.
         """
+        import sys
+        from pathlib import Path
+        # Ensure gm_graph is importable from scripts/
+        if "open-tabletop-gm/scripts" not in sys.path:
+            sys.path.insert(0, "open-tabletop-gm/scripts")
         try:
             import gm_graph
         except ImportError:
+            return ""
+
+        try:
+            # Load graph data from campaign graph.json
+            graph_path = Path(self.campaign) / "graph.json" if Path(self.campaign).is_dir() \
+                else (self.camp_dir / "graph.json")
+            if not graph_path.exists():
+                return ""
+            data = gm_graph._load(str(graph_path))
+
+            # Seeds: NPCs the DM has declared on-scene; lexical rank still works
+            # if seeds are empty, so an unresolved seed costs precision not failure.
+            seeds: list = self._scene_present().split(",") if self._scene_present() else []
+            # Filter empty strings from split
+            seeds = [s.strip() for s in seeds if s.strip()]
+
+            # Hops: budget/latency trade for a 24B-class local model at Phase 6 ceiling.
+            # Chosen as 2; see _scene_notes docstring for the rationale.
+            hops = 2
+
+            # BFS from seeds, hops-bounded, only traversing edges active at current session
+            sub = gm_graph._expand(data, seeds, hops, None)
+
+            # Render as markdown text for inclusion in the prompt
+            note = gm_graph.render_subgraph(sub, None)
+            # render_subgraph may return "" if sub is empty; that is fine —
+            # the fallthrough to notes_digest in _digest() handles it.
+            return note if note else ""
+        except Exception:
+            # Every failure path returns "" so the turn degrades to today's
+            # behaviour (full notes_digest). An raising optimisation is a new
+            # failure mode wearing a feature's clothes.
             return ""
         try:
             selection = gm_graph.scene_nodes(
