@@ -45,7 +45,8 @@ def format_report(rows: list) -> str:
     for row in rows:
         if row.status == "ok":
             continue
-        lines.append(f"FAIL {row.name}")
+        label = "WARN" if row.status == "warn" else "FAIL"
+        lines.append(f"{label} {row.name}")
         lines.append(f"  cause: {row.cause}")
         lines.append(f"  fix: {row.fix}")
     return "\n".join(lines)
@@ -73,6 +74,8 @@ def run(env=None, probe=None, budget: float = BUDGET_S, per_call: float = PER_CA
         pairs.append(("advisor", advisor))
     for role, model in pairs:
         rows.append(_endpoint_row(role, model, probe, deadline, clock, per_call))
+    if not any(row.name == "reasoning" and row.status != "ok" for row in rows):
+        rows.append(_reasoning_config_row(env))
     return rows
 
 
@@ -81,7 +84,7 @@ def main(argv=None, **kwargs) -> int:
     text = format_report(rows)
     if text:
         print(text)
-    return 0 if all(row.status == "ok" for row in rows) else 1
+    return 1 if any(row.status == "fail" for row in rows) else 0
 
 
 def _python_row(version) -> Row:
@@ -187,6 +190,27 @@ def _live_probe(env, role, model, timeout):
     except Exception as exc:
         return _classify_error(exc)
     return None
+
+
+def _reasoning_config_row(env) -> Row:
+    """Warn when a model cannot run with the default and GM_REASONING was not set.
+
+    The default stays `none`. Reporting is the remedy; existing sessions are
+    not moved.
+    """
+    value = env.get("GM_REASONING")
+    if value is not None and value.strip():
+        return Row("reasoning", "ok")
+    model = (env.get("GM_DM_MODEL") or "")
+    from localdm.llm import REASONING_BY_MODEL
+    for needle, setting in REASONING_BY_MODEL:
+        if needle in model.lower() and setting not in ("", "none", "off"):
+            return Row(
+                "reasoning", "warn",
+                f"GM_REASONING is unset and {model} requires reasoning.",
+                f"Set GM_REASONING={setting}.",
+            )
+    return Row("reasoning", "ok")
 
 
 def _reasoning_value(value: str):
