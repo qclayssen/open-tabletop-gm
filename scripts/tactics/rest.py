@@ -341,6 +341,72 @@ def _calendar_module():
 
 REST_HOURS = {"short": 1, "long": 8}       # systems/dnd5e/system.md, "Rests"
 
+# Narrated, never enforced. The 24-hour limit is outside the SRD this engine
+# reads, so a second long rest still heals; the DM is told to narrate the limit.
+_LONG_REST_LIMIT = ("The once-per-24-hours limit applies; narrate it. "
+                    "The rest still resolves.")
+
+
+def _hour_of(data: dict) -> int | None:
+    """The in-world hour of a calendar dict: hours since year 0, day 1, hour 0.
+
+    The same number `world.in_game_hour` reads off disk. The rest cannot call
+    that: the advanced calendar is only staged, and the file still says the
+    hour before the rest. No dict, or a dict with no day and month, is no clock.
+    """
+    if not isinstance(data, dict) or not data:
+        return None
+    try:
+        day, month = int(data["day"]), int(data["month"])
+        year = int(data.get("year") or 0)
+        hour = int(data.get("hour") or 0)
+    except (KeyError, TypeError, ValueError):
+        return None
+    months = data.get("months")
+    per_year = len(months) if isinstance(months, list) and months else 12
+    month_len = data.get("month_length") or 30
+    try:
+        month_len = max(1, int(month_len))
+    except (TypeError, ValueError):
+        month_len = 30
+    return ((max(0, year) * per_year + (max(0, month) - 1)) * month_len
+            + (max(0, day) - 1)) * 24 + hour
+
+
+def _prior_long_rest(value):
+    """An earlier stamp as an int, or None when the field is absent or junk."""
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _record_long_rest(state: dict, tokens, cal_data) -> list:
+    """Stamp each rested entity and warn when the new hour is inside 24 of the last.
+
+    Mutates `state` only. The caller stages that dict on the Transaction; this
+    writes nothing. A dead token did not rest. No calendar means no stamp and
+    no warning. Never refuses, skips, or clamps the heal `long_rest` already did.
+    """
+    hour = _hour_of(cal_data) if cal_data else None
+    if hour is None:
+        return []
+    lines = []
+    for token in tokens:
+        if token.dead:
+            continue
+        ent = state.get(token.name.lower())
+        if not isinstance(ent, dict):
+            continue
+        prev = _prior_long_rest(ent.get("last_long_rest"))
+        if prev is not None and hour - prev < 24:
+            lines.append(f"{token.name}: this long rest falls inside 24 hours of the last one. "
+                         f"{_LONG_REST_LIMIT}")
+        ent["last_long_rest"] = hour
+    return lines
+
 
 def calendar_step(campaign: str, rest_type: str) -> tuple:
     """What the clock would read after this rest, without writing it.
@@ -519,9 +585,14 @@ def cmd_rest_campaign(args, camp_dir, campaign: str, roller: Roller = None) -> t
         else:
             tx.stage(path, new)
             written_sheets.append((name, path, sync.short_diff(old, new)))
-    tx.stage_json(pathlib.Path(camp_dir) / "tracker.json", sync.tracker_state(camp_dir, enc))
-
+    # The hour comes from the staged calendar, not from the file, which still
+    # shows the time before this rest. The stamp is set on the tracker dict
+    # before it is staged, so commit is the only write and a rollback drops it.
     cal_path, cal_data, cal_line = calendar_step(campaign, args.type)
+    state = sync.tracker_state(camp_dir, enc)
+    limit_lines = (_record_long_rest(state, targets, cal_data)
+                   if args.type == "long" else [])
+    tx.stage_json(pathlib.Path(camp_dir) / "tracker.json", state)
     if cal_path is not None:
         tx.stage_json(cal_path, cal_data)
     # Faction clocks move on whole days (scripts/calendar.py, _tick_world), which
@@ -535,6 +606,7 @@ def cmd_rest_campaign(args, camp_dir, campaign: str, roller: Roller = None) -> t
     out = list(lines)
     if cal_line:
         out.append(cal_line)
+    out.extend(limit_lines)
     for name, path, diff in written_sheets:
         if path is None:
             out.append(f"{name}: no sheet in characters/, nothing written.")

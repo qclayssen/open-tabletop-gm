@@ -81,10 +81,17 @@ def tracker_state(camp_dir, enc, drop_monsters: bool = False) -> dict:
             continue
         ent = state.setdefault(key, {"name": t.name, "conditions": [], "concentration": None,
                                      "effects": [], "death_saves": {}})
+        # last_long_rest is the in-world hour a long rest finished, written by
+        # rest.py onto this same dict. It is not a condition, so rewriting the
+        # fields this sync owns must put the hour back: a short rest, and every
+        # later combat sync, leave it where it was.
+        kept_rest = ent.get("last_long_rest") if isinstance(ent, dict) else None
         ent["conditions"] = list(t.conditions)
         ent["concentration"] = t.concentration
         ent["death_saves"] = {"successes": t.death_saves["successes"],
                               "failures": t.death_saves["failures"], "stable": t.stable}
+        if kept_rest is not None:
+            ent["last_long_rest"] = kept_rest
     return state
 
 
