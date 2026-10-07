@@ -88,7 +88,7 @@ def _python_row(version) -> Row:
     err = _start().check_python(version)
     if not err:
         return Row("python", "ok")
-    return Row("python", "fail", err, "Install Python 3.10 or newer and rerun python3 scripts/doctor.py.")
+    return Row("python", "fail", err, "Install Python 3.14 or newer and rerun python3 scripts/doctor.py.")
 
 
 def _flask_row(present) -> Row:
