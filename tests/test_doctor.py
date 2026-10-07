@@ -17,7 +17,7 @@ def _quiet(**kwargs):
     env.update(kwargs.pop("env", {}))
     return doctor.run(
         env=env,
-        python_version=kwargs.pop("python_version", (3, 10)),
+        python_version=kwargs.pop("python_version", (3, 14)),
         flask_present=kwargs.pop("flask_present", True),
         campaign_root=root,
         srd_message=kwargs.pop("srd_message", ""),
@@ -47,11 +47,11 @@ def test_passing_checks_print_nothing(tmp_path):
 
 
 def test_old_python_names_the_version_and_the_install():
-    rows = _quiet(python_version=(3, 9), probe=lambda *a: None, campaign_root=_camp())
+    rows = _quiet(python_version=(3, 13), probe=lambda *a: None, campaign_root=_camp())
     text = doctor.format_report(rows)
     assert "python" in text
-    assert "3.9" in text
-    assert "3.10" in text
+    assert "3.13" in text
+    assert "3.14" in text
 
 
 def test_missing_flask_names_pip_install(tmp_path):
@@ -176,7 +176,7 @@ def test_main_exits_nonzero_when_a_row_fails(tmp_path, capsys):
     code = doctor.main(
         [],
         env={"GM_DM_MODEL": "same", "GM_ADVISOR_MODEL": "same"},
-        python_version=(3, 10),
+        python_version=(3, 14),
         flask_present=True,
         campaign_root=_one(tmp_path),
         srd_message="",

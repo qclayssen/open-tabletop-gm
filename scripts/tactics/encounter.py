@@ -534,7 +534,6 @@ def cmd_propose(args, camp_dir, campaign: str) -> tuple[str, dict]:
         return json.dumps(refusal, indent=2), refusal
 
     # Format human-readable output.
-    # Nested same-quote f-strings (`f'{p['name']}'`) are 3.12+; CI floor is 3.10.
     party = ", ".join(
         f"{member['name']} L{member['level']}" for member in proposal["party"])
     monsters = ", ".join(monster["name"] for monster in proposal["monsters"])

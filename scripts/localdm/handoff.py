@@ -5,7 +5,7 @@ checkpoints (session_end, context_full, beat_landed) and the 06-02 continuity
 benchmark (pinned facts, folds, restart, no secrets in recap).
 
 - Engine owns the rules; the LLM only narrates. stdlib + Flask only.
-- Python 3.10 minimum. encoding="utf-8" on every file read/write.
+- Python 3.14 floor. encoding="utf-8" on every file read/write.
 """
 
 from __future__ import annotations

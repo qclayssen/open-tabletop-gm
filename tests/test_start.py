@@ -19,8 +19,8 @@ _spec.loader.exec_module(start)
 
 
 def test_python_floor():
-    assert start.check_python((3, 9)) and "3.10" in start.check_python((3, 9))
-    assert start.check_python((3, 10)) is None
+    assert start.check_python((3, 13)) and "3.14" in start.check_python((3, 13))
+    assert start.check_python((3, 14)) is None
 
 
 def test_flask_hint(monkeypatch):

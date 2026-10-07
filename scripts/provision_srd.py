@@ -237,9 +237,9 @@ def build() -> int:
     # class or racial features -- so the missing dependency would be discovered
     # downstream as a mysterious dataset, or as this script's own gate refusing it
     # with a message about `features` that names the wrong cause. The
-    # `floor-310` job is the case that matters: it installs pytest and nothing
-    # else, deliberately, so provisioning there has to say what it needs rather
-    # than quietly produce half a dataset.
+    # A bare environment (pytest and nothing else) is the case that matters:
+    # provisioning there has to say what it needs rather than quietly produce
+    # half a dataset.
     try:
         import yaml  # noqa: F401
     except ImportError:
@@ -266,9 +266,8 @@ def selftest() -> int:
 
     What this cannot do is catch a mutation that disables its own reporting --
     replacing the `problems.append` calls with `pass` leaves this exiting 0 with
-    "SELFTEST FAILED" printed on every fixture. That is the same limit
-    `scripts/check_py_floor.py` documents, and the workflow greps for the string
-    rather than trusting the exit code, for the same reason.
+    "SELFTEST FAILED" printed on every fixture. The workflow greps
+    for the string rather than trusting the exit code, for that reason.
     """
     def good() -> dict:
         """A dataset that meets every floor and carries every smoke record.
