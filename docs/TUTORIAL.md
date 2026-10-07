@@ -4,7 +4,7 @@ This guide gets you playing a tactical grid fight in about five minutes, with no
 
 ## 1. Set up (once)
 
-You need Python 3.10 or newer. Nothing else: the tutorial ships with the two kobolds it needs, so no download is required.
+You need Python 3.14 or newer. Nothing else: the tutorial ships with the two kobolds it needs, so no download is required.
 
 ## 2. Start the tutorial
 

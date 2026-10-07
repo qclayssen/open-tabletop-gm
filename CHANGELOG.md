@@ -12,6 +12,10 @@ This project is the LLM-agnostic, system-flexible fork of [claude-dnd-skill](htt
 
 ## [Unreleased]
 
+### Changed: Python 3.14 is the floor; the 3.10 and Windows requirements are gone
+
+Owner ruling D-14 (2026-10-07). Hard Rule 4 (Python 3.10, Windows, non-UTF-8 locale) is deleted, and Hard Rule 5 now allows pinned, justified dependencies as long as the engine core still tests with no extras. CI runs 3.14 only: the `floor-310` and `non-UTF-8 locale` jobs and `scripts/check_py_floor.py` are removed, and `start.py` requires 3.14. No dependency was added, and existing `encoding="utf-8"` arguments are untouched.
+
 ### Fixed: the tactical panel's type was not the face it asked for, its labels grew with the board, and a refusal was on two surfaces at once
 
 Five correctness items from COMBAT-FEEL Wave 0 (#300), merged as `b582333` on 2026-10-05.

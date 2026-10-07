@@ -4,7 +4,7 @@ This is how to open a new campaign with the cinematic display in your browser: t
 
 ## 1. Install (once)
 
-You need Python 3.10 or newer.
+You need Python 3.14 or newer.
 
 ```bash
 pip3 install -r display/requirements.txt
