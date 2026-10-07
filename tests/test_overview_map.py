@@ -295,6 +295,35 @@ def test_display_has_an_overview_entry_link():
     assert "innerHTML" not in js and "insertAdjacentHTML" not in js
 
 
+# The note branch: a sentence in place of the map. #atlas-stage, the pins
+# layer and the legend are not in the document, and the script still loads.
+# The empty spec is truthy, so `if (spec)` calls render() and the first
+# `stage.style` access throws. A render assertion cannot tell that from the
+# guard, because both versions show the sentence.
+_NOTE = "This campaign has no overview map yet."
+_NOTE_BRANCH_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Overview map</title>
+<link rel="stylesheet" href="/static/atlas.css">
+</head>
+<body class="atlas-page">
+<header class="atlas-header">
+  <a class="atlas-back" href="/">Back to the story</a>
+  <h1 id="atlas-title">Overview map</h1>
+</header>
+<main class="atlas-main">
+  <p class="atlas-note" role="status">""" + _NOTE + """</p>
+</main>
+<script id="atlas-data" type="application/json">{"extent": [1, 1], "name": "Overview", "pins": []}</script>
+<script src="/static/atlas.js" defer></script>
+</body>
+</html>
+"""
+
+
 class OverviewPageInBrowser(BrowserTestCase):
     """/atlas/campus drawn by atlas.js: one marker and one legend row per revealed pin."""
 
@@ -349,3 +378,35 @@ class OverviewPageInBrowser(BrowserTestCase):
         self.assertAlmostEqual(got["fx"], 0.5, delta=0.01)
         self.assertAlmostEqual(got["fy"], 0.25, delta=0.01)
         self.assertAlmostEqual(got["ratio"], 1400 / 1900, delta=0.01)
+
+    def test_note_branch_shows_the_sentence_without_a_page_error(self):
+        """No #atlas-stage, a truthy empty spec, and the real atlas.js.
+
+        This main's /atlas route answers a campaign with no overview spec as
+        a plaintext 404, so that response never loads the script and cannot
+        throw. The document fulfilled here is the note branch: the sentence
+        is in the page, the stage is not, and /static/atlas.js is the file
+        under test. before fix: render() throws
+        Cannot read properties of null (reading 'style').
+        """
+        context = self.browser.new_context(viewport={"width": 1280, "height": 720})
+        self.addCleanup(context.close)
+        page = context.new_page()
+        errors = []
+        scripts = []
+        page.on("pageerror", lambda exc: errors.append(str(exc)))
+        page.on("response", lambda resp: scripts.append(resp.status)
+                if resp.url.endswith("/static/atlas.js") else None)
+
+        def _note_document(route):
+            route.fulfill(status=200, content_type="text/html; charset=utf-8",
+                          body=_NOTE_BRANCH_HTML)
+
+        page.route(lambda url: url.split("?", 1)[0].rstrip("/").endswith("/atlas"),
+                   _note_document)
+        page.goto(self.url("/atlas"), wait_until="load")
+        page.wait_for_timeout(300)
+        self.assertEqual(scripts, [200], "the real atlas.js did not load")
+        self.assertIsNone(page.query_selector("#atlas-stage"))
+        self.assertEqual(page.locator(".atlas-note").inner_text(), _NOTE)
+        self.assertEqual(errors, [], f"uncaught page error: {errors}")
