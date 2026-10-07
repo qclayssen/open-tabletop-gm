@@ -92,6 +92,13 @@ else
   python3 "$DISPLAY_DIR/display_check.py" > "$DISPLAY_DIR/.preflight"
 fi
 
+# Named startup failures from scripts/doctor.py. The map still opens: the
+# display does not need the model. A nonzero status is printed, not fatal.
+DOCTOR="$(cd "$DISPLAY_DIR/.." && pwd)/scripts/doctor.py"
+if [[ -f "$DOCTOR" ]]; then
+  python3 "$DOCTOR" || true
+fi
+
 if $TLS_MODE && [[ -z "$LAN_FLAG" ]]; then
   echo "Error: --tls requires --lan (TLS is only meaningful for network access)"
   exit 1
