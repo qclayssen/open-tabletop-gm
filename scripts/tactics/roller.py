@@ -136,10 +136,27 @@ class Roll:
     # sight.redact_log drops `rolls` wholesale for an entry that names a
     # creature the players cannot see, and a field alongside would survive the
     # redaction and give that creature's AC away. See sight.py.
+    #
+    # An attack's outcome lives here for the same reason. `hit` is whether
+    # the d20 landed. `damage` is the post-mitigation integer, set on that
+    # d20 only, and only after the damage dice have been resolved. The damage
+    # die is a second Roll in the same log entry and must not carry either
+    # field, or a reader would see two outcomes for one attack. Both default
+    # to None so a save, a check, or a damage die does not have to supply
+    # them. None stays off the wire: a miss sets hit to False and leaves
+    # damage unset, so the dict has no damage key. 0 would mean a hit that
+    # dealt nothing, which is a different fact.
     odds: dict = field(default_factory=dict)
+    hit: bool | None = None
+    damage: int | None = None
 
     def to_dict(self) -> dict:
-        return dict(self.__dict__)
+        out = dict(self.__dict__)
+        if self.hit is None:
+            out.pop("hit")
+        if self.damage is None:
+            out.pop("damage")
+        return out
 
 
 @dataclass
