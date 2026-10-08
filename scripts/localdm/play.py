@@ -520,46 +520,9 @@ class Session:
         nothing, or any error obtainable from gm_graph. The caller in
         `_digest()` then falls back to `context.notes_digest()`.
         """
-        import sys
-        from pathlib import Path
-        # Ensure gm_graph is importable from scripts/
-        if "open-tabletop-gm/scripts" not in sys.path:
-            sys.path.insert(0, "open-tabletop-gm/scripts")
         try:
             import gm_graph
         except ImportError:
-            return ""
-
-        try:
-            # Load graph data from campaign graph.json
-            graph_path = Path(self.campaign) / "graph.json" if Path(self.campaign).is_dir() \
-                else (self.camp_dir / "graph.json")
-            if not graph_path.exists():
-                return ""
-            data = gm_graph._load(str(graph_path))
-
-            # Seeds: NPCs the DM has declared on-scene; lexical rank still works
-            # if seeds are empty, so an unresolved seed costs precision not failure.
-            seeds: list = self._scene_present().split(",") if self._scene_present() else []
-            # Filter empty strings from split
-            seeds = [s.strip() for s in seeds if s.strip()]
-
-            # Hops: budget/latency trade for a 24B-class local model at Phase 6 ceiling.
-            # Chosen as 2; see _scene_notes docstring for the rationale.
-            hops = 2
-
-            # BFS from seeds, hops-bounded, only traversing edges active at current session
-            sub = gm_graph._expand(data, seeds, hops, None)
-
-            # Render as markdown text for inclusion in the prompt
-            note = gm_graph.render_subgraph(sub, None)
-            # render_subgraph may return "" if sub is empty; that is fine —
-            # the fallthrough to notes_digest in _digest() handles it.
-            return note if note else ""
-        except Exception:
-            # Every failure path returns "" so the turn degrades to today's
-            # behaviour (full notes_digest). An raising optimisation is a new
-            # failure mode wearing a feature's clothes.
             return ""
         try:
             selection = gm_graph.scene_nodes(
