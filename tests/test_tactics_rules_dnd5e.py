@@ -212,6 +212,79 @@ def test_conditional_resistance_is_not_applied_blindly():
     assert res["total"] == 6 and "GM check" in res["text"]
 
 
+def test_petrified_resists_all_damage():
+    """before fix: `assert 10 == 5` on the first line and `assert 7 == 3` on the
+    second: nothing halved a petrified creature's damage at all.
+
+    SRD 5.1, petrified: "The creature has resistance to all damage." The 2014
+    wording carries no "nonmagical" qualifier and exempts no type, so untyped
+    damage is damage like any other and the halving rounds down. Poison stays at
+    zero because immunity is read first: resisted and immune is still immune.
+    """
+    f = frog()
+    f.hp = f.max_hp = 99
+    RULES.set_condition(f, "petrified")
+
+    assert RULES.damage(f, [{"amount": 10, "type": "bludgeoning"}])["total"] == 5
+    assert RULES.damage(f, [{"amount": 7, "type": "bludgeoning"}])["total"] == 3
+    untyped = RULES.damage(f, [{"amount": 10}])         # no type at all is still damage
+    assert untyped["total"] == 5 and "resists all damage" in untyped["text"]
+    assert RULES.damage(f, [{"amount": 10, "type": "poison"}])["total"] == 0
+
+    # It is petrified's resistance, not a blanket one: a merely stunned creature
+    # takes every point.
+    g = frog()
+    g.hp = g.max_hp = 99
+    RULES.set_condition(g, "stunned")
+    assert RULES.damage(g, [{"amount": 10, "type": "bludgeoning"}])["total"] == 10
+
+
+def test_petrified_halves_once_and_before_vulnerability():
+    """before fix: `assert 14 == 6` on the last line. The first was already right
+    for the wrong reason -- the creature had no all-damage resistance to double
+    up with its own -- and it is here so that the obvious wrong implementation
+    (a second, independent halving) cannot pass.
+
+    Two clauses in one test because the order is the claim: resistance applies
+    once, and before vulnerability. Petrified plus its own fire resistance is
+    one halving (5, not 2); petrified plus fire vulnerability is 7 -> 3 -> 6,
+    where vulnerability first gives 14 and resistance twice gives 1.
+    """
+    once = frog()
+    once.hp = once.max_hp = 99
+    once.resistances = ["fire"]
+    RULES.set_condition(once, "petrified")
+    assert RULES.damage(once, [{"amount": 10, "type": "fire"}])["total"] == 5
+
+    both = frog()
+    both.hp = both.max_hp = 99
+    both.vulnerabilities = ["fire"]
+    RULES.set_condition(both, "petrified")
+    assert RULES.damage(both, [{"amount": 7, "type": "fire"}])["total"] == 6
+
+
+def test_petrified_reaches_the_damage_previews():
+    """before fix: `KeyError: 'resist_all'` on the first assert; the condition
+    table carries no such key, so every reader below was reading nothing.
+
+    The previews (`ai`, `spells`) do not call damage(), they call
+    damage_multiplier, so a condition that changes damage has to reach that one
+    too or the GM is shown one number and dealt another. Untyped damage is the
+    case that catches a preview which only ever looks a type up in a list.
+    """
+    plain = frog()
+    assert RULES.condition_modifiers(plain)["resist_all"] is False
+    assert RULES.damage_multiplier(plain, "fire") == 1.0
+    assert RULES.damage_multiplier(plain, "") == 1.0
+
+    f = frog()
+    RULES.set_condition(f, "petrified")
+    assert RULES.condition_modifiers(f)["resist_all"] is True
+    assert RULES.damage_multiplier(f, "fire") == 0.5
+    assert RULES.damage_multiplier(f, "") == 0.5
+    assert RULES.damage_multiplier(f, "poison") == 0.0      # immune, and says so
+
+
 def test_monster_dies_at_zero():
     f = frog()
     res = RULES.damage(f, [{"amount": 30, "type": "fire"}])

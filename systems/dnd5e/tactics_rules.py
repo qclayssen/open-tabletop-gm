@@ -110,7 +110,8 @@ CONDITION_EFFECTS = {
         "attack_against": "adv", "action_economy": "none", "movement": 0,
         "auto_crit_within_5": True,               # PHB appendix A
         "immunities": ["poison", "disease"],     # PHB p291
-        "note": "as paralyzed, and immune to poison and disease",
+        "resist_all": True,                       # PHB appendix A: resistance to all damage
+        "note": "as paralyzed, resistant to all damage, and immune to poison and disease",
     },
     "poisoned": {
         "attack_roll": "dis", "ability_check": "dis",   # PHB p292
@@ -197,16 +198,18 @@ def get_condition_modifiers(token) -> dict:
 
     The keys are always present: `attack_roll`, `ability_check`, `save`,
     `attack_against`, `movement`, `action_economy`, plus `auto_crit_within_5`,
-    `immunities`, `harmful_to`, `exhaustion` and the `sources` that produced
-    them. A value is `"adv"` / `"dis"`, a gate dict, a per-ability dict (with
-    "*" for every ability), a speed, or None when nothing applies.
+    `resist_all`, `immunities`, `harmful_to`, `exhaustion` and the `sources`
+    that produced them. A value is `"adv"` / `"dis"`, a gate dict, a per-ability
+    dict (with "*" for every ability), a speed, or None when nothing applies.
 
     Advantage and disadvantage from different conditions cancel, because that is
-    what the rules say happens; every other kind of effect stacks.
+    what the rules say happens; every other kind of effect stacks. `resist_all`
+    is the one resistance that arrives through a condition rather than the token's
+    own stat block, so the damage path reads it here beside `immunities`.
     """
     mods = {k: None for k in MODIFIER_KEYS}
     mods.update({"save": {}, "auto_crit_within_5": False, "immunities": [],
-                 "harmful_to": [], "hp_max": None, "death": False,
+                 "harmful_to": [], "hp_max": None, "death": False, "resist_all": False,
                  "exhaustion": 0, "sources": []})
     level = exhaustion_level(token)
     if level:
@@ -236,7 +239,7 @@ def _merge_effects(mods: dict, effects: dict) -> None:
         elif key == "action_economy":
             if value == "none":
                 mods[key] = "none"
-        elif key in ("auto_crit_within_5", "death"):
+        elif key in ("auto_crit_within_5", "death", "resist_all"):
             mods[key] = bool(mods[key]) or bool(value)
         elif key in ("immunities", "harmful_to"):
             mods[key] = mods[key] + [v for v in value if v not in mods[key]]
@@ -900,31 +903,46 @@ class DnD5e(Rules):
         return list(caster.extra.get("spells", []))
 
     def damage_multiplier(self, token, dtype: str) -> float:
-        """For previews: 0 immune, 0.5 resistant, 2 vulnerable (unconditional entries only)."""
+        """For previews: 0 immune, 0.5 resistant, 2 vulnerable.
+
+        Unconditional entries only, with the one that is a rule rather than a
+        clause: a condition that resists everything (petrified) applies whatever
+        the type, untyped included, and counts once together with a matching
+        resistance rather than twice. Condition-granted immunities count here for
+        the same reason -- the previews must not promise a number `damage` will
+        not deal.
+        """
         dtype = (dtype or "").lower()
-        if not dtype:
-            return 1.0
-        if dtype in _plain(token.immunities):
+        mods = self.condition_modifiers(token)
+        if dtype and dtype in _plain(token.immunities) | set(mods["immunities"]):
             return 0.0
-        mult = 0.5 if dtype in _plain(token.resistances) else 1.0
-        return mult * (2 if dtype in _plain(token.vulnerabilities) else 1)
+        resists = bool(mods["resist_all"]) or bool(dtype and dtype in _plain(token.resistances))
+        mult = 0.5 if resists else 1.0
+        return mult * (2 if dtype and dtype in _plain(token.vulnerabilities) else 1)
 
     # ── damage ───────────────────────────────────────────────────────────────
     def damage(self, target, parts: list, crit: bool = False, ctx: AttackContext = None) -> dict:
         total, notes = 0, []
-        # Petrified makes a creature immune to poison and disease (PHB p291); the
-        # resistance that goes with it is a nonmagical-attack clause, which the
-        # conditional-defence pass below leaves to the GM rather than guessing.
-        immune = _plain(target.immunities) | set(self.condition_modifiers(target)["immunities"])
+        # Petrified gives a creature immunity to poison and disease and resistance
+        # to all damage (PHB appendix A). The 2014 wording is unconditional -- no
+        # "nonmagical" qualifier and no type exempt -- so both are read off the
+        # conditions here rather than left to the GM's memory.
+        conds = self.condition_modifiers(target)
+        immune = _plain(target.immunities) | set(conds["immunities"])
+        resist_all = bool(conds["resist_all"])
         for p in parts:
             amt, typ = max(0, int(p["amount"])), (p.get("type") or "").lower()
             if typ and typ in immune:
                 notes.append(f"immune to {typ}")
                 amt = 0
             else:
-                if typ and typ in _plain(target.resistances):
+                # Resistance first, then vulnerability, and each at most once: a
+                # creature that resists everything and also resists this type has
+                # one resistance, not two, and the order is observable on an odd
+                # number (7 -> 3 -> 6, not 14 and not 1).
+                if resist_all or (typ and typ in _plain(target.resistances)):
                     amt //= 2
-                    notes.append(f"resists {typ}")
+                    notes.append("resists all damage" if resist_all else f"resists {typ}")
                 if typ and typ in _plain(target.vulnerabilities):
                     amt *= 2
                     notes.append(f"vulnerable to {typ}")

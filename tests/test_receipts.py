@@ -29,6 +29,7 @@ WHAT THESE TESTS PIN DOWN
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import stat
@@ -466,6 +467,78 @@ def test_the_state_hash_moves_when_the_fight_moves(tmp_path):
     assert receipts.state_hash(enc) == first          # and back again
     enc.round = 2
     assert receipts.state_hash(enc) != first
+
+
+# ─── the state hash pins the fight, not a key that never existed (RULE-02) ────
+
+def test_the_state_hash_tracks_a_tokens_reaction_and_not_the_turns(tmp_path):
+    """before fix: `assert <64 hex> != <64 hex>` -- the token's reaction is not
+    in the payload, so flipping it cannot move the hash.
+
+    A reaction is a token's (state.py:87), and spending one changes what the
+    fight can still do, so a receipt has to pin it. The turn-level
+    `reaction_used` was hashed instead and is a permanent `false`: `TurnState`
+    has no such field (state.py:234-247), so `getattr(turn, "reaction_used",
+    False)` was a constant in the payload that told a verifier nothing while
+    making the hash look like it covered reactions.
+    """
+    enc = _fight(tmp_path)
+    before = receipts.state_hash(enc)
+    enc.tokens["frog-1"].reaction_used = True
+    assert receipts.state_hash(enc) != before         # the real reaction state
+    enc.tokens["frog-1"].reaction_used = False
+    assert receipts.state_hash(enc) == before         # and back again
+    enc.turn.reaction_used = True                     # a turn attribute that never existed
+    assert receipts.state_hash(enc) == before, (
+        "the turn-level key is back in the payload: TurnState has no "
+        "reaction_used, so hashing it proves nothing")
+
+
+def _state_hash_before_reactions_moved(enc) -> str:
+    """`state_hash` exactly as it stood before RULE-02: the turn-level
+    `reaction_used` key, and no per-token one. Copied out of the old function
+    rather than imported, so the legacy chain below is a real old chain and not
+    a call into the new code."""
+    turn = getattr(enc, "turn", None)
+    payload = {
+        "round": getattr(enc, "round", 0),
+        "turn_index": getattr(enc, "turn_index", 0),
+        "turn": {
+            "actor": getattr(turn, "actor", "") or "",
+            "action_used": bool(getattr(turn, "action_used", False)),
+            "bonus_used": bool(getattr(turn, "bonus_used", False)),
+            "reaction_used": bool(getattr(turn, "reaction_used", False)),
+        },
+        "tokens": sorted(
+            ({"id": t.id, "side": t.side, "x": t.x, "y": t.y, "hp": t.hp,
+              "max_hp": t.max_hp, "temp_hp": getattr(t, "temp_hp", 0),
+              "ac": t.ac, "conditions": sorted(t.conditions or []),
+              "dead": bool(getattr(t, "dead", False))}
+             for t in (getattr(enc, "tokens", {}) or {}).values()),
+            key=lambda t: t["id"]),
+    }
+    return hashlib.sha256(receipts.canonical(payload)).hexdigest()
+
+
+def test_a_chain_written_with_the_old_state_hash_still_verifies(tmp_path):
+    """before fix: `AssertionError: the payload moved`.
+
+    The state hash is an input to a signature, never an input to verification:
+    `verify` re-derives each `sig` over the record as written and never
+    recomputes a `state`. So moving the hash is a change to what FUTURE receipts
+    pin, and a chain written under the old payload stays exactly as valid as it
+    was -- which is the only honest way to change it. Re-signing old records
+    would be rewriting history, and `test_resigning_the_whole_chain_is_the_only
+    _way_to_rewrite_history` says who is allowed to do that.
+    """
+    enc = _fight(tmp_path)
+    legacy = _state_hash_before_reactions_moved(enc)
+    assert legacy != receipts.state_hash(enc), "the payload moved"
+    receipts.record(enc, "kairos", "attack", [{"total": 9}], states=[legacy])
+    recs = _receipts(tmp_path)
+    assert recs[0]["state"] == legacy                 # kept, not re-signed
+    out = receipts.verify(tmp_path / "camp")
+    assert out["ok"] is True and out["checked"] == 1, out["reason"]
 
 
 def test_the_campaign_is_resolved_through_the_configured_root(tmp_path, monkeypatch):

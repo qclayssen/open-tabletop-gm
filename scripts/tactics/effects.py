@@ -284,7 +284,11 @@ def silvery_barbs(enc, roller: Roller, caster, rolled_by, what: str, natural: in
     lv = slot_for(caster)
     spend_slot(caster, lv)
     caster.reaction_used = True
-    r = roller.roll("1d20", rolled_by.name, f"{what} (Silvery Barbs reroll)")
+    # The reroll is `rolled_by`'s, so under roll_mode players it is the player's
+    # die and the engine asks for it (roller.PendingRoll) rather than rolling it:
+    # the same rule as their attack roll, two lines up the same call stack.
+    r = roller.roll("1d20", rolled_by.name, f"{what} (Silvery Barbs reroll)",
+                    player=player_rolls(enc, rolled_by))
     keep = min(natural, r.natural)
     new_total = total - natural + keep
     who = beneficiary if beneficiary is not None else caster
