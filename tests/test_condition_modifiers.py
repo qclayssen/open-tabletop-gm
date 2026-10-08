@@ -180,7 +180,10 @@ def test_petrified_is_stunned_and_immune_to_poison_and_disease():
     assert set(m["immunities"]) == {"poison", "disease"}
     t = with_("petrified", hp=10)
     dmg = RULES.damage(t, [{"amount": 5, "type": "poison"}, {"amount": 4, "type": "slashing"}])
-    assert dmg["total"] == 4 and "immune to poison" in dmg["text"]
+    # Poison is immunity, so that 5 is 0. Slashing is still damage, and petrified
+    # resists all of it, so 4 becomes 2. The old total of 4 was the missing resistance.
+    assert dmg["total"] == 2 and "immune to poison" in dmg["text"]
+    assert "resists all damage" in dmg["text"]
 
 
 def test_a_hit_within_5_ft_on_a_paralyzed_target_is_a_crit():
