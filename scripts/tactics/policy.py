@@ -116,9 +116,11 @@ def pick(enc, t, opts, difficulty="normal", rng=None) -> dict:
     return cands[-1][1]
 
 
-def choose_auto(enc, roller, token_ref, difficulty="normal", reactions=None) -> dict:
+def choose_auto(enc, roller, token_ref, difficulty="normal", reactions=None, rng=None) -> dict:
+    """Pick and run an option. `rng` supplies the pick's random draw; None keeps
+    the crc32 stream seeded from the fight (see pick)."""
     t = engine._resolve(enc, token_ref)
-    o = pick(enc, t, ai.options(enc, t, limit=ai.ALL), difficulty)
+    o = pick(enc, t, ai.options(enc, t, limit=ai.ALL), difficulty, rng)
     data = ai.choose(enc, roller, t, o["n"], reactions, limit=ai.ALL)
     data["profile"] = profile(t)["archetype"]
     return data

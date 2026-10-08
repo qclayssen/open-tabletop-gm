@@ -60,7 +60,14 @@ def log(enc: Encounter, kind: str, actor: str, text: str, roller: Roller = None,
         # One append-only receipt per roll, chained to the last (receipts.py).
         # Before enc.log, so the fallback state hash is the state the action
         # resolved in, and because the receipt write never raises.
-        receipts.record(enc, actor, kind, rolls, roller.states[mark:] if roller else [])
+        states = roller.states[mark:] if roller else []
+        sink = getattr(enc, "receipt_sink", None)
+        if sink is not None:
+            # The pure core (purecore.py) writes nothing. It parks the receipt
+            # here and the edge that owns the disk writes it afterwards.
+            sink.append((actor, kind, rolls, states))
+        else:
+            receipts.record(enc, actor, kind, rolls, states)
     enc.log.append({"round": enc.round, "actor": actor, "kind": kind, "text": text, "rolls": rolls})
 
 
