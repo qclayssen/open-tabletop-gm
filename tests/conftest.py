@@ -74,6 +74,7 @@ only with a tidier name.
 """
 from __future__ import annotations
 
+import os
 import pathlib
 import sys
 
@@ -192,3 +193,28 @@ def raw_srd():
     something is cleaned up; what this fixture changes is only the install half.
     """
     return _spells_module()
+
+# ─── golden-trace recording (opt-in) ──────────────────────────────────────────
+#
+# `python3 scripts/tactics/traces.py --generate` runs tests/test_tactics_*.py once
+# with TACTICS_RECORD_TRACES=<dir> set. Only then does this do anything: without
+# the variable the fixture yields straight away and the hook returns, so the
+# suite's results and timing are unchanged. See scripts/tactics/traces.py for
+# what is recorded. Recording needs one process (xdist workers would each write
+# their own raw file), which `--generate` arranges.
+
+@pytest.fixture(autouse=True)
+def _record_traces(request):
+    if not os.environ.get("TACTICS_RECORD_TRACES"):
+        yield
+        return
+    from tactics import traces
+    with traces.recording(request.node.nodeid):
+        yield
+
+
+def pytest_sessionfinish(session):
+    target = os.environ.get("TACTICS_RECORD_TRACES")
+    if target:
+        from tactics import traces
+        traces.flush(target)
