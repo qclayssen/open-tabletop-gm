@@ -68,6 +68,42 @@ def add_player_turns(m, count):
         m.add("player", f"Player turn {i}")
 
 
+# Every fact the phase 6 fixture pins. A fold that drops one must fail.
+FIXTURE_PINS = (
+    "ally the goblin chief",
+    "protect the artifact",
+    "Frog Pond",
+    "secret door",
+    "NPC treasure map",
+    "missing scout",
+    "cursed heirloom",
+)
+
+
+def _summary_keeping_pins() -> str:
+    """Model text that keeps every fixture pin. fold() stores this string."""
+    return "\n".join(FIXTURE_PINS)
+
+
+def _assert_pins_survived(summary: str) -> None:
+    """Non-empty is not enough: each fixture pin has to be in the file."""
+    assert summary.strip(), "summary.md should be non-empty after fold"
+    for pin in FIXTURE_PINS:
+        assert _check_pin_in_summary(summary, pin), (
+            f"{pin} was omitted from summary.md"
+        )
+
+
+def _pinned_campaign(tmp):
+    return fixture_campaign(
+        tmp,
+        promises=["ally the goblin chief", "protect the artifact"],
+        location="Frog Pond",
+        reveals=["secret door", "NPC treasure map"],
+        threads=["missing scout", "cursed heirloom"],
+    )
+
+
 # ── T1: pin the facts are nameable ────────────────────────────────────────
 
 def test_t1_pins_are_in_transcript():
@@ -100,8 +136,14 @@ def test_t1_pins_are_in_transcript():
         assert "secret door" in transcript_text, (
             "reveal 'secret door' should be in transcript"
         )
+        assert "NPC treasure map" in transcript_text, (
+            "reveal 'NPC treasure map' should be in transcript"
+        )
         assert "missing scout" in transcript_text, (
             "thread 'missing scout' should be in transcript"
+        )
+        assert "cursed heirloom" in transcript_text, (
+            "thread 'cursed heirloom' should be in transcript"
         )
 
 
@@ -120,49 +162,38 @@ def test_t1_due_after_14_turns():
 
 
 def test_t1_fold_writes_summary(tmp_path):
-    """After a fold, summary.md should be written (non-empty file)."""
+    """After a fold, summary.md keeps every fixture pin."""
     with tempfile.TemporaryDirectory() as tmp:
-        m = fixture_campaign(
-            tmp,
-            promises=["protect the artifact"],
-            location="Frog Pond",
-        )
+        m = _pinned_campaign(tmp)
         add_player_turns(m, 14)
 
-        summarizer = Summarizer(FakeClient(lambda *a: "Summary output."), "dm-local", m)
+        summarizer = Summarizer(
+            FakeClient(lambda *a: _summary_keeping_pins()), "dm-local", m)
         assert summarizer.due(), "due() should be True"
         summarizer.fold()
 
-        summary = _read_summary(m)
-        # Summary file is written by set_summary(); content depends on LLM output
-        assert summary, "summary.md should be non-empty after fold"
+        _assert_pins_survived(_read_summary(m))
 
 
 # ── T2: folds and a restart ───────────────────────────────────────────────
 
 def test_t2_multiple_folds_write_summaries(tmp_path):
-    """After each fold, summary.md should be written and non-empty."""
+    """After each fold, summary.md still contains every fixture pin."""
     with tempfile.TemporaryDirectory() as tmp:
-        m = fixture_campaign(
-            tmp,
-            promises=["protect the artifact"],
-            location="Frog Pond",
-        )
+        m = _pinned_campaign(tmp)
         # Start with 14 turns so first fold fires
         add_player_turns(m, 14)
 
-        summarizer = Summarizer(FakeClient(lambda *a: "Summary output."), "dm-local", m)
+        summarizer = Summarizer(
+            FakeClient(lambda *a: _summary_keeping_pins()), "dm-local", m)
 
         # Run 3 folds, adding turns between folds so due() stays True
         for _ in range(3):
             assert summarizer.due(), "due() should be True before fold"
             summarizer.fold()
+            _assert_pins_survived(_read_summary(m))
             # Add more turns so the next fold can fire
             add_player_turns(m, 14)
-
-        # After folds, summary should exist
-        summary = _read_summary(m)
-        assert summary, "summary.md should exist after multiple folds"
 
 
 def test_t2_budget_recorded_as_summary_length(tmp_path):
