@@ -674,3 +674,109 @@ def test_a_hand_edited_scene_is_refused_by_the_schema_gate(camp):
     # rather than a marker in the wrong place.
     (camp / "scene.json").write_text(json.dumps(wrong_type), encoding="utf-8")
     assert scenes().load(camp) is None
+
+
+# ─── which of the ways is it: missing, invalid, or ok ─────────────────────────
+
+def test_a_campaign_with_no_scene_says_so_in_words(camp):
+    """before fix: `AttributeError: module 'tactics.scenes' has no attribute 'status'`.
+
+    `load` answers None to both "this campaign never had a scene" and "there is
+    a scene file I will not read", and those are different facts: the first is
+    ordinary and needs nothing from anybody, the second is a file a human should
+    look at. A GM asking why the map is blank needs the second answer to be
+    reachable, and asking must not be what creates the file.
+    """
+    out = scenes().status(camp)
+    assert out["state"] == "missing"
+    assert "scene.json" in out["reason"]
+    assert not (camp / "scene.json").exists(), \
+        "asking what state a scene is in must not write one"
+
+
+def test_a_scene_it_will_not_read_is_invalid_and_says_which_way(camp):
+    """before fix: `AttributeError: ... has no attribute 'status'`.
+
+    Several ways a file that is there is still not a scene this engine reads.
+    `load` says None to all of them, which is why the sentence each one comes
+    back with here is the whole point of the function. None of them may raise,
+    the version that is not a number included: `load` refuses that one by
+    raising out of `int()`, and a report on a broken file must not itself be
+    broken by the file it is reporting on.
+    """
+    path = camp / "scene.json"
+
+    path.write_text("{not json", encoding="utf-8")
+    out = scenes().status(camp)
+    assert out["state"] == "invalid" and "scene.json" in out["reason"]
+
+    # A schema refusal, quoted from the gate rather than invented: the GM gets
+    # the same sentence `save` would have refused it with.
+    off = json.loads(json.dumps(scenes().blank(camp, "strixhaven-campus")))
+    off["marker"]["x"] = 1.5
+    path.write_text(json.dumps(off), encoding="utf-8")
+    out = scenes().status(camp)
+    assert out["state"] == "invalid" and "outside 0..1" in out["reason"]
+    assert scenes().load(camp) is None, "status and load must agree on this file"
+
+    newer = json.loads(json.dumps(scenes().blank(camp, "strixhaven-campus")))
+    newer["version"] = 99
+    path.write_text(json.dumps(newer), encoding="utf-8")
+    out = scenes().status(camp)
+    assert out["state"] == "invalid"
+    assert "99" in out["reason"] and "version" in out["reason"]
+
+    # Not a number at all. `load` raises ValueError on this one today.
+    path.write_text(json.dumps({"version": "soon", "map": "x"}), encoding="utf-8")
+    out = scenes().status(camp)
+    assert out["state"] == "invalid" and "soon" in out["reason"]
+
+    # Valid JSON that is not a scene object: the same answer, not a traceback.
+    path.write_text("[1, 2]", encoding="utf-8")
+    assert scenes().status(camp)["state"] == "invalid"
+
+    # And a directory where the file should be, which is what a mistyped `mkdir`
+    # leaves behind: `read_text` raises an OSError rather than a JSON error, so
+    # this is the branch an unguarded reader would die on.
+    path.unlink()
+    path.mkdir()
+    out = scenes().status(camp)
+    assert out["state"] == "invalid" and "scene.json" in out["reason"]
+    assert scenes().load(camp) is None
+
+
+def test_ok_is_exactly_when_load_would_read_the_scene(camp):
+    """before fix: `AttributeError: ... has no attribute 'status'`.
+
+    The value of `status` is that a caller can act on it without reading the
+    file again, so the two readers must not be able to disagree: wherever it
+    says `ok`, `load` returns the scene, and wherever it says anything else,
+    `load` returns None. Pinned over all three states in one loop, because a
+    divergence introduced later would appear exactly here.
+    """
+    path = camp / "scene.json"
+
+    def write_ok():
+        scenes().save(camp, scenes().blank(camp, "strixhaven-campus"))
+
+    def write_ok_then_missing():
+        write_ok()
+        path.unlink()
+
+    cases = {
+        "ok": write_ok,
+        "invalid": lambda: path.write_text("{not json", encoding="utf-8"),
+        "missing": write_ok_then_missing,
+    }
+    for expected, write in cases.items():
+        write()
+        out = scenes().status(camp)
+        assert out["state"] == expected, (expected, out)
+        assert (scenes().load(camp) is not None) == (expected == "ok"), expected
+        assert out["reason"], "every answer carries a sentence for the GM"
+
+    # And the scene itself is handed back untouched by the asking.
+    write_ok()
+    spec = scenes().blank(camp, "strixhaven-campus")
+    assert scenes().status(camp)["state"] == "ok"
+    assert scenes().load(camp) == spec
