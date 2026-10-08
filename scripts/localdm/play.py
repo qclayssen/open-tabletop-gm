@@ -71,6 +71,7 @@ from localdm import canon as canon_mod                         # noqa: E402
 from localdm import recap as recap_mod                         # noqa: E402
 from localdm import agency as agency_mod                       # noqa: E402
 from localdm import graph_writer                               # noqa: E402
+import rhythm as rhythm_mod                                     # noqa: E402
 
 #: The stream headless skill checks roll off. One per process, seeded by the
 #: canonical factory, so the seed is on the object as `.seed_value` and every
@@ -1150,13 +1151,69 @@ class Session:
                 f"{counts['declined']} declined. (Proposals cleared.)"]
 
     def _gm_end_cmd(self, rest: str) -> list:
-        """/gm end — end the session and write a handoff.
-        
+        """/gm end: end the session, archive the plan, and write a handoff.
+
         Writes a structured handoff with written_because: session_end.
+        The archive report is always included, including when there was no plan.
         """
+        archived = self._archive_rhythm()
         if self.summarizer.write_handoff("session_end"):
-            return ["(Session ended. Handoff written to summary.md.)"]
-        return ["(Failed to write session handoff.)"]
+            return [f"(Session ended. Handoff written to summary.md. {archived})"]
+        return [f"(Failed to write session handoff. {archived})"]
+
+    def _archive_rhythm(self) -> str:
+        try:
+            return rhythm_mod.archive_session(self.campaign, camp_dir=self.camp_dir)
+        except rhythm_mod.RhythmError as exc:
+            return str(exc)
+
+    def _scene_entry(self, surface: str) -> tuple[list[str], str]:
+        """Pull scene-entry directives once for this surface.
+
+        The same tuple is not emitted twice. An override that changes tempo or
+        pressure changes the tuple, so the next call re-emits. A broken plan is
+        a named note, not an empty turn.
+        """
+        try:
+            lines = rhythm_mod.emit_scene_directives(
+                self.campaign, camp_dir=self.camp_dir, surface=surface)
+        except rhythm_mod.RhythmError as exc:
+            return [], f"(engine) {exc}"
+        if surface == "browser" and self.display is not None and lines:
+            narrate = getattr(self.display, "narrate", None)
+            if narrate is not None:
+                for line in lines:
+                    narrate(line)
+        inners = []
+        for line in lines:
+            inner = line.strip()
+            if inner.startswith("[[") and inner.endswith("]]"):
+                inner = inner[2:-2].strip()
+            if inner:
+                inners.append(inner)
+        if inners:
+            self.directives = [*(self.directives or []), *inners]
+        return lines, ""
+
+    def _open_scene(self, surface: str) -> list:
+        """A scene can open before anyone acts. Nothing to emit returns []."""
+        lines, note = self._scene_entry(surface)
+        if not lines and not note and not self.directives:
+            return []
+        if not lines and not self.directives:
+            return [note] if note else []
+        try:
+            reply_ = self._dm(task="The scene is opening. No player has acted yet. "
+                              "Follow the table settings.")
+        except llm.LLMError as exc:
+            return ([note] if note else []) + lines + [f"(model unavailable: {exc})"]
+        out = ([note] if note else []) + lines
+        if reply_.narration:
+            self._say(reply_.narration)
+            out.append(reply_.narration)
+        else:
+            out.append("(Scene opened.)")
+        return out
 
     def _gm_arc_advance_cmd(self, rest: str) -> list:
         """/gm arc advance — advance the campaign arc and write a handoff.
@@ -1370,7 +1427,9 @@ class Session:
 
     # ── input ──────────────────────────────────────────────────────────────
 
-    def handle(self, line: str) -> list:
+    def handle(self, line: str, *, surface: str | None = None) -> list:
+        if surface not in ("browser", "repl"):
+            surface = "browser" if self.display is not None else "repl"
         original = line.strip()
         line = original
         line = self._take_directives(line)
@@ -1388,6 +1447,12 @@ class Session:
             # is a real next input and consumes it even when nothing follows.
             if original and self.pending_cast is not None:
                 self.pending_cast = None
+            # Scene entry is the line with no action after it. A pending roll
+            # still owns the empty answer; the directive waits until it clears.
+            if not self.pending:
+                opened = self._open_scene(surface)
+                if opened:
+                    return opened
             return []
         if self.pending:
             low = line.lower()
@@ -1432,9 +1497,11 @@ class Session:
             return self._agency_cmd(line[len(line.split()[0]):])
         if line.split() and line.split()[0] in ("/graph", "/gm-graph"):
             return self._graph_cmd(line[len(line.split()[0]):])
-        # /gm end - write handoff at session boundary
-        if line.split() and line.split()[0] in ("/end", "/gm-end", "/gm end"):
-            return self._gm_end_cmd(line[len(line.split()[0]):].strip())
+        # /gm end - write handoff at session boundary, and archive the plan.
+        parts = line.split()
+        if parts[:2] == ["/gm", "end"] or (parts and parts[0] in ("/end", "/gm-end")):
+            rest = " ".join(parts[2:]) if parts[:2] == ["/gm", "end"] else " ".join(parts[1:])
+            return self._gm_end_cmd(rest)
         # /gm arc advance - write handoff when beat lands
         if line.split() and line.split()[0] in ("/arc-advance", "/gm-arc-advance", "/gm arc advance"):
             return self._gm_arc_advance_cmd(line[len(line.split()[0]):].strip())
@@ -1449,7 +1516,10 @@ class Session:
             # DM must be able to acknowledge once the roll lands (audit report B3).
             self.memory.add("player", line)
             return [f"(engine) {_waiting(self.pending)}"]
-        return self._player_turn(line)
+        lines, note = self._scene_entry(surface)
+        out = self._player_turn(line)
+        head = ([note] if note else []) + lines
+        return head + out
 
     def _ability_check(self, spec: str, line: str, meta: dict | None = None,
                        rng=None) -> list:
@@ -1986,6 +2056,39 @@ def _missing_campaign_message(name, camp_dir) -> str:
         lines.append("No campaigns found there. Set GM_CAMPAIGN_ROOT if yours live elsewhere.")
     lines.append("To create one, run /gm new <name> in the /gm skill (Claude Code or OpenCode).")
     return "\n".join(lines)
+
+
+def collect_surface_lines(raw_lines: list[str], *, surface: str) -> list[str]:
+    """Keep scene-entry directives on both the browser and the REPL.
+
+    A [[...]] line used to be held until a player action followed it, and dropped
+    when none did. Scene entry is that shape, so both surfaces return it alone.
+    """
+    if surface not in ("browser", "repl"):
+        raise ValueError(f"unknown surface {surface!r}")
+    kept: list[str] = []
+    pending = ""
+    for raw in raw_lines:
+        stripped = raw.strip()
+        if re.fullmatch(r"\[\[.*\]\]", stripped):
+            pending += stripped + " "
+            continue
+        match = re.match(r"\[[^\]]+\]:\s*(.*)", stripped)
+        text = (match.group(1) if match else stripped).strip()
+        if text:
+            kept.append((pending + text).strip())
+            pending = ""
+    if pending.strip():
+        kept.append(pending.strip())
+    return kept
+
+
+def accept_input(session, raw_lines: list[str], *, surface: str) -> list:
+    """Drain one surface, then hand each kept line to the session."""
+    out: list = []
+    for line in collect_surface_lines(raw_lines, surface=surface):
+        out.extend(session.handle(line, surface=surface))
+    return out
 
 
 def main(argv=None) -> int:

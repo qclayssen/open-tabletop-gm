@@ -32,7 +32,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import pathlib
 import re
 import sys
@@ -40,6 +39,7 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 from paths import find_campaign  # noqa: E402
+import safeio  # noqa: E402
 
 TEMPO = ("brisk", "measured", "calm")
 PRESSURE = ("none", "ambient", "urgent")
@@ -205,9 +205,18 @@ def resolve_axis(axis, scene=None, session=None, campaign=None):
 
 # ── the model ────────────────────────────────────────────────────────────────
 
-def load(campaign: str) -> dict:
+def _camp_dir(campaign: str, camp_dir=None) -> pathlib.Path:
+    if camp_dir is not None:
+        path = pathlib.Path(camp_dir)
+        if not path.is_dir():
+            raise RhythmError(f"campaign_dir: {path} is not a directory")
+        return path
+    return find_campaign(campaign, migrate=False)
+
+
+def load(campaign: str, camp_dir=None) -> dict:
     """Everything rhythm knows about a campaign, resolved. Raises RhythmError."""
-    cdir = find_campaign(campaign, migrate=False)
+    cdir = _camp_dir(campaign, camp_dir)
     world_text = _read(cdir / "world.md")
     state_text = _read(cdir / "state.md")
     warnings: list[str] = []
@@ -314,7 +323,7 @@ def _set_lines(text, heading, scene_id, key, value):
     return text[:lo] + "\n".join(lines) + text[hi:]
 
 
-def set_value(campaign, target, axis, value, dry_run=False):
+def set_value(campaign, target, axis, value, dry_run=False, camp_dir=None):
     """Apply one `set`. Returns the list of (file, key, value) changes made (or planned)."""
     if axis == "preset":
         if value not in PRESETS:
@@ -331,8 +340,8 @@ def set_value(campaign, target, axis, value, dry_run=False):
             pairs = [(axis, value)]
         else:
             raise RhythmError(f"invalid {axis} {value!r} (expected {' | '.join(AXES[axis])})")
-    cdir = find_campaign(campaign, migrate=False)
-    load(campaign)  # refuse to edit a block that does not parse
+    cdir = _camp_dir(campaign, camp_dir)
+    load(campaign, camp_dir=cdir)  # refuse to edit a block that does not parse
     fname, heading, scene = (("world.md", "Campaign Rhythm", None) if target == "campaign"
                              else ("state.md", "Session Plan", None if target == "session" else target))
     path = cdir / fname
@@ -346,10 +355,353 @@ def set_value(campaign, target, axis, value, dry_run=False):
         text = new
         changes.append((fname, f"{target}.{k}", v))
     if not dry_run:
-        tmp = path.with_name(path.name + ".tmp")
-        tmp.write_text(text, encoding="utf-8", newline="")
-        os.replace(tmp, path)
+        safeio.atomic_write_text(path, text)
     return changes
+
+
+# ── authoring, directives, advance ───────────────────────────────────────────
+
+# Scene-entry lines. The spec writes these with an em dash; this fork does not
+# put em dashes in text the table sees, so the break is a hyphen.
+_DIRECTIVE_TEXT = {
+    ("brisk", "urgent"):
+        "[[Scene {id} - brisk, urgent. Clock running. Cut hard, land a decision before this scene ends.]]",
+    ("brisk", "ambient"):
+        "[[Scene {id} - brisk, ambient. Keep momentum. Skip routine and travel.]]",
+    ("measured", "ambient"):
+        "[[Scene {id} - measured, ambient. Standard tempo - give the scene the time it needs.]]",
+    ("calm", "ambient"):
+        "[[Scene {id} - calm, ambient. Linger. Let the players talk and the NPCs answer.]]",
+    ("calm", "none"):
+        "[[Scene {id} - calm, no pressure. Slow and atmospheric; resolving nothing is allowed.]]",
+    ("calm", "urgent"):
+        "[[Scene {id} - calm, urgent. Nothing cuts. Everything is at stake. Do not let them breathe.]]",
+    ("brisk", "none"):
+        "[[Scene {id} - brisk, no pressure. Fast and airborne. Keep it moving and light.]]",
+}
+_PRESSURE_POINT_LINE = (
+    "[[Pressure point - the two-thirds turn. Force a decision or escalation "
+    "before the session closes.]]"
+)
+_SURFACES = ("browser", "repl")
+_SCENE_FIELDS = ("id", "label", "location", "intent", "tempo", "pressure",
+                 "pressure_point", "exit_when", "stall_after")
+
+
+def _yaml_scalar(value) -> str:
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int) and not isinstance(value, bool):
+        return str(value)
+    text = str(value)
+    if (text == "" or text != text.strip()
+            or any(ch in text for ch in ":#{}[]&*!|>'\"%@`,")
+            or text.lower() in ("null", "true", "false", "yes", "no")):
+        return json.dumps(text, ensure_ascii=False)
+    return text
+
+
+def _pressure_flag(value, where: str) -> bool:
+    if value is True:
+        return True
+    if value is False or value is None:
+        return False
+    if isinstance(value, str) and value.strip().lower() in ("true", "yes"):
+        return True
+    if isinstance(value, str) and value.strip().lower() in ("false", "no", "null", ""):
+        return False
+    raise RhythmError(f"pressure_point_count: {where} pressure_point must be true or false, "
+                      f"got {value!r}")
+
+
+def _axis_or_refuse(value, axis: str):
+    if value is None:
+        return None
+    if isinstance(value, str) and value.strip().lower() in ("null", ""):
+        return None
+    if isinstance(value, str) and value.strip().lower() in AXES[axis]:
+        return value.strip().lower()
+    raise RhythmError(f"invalid_{axis}: {value!r} "
+                      f"(expected {' | '.join(AXES[axis])} | null)")
+
+
+def normalize_plan(plan: dict) -> dict:
+    """A plan that may be written. Exactly one pressure point, or RhythmError
+    whose message starts with a reason token."""
+    if not isinstance(plan, dict):
+        raise RhythmError("plan_shape: a session plan must be a mapping")
+    raw_scenes = plan.get("scenes")
+    if not isinstance(raw_scenes, list) or not raw_scenes:
+        raise RhythmError("pressure_point_count: a session plan needs exactly one "
+                          "pressure point, found 0")
+    scenes = []
+    seen = set()
+    for i, raw in enumerate(raw_scenes, start=1):
+        if not isinstance(raw, dict):
+            raise RhythmError(f"scene_shape: scene {i} must be a mapping")
+        sid = raw.get("id")
+        if not isinstance(sid, str) or not sid.strip():
+            raise RhythmError(f"scene_id: scene {i} must have an id")
+        sid = sid.strip()
+        if sid in seen:
+            raise RhythmError(f"scene_id: duplicate scene id {sid!r}")
+        seen.add(sid)
+        scene = {"id": sid, "pressure_point": _pressure_flag(raw.get("pressure_point", False),
+                                                            f"scene {sid!r}")}
+        for key in ("label", "location", "intent", "exit_when"):
+            if raw.get(key) not in (None, ""):
+                scene[key] = str(raw[key])
+        for axis in AXES:
+            if axis in raw:
+                scene[axis] = _axis_or_refuse(raw.get(axis), axis)
+        if raw.get("stall_after") not in (None, ""):
+            try:
+                scene["stall_after"] = int(raw["stall_after"])
+            except (TypeError, ValueError) as exc:
+                raise RhythmError(f"stall_after: scene {sid!r} stall_after must be an integer") from exc
+        scenes.append(scene)
+    found = sum(1 for scene in scenes if scene["pressure_point"])
+    if found != 1:
+        raise RhythmError("pressure_point_count: a session plan needs exactly one "
+                          f"pressure point, found {found}")
+    out = {"scenes": scenes}
+    if plan.get("session") not in (None, ""):
+        out["session"] = plan["session"]
+    if plan.get("in_world"):
+        out["in_world"] = str(plan["in_world"])
+    if plan.get("days"):
+        out["days"] = [str(day) for day in plan["days"]]
+    for axis in AXES:
+        if axis in plan:
+            out[axis] = _axis_or_refuse(plan.get(axis), axis)
+    current = plan.get("current_scene") or scenes[0]["id"]
+    current = str(current)
+    if current not in seen:
+        raise RhythmError(f"current_scene: {current!r} is not a scene in this plan")
+    out["current_scene"] = current
+    return out
+
+
+def render_plan(plan: dict) -> str:
+    """Fenced YAML for a normalized plan. Authoring writes this once; later edits
+    stay line-targeted and do not come back through here."""
+    lines = ["## Session Plan", "```yaml"]
+    for key in ("session", "in_world", "tempo", "pressure"):
+        if key in plan:
+            lines.append(f"{key}: {_yaml_scalar(plan[key])}")
+    if plan.get("days"):
+        lines.append("days:")
+        for day in plan["days"]:
+            lines.append(f"  - {_yaml_scalar(day)}")
+    lines.append("scenes:")
+    for scene in plan["scenes"]:
+        first = True
+        for key in _SCENE_FIELDS:
+            if key not in scene and key != "pressure_point":
+                continue
+            if key == "pressure_point" or key in scene:
+                value = scene.get(key, False) if key == "pressure_point" else scene[key]
+                prefix = "  - " if first else "    "
+                lines.append(f"{prefix}{key}: {_yaml_scalar(value)}")
+                first = False
+    lines.append(f"current_scene: {_yaml_scalar(plan['current_scene'])}")
+    lines.append("```")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _plan_section_span(text: str):
+    heads = list(_H2.finditer(text))
+    for i, match in enumerate(heads):
+        if match.group(1) != "Session Plan":
+            continue
+        end = heads[i + 1].start() if i + 1 < len(heads) else len(text)
+        return match.start(), end
+    return None
+
+
+def _place_plan(text: str, block: str) -> str:
+    span = _plan_section_span(text)
+    if span is not None:
+        start, end = span
+        return text[:start] + block + text[end:]
+    heads = list(_H2.finditer(text))
+    for match in heads:
+        if match.group(1) == "Campaign Arc":
+            return text[:match.start()] + block + "\n" + text[match.start():]
+    sep = "" if text.endswith("\n\n") or text == "" else "\n"
+    return text + sep + block
+
+
+def author_plan(campaign: str, plan: dict, *, dry_run: bool = False, camp_dir=None) -> dict:
+    """Write a session plan. Invalid plans raise RhythmError before any write.
+    The write goes through safeio, so a failure leaves the previous file intact."""
+    normalized = normalize_plan(plan)
+    cdir = _camp_dir(campaign, camp_dir)
+    path = cdir / "state.md"
+    text = _read(path)
+    new = _place_plan(text, render_plan(normalized))
+    if not new.endswith("\n"):
+        new += "\n"
+    if not dry_run:
+        safeio.atomic_write_text(path, new)
+    return load(campaign, camp_dir=cdir) if not dry_run else normalized
+
+
+def _current(loaded: dict):
+    current = loaded.get("current_scene")
+    for scene in loaded.get("scenes") or []:
+        if scene["id"] == current:
+            return scene
+    return None
+
+
+def directive_lines(scene: dict, *, turns_quiet: int = 0) -> list[str]:
+    """The [[...]] lines for one scene. stall_after adds advice; it does not
+    move current_scene."""
+    tempo, pressure = scene["tempo_resolved"], scene["pressure_resolved"]
+    template = _DIRECTIVE_TEXT.get((tempo, pressure))
+    if template is None:
+        pressure_word = "no pressure" if pressure == "none" else pressure
+        template = f"[[Scene {{id}} - {tempo}, {pressure_word}.]]"
+    lines = [template.format(id=scene["id"])]
+    if scene.get("pressure_point"):
+        lines.append(_PRESSURE_POINT_LINE)
+    stall = scene.get("stall_after")
+    if stall is not None:
+        try:
+            limit = int(stall)
+        except (TypeError, ValueError):
+            limit = None
+        if limit is not None and turns_quiet >= limit:
+            exit_when = scene.get("exit_when") or "the exit"
+            lines.append(
+                f"[[Stall guard - no decision or discovery in {limit} turns. "
+                f"Move toward: {exit_when}.]]")
+    return lines
+
+
+def emission_key(scene: dict) -> str:
+    return f"{scene['id']}:{scene['tempo_resolved']}:{scene['pressure_resolved']}"
+
+
+def emit_scene_directives(campaign: str, *, camp_dir=None, surface: str = "repl",
+                          turns_quiet: int = 0) -> list[str]:
+    """Scene-entry directives for one surface, or [] when this tuple was already sent.
+
+    browser and repl share last_emitted, so a second surface does not repeat the
+    same tuple. A later edit that changes tempo or pressure changes the tuple and
+    the next call re-emits. An empty list is a decision, not a missing result.
+    """
+    if surface not in _SURFACES:
+        raise RhythmError(f"unknown_surface: {surface!r} (expected browser | repl)")
+    loaded = load(campaign, camp_dir=camp_dir)
+    scene = _current(loaded)
+    if scene is None:
+        return []
+    key = emission_key(scene)
+    if loaded.get("last_emitted") == key:
+        return []
+    lines = directive_lines(scene, turns_quiet=turns_quiet)
+    cdir = _camp_dir(campaign, camp_dir)
+    path = cdir / "state.md"
+    text = _read(path)
+    new = _set_lines(text, "Session Plan", None, "last_emitted", key)
+    if new is None:
+        raise RhythmError("session_plan: no ## Session Plan block to record last_emitted")
+    safeio.atomic_write_text(path, new)
+    return lines
+
+
+def _advance_result(completed: bool, report: str, current_scene) -> dict:
+    if not str(report).strip():
+        raise RhythmError("advance_silent: an advance produced no report")
+    return {"completed": bool(completed), "report": str(report), "current_scene": current_scene}
+
+
+def auto_advance(campaign: str, *, precondition_met: bool = True, camp_dir=None) -> dict:
+    """Step toward the pressure point, or report why the step did not happen.
+
+    Never waits for a precondition that has not arrived, and never returns
+    without a report. stall_after is not a trigger: this moves only when called.
+    A write that dies mid-flight reports advance_interrupted and leaves the
+    previous plan in place.
+    """
+    loaded = load(campaign, camp_dir=camp_dir)
+    current = loaded.get("current_scene")
+    if not precondition_met:
+        return _advance_result(False, "precondition_unmet: the next scene was not reached", current)
+    scenes = loaded.get("scenes") or []
+    points = [scene for scene in scenes if scene.get("pressure_point")]
+    if not points:
+        return _advance_result(False, "no_remaining_pressure_point: the plan has no pressure point",
+                               current)
+    ids = [scene["id"] for scene in scenes]
+    point_id = points[0]["id"]
+    ahead = list(ids) if current not in ids else ids[ids.index(current) + 1:]
+    if point_id not in ahead:
+        return _advance_result(
+            False,
+            "no_remaining_pressure_point: no pressure point remains ahead of the current scene",
+            current)
+    nxt = ahead[0]
+    cdir = _camp_dir(campaign, camp_dir)
+    path = cdir / "state.md"
+    new = _set_lines(_read(path), "Session Plan", None, "current_scene", nxt)
+    if new is None:
+        return _advance_result(False, "no_session_plan: nothing to advance", current)
+    try:
+        safeio.atomic_write_text(path, new)
+    except (OSError, KeyboardInterrupt) as exc:
+        return _advance_result(False, f"advance_interrupted: {exc}", current)
+    shown = current if current is not None else "none"
+    return _advance_result(True, f"advanced: {shown} -> {nxt}", nxt)
+
+
+def _archive_text(loaded: dict) -> str:
+    bits = []
+    for scene in loaded.get("scenes") or []:
+        mark = " (pressure point)" if scene.get("pressure_point") else ""
+        label = scene.get("label") or ""
+        bits.append(f"- {scene['id']}: {label}{mark}")
+    body = "\n".join(bits) if bits else "- (no scenes)"
+    return ("## Archived session plan\n"
+            f"session: {loaded.get('session')}\n"
+            f"current_scene was: {loaded.get('current_scene')}\n"
+            f"{body}\n")
+
+
+def archive_session(campaign: str, *, camp_dir=None) -> str:
+    """Copy the live plan into session-log.md and clear current_scene.
+
+    A failure names itself. Clearing happens only after the log write lands, so
+    a dead log write does not drop the only copy.
+    """
+    loaded = load(campaign, camp_dir=camp_dir)
+    if not loaded.get("scenes") and loaded.get("session") is None and not loaded.get("current_scene"):
+        return "no_session_plan: nothing to archive"
+    cdir = _camp_dir(campaign, camp_dir)
+    log = cdir / "session-log.md"
+    try:
+        existing = log.read_text(encoding="utf-8") if log.exists() else "# Session Log\n"
+    except OSError as exc:
+        return f"archive_interrupted: {exc}"
+    try:
+        safeio.atomic_write_text(log, existing.rstrip() + "\n\n" + _archive_text(loaded))
+    except (OSError, KeyboardInterrupt) as exc:
+        return f"archive_interrupted: {exc}"
+    path = cdir / "state.md"
+    new = _set_lines(_read(path), "Session Plan", None, "current_scene", None)
+    if new is None:
+        return "archive_incomplete: session log updated but no Session Plan block to clear"
+    try:
+        safeio.atomic_write_text(path, new)
+    except (OSError, KeyboardInterrupt) as exc:
+        return ("archive_incomplete: session log updated but current_scene was not cleared "
+                f"({exc})")
+    return f"archived: session {loaded.get('session')} current_scene cleared"
 
 
 # ── text views ───────────────────────────────────────────────────────────────
@@ -397,10 +749,28 @@ def main(argv=None) -> int:
     st.add_argument("axis", choices=("tempo", "pressure", "preset"))
     st.add_argument("value")
     st.add_argument("--dry-run", action="store_true")
+    au = sub.add_parser("author", help="write a session plan from a JSON file")
+    au.add_argument("--file", required=True, help="JSON object with exactly one pressure point")
+    au.add_argument("--dry-run", action="store_true")
+    ad = sub.add_parser("advance", help="step toward the pressure point, or report why not")
+    ad.add_argument("--precondition-unmet", action="store_true")
+    sub.add_parser("archive", help="archive the session plan and clear current_scene")
     a = p.parse_args(argv)
     try:
         if a.cmd == "export":
             sys.stdout.write(export_json(a.campaign))
+            return 0
+        if a.cmd == "author":
+            payload = json.loads(pathlib.Path(a.file).read_text(encoding="utf-8"))
+            author_plan(a.campaign, payload, dry_run=a.dry_run)
+            print("would author" if a.dry_run else "authored")
+            return 0
+        if a.cmd == "advance":
+            result = auto_advance(a.campaign, precondition_met=not a.precondition_unmet)
+            print(result["report"])
+            return 0 if result["completed"] else 1
+        if a.cmd == "archive":
+            print(archive_session(a.campaign))
             return 0
         if a.cmd == "set":
             for f, k, v in set_value(a.campaign, a.target, a.axis, a.value, a.dry_run):
