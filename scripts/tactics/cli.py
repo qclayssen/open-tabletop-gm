@@ -82,9 +82,8 @@ import sys
 import dice                               # scripts/dice.py (on sys.path via tactics/__init__)
 from paths import find_campaign, _is_campaign  # scripts/paths.py (on sys.path via tactics/__init__)
 
-from . import (actions, ai, effects, encounter, engine, formations, journal, maps, policy,
-                 receipts, rest, roller, scenes, sight, slots, spells, state, statecard, sync)
-from .core import rules_for
+from . import (actions, encounter, engine, formations, journal, maps, policy,
+               purecore, receipts, rest, roller, scenes, sight, state, sync)
 from .grid import label, parse_square
 from .roller import PendingRoll, Roller
 from .state import Encounter
@@ -764,106 +763,37 @@ def _pc_names(enc) -> list:
     return [t.name for t in enc.tokens.values() if t.side == "pc"]
 
 
-def _advantage(args) -> str:
-    """The GM's own ruling for this roll, if they made one."""
-    return getattr(args, "advantage", None) or "normal"
+cmd_status = purecore.cmd_status
 
 
-def _exhaustion_label(token) -> str:
-    """The exhaustion level as a word, for the lines the GM reads."""
-    for c in token.conditions:
-        m = re.fullmatch(r"(?:exhausted|exhaustion)\s*(\d)", c.lower())
-        if m:
-            return m.group(1)
-    return str((token.extra or {}).get("exhaustion_level") or "")
+def core_command(args, enc=None, camp_dir=None) -> dict:
+    """The command dict purecore.execute takes, built from parsed arguments.
+
+    The CLI is the edge: whatever the core must not look up for itself (the
+    seed, the player's answers, the GM's difficulty setting) is resolved here."""
+    c = {"cmd": args.cmd, "seed": getattr(args, "_seed", None)}
+    for key in ("token", "square", "target", "attack", "option", "name", "dc", "sense", "by",
+                "source", "advantage", "words", "level", "kind", "what", "trigger", "ally", "n",
+                "mode", "action", "condition", "changes", "players"):
+        if hasattr(args, key):
+            c[key] = getattr(args, key)
+    if enc is not None and getattr(args, "react", None) is not None:
+        c["reactions"] = _reactions(enc, args)
+    if args.cmd == "choose" and str(c.get("n")) == "auto":
+        c["difficulty"] = args.difficulty or _difficulty(camp_dir)
+    return c
 
 
-def cmd_status(enc) -> str:
-    if enc.status == "active":
-        act = "action used" if enc.turn.action_used else "action ready"
-        head = (f"Round {enc.round}, {enc.current.name}'s turn "
-                f"({engine.remaining_movement(enc)} ft left, {act}).")
-    else:
-        head = f"Combat ended after round {enc.round}."
-    parts = []
-    for tid in enc.order:
-        x = enc.tokens[tid]
-        level = _exhaustion_label(x) if x.has("exhaustion") else ""
-        tags = [f"exhaustion {level}" if c == "exhaustion" and level else c
-                for c in x.conditions]
-        if x.concentration:
-            tags.append(f"concentrating: {x.concentration}")
-        tags += [e["name"] for e in x.effects if not e.get("conditions") and e.get("name")]
-        cond = f" [{', '.join(tags)}]" if tags else ""
-        left = slots.summary(x)
-        if left:
-            cond += f" ({left})"
-        parts.append(f"{x.name} dead" if x.dead else f"{x.name} {x.square} {x.hp}/{x.max_hp}{cond}")
-    ready = actions.readied_lines(enc)
-    return f"{head}\n" + " | ".join(parts) + ("\n" + "\n".join(ready) if ready else "")
-
-
-def cmd_options(enc, ref):
-    t = engine._resolve(enc, ref)
-    if t.controller == "player":
-        raise Stop(f"{t.name} is player-controlled: wait for the player's action.")
-    opts = ai.options(enc, t)
-    if not opts:
-        return f"{t.name} has nothing to do (cannot act or no targets): end-turn.", {"options": []}
-    lines = [f"{t.name} ({t.square}, {t.hp}/{t.max_hp} HP). Pick one, then: choose {t.id} <n>"]
-    lines += [f"{o['n']}. {o['label']}" for o in opts]
-    waiting = ai.recharging(enc, t)
-    if waiting:
-        lines.append(f"({', '.join(waiting)} recharging)")
-    special = ai.specials(enc, t)
-    if special:
-        lines.append(f"(Or narrate a special the engine does not run: {', '.join(special)})")
-    return "\n".join(lines), {"options": opts}
-
-
-def _split_name(enc, token, words: list, names: list) -> tuple:
-    """("spell or action name", [targets]) from loose words: the longest prefix
-    that names one of `names`, so both `cast kairos "magic missile" frog-1` and
-    `cast kairos magic missile frog-1` work."""
-    low = [n.lower() for n in names]
-    for i in range(len(words), 0, -1):
-        cand = " ".join(words[:i]).lower()
-        if cand in low or any(n.startswith(cand) for n in low) and i == 1:
-            return " ".join(words[:i]), words[i:]
-    return (words[0], words[1:]) if words else ("", [])
-
-
-def _cast(enc, roller, args) -> tuple:
-    c = engine._resolve(enc, args.token)
-    name, targets = _split_name(enc, c, args.words, engine.rules_for(enc).known_spells(c))
-    if not name:
-        raise Stop("Name the spell: cast <token> \"<spell>\" [targets].")
-    data = spells.cast(enc, roller, c, name, targets, args.level, _reactions(enc, args))
-    return data["text"], data
-
-
-def _use(enc, roller, args) -> tuple:
-    t = engine._resolve(enc, args.token)
-    if len(args.words) < 2:
-        raise Stop("use <token> \"<action>\" <square|target>")
-    name, rest = " ".join(args.words[:-1]), args.words[-1]
-    data = spells.use_action(enc, roller, t, name, rest, _reactions(enc, args))
-    return data["text"], data
-
-
-def _adjust(enc, args) -> str:
-    t = engine._resolve(enc, args.token)
-    done = []
-    for pair in args.changes:
-        key, _, val = pair.partition("=")
-        if key not in ("hp", "temp_hp", "ac", "speed", "max_hp") or not val.lstrip("-").isdigit():
-            raise Stop(f"adjust takes hp=N temp_hp=N ac=N speed=N max_hp=N, not {pair!r}")
-        setattr(t, key, int(val))
-        done.append(f"{key} {val}")
-    t.hp = max(0, min(t.hp, t.max_hp))
-    text = f"{t.name}: {', '.join(done)}."
-    engine._log(enc, "adjust", t.id, f"GM: {text}")
-    return text
+def _through_core(enc, args, roller, camp_dir) -> tuple:
+    """Run a command on the loaded fight through the pure core, then do the one
+    write the core hands back to its caller: the roll receipts."""
+    enc.receipt_sink = []
+    try:
+        return purecore.execute(enc, core_command(args, enc, camp_dir), roller)
+    finally:
+        sink, enc.receipt_sink = enc.receipt_sink, None
+        for actor, kind, rolls, states in sink:
+            receipts.record(enc, actor, kind, rolls, states)
 
 
 def _end(camp_dir, enc, campaign: str = "", award: bool = True) -> str:
@@ -1005,112 +935,8 @@ def run(args) -> int:
         enc.campaign_dir = camp_dir
         roller.state_fn = lambda: receipts.state_hash(enc)
         cmd = args.cmd
-        if cmd == "status":
-            text = cmd_status(enc)
-        elif cmd == "options":
-            text, data = cmd_options(enc, args.token)
-        elif cmd == "preview":
-            data = engine.preview_move(enc, args.token, args.square)
-            text = data["text"]
-        elif cmd == "reachable":
-            data = engine.reachable(enc, args.token)
-            text = f"{len(data['walk'])} squares walking, {len(data['dash'])} more with Dash."
-        elif cmd == "approach":
-            data = engine.approach(enc, args.token, args.target)
-            text = data["text"]
-        elif cmd == "targets":
-            data = {"targets": engine.attack_options(enc, args.token)}
-            legal = [t for t in data["targets"] if t["legal"]]
-            text = "; ".join(f"{t['attack']} -> {t['target_name']} {t['hit_percent']}%"
-                             for t in legal) or "No target in range."
-        elif cmd == "log":
-            text = "\n".join(e["text"] for e in enc.log[-args.n:]) or "(empty log)"
-        elif cmd == "spells":
-            rows = spells.castable(enc, args.token)
-            data = {"spells": rows}
-            text = "; ".join(f"{r['name']}" + ("" if r["ok"] else f" (no: {r['reason'].rstrip('.')})")
-                             for r in rows) or "No spells."
-        elif cmd == "preview-area":
-            c = engine._resolve(enc, args.token)
-            name, targets = _split_name(enc, c, args.words, engine.rules_for(enc).known_spells(c))
-            data = spells.preview(enc, c, name, targets[0] if len(targets) == 1 else targets, args.level)
-            text = data["text"]
-        elif cmd == "cast":
-            text, data = _cast(enc, roller, args)
-        elif cmd == "use":
-            text, data = _use(enc, roller, args)
-        elif cmd == "help":
-            text = actions.help_action(enc, args.token, args.ally, args.target)["text"]
-        elif cmd == "hide":
-            data = actions.hide(enc, roller, args.token)
-            text = data["text"]
-        elif cmd == "escape":
-            text = actions.escape(enc, roller, args.token)["text"]
-        elif cmd == "ready":
-            data = actions.ready(enc, roller, args.token, args.kind, " ".join(args.what) or None,
-                                 args.target, args.trigger or "", args.level)
-            text = data["text"]
-        elif cmd == "trigger":
-            text = actions.trigger(enc, roller, args.token, args.target,
-                                   _reactions(enc, args))["text"]
-        elif cmd == "sight":
-            data = sight.sight(enc, args.token, players=args.players)
-            text = data["text"]
-        elif cmd == "card":
-            data = statecard.statecard(enc, args.token, players=args.players)
-            text = data["text"]
-        elif cmd == "fog":
-            enc.meta["fog"] = args.mode
-            text = f"Fog of war: {args.mode}." + {
-                "hide": " The display dims what no PC sees and hides the creatures there.",
-                "dim": " The display dims what no PC sees; every creature stays shown.",
-                "off": " The display shows the whole map."}[args.mode]
-        elif cmd == "reactions":
-            t = engine._resolve(enc, args.token)
-            t.reactions = args.mode
-            text = f"{t.name}: spell reactions {args.mode}."
-        elif cmd == "choose":
-            t = engine._resolve(enc, args.token)
-            if t.controller == "player":
-                raise Stop(f"{t.name} is player-controlled: use move/attack for the player's choice.")
-            if args.n == "auto":
-                data = policy.choose_auto(enc, roller, t, args.difficulty or _difficulty(camp_dir),
-                                          _reactions(enc, args))
-                text = f"{data['option']['label']} [{data['profile']}]. {data['text']}"
-            elif args.n.isdigit():
-                data = ai.choose(enc, roller, t, int(args.n), _reactions(enc, args))
-                text = f"{data['option']['n']}. {data['text']}"
-            else:
-                raise Stop(f"choose {t.id} <n>: an option number, or auto.")
-        elif cmd == "move":
-            data = engine.move(enc, roller, args.token, args.square, _reactions(enc, args))
-            text = data["text"]
-        elif cmd == "attack":
-            data = engine.attack(enc, roller, args.token, args.target, args.attack,
-                                 _reactions(enc, args), _advantage(args))
-            text = data["text"]
-        elif cmd == "check":
-            data = engine.check(enc, roller, args.token, args.name, args.dc or 0,
-                                _advantage(args), args.sense or "", args.by, args.source)
-            text = data["text"]
-        elif cmd == "multiattack":
-            data = engine.multiattack(enc, roller, args.token, args.target, args.option,
-                                      _reactions(enc, args))
-            text = data["text"]
-        elif cmd in ("dash", "disengage", "dodge"):
-            text = getattr(engine, cmd)(enc, args.token)["text"]
-        elif cmd == "stand":
-            text = engine.stand_up(enc, args.token)["text"]
-        elif cmd == "death-save":
-            t = engine._resolve(enc, args.token)
-            if enc.current.id != t.id:
-                raise Stop(f"It is {enc.current.name}'s turn, not {t.name}'s.")
-            text = engine.death_save(enc, roller)["text"]
-        elif cmd == "undo-move":
-            text = engine.undo_move(enc)["text"]
-        elif cmd == "end-turn":
-            text = engine.end_turn(enc, roller)["text"]
-        elif cmd == "rest":
+        if cmd == "rest":
+            # Writes the calendar, so it stays at the edge (purecore.py).
             # The campaign name, so a long rest taken in a fight stamps the same
             # end hour in tracker.json as one taken between fights: the rest is
             # the same event whether or not an encounter happens to be loaded.
@@ -1118,53 +944,10 @@ def run(args) -> int:
             moved = rest.advance_calendar(_campaign(args), args.type)
             if moved:
                 text += "\n" + moved
-        elif cmd == "condition" and args.action == "remove" and args.condition.lower() == "concentration":
-            t = engine._resolve(enc, args.token)
-            if not t.concentration:
-                raise Stop(f"{t.name} is not concentrating.")
-            text = effects.end_concentration(enc, t, "GM ruling")
-            engine._log(enc, "condition", t.id, f"GM: {text}")
-        elif cmd == "condition" and args.action == "remove" and any(
-                args.condition.lower() in e.get("conditions", [])
-                for e in engine._resolve(enc, args.token).effects):
-            t = engine._resolve(enc, args.token)
-            names = effects.remove_granting(t, args.condition.lower())
-            t.remove_condition(args.condition)
-            text = f"{t.name}: {args.condition.lower()} removed (ends {', '.join(names)})."
-            engine._log(enc, "condition", t.id, f"GM: {text}")
-        elif cmd == "condition":
-            t = engine._resolve(enc, args.token)
-            R = rules_for(enc)
-            name = args.condition.lower()
-            if args.level is not None:
-                name = f"exhaustion {args.level}"
-            # The statblock's condition immunities bind a GM-typed add too, not
-            # only rider saves: the engine owns the rule, the GM cannot forget it.
-            base = name.split()[0]
-            immune = {c.lower() for c in t.condition_immunities}
-            if args.action == "add" and base in immune:
-                text = f"{t.name} is immune to being {base}; nothing added."
-            else:
-                if args.action == "add":
-                    more = R.set_condition(t, name)
-                else:
-                    more = R.clear_condition(t, name)
-                said = name
-                if t.has("exhaustion") and _exhaustion_label(t):
-                    said = f"exhaustion {_exhaustion_label(t)}"
-                text = f"{t.name}: {said} {'added' if args.action == 'add' else 'removed'}."
-                if args.action == "add":
-                    # What the condition is doing to this creature, so nobody has to
-                    # remember which of fourteen it is.
-                    text += " " + " ".join(more + R.condition_notes(t))
-                    text += " " + " ".join(effects.check_incapacitated(enc, t))
-                else:
-                    text += (" " + " ".join(more)) if more else ""
-            engine._log(enc, "condition", t.id, f"GM: {text}")
-        elif cmd == "adjust":
-            text = _adjust(enc, args)
-        else:                                               # end
+        elif cmd == "end":
             text = _end(camp_dir, enc, _campaign(args), award=not args.no_xp)
+        else:
+            text, data = _through_core(enc, args, roller, camp_dir)
 
     if args.cmd not in READ_ONLY:
         if roller.supplied:
