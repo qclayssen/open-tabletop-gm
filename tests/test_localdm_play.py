@@ -1733,38 +1733,20 @@ def test_the_number_rewrite_changes_prose_only_and_keeps_the_directive(tmp_path)
 def test_the_dm_turn_completes_while_the_advisor_is_still_blocked(tmp_path):
     """The mutant-killing test.
 
-    The advisor is gated on an Event that is never set during the assertions. If
-    the turn blocks on the advisor, `handle()` never returns and this raises
-    rather than returning -- and if the DM somehow returns first with no
-    narration, the return-value assertion catches it.
+    Verifies that the shadow advisor runs in a background thread and does not
+    block the main turn. The thread is still alive after `handle()` returns; it
+    only finishes after `gate.set()` is called.
     """
     import threading as th
     gate = th.Event()
-    # STARTED vs FINISHED, and the distinction is the whole test.
-    #
-    # The first version recorded `reached.append("advisor")` on ENTRY and asserted
-    # it was empty when the turn returned. That is not a property anything
-    # guarantees: `_start_shadow` starts the shadow advisor's thread BY DESIGN, so
-    # on a loaded scheduler that thread can be scheduled and reach the advisor
-    # call before `handle()` returns. It flaked on main (recorded red by the
-    # merge queue) and passed every local run -- the signature of a scheduling
-    # race wearing a test's clothes.
-    #
-    # What IS deterministic is whether the call FINISHED. The gate is released
-    # only after the assertions, so:
-    #   * threaded (correct) -- the thread is still inside `gate.wait(5)`, so
-    #     nothing has finished when the turn returns;
-    #   * inlined (the mutant) -- `run()` executes inside `_player_turn`, so the
-    #     turn blocks for the full 5s and the call has FINISHED by the time
-    #     `handle()` returns.
-    # `gate.wait(5)` TIMING OUT is what makes that true: with a block-forever gate
-    # the mutant would hang rather than fail, and a hang is a worse signal.
-    finished = []
 
     def responder(model, msgs, role):
         if role.startswith("advisor"):
-            gate.wait(5)                    # released only after the assertions
-            finished.append("advisor")
+            # The gate is never set until after the assertions below, so this
+            # blocks for up to 5 seconds (timeout) then returns. The point is
+            # that `handle()` should return well before that timeout if the
+            # thread is truly backgrounded.
+            gate.wait(5)
             return "Note."
         return "Reeds." + NULLS
 
@@ -1773,13 +1755,14 @@ def test_the_dm_turn_completes_while_the_advisor_is_still_blocked(tmp_path):
                 shadow=True)
     out = s.handle("I look.")
 
-    # We are here, so the turn returned. Did it return while the advisor was
-    # still waiting, or after waiting for it?
+    # We are here, so the turn returned. Verify the shadow thread is still
+    # alive — this is deterministic: if the thread runs in a background thread
+    # (correct), it will still be running when handle returns. If it were inlined
+    # (the mutant), it would have already finished and is_alive() would be False.
     assert out == ["Reeds."], "the turn returned the wrong narration"
-    assert finished == [], (
-        "an advisor call had FINISHED by the time the turn returned, so the turn "
-        "waited for it. This is the exact regression _start_shadow's thread "
-        "exists to prevent.")
+    assert s._shadow_thread.is_alive(), (
+        "the shadow thread finished before the turn returned, indicating it "
+        "runs inline within _player_turn rather than in a separate thread")
     assert s.saved_notes == "", (
         "a note was filed before the assertions ran; the note would have reached "
         "the DM only because the turn blocked")
