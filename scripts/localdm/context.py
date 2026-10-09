@@ -74,7 +74,9 @@ DIGEST_SECTIONS = ("Current Situation", "Pinned Facts", "World State", "Faction 
 OPTIONAL_DIGEST_SECTIONS = ("World Queue",)
 LABEL = {"player": "Player", "dm": "GM", "engine": "Engine"}
 
-_HEADING = re.compile(r"^## +(.+?)\s*$", re.M)
+# 0-3 leading spaces: CommonMark counts that as a heading. Column 0 only
+# let ` ## Forged` hide inside an allowlisted section (#292).
+_HEADING = re.compile(r"^[ ]{0,3}## +(.+?)\s*$", re.M)
 _COUNCIL = re.compile(r"^\W*council:\s*(\w+)", re.M | re.I)
 
 
@@ -133,6 +135,14 @@ def _truncate(text: str, limit: int) -> str:
 # them)` is ordinary English, which is exactly why `scrub_injection` cannot see
 # it. Demotion is structural, so it survives paraphrase -- and it cannot drop
 # content, because it only renames what is already there.
+#
+# INDENT AND SETEXT (#292)
+# ========================
+# `re.M` makes `^` match at column 0 only. CommonMark accepts 0-3 spaces
+# before an ATX heading, and a setext heading is a title plus an underline
+# of `=` or `-` with no hashes at all. Both are handled in `_demote_headings`:
+# the ATX pattern allows that indent, and a setext underline is stripped so
+# the title cannot stand as H1 or H2. Four spaces stays a code block.
 CAMPAIGN_HEADING_BASE = "####"
 # One more level than the digest's own `###`, so a campaign heading can never
 # outrank the section of the digest that contains it either.
@@ -144,6 +154,13 @@ def _demote_headings(text: str, base: str = CAMPAIGN_HEADING_BASE) -> str:
     A heading shallower than `base` is deepened; one already at or below it is
     left alone. That keeps nested structure nested instead of flattening a
     `#####` sub-point up to the same level as its parent.
+
+    CommonMark treats 0-3 leading spaces as part of the heading, so the match
+    allows that indent. Four spaces is a code block and is left alone.
+
+    A setext heading has no hashes: a title line followed immediately by a
+    line of `=` (H1) or `-` (H2). The underline is removed first, which leaves
+    the title as prose. A table row such as `| --- |` is not an underline.
     """
     base_level = len(base)
 
@@ -158,7 +175,27 @@ def _demote_headings(text: str, base: str = CAMPAIGN_HEADING_BASE) -> str:
         # first attempt at this helper did reintroduce.
         return base + " " + text_after
 
-    return re.sub(r"^(#{1,6})(\s+)(.*)$", push, text, flags=re.M)
+    # Setext before ATX. The title stays; only the underline goes.
+    text = re.sub(
+        r"(?m)^([^\n]*\S[^\n]*)\n[ ]{0,3}(?:=+|-+)[ \t]*$",
+        r"\1",
+        text,
+    )
+    return re.sub(r"(?m)^[ ]{0,3}(#{1,6})(\s+)(.*)$", push, text)
+
+
+def _campaign_block(title: str, body: str) -> str:
+    """One digest section: a title at CAMPAIGN_HEADING_BASE plus a demoted body.
+
+    Shared by state_digest, sheet_digest and notes_digest so the heading-depth
+    rule lives in one place. The title is the digest's own wrapper (a section
+    name or a file name). The body is whatever the caller already selected.
+
+    This is structural depth, not a notes-name allowlist. templates/npcs.md has
+    no `##` headings (`# NPCs` then `### <Name>`), so a name filter keyed the
+    way DIGEST_SECTIONS is would keep zero sections and empty the roster.
+    """
+    return f"{CAMPAIGN_HEADING_BASE} {title}\n" + _demote_headings(body)
 
 
 def state_digest(state_md: str, sections=DIGEST_SECTIONS, limit: int = 3000) -> str:
@@ -185,8 +222,7 @@ def state_digest(state_md: str, sections=DIGEST_SECTIONS, limit: int = 3000) -> 
             body = [line for line in state_md[m.end():end].splitlines()
                     if line.strip() and not is_template_line(line)]
         if body:
-            parts.append(f"#### {section_name}\n"
-                         + _demote_headings("\n".join(body)))
+            parts.append(_campaign_block(section_name, "\n".join(body)))
         # Inject handoff fields after Pinned Facts (high priority, before World State)
         if not handoff_injected and section_name == "Pinned Facts":
             if handoff_where or handoff_in_flight:
@@ -196,8 +232,8 @@ def state_digest(state_md: str, sections=DIGEST_SECTIONS, limit: int = 3000) -> 
                 if handoff_in_flight:
                     handoff_parts.append("In flight:\n" + "\n".join(f"  - {item}" for item in handoff_in_flight))
                 if handoff_parts:
-                    parts.append("#### Handoff (injected)\n" + _demote_headings("\n".join(handoff_parts)))
-                handoff_injected = True
+                    parts.append(_campaign_block("Handoff (injected)", "\n".join(handoff_parts)))
+                    handoff_injected = True
     # Scrubbed on load; read the ceiling note at the top of this module first.
     return _truncate(scrub_injection("\n\n".join(parts)), limit)
 
@@ -262,8 +298,7 @@ def sheet_digest(camp_dir, sections=SHEET_SECTIONS, limit: int = 3000) -> str:
         end = heads[i + 1].start() if i + 1 < len(heads) else len(text)
         body = [ln for ln in text[m.end():end].splitlines() if ln.strip()]
         if body:
-            parts.append(f"#### Player character: {m.group(1)}\n"
-                         + _demote_headings("\n".join(body)))
+            parts.append(_campaign_block(f"Player character: {m.group(1)}", "\n".join(body)))
     return scrub_injection("\n\n".join(parts))[:limit]   # scrubbed; see the ceiling note
 
 
@@ -289,7 +324,7 @@ def sheet_digest(camp_dir, sections=SHEET_SECTIONS, limit: int = 3000) -> str:
 # the warning and keep the clock result, which is the inverse of what we want.
 # Pinned by test_provenance_boundary.py::test_gm_only_markers_survive_the_digest.
 NOTE_FILES = ("world.md", "npcs.md", "faction_log.md")
-_HEAD_LINE = re.compile(r"^#{1,6} ")
+_HEAD_LINE = re.compile(r"^[ ]{0,3}#{1,6} ")
 _TEMPLATE_DEFAULT = re.compile(r"Attitude toward party:\*\*\s*neutral|Current stage:\*\*\s*1\b", re.I)
 _PLACEHOLDER = re.compile(r"<[^>\n]+>")
 _EMPTY_FIELD = re.compile(r"\s*(?:[-*]\s+)?\*\*[^*]+:\*\*[\s|]*(?:\*\*[^*]+:\*\*[\s|]*)*")
@@ -362,8 +397,7 @@ def notes_digest(camp_dir, files=NOTE_FILES, limit: int = 2500) -> str:
                     if not (_HEAD_LINE.match(ln)
                             and (i + 1 == len(keep) or _HEAD_LINE.match(keep[i + 1])))]
         if body:
-            parts.append(f"#### {name}\n"
-                         + _demote_headings("\n".join(body)))
+            parts.append(_campaign_block(name, "\n".join(body)))
     return scrub_injection("\n\n".join(parts))[:limit]   # scrubbed; see the ceiling note
 
 

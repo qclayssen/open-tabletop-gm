@@ -33,8 +33,8 @@ The shape of one line:
     actor   the token id, kind   the log entry's kind ("attack", "save", ...).
     state   SHA-256 over the fight as it stood immediately before the dice were
             rolled: round, turn, and every token's id, side, position, HP, temp
-            HP, AC, conditions and dead flag. A receipt says which fight, and
-            which moment of it, the roll belongs to.
+            HP, AC, conditions, spent reaction and dead flag. A receipt says
+            which fight, and which moment of it, the roll belongs to.
     roll    the full Roll.to_dict() payload, untouched.
     sig     see below.
 
@@ -302,10 +302,22 @@ def state_hash(enc) -> str:
     """SHA-256 over the fight as it stands, as one hex string.
 
     Round, turn and action economy, plus every token's id, side, position, HP,
-    temp HP, AC, conditions and dead flag, sorted by id so dict order cannot
-    move the hash. Deliberately not the whole encounter: the combat log, the map
-    and the display meta are not what a roll is disputed about, and a receipt
-    should pin the moment, not freeze the file.
+    temp HP, AC, conditions, spent reaction and dead flag, sorted by id so dict
+    order cannot move the hash. Deliberately not the whole encounter: the combat
+    log, the map and the display meta are not what a roll is disputed about, and
+    a receipt should pin the moment, not freeze the file.
+
+    `reaction_used` is hashed per token and not on the turn, because that is
+    where it lives: `TurnState` has no such field, so the turn-level key this
+    used to carry was a constant `false` that made the payload look like it
+    covered reactions while proving nothing. A creature that has already spent
+    its reaction is a different fight, and the token is what knows.
+
+    Moving this payload changes what FUTURE receipts pin. It does not touch a
+    chain already on disk: `verify` re-derives each `sig` over the record as
+    written and never recomputes a `state`, so receipts written under an older
+    payload keep verifying exactly as they did. Old receipts are history, and
+    history is not re-signed.
     """
     turn = getattr(enc, "turn", None)
     payload = {
@@ -315,12 +327,12 @@ def state_hash(enc) -> str:
             "actor": getattr(turn, "actor", "") or "",
             "action_used": bool(getattr(turn, "action_used", False)),
             "bonus_used": bool(getattr(turn, "bonus_used", False)),
-            "reaction_used": bool(getattr(turn, "reaction_used", False)),
         },
         "tokens": sorted(
             ({"id": t.id, "side": t.side, "x": t.x, "y": t.y, "hp": t.hp,
               "max_hp": t.max_hp, "temp_hp": getattr(t, "temp_hp", 0),
               "ac": t.ac, "conditions": sorted(t.conditions or []),
+              "reaction_used": bool(getattr(t, "reaction_used", False)),
               "dead": bool(getattr(t, "dead", False))}
              for t in (getattr(enc, "tokens", {}) or {}).values()),
             key=lambda t: t["id"]),

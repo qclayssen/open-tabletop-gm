@@ -357,21 +357,18 @@ def test_the_only_square_rule_remaining_is_distance_itself():
         path = ROOT / "scripts" / "tactics" / f"{name}.py"
         text = path.read_text(encoding="utf-8")
         callers[name] = len(re.findall(r"\.distance\(", text))
-    # engine dropped 9 -> 3 with #257, and the drop is the point rather than a
-    # loss: six of those sites were asking "how far is this creature" and were
-    # answered from its anchor square. They now go through `min_distance` (the
-    # nearest square of the body) or `adjacent` (squares that touch), both of
-    # which are `distance` asked about a footprint and both of which reduce to
-    # this exact call for two 1x1 creatures. The three that remain are
-    # `approach`, which is placing one creature beside another and asks about a
-    # single destination square by design.
+    # engine dropped 3 -> 1 with #296. `approach` used to ask `distance` three
+    # times about the destination anchor. It now has one call site, inside
+    # `body_distance`, and that call is still `Grid.distance`: it is asked for
+    # every square of the mover against every square of the target. A 1x1 pair
+    # is that one call on the two anchors, which is the old number.
     # Exact, not a floor. A floor of 20 survived a mutant that replaced one call
     # with hand-rolled `max(abs(dx), abs(dy)) * 5`, which is exactly the change
     # this is meant to catch -- so the threshold was loose enough to miss the one
     # thing it exists for. An exact count fails when a call site is added too,
     # which is the intended friction: moving a distance question is a decision
     # about geometry and should say so in a test.
-    assert callers == {"actions": 1, "ai": 5, "effects": 3, "engine": 3,
+    assert callers == {"actions": 1, "ai": 5, "effects": 3, "engine": 1,
                        "fightq": 3, "policy": 1, "spells": 1, "statecard": 2,
                        "formations": 0}, (
         f"the Grid.distance call sites moved: {callers}. Either a caller started "

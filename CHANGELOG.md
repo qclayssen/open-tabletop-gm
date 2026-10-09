@@ -12,6 +12,53 @@ This project is the LLM-agnostic, system-flexible fork of [claude-dnd-skill](htt
 
 ## [Unreleased]
 
+### Fixed: petrified resisted nothing, Silvery Barbs rolled a player's die for them, and the receipt hash pinned a field no turn had
+
+Four rules from the phase 13 rules lane (#314).
+
+**A petrified creature had no resistance to damage.** SRD 5.1, appendix A: "The
+creature has resistance to all damage." The condition carried its immunities and its
+automatic criticals, but nothing halved damage, so a creature turned to stone took every
+point of it. `CONDITION_EFFECTS["petrified"]` now carries `resist_all`, which
+`get_condition_modifiers` merges as one resistance rather than two when the creature is
+already resistant to that type, and which `damage` applies before vulnerability and
+whatever the type, untyped damage included: 10 bludgeoning is 5, 7 is 3, poison stays 0
+because immunity is read first, and 7 fire against a creature that is also vulnerable to
+fire is 6 (3, then doubled). The 2014 wording carries no "nonmagical" qualifier and there
+is no 2024 rule here. `damage_multiplier`, which the damage previews read, sees the same
+key, so a GM is not shown one number and dealt another, and the condition's GM-facing note
+now says what it does.
+
+**Silvery Barbs asked for nobody's die.** The reroll belongs to the creature that
+succeeded, so under `roll_mode: players` it is the player's own roll.
+`effects.silvery_barbs` called `roller.roll` without `player=`, so the engine rolled it and
+the player was never asked. It now passes `player=player_rolls(enc, rolled_by)`, the same
+test the attack roll two lines up the same call stack uses: the table pauses on a
+`PendingRoll` labelled "Silvery Barbs reroll", and the face the player supplies is the one
+kept.
+
+**The receipt chain's state hash pinned a key no turn has.** `state_hash` recorded
+`reaction_used` inside the turn's action economy, and `TurnState` has no such field, so the
+value was always False and a creature spending its reaction never moved the hash. The key
+now sits on each token beside `hp` and `conditions`, where the flag actually lives, and
+flipping one token's reaction changes the hash. **Old receipts stay valid history**: they
+are not re-signed and they are not rewritten. `receipts.verify` re-derives each signature
+over the record as it was written and never recomputes a `state`, so a chain signed under
+the old payload still verifies, and a test proves it against a chain built from the old
+payload verbatim.
+
+**`scenes.load` answers None to two different questions.** No scene at all, and a
+scene file this engine will not read, are both None. That is right for every caller it has
+and useless to a GM asking why the map is blank. `scenes.status(camp_dir)` returns
+`{"state": "missing" | "invalid" | "ok", "reason": ...}`, carrying the sentence that
+refused the file when there is one. It is read-only and never raises, so a report on a
+broken file is not broken by the file it reports on; `load` and `cli` are untouched, and
+`ok` is decided by calling `load`, so the two readers cannot disagree about a file.
+
+### Changed: Python 3.14 is the floor; the 3.10 and Windows requirements are gone
+
+Owner ruling D-14 (2026-10-07). Hard Rule 4 (Python 3.10, Windows, non-UTF-8 locale) is deleted, and Hard Rule 5 now allows pinned, justified dependencies as long as the engine core still tests with no extras. CI runs 3.14 only: the `floor-310` and `non-UTF-8 locale` jobs and `scripts/check_py_floor.py` are removed, and `start.py` requires 3.14. No dependency was added, and existing `encoding="utf-8"` arguments are untouched.
+
 ### Fixed: the tactical panel's type was not the face it asked for, its labels grew with the board, and a refusal was on two surfaces at once
 
 Five correctness items from COMBAT-FEEL Wave 0 (#300), merged as `b582333` on 2026-10-05.

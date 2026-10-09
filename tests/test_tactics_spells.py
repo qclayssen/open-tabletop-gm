@@ -234,6 +234,45 @@ def test_silvery_barbs_rerolls_an_enemy_hit():
     assert fx.find(k, name="silvery barbs")                # Kairos was the target: he gets it
 
 
+def _barbs_frog(pos=(1, 0)):
+    """A frog that can answer with Silvery Barbs: it needs the spell and a slot,
+    which is all `effects.barbs_casters` asks of a caster."""
+    f = frog("frog-1", pos)
+    f.extra["spells"] = ["Silvery Barbs"]
+    f.extra["slots"] = {"1": {"total": 1, "used": 0}}
+    return f
+
+
+def test_silvery_barbs_reroll_is_the_players_own_die():
+    """before fix: `Failed: DID NOT RAISE <class 'tactics.roller.PendingRoll'>`.
+
+    The reroll is `rolled_by`'s, and under roll_mode players a player character's
+    die is the player's, exactly like their attack or their save: the engine asks
+    for it and keeps the face supplied. `effects.silvery_barbs` rolled it with the
+    engine's own rng instead, so Kairos's forced reroll was decided by the engine
+    while the display still showed him as the one rolling -- a dice request that
+    never reached the player, on the one roll the spell exists to force.
+    """
+    k, f = caster(pos=(0, 0)), _barbs_frog()
+    enc = fight(k, f)                                   # it is Kairos's turn
+    # The 3 is scripted for the engine's rng on purpose: on the pre-fix code the
+    # engine rolls the reroll itself, keeps that 3 and returns a result, so
+    # nothing is ever asked of the player whose die it is.
+    with pytest.raises(PendingRoll) as e:
+        engine.attack(enc, roller(3, supplied=[15]), "kairos", "frog-1", "fire bolt",
+                      {"frog-1:silvery barbs": True})
+    assert "Silvery Barbs reroll" in e.value.label
+
+    # And the face the player supplies is the one kept: 15 + 6 = 21 hits, the
+    # reroll 3 keeps 3, 9 vs AC 11 misses.
+    k2, f2 = caster(pos=(0, 0)), _barbs_frog()
+    enc2 = fight(k2, f2)
+    res = engine.attack(enc2, roller(supplied=[15, 3]), "kairos", "frog-1", "fire bolt",
+                        {"frog-1:silvery barbs": True})
+    assert not res["hit"] and "keeps 3" in res["text"]
+    assert f2.extra["slots"]["1"]["used"] == 1          # the frog paid for the reaction
+
+
 def test_reactions_off_never_asks():
     k, f = caster(pos=(0, 0)), frog("frog-1", (1, 0))
     k.reactions = "off"

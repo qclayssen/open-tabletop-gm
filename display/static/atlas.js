@@ -53,6 +53,13 @@
     empty.hidden = pins.length > 0;
   }
 
+  /* No stage means there is no map behind the page.
+   *
+   * The note branch omits #atlas-stage (and the pins layer and the legend)
+   * and still loads this script. readSpec() parses the empty spec sent with
+   * that note, and an empty object is truthy, so `if (spec)` is not enough:
+   * render() would throw on stage.style while the sentence is already shown.
+   * The guard is the element. */
   const spec = readSpec();
-  if (spec) render(spec);
+  if (spec && document.getElementById('atlas-stage')) render(spec);
 })();

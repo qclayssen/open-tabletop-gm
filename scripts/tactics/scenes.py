@@ -556,6 +556,74 @@ def load(camp_dir) -> dict | None:
     return spec if not validate(spec) else None
 
 
+def _declared_version(spec) -> int | None:
+    """The `version` a scene file declares, or None when it is not a number.
+
+    `load` reads this with `int(spec.get("version") or 0)` and lets the
+    TypeError or ValueError out, which is fine for a function that only ever
+    answers yes or no. `status` below reports on the file, so it has to survive
+    the file it is reporting on.
+    """
+    try:
+        return int(spec.get("version"))
+    except (TypeError, ValueError):
+        return None
+
+
+def status(camp_dir) -> dict:
+    """Which of the ways this campaign has no scene, and why: `missing`, `invalid` or `ok`.
+
+    `load` answers None both to "this campaign never had a scene" and to "there
+    is a scene file I will not read". That is right for every caller it has,
+    and it leaves a caller that has to tell a GM which one it is with nothing to
+    ask. This is that question:
+
+        {"state": "missing", "reason": ...}  no scene.json. Ordinary.
+        {"state": "invalid", "reason": ...}  a file a human should look at,
+                                             with the sentence that refused it.
+        {"state": "ok", "reason": ...}       `load` returns it.
+
+    `state` is the answer and `reason` is prose for a human; a caller branches
+    on the first and shows the second. `ok` is decided by calling `load`
+    itself, so the two readers cannot come to different conclusions about the
+    same file, and nothing downstream of `load` needs to learn a second way of
+    asking whether there is a scene.
+
+    Read-only, never raising, and it repairs nothing: no migration is applied
+    on disk, no file is created, and a broken one is left exactly as it was
+    found for a human to read. `load` and `cli` are untouched.
+    """
+    path = scene_path(camp_dir)
+    if not path.exists():
+        return {"state": "missing", "reason": f"there is no scene at {path}"}
+    # Read the file the tolerant way `load` partly does, and say why when it is
+    # not a scene object or not a version this engine reads. Read before asking
+    # `load`, because `load` raises on a version that is not a number and a
+    # report about a broken file must not be broken by the file it reports on.
+    try:
+        spec = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return {"state": "invalid", "reason": f"{path} is not readable JSON: {exc}"}
+    if not isinstance(spec, dict):
+        return {"state": "invalid",
+                "reason": f"{path} holds {type(spec).__name__}, not a scene object"}
+    version = _declared_version(spec)
+    if version != SCHEMA_VERSION:
+        return {"state": "invalid",
+                "reason": f"{path} declares version {spec.get('version')!r} and this "
+                          f"engine reads version {SCHEMA_VERSION}"}
+    # Past the version gate the only thing `load` can still refuse is the schema,
+    # so asking it here is what makes `ok` mean exactly "load reads this file".
+    if load(camp_dir) is not None:
+        return {"state": "ok", "reason": f"{path} is a scene this engine reads"}
+    problems = validate(spec)
+    if problems:
+        return {"state": "invalid",
+                "reason": f"{path} will not place a marker: " + "; ".join(problems)}
+    return {"state": "invalid",
+            "reason": f"{path} is a scene this engine will not read"}
+
+
 def snap(spec: dict, where: dict, *, name=None, revealed=None) -> dict:
     """`spec` with its marker moved onto the place `where` describes.
 

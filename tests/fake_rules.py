@@ -192,6 +192,12 @@ class FakeRules(Rules):
         odds = self.hit_chance(attacker, target, attack, ctx, explicit)
         roll.odds = {"percent": odds["percent"], "label": "to hit", "about": target.id,
                      "advantage": explicit}
+        # The same two fields 5e puts on its d20, after damage() has a total.
+        # Odds alone would leave this toy green in the conformance suite while
+        # the roll the display reads no longer matched.
+        roll.hit = hit
+        if hit:
+            roll.damage = damage["total"]
         return {"hit": hit, "crit": False, "natural": roll.natural, "total": total,
                 "ac": ac, "advantage": explicit, "reasons": odds["reasons"],
                 "damage": damage, "odds": dict(roll.odds), "verdict": "hit" if hit else "miss",
@@ -273,8 +279,11 @@ class FakeRules(Rules):
         before = target.hp
         target.hp = max(0, target.hp - total)
         dealt = before - target.hp
-        out = {"hp": target.hp, "damage": dealt, "dealt": dealt, "types": types,
-               "dead": False, "concentration_dc": None}
+        # `total` is the figure the attack roll's `damage` field reads, the
+        # amount before the HP floor. `dealt` stays the hit points actually
+        # lost. This system has no resistances to change the first number.
+        out = {"hp": target.hp, "damage": dealt, "dealt": dealt, "total": total,
+               "types": types, "dead": False, "concentration_dc": None}
         if target.hp == 0:
             target.dead = out["dead"] = True
             out["text"] = f"{target.name} takes {dealt} damage and is out of the fight."

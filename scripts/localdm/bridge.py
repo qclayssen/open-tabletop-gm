@@ -4,6 +4,10 @@ Commands go through tactics.cli.main exactly as the GM would type them, with
 stdout and stderr captured, so the loop sees the same 1 to 4 lines. Exit codes:
 0 done, 1 refused (nothing changed), 2 waiting for the player (a --roll or a
 --react answer) or an argparse error.
+
+Every state-changing command reaches the rules through the pure core
+(tactics/purecore.py) by way of tactics.cli.main: the bridge owns no rule and no
+persistence of its own, and the CLI is the edge that loads and saves the fight.
 """
 from __future__ import annotations
 

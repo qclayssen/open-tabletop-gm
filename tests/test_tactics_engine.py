@@ -54,6 +54,21 @@ def test_all_enemies_down_is_announced():
 
 # ─── movement ─────────────────────────────────────────────────────────────────
 
+def test_a_large_approach_does_not_stand_on_the_target():
+    """A 2x2 ranked by its anchor walks onto the Medium it is approaching, and
+    the move is then refused because its own body covers that square. The square
+    approach returns must leave the target's square free."""
+    ape = kairos(pos=(0, 0))
+    ape.id, ape.name = "ape", "Ape"
+    ape.width, ape.height, ape.speed = 2, 2, 40
+    frog_1 = frog("frog-1", (4, 0))
+    enc = start(encounter([ape, frog_1]), ["ape", "frog-1"])
+    res = engine.approach(enc, "ape", "frog-1")
+    dest = grid.parse_square(res["square"])
+    assert frog_1.pos not in grid.footprint(dest, ape.size)
+    assert res["distance"] == enc.board().min_distance(dest, frog_1.pos, ape.size, frog_1.size)
+
+
 def test_move_spends_feet_and_reports_what_is_left():
     enc = start(encounter([kairos(), frog("frog-1", (7, 7))]), ["kairos", "frog-1"])
     res = engine.move(enc, roller(), "kairos", "D4")         # 3 diagonals = 15 ft

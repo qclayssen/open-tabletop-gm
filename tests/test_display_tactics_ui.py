@@ -185,16 +185,15 @@ class FrameGeometry(unittest.TestCase):
         self.assertAlmostEqual(max(ys) - min(ys), 24, places=2)
 
     def test_the_ally_frame_is_a_circle_of_the_same_radius(self):
-        # The enemy frame and the ally frame are drawn at the same radius, so the two
+        # The enemy frame and the ally frame are drawn at one radius, so the two
         # shapes are the same size on the board and only the outline differs.
-        # The geometry lives in one `shape` object that is drawn twice --
+        # The geometry now lives in one `shape` object that is drawn twice --
         # filled underneath, stroked over the top -- so that a portrait cannot
-        # change the silhouette. The radius scales with the token's smaller dimension:
-        # C / 2 - 4 for 1x1 tokens, larger for bigger tokens.
+        # change the silhouette. frameRadius is C/2 - 4 when the token is 1x1.
         js = JS.read_text(encoding="utf-8")
         self.assertIn("Math.min(w, h)", js)
-        self.assertIn("{ tag: 'circle', geo: { cx, cy, r:", js)
-        self.assertIn("{ tag: 'path', geo: { d: octagon(cx, cy,", js)
+        self.assertIn("{ tag: 'circle', geo: { cx, cy, r: frameRadius } }", js)
+        self.assertIn("{ tag: 'path', geo: { d: octagon(cx, cy, frameRadius) } }", js)
 
     def test_every_side_has_its_own_frame_colour_and_word(self):
         out = _run("return {cls: Object.values(SIDES).map(s => s.cls), "
@@ -386,9 +385,7 @@ class ScriptAndStylesheetAgree(unittest.TestCase):
         js = self.js()
         self.assertRegex(js, r"const isEnemy = t\.side === 'enemy'")
         self.assertRegex(js, r"\? \{ tag: 'path', geo: \{ d: octagon\(")
-        # The radius scales with the token's smaller dimension:
-        # C / 2 - 4 for 1x1 tokens, larger for bigger tokens.
-        self.assertRegex(js, r"Math\.floor\(C / 2 \* Math\.min\(w, h\)\) - 4")
+        self.assertRegex(js, r": \{ tag: 'circle', geo: \{ cx, cy, r: frameRadius \} \}")
         # One helper draws it, so the fill and the frame cannot drift apart.
         self.assertIn("const shapeNode = (style, parent) =>", js)
         self.assertIn("shapeNode('fill:none;stroke:var(--tx-panel);stroke-width:2', g);", js)

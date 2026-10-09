@@ -5,7 +5,7 @@
     python3 start.py --srd           # first fetch the full SRD data (needs network)
     python3 start.py -- --auto-dice  # anything after `--` goes to the tutorial
 
-It checks Python (3.10 or newer) and Flask, then starts the tutorial fight. If the
+It checks Python (3.14 or newer) and Flask, then starts the tutorial fight. If the
 full SRD dataset has not been built, it uses the small bundled kobold record
 (tests/fixtures/srd_monsters_play.json, SRD 5.1, CC-BY-4.0, see systems/dnd5e/NOTICE),
 so nothing has to be downloaded to play. Standard library only.
@@ -21,7 +21,7 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent
 SRD_FULL = ROOT / "systems" / "dnd5e" / "data" / "dnd5e_srd.json"
 SRD_MINI = ROOT / "tests" / "fixtures" / "srd_monsters_play.json"
-MIN_PY = (3, 10)
+MIN_PY = (3, 14)
 
 
 def check_python(version=None):
