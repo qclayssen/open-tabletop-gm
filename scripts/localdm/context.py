@@ -184,6 +184,20 @@ def _demote_headings(text: str, base: str = CAMPAIGN_HEADING_BASE) -> str:
     return re.sub(r"(?m)^[ ]{0,3}(#{1,6})(\s+)(.*)$", push, text)
 
 
+def _campaign_block(title: str, body: str) -> str:
+    """One digest section: a title at CAMPAIGN_HEADING_BASE plus a demoted body.
+
+    Shared by state_digest, sheet_digest and notes_digest so the heading-depth
+    rule lives in one place. The title is the digest's own wrapper (a section
+    name or a file name). The body is whatever the caller already selected.
+
+    This is structural depth, not a notes-name allowlist. templates/npcs.md has
+    no `##` headings (`# NPCs` then `### <Name>`), so a name filter keyed the
+    way DIGEST_SECTIONS is would keep zero sections and empty the roster.
+    """
+    return f"{CAMPAIGN_HEADING_BASE} {title}\n" + _demote_headings(body)
+
+
 def state_digest(state_md: str, sections=DIGEST_SECTIONS, limit: int = 3000) -> str:
     """The state.md sections the DM reads, trimmed to what is actually filled in.
 
@@ -208,8 +222,7 @@ def state_digest(state_md: str, sections=DIGEST_SECTIONS, limit: int = 3000) -> 
             body = [line for line in state_md[m.end():end].splitlines()
                     if line.strip() and not is_template_line(line)]
         if body:
-            parts.append(f"#### {section_name}\n"
-                         + _demote_headings("\n".join(body)))
+            parts.append(_campaign_block(section_name, "\n".join(body)))
         # Inject handoff fields after Pinned Facts (high priority, before World State)
         if not handoff_injected and section_name == "Pinned Facts":
             if handoff_where or handoff_in_flight:
@@ -219,8 +232,8 @@ def state_digest(state_md: str, sections=DIGEST_SECTIONS, limit: int = 3000) -> 
                 if handoff_in_flight:
                     handoff_parts.append("In flight:\n" + "\n".join(f"  - {item}" for item in handoff_in_flight))
                 if handoff_parts:
-                    parts.append("#### Handoff (injected)\n" + _demote_headings("\n".join(handoff_parts)))
-                handoff_injected = True
+                    parts.append(_campaign_block("Handoff (injected)", "\n".join(handoff_parts)))
+                    handoff_injected = True
     # Scrubbed on load; read the ceiling note at the top of this module first.
     return _truncate(scrub_injection("\n\n".join(parts)), limit)
 
@@ -285,8 +298,7 @@ def sheet_digest(camp_dir, sections=SHEET_SECTIONS, limit: int = 3000) -> str:
         end = heads[i + 1].start() if i + 1 < len(heads) else len(text)
         body = [ln for ln in text[m.end():end].splitlines() if ln.strip()]
         if body:
-            parts.append(f"#### Player character: {m.group(1)}\n"
-                         + _demote_headings("\n".join(body)))
+            parts.append(_campaign_block(f"Player character: {m.group(1)}", "\n".join(body)))
     return scrub_injection("\n\n".join(parts))[:limit]   # scrubbed; see the ceiling note
 
 
@@ -385,8 +397,7 @@ def notes_digest(camp_dir, files=NOTE_FILES, limit: int = 2500) -> str:
                     if not (_HEAD_LINE.match(ln)
                             and (i + 1 == len(keep) or _HEAD_LINE.match(keep[i + 1])))]
         if body:
-            parts.append(f"#### {name}\n"
-                         + _demote_headings("\n".join(body)))
+            parts.append(_campaign_block(name, "\n".join(body)))
     return scrub_injection("\n\n".join(parts))[:limit]   # scrubbed; see the ceiling note
 
 
