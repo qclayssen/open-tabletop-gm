@@ -533,14 +533,19 @@ def cmd_propose(args, camp_dir, campaign: str) -> tuple[str, dict]:
         }
         return json.dumps(refusal, indent=2), refusal
 
-    # Format human-readable output
+    # Format human-readable output.
+    # Nested same-quote f-strings (`f'{p['name']}'`) are 3.12+; CI floor is 3.10.
+    party = ", ".join(
+        f"{member['name']} L{member['level']}" for member in proposal["party"])
+    monsters = ", ".join(monster["name"] for monster in proposal["monsters"])
+    rating = proposal["rating"]
     lines = [
         f"Encounter Proposal ({proposal['target_band'].upper()})",
-        f"Party: {', '.join(f'{p['name']} L{p['level']}' for p in proposal['party'])}",
+        f"Party: {party}",
         f"Map: {proposal['map']}",
-        f"Monsters: {', '.join(f'{m['name']}' for m in proposal['monsters'])}",
-        f"Rating: {proposal['rating']['adjusted_xp']} XP (threshold: {proposal['rating']['threshold']})",
-        f"Actual band: {proposal['rating']['actual_band']}",
+        f"Monsters: {monsters}",
+        f"Rating: {rating['adjusted_xp']} XP (threshold: {rating['threshold']})",
+        f"Actual band: {rating['actual_band']}",
         f"Seed: {proposal['seed']}",
         f"Warning: {proposal['warning']}",
     ]
