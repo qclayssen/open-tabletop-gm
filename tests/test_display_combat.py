@@ -266,16 +266,6 @@ class CombatEndpoints(unittest.TestCase):
     # none of them. Hoisting them into this class fixes both halves at once: at
     # module scope they would collect and then error on a missing fixture, which
     # is a different kind of green.
-    def test_monster_spells_and_previews_are_not_readable_from_a_browser(self):
-        self.push(SNAP)
-        code, body = self.do({"cmd": "spells", "args": ["frog-1"]})
-        self.assertEqual(code, 403)
-        code, body = self.do({"cmd": "preview-area", "args": ["frog-1", "fire bolt", "B7"]})
-        self.assertEqual(code, 403)
-        self.assertEqual(self.calls, [])
-        self.assertEqual(self.do({"cmd": "spells", "args": ["kairos"]})[0], 200)
-
-    def test_a_usage_error_is_an_error_not_a_pending_prompt(self):
         self.push(SNAP)
         self.reply = (2, "usage: combat.py cast ...\ncombat.py cast: error: argument --level: invalid int value: 'x'")
         code, body = self.do({"cmd": "cast", "args": ["kairos", "fire bolt", "--level", "x"]})
@@ -294,6 +284,23 @@ class CombatEndpoints(unittest.TestCase):
         self.assertEqual(self.queued(), [])
 
 
+    def test_monster_spells_and_previews_are_not_readable_from_a_browser(self):
+        self.push(SNAP)
+        code, body = self.do({"cmd": "spells", "args": ["frog-1"]})
+        self.assertEqual(code, 403)
+        code, body = self.do({"cmd": "preview-area", "args": ["frog-1", "fire bolt", "B7"]})
+        self.assertEqual(code, 403)
+        self.assertEqual(self.calls, [])
+        self.assertEqual(self.do({"cmd": "spells", "args": ["kairos"]})[0], 200)
+    def test_a_usage_error_is_an_error_not_a_pending_prompt(self):
+        self.push(SNAP)
+        self.reply = (2, "usage: combat.py cast ...\ncombat.py cast: error: argument --level: invalid int value: 'x'")
+        code, body = self.do({"cmd": "cast", "args": ["kairos", "fire bolt", "--level", "x"]})
+        self.assertIn("error", body)
+        self.assertNotIn("pending", body)
+        self.reply = (2, "Kairos rolls 1d20+5 for Fire Bolt vs Frog 1. Nothing has happened yet.")
+        code, body = self.do({"cmd": "cast", "args": ["kairos", "fire bolt", "frog-1"]})
+        self.assertIn("pending", body)
 class Snapshot(unittest.TestCase):
     """sync.snapshot carries what the spell and action UI shows."""
 
@@ -347,8 +354,3 @@ class Snapshot(unittest.TestCase):
         self.assertEqual(threat, {"kairos": 0, "frog-1": 10, "frog-2": 0})
         f.reaction_used = True
         self.assertEqual(sync.snapshot(enc)["tokens"][1]["threat"], 0)
-
-
-if __name__ == "__main__":
-    unittest.main()
-

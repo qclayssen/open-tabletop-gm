@@ -1412,7 +1412,10 @@
   }
 
   function drawToken(t) {
-    const cx = t.x * C + C / 2, cy = t.y * C + C / 2;
+    const w = t.width || 1, h = t.height || 1;
+    // Token body centre: the visual centre of the WxH square body,
+    // anchored at (t.x, t.y) top-left. For w=h=1 this is the original centre.
+    const cx = t.x * C + w * C / 2, cy = t.y * C + h * C / 2;
     const cls = ['tx-tok'];
     if (t.id === snap.current) cls.push('tx-now');
     if (t.dead) cls.push('tx-dead');
@@ -1425,7 +1428,11 @@
       'aria-label': `${t.name}, ${sideOf(t).word}, ${t.dead ? 'dead' : t.hp + ' of ' + t.max_hp + ' HP'}, AC ${ac}, ${label(t.x, t.y)}` +
         (tg.length ? ', ' + tg.join(', ') : '') + (mark && mark.say ? ', ' + mark.say : '') }, ui.tokenLayer);
     const side = sideOf(t);
-    svg('circle', { cx, cy, r: C / 2 - 1, class: 'tx-ring' }, g);
+    // Ring radius scales with the token's smaller dimension so the circle
+    // always fits inside the body, with a 1px border. For 1x1 this is the
+    // original C/2 - 1.
+    const ringRadius = Math.floor(C / 2 * Math.min(w, h)) - 1;
+    svg('circle', { cx, cy, r: ringRadius, class: 'tx-ring' }, g);
     // The frame is what says whose turn-relevant creature this is: a notched
     // octagon for an enemy, a round frame for everyone else. Side stays
     // readable in greyscale, at a glance, and to a colour-blind player.
@@ -1443,9 +1450,10 @@
     // The silhouette, as tag + geometry. One description, drawn twice: once as
     // the fill underneath and once as the frame over the top, so the two can
     // never drift apart.
+    const frameRadius = Math.floor(C / 2 * Math.min(w, h)) - 4;
     const shape = isEnemy
-      ? { tag: 'path', geo: { d: octagon(cx, cy, C / 2 - 4) } }
-      : { tag: 'circle', geo: { cx, cy, r: C / 2 - 4 } };
+      ? { tag: 'path', geo: { d: octagon(cx, cy, frameRadius) } }
+      : { tag: 'circle', geo: { cx, cy, r: frameRadius } };
     // svg() takes (tag, attrs, parent) -- three. The style belongs in attrs, or
     // it lands in the parent slot and the call throws.
     const shapeNode = (style, parent) => svg(shape.tag, Object.assign({}, shape.geo, { style }), parent);
@@ -1481,9 +1489,17 @@
       const clipId = 'txclip-' + t.id.replace(/[^A-Za-z0-9_-]/g, '');
       const clip = svg('clipPath', { id: clipId }, ui.defsLayer);
       svg(shape.tag, shape.geo, clip);
+      // Portrait positioned with a 2px border inside the token body edges,
+      // sized to fill the body minus 2px border on each side. For 1x1 this
+      // gives the original C-4 sizing at the original position.
       img = svg('image', {
-        class: 'tx-art', x: cx - C / 2 + 2, y: cy - C / 2 + 2, width: C - 4, height: C - 4,
-        preserveAspectRatio: 'xMidYMid slice', 'clip-path': `url(#${clipId})`,
+        class: 'tx-art',
+        x: t.x * C + 2,
+        y: t.y * C + 2,
+        width: w * C - 4,
+        height: h * C - 4,
+        preserveAspectRatio: 'xMidYMid slice',
+        'clip-path': `url(#${clipId})`,
         href: '/tokens/' + art.split('/').pop()
       }, g);
       img.addEventListener('error', paint);
@@ -1495,9 +1511,7 @@
     shapeNode('fill:none;stroke:var(--tx-panel);stroke-width:2', g);
     if (!t.dead) {
       const pct = Math.max(0, t.hp / Math.max(1, t.max_hp));
-      svg('rect', { x: t.x * C + 4, y: t.y * C + C - 5, width: C - 8, height: 3, style: 'fill:var(--tx-line)' }, g);
-      svg('rect', { x: t.x * C + 4, y: t.y * C + C - 5, width: (C - 8) * pct, height: 3,
-                    style: 'fill:' + (pct <= .25 ? 'var(--tx-danger)' : 'var(--tx-heal)') }, g);
+      svg('rect', { x: t.x * C + 4, y: t.y * C + h * C - 5, width: w * C - 8, height: 3, style: 'fill:var(--tx-line)' }, g);
       // Small corner markers: C = concentrating (top left), R = a readied action (top right).
       // Inset and sized in pixels, like every other piece of chrome that exists
       // to carry a glyph: 5 units was half a pixel of inset at the phone

@@ -168,6 +168,10 @@ _GLOBAL_GENERATOR_EXEMPT = {
         "generates placeholder NPC names. Not a roll: there is no DC, no bonus and "
         "nothing at the table depends on the value. Reported in dnd-gm#306 as lower "
         "severity, deliberately not folded in.",
+    "scripts/localdm/handoff.py":
+        "sets seed for deterministic continuity benchmark fixture; not a player-facing "
+        "roll, so it has no seed to quote and no receipt to appear in. Reported in "
+        "dnd-gm#306 as lower severity, deliberately not folded in.",
 }
 
 #: Modules permitted to *construct* a generator outside `dice.new_rng()`.

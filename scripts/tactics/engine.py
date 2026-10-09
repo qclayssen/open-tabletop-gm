@@ -301,10 +301,15 @@ def approach(enc: Encounter, token_ref, target_ref) -> dict:
     parity = enc.turn.diag_parity if mine else 0
     reach = _melee_reach(t)
     squares = grid.reachable(t.pos, left, opts, parity=parity)
-    squares = {p: c for p, c in squares.items() if p != target.pos}
+    # Consider the target's footprint, not just its anchor square, so that a 2x2 creature
+    # approaching a Medium does not get sent to a square its own body already occupies.
+    target_footprint = footprint(target.pos, (target.width, target.height))
+    squares = {p: c for p, c in squares.items() if p not in target_footprint}
     squares[t.pos] = 0
-    best = min(squares, key=lambda p: (max(grid.distance(p, target.pos), reach), squares[p],
-                                       grid.distance(p, target.pos), p))
+    # Distance to the nearest square of the target's body, not just its anchor.
+    target_distance = lambda p: min(grid.distance(p, tf) for tf in target_footprint)
+    best = min(squares, key=lambda p: (max(target_distance(p), reach), squares[p],
+                                       target_distance(p), p))
     dist = grid.distance(best, target.pos)
     found = grid.path(t.pos, best, opts=opts, parity=parity)
     path, feet = found if found else ([t.pos], 0)
